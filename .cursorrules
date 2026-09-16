@@ -1,0 +1,544 @@
+# AI Banking Agent — 开发上下文 (AI Development Context)
+# 所有团队成员在使用 Cursor / AI 辅助编码时，请确保此文件在项目根目录。
+# AI 将基于此文件理解项目全貌，确保各模块代码风格、接口、架构保持一致。
+
+## 项目概述
+
+你正在参与开发一个 **AI Banking Agent（银行AI智能体）** 比赛项目。
+该系统允许用户通过自然语言对话完成银行业务操作，包括转账、账单分析、理财、卡片管理、订阅管理等。
+Agent 能自主理解用户意图、规划任务链路，并在严格的安全框架（权限分级）内执行操作。
+
+## 技术栈（强制）
+
+- **语言**: Python 3.11+（后端 & Agent）、TypeScript（前端）
+- **LLM**: 通过 Function Calling 调用，兼容 OpenAI API 格式（GPT-4 / Claude / 通义千问 / GLM-4）
+- **Agent 框架**: LangChain + LangGraph（用于 DAG 任务编排）
+- **后端框架**: FastAPI（异步，ASGI）
+- **前端框架**: React 18 + TypeScript + Vite
+- **数据库**: PostgreSQL（主数据库）+ Redis（会话缓存、限流）
+- **实时通信**: WebSocket（前后端对话流）
+- **图表可视化**: ECharts
+- **容器化**: Docker + Docker Compose（一键启动）
+
+## 项目目录结构
+
+```
+bank-agent/
+├── .cursorrules              # 本文件 - AI 开发上下文
+├── docker-compose.yml        # 一键启动所有服务
+├── README.md
+│
+├── agent/                    # 🤖 Agent 核心层（成员B 负责）
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── nlu_engine.py          # 意图理解引擎：意图分类 + 实体提取 + 槽位填充
+│   │   ├── task_planner.py        # 任务规划器：DAG 生成 + 权限判定 + 执行调度
+│   │   ├── dialog_manager.py      # 对话管理器：多轮上下文 + 会话状态机
+│   │   └── prompt_templates/      # Prompt 模板目录
+│   │       ├── system_prompt.py   # 系统提示词（严禁修改安全边界部分）
+│   │       └── few_shot_examples.py
+│   ├── tools/                     # Agent 工具定义（对接后端 API）
+│   │   ├── __init__.py
+│   │   ├── transfer_tool.py       # 转账相关工具
+│   │   ├── query_tool.py          # 查询相关工具（余额、交易记录）
+│   │   ├── finance_tool.py        # 理财相关工具
+│   │   ├── card_tool.py           # 卡片管理工具
+│   │   └── subscription_tool.py   # 订阅管理工具
+│   ├── config/
+│   │   └── agent_config.yaml      # Agent 配置（模型参数、超时等）
+│   └── tests/
+│
+├── backend/                  # 🔧 后端服务层（成员C 负责）
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py                # FastAPI 入口，挂载路由 + 中间件
+│   │   ├── models/                # SQLAlchemy / Pydantic 数据模型
+│   │   │   ├── user.py
+│   │   │   ├── account.py
+│   │   │   ├── transaction.py
+│   │   │   ├── contact.py
+│   │   │   ├── financial_product.py
+│   │   │   ├── subscription.py
+│   │   │   └── audit_log.py
+│   │   ├── routers/               # API 路由（RESTful）
+│   │   │   ├── chat.py            # POST /api/v1/chat/message, /confirm, GET /history
+│   │   │   ├── accounts.py
+│   │   │   ├── transactions.py
+│   │   │   ├── finance.py
+│   │   │   ├── cards.py
+│   │   │   └── subscriptions.py
+│   │   ├── services/              # 业务逻辑层
+│   │   ├── security/              # 安全模块
+│   │   │   ├── permission_guard.py    # 权限分级拦截器
+│   │   │   ├── injection_detector.py  # Prompt 注入检测
+│   │   │   ├── hallucination_checker.py # 幻觉校验
+│   │   │   └── circuit_breaker.py     # 异常熔断
+│   │   ├── middleware/            # 中间件
+│   │   │   ├── auth.py            # JWT 认证
+│   │   │   ├── rate_limiter.py    # 限流
+│   │   │   └── audit.py           # 审计日志中间件
+│   │   └── database/
+│   │       ├── connection.py      # 数据库连接
+│   │       └── seed.py            # 种子数据
+│   ├── migrations/                # Alembic 数据库迁移
+│   └── requirements.txt
+│
+├── frontend/                 # 🎨 前端应用（成员D 负责）
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── main.tsx
+│   │   ├── components/
+│   │   │   ├── ChatWindow/        # 聊天窗口（消息流 + 输入框）
+│   │   │   ├── MessageBubble/     # 消息气泡（支持富文本/表格/按钮）
+│   │   │   ├── ConfirmDialog/     # 操作确认弹窗（黄色级别）
+│   │   │   ├── MFAVerify/         # 多因子验证界面（红色级别）
+│   │   │   ├── Charts/            # 数据可视化（ECharts 封装）
+│   │   │   └── QuickActions/      # 快捷操作提示
+│   │   ├── pages/
+│   │   ├── services/              # API 调用封装 + WebSocket 管理
+│   │   ├── store/                 # 状态管理（Zustand 推荐）
+│   │   ├── types/                 # TypeScript 类型定义
+│   │   └── utils/
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── security/                 # 🛡️ 安全模块（成员E 负责，被后端引用）
+│
+└── tests/                    # 测试（成员E 负责）
+    ├── unit/
+    ├── integration/
+    ├── security/
+    └── e2e/
+```
+
+## 核心架构流程
+
+```
+用户输入(自然语言)
+    ↓
+[接入层] APP / Web / IM → WebSocket/HTTP
+    ↓
+[API网关] JWT认证 → 限流 → 日志
+    ↓
+[对话管理器] 维护多轮上下文、会话状态机
+    ↓
+[意图理解引擎] LLM Function Calling → 意图分类 + 实体提取 + 槽位填充
+    ↓
+[任务规划器] 复杂任务拆解为 DAG → 权限级别判定
+    ↓
+[权限分级] 🟢绿色(自动执行) / 🟡黄色(用户确认) / 🔴红色(MFA强验证)
+    ↓
+[工具调用层] 调用后端银行业务 API（白名单机制）
+    ↓
+[安全沙箱] 参数校验 + 幻觉检测 + 审计日志
+    ↓
+[后端服务] 执行业务逻辑 → 返回结果
+    ↓
+[响应生成] LLM 生成自然语言回复（数据来自API，禁止编造）
+    ↓
+返回用户
+```
+
+## 六大业务场景
+
+开发任何功能时，必须明确该功能属于哪个场景：
+
+| 编号 | 场景 | 优先级 | 说明 |
+|------|------|--------|------|
+| 1 | 智能转账 | P0必做 | 按人名/手机号/备注转账、定时转账、AA收款 |
+| 2 | 账单分析 | P0必做 | 消费分类统计、异常交易识别、月度/年度报告 |
+| 3 | 理财操作 | P0必做 | 产品推荐对比、风险评估、申购/赎回 |
+| 4 | 卡片管理 | P1建议 | 卡申请、额度调整、交易限制、解锁、挂失 |
+| 5 | 订阅代扣 | P1建议 | 订阅识别、续费提醒、一键取消 |
+| 6 | 跨场景联动 | P2加分 | 事件触发多步骤操作链（如生日自动送花） |
+
+## 权限分级机制（最重要！贯穿所有模块）
+
+每一个操作都必须有明确的权限级别。代码中使用枚举 `PermissionLevel`:
+
+```python
+from enum import Enum
+
+class PermissionLevel(Enum):
+    GREEN = "green"    # 自动执行：查询类操作，无需确认
+    YELLOW = "yellow"  # 用户确认：展示详情后需用户明确确认
+    RED = "red"        # 强验证：需 MFA（短信验证码/人脸/U盾）
+```
+
+### 操作 → 权限映射（开发时必须遵循）
+
+```python
+PERMISSION_MAP = {
+    # 🟢 绿色 - 自动执行
+    "query_balance": PermissionLevel.GREEN,
+    "query_transactions": PermissionLevel.GREEN,
+    "analyze_spending": PermissionLevel.GREEN,
+    "query_financial_products": PermissionLevel.GREEN,
+    "query_subscriptions": PermissionLevel.GREEN,
+    "risk_assessment": PermissionLevel.GREEN,
+
+    # 🟡 黄色 - 用户确认
+    "transfer_small": PermissionLevel.YELLOW,      # 日累计 ≤ 1000元
+    "cancel_subscription": PermissionLevel.YELLOW,
+    "apply_virtual_card": PermissionLevel.YELLOW,
+    "set_transaction_limit": PermissionLevel.YELLOW,
+    "schedule_transfer": PermissionLevel.YELLOW,
+
+    # 🔴 红色 - 强验证 MFA
+    "transfer_large": PermissionLevel.RED,          # 日累计 > 1000元
+    "change_password": PermissionLevel.RED,
+    "report_card_lost": PermissionLevel.RED,
+    "unlock_card": PermissionLevel.RED,
+    "purchase_financial_product": PermissionLevel.RED,
+    "redeem_financial_product": PermissionLevel.RED,
+    "adjust_credit_limit": PermissionLevel.RED,
+}
+```
+
+### 判定转账权限级别的逻辑
+
+```python
+def get_transfer_permission(amount: float, daily_used: float) -> PermissionLevel:
+    """转账权限判定：基于日累计金额"""
+    if daily_used + amount <= 1000:
+        return PermissionLevel.YELLOW   # 小额 → 用户确认
+    else:
+        return PermissionLevel.RED      # 大额 → 强验证
+```
+
+## 数据模型（所有模块共用）
+
+以下为核心数据结构，前后端和 Agent 层必须保持一致：
+
+### User（用户）
+```python
+class User(BaseModel):
+    user_id: str           # 如 "U123456"
+    name: str
+    phone: str             # 脱敏格式 "138****5678"
+    id_card: str           # 脱敏
+    risk_level: str        # "conservative" | "stable" | "balanced" | "aggressive"
+    created_at: datetime
+    status: str            # "active" | "frozen" | "closed"
+```
+
+### Account（账户）
+```python
+class Account(BaseModel):
+    account_id: str        # 如 "A001"
+    user_id: str
+    account_type: str      # "savings" | "checking" | "credit"
+    card_number: str       # 脱敏 "6222****8842"
+    balance: float
+    daily_transfer_used: float    # 今日已转金额
+    daily_transfer_limit: float   # 日转账限额
+    status: str            # "active" | "frozen" | "lost"
+```
+
+### Transaction（交易记录）
+```python
+class Transaction(BaseModel):
+    tx_id: str             # 如 "TX20260916001"
+    account_id: str
+    type: str              # "transfer_in" | "transfer_out" | "purchase" | "refund" | "subscription"
+    amount: float
+    counterparty: str
+    category: str          # "dining" | "shopping" | "transport" | "entertainment" | "transfer" | "subscription" | "salary" | "other"
+    note: str | None
+    timestamp: datetime
+    status: str            # "completed" | "pending" | "failed" | "cancelled"
+    channel: str           # "agent" | "app" | "atm" | "pos"
+```
+
+### Contact（联系人）
+```python
+class Contact(BaseModel):
+    contact_id: str
+    user_id: str
+    name: str
+    nickname: str | None
+    phone: str
+    account_number: str
+    bank: str
+    transfer_count: int    # 历史转账次数，用于智能排序
+    last_transfer: date | None
+```
+
+### FinancialProduct（理财产品）
+```python
+class FinancialProduct(BaseModel):
+    product_id: str        # 如 "FP001"
+    name: str
+    annual_rate: float     # 年化收益率，如 0.038 表示 3.8%
+    risk_level: str        # "R1" ~ "R5"
+    term_days: int
+    min_amount: float
+    max_amount: float
+    status: str            # "on_sale" | "sold_out" | "off_shelf"
+```
+
+### Subscription（订阅）
+```python
+class Subscription(BaseModel):
+    sub_id: str
+    user_id: str
+    service_name: str      # 如 "网易云音乐会员"
+    merchant: str
+    amount: float
+    cycle: str             # "monthly" | "quarterly" | "yearly"
+    next_charge_date: date
+    account_id: str
+    status: str            # "active" | "paused" | "cancelled"
+```
+
+### AuditLog（审计日志）
+```python
+class AuditLog(BaseModel):
+    audit_id: str          # 如 "AUD-20260916-001"
+    session_id: str
+    user_id: str
+    timestamp: datetime
+    intent: str            # 识别到的意图
+    permission_level: str  # "green" | "yellow" | "red"
+    action: str            # 执行的操作名
+    params: dict           # 操作参数
+    user_confirmed: bool | None
+    mfa_method: str | None # "sms" | "face" | "ukey" | None
+    result: str            # "success" | "failed" | "cancelled" | "blocked"
+    decision_chain: list[str]  # 完整决策链路
+    ip: str | None
+    device_id: str | None
+```
+
+## API 接口规范
+
+### 前端 ↔ Agent 接口
+
+```
+# 发送用户消息（核心对话接口）
+POST /api/v1/chat/message
+Request:  { session_id?, user_id, message, channel, device_id }
+Response: SSE 流式返回 { session_id, message_id, type, content, action_required?, timestamp }
+
+# type 枚举: "text" | "confirmation" | "mfa_required" | "chart" | "error"
+# action_required.type 枚举: "confirm" | "mfa" | "select"
+
+# 用户确认/验证
+POST /api/v1/chat/confirm
+Request:  { session_id, message_id, action: "confirm"|"cancel", mfa_code? }
+
+# 获取历史消息
+GET /api/v1/chat/history?session_id=xxx&limit=50
+```
+
+### Agent → 后端工具函数（Function Calling）
+
+每个工具必须严格定义 JSON Schema，LLM 通过 Function Calling 决定调用哪个工具：
+
+| 工具名 | 用途 | 关键参数 |
+|--------|------|----------|
+| `query_balance` | 查询余额 | user_id, account_type? |
+| `transfer_money` | 转账 | from_account, to_contact, amount, note?, scheduled_time? |
+| `query_transactions` | 查询交易记录 | user_id, start_date?, end_date?, category?, min/max_amount? |
+| `analyze_spending` | 消费分析 | user_id, period (week/month/quarter/year) |
+| `get_financial_products` | 获取理财产品 | risk_level?, min_term?, max_term? |
+| `purchase_product` | 申购理财 | user_id, product_id, amount |
+| `manage_card` | 卡片管理 | user_id, card_number, action (lock/unlock/report_lost/adjust_limit) |
+| `get_subscriptions` | 获取订阅列表 | user_id |
+| `cancel_subscription` | 取消订阅 | user_id, sub_id |
+
+## 安全规范（所有成员必须遵守）
+
+### 1. 幻觉防护
+- **禁止** LLM 自行生成任何金额、账号、交易状态等数据
+- 所有业务数据 **必须** 来自后端 API 的真实返回
+- 回复中的关键数字需与 tool_call 返回值做 **一致性校验**
+- 如果 API 调用失败，回复 "暂时无法查询，请稍后重试"，**绝不编造**
+
+### 2. Prompt 注入防御
+- 系统提示词与用户输入 **严格隔离**，使用边界标记
+- 用户输入必须经过 `injection_detector.py` 过滤
+- 权限校验在 **后端强制执行**，绝不依赖 LLM 的判断
+- 检测到注入攻击时：终止会话 + 记录安全事件
+
+### 3. 操作审计
+- 所有 🟡黄色 和 🔴红色 操作 **必须** 写入审计日志
+- 审计日志包含完整的 **决策链路**（decision_chain）
+- 日志格式参照 `AuditLog` 模型
+
+### 4. 异常熔断
+- 连续 3 次操作失败 → 暂停会话
+- 短时间多次高风险操作 → 安全锁定
+- 疑似注入攻击 → 立即终止 + 告警
+
+## 代码规范
+
+### Python（后端 & Agent）
+- 使用 **类型注解**（Type Hints），所有函数参数和返回值必须标注类型
+- 使用 **Pydantic v2** 做数据校验
+- 异步函数使用 `async/await`
+- 命名：`snake_case`（变量/函数）、`PascalCase`（类）、`UPPER_SNAKE_CASE`（常量）
+- docstring 使用中文，注释使用中文
+- 异常处理：自定义业务异常类，统一 HTTP 错误码
+
+```python
+# ✅ 正确示例
+async def transfer_money(
+    from_account: str,
+    to_contact: str,
+    amount: float,
+    note: str | None = None
+) -> TransferResult:
+    """执行转账操作"""
+    ...
+
+# ❌ 错误示例
+def transfer(a, b, c):  # 无类型注解、变量名不清晰
+    ...
+```
+
+### TypeScript（前端）
+- 严格模式 `"strict": true`
+- 所有 props 和 state 必须定义 **interface/type**
+- 组件使用 **函数式组件** + Hooks
+- 命名：`camelCase`（变量/函数）、`PascalCase`（组件/类型）
+- CSS 方案：CSS Modules 或 Tailwind CSS
+- API 调用统一封装在 `services/` 目录
+
+```typescript
+// ✅ 正确示例
+interface ChatMessage {
+  messageId: string;
+  type: 'text' | 'confirmation' | 'mfa_required' | 'chart' | 'error';
+  content: string;
+  actionRequired?: ActionRequired;
+  timestamp: string;
+}
+
+// ❌ 错误示例
+const msg: any = { ... };  // 禁止使用 any
+```
+
+### 通用规范
+- Git 提交信息格式：`<type>(<scope>): <description>`
+  - type: feat / fix / refactor / docs / test / chore
+  - scope: agent / backend / frontend / security / all
+  - 示例：`feat(agent): 实现转账意图识别`
+- 分支策略：`main` ← `dev` ← `feature/xxx`
+- 每个 PR 需关联至少一个功能编号（如 T-001, B-002）
+
+## 团队协作边界
+
+### 成员B（Agent 核心）的代码边界
+- 只修改 `agent/` 目录下的文件
+- 需要新增后端 API 时，在 `agent/tools/` 中定义接口契约，通知成员C实现
+- Prompt 模板修改需通知成员E做安全审查
+
+### 成员C（后端）的代码边界
+- 只修改 `backend/` 目录下的文件
+- API 路由新增/修改需同步更新 API 文档并通知成员B和D
+- 数据库 migration 文件必须包含 rollback 逻辑
+
+### 成员D（前端）的代码边界
+- 只修改 `frontend/` 目录下的文件
+- 消息类型（type 枚举）变更需与成员B协商
+- 新增图表组件需确认数据格式与后端一致
+
+### 成员E（安全&测试）的代码边界
+- `security/` 目录 + `tests/` 目录
+- 安全模块会被后端引用，接口变更需通知成员C
+- 每个 Sprint 结束前提交安全测试报告
+
+## 意图理解相关（成员B 重点关注）
+
+### 支持的意图类型
+```python
+INTENT_TYPES = [
+    "transfer",             # 转账
+    "query_balance",        # 查余额
+    "query_transactions",   # 查交易记录
+    "analyze_spending",     # 账单分析
+    "financial_recommend",  # 理财推荐
+    "financial_purchase",   # 理财申购
+    "financial_redeem",     # 理财赎回
+    "card_manage",          # 卡片管理
+    "subscription_query",   # 订阅查询
+    "subscription_cancel",  # 取消订阅
+    "cross_scene",          # 跨场景联动
+    "correction",           # 纠错（"不对，是转给李四"）
+    "interruption",         # 中断（"停一下"、"暂停"）
+    "confirmation",         # 确认（"确认"、"好的"）
+    "cancellation",         # 取消（"取消"、"算了"）
+    "unknown",              # 无法识别
+]
+```
+
+### 必须支持的对话能力
+1. **模糊表达**："转点钱给老王" → 追问金额
+2. **省略上下文**："再转一笔" → 复用上轮参数
+3. **隐含意图**："我下个月房租怎么办" → 推测并确认
+4. **多意图**："查下余额，顺便把账单发我" → 拆分为 2 个子任务
+5. **纠错**："不对，是转给李四不是张三" → 修正参数
+6. **中断/恢复**："停一下" → 暂停任务，"继续" → 恢复执行
+
+### 任务 DAG 编排
+复杂任务拆解为子任务 DAG（有向无环图），支持：
+- 串行依赖（查余额 → 决定转账金额）
+- 并行执行（同时给多人转账）
+- 条件分支（余额不足 → 提示充值 / 余额充足 → 执行转账）
+
+## 环境变量
+
+```env
+# LLM 配置
+LLM_API_KEY=your-api-key
+LLM_MODEL=gpt-4
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MAX_TOKENS=4096
+LLM_TEMPERATURE=0.3       # 银行场景用较低 temperature 确保稳定性
+
+# 数据库
+DATABASE_URL=postgresql://user:pass@localhost:5432/banking_agent
+REDIS_URL=redis://localhost:6379/0
+
+# 安全
+JWT_SECRET=your-jwt-secret
+MFA_SMS_ENABLED=true       # 是否启用短信验证
+DAILY_TRANSFER_LIMIT=50000 # 日转账限额
+
+# 服务端口
+BACKEND_PORT=8000
+FRONTEND_PORT=3000
+```
+
+## 常见开发场景 AI 提示
+
+当你让 AI 辅助开发时，可以附加以下上下文：
+
+### 新增一个工具函数
+> "参照项目中已有的 `transfer_tool.py` 的结构，新增一个 XXX 工具。
+> 必须定义 Function Calling JSON Schema，包含 name/description/parameters。
+> 工具执行前必须经过权限分级判定。"
+
+### 新增一个 API 路由
+> "在 `backend/app/routers/` 中新增路由。
+> 使用 FastAPI + async，Pydantic 模型做请求/响应校验。
+> 必须添加 JWT 认证中间件和审计日志。"
+
+### 新增一个前端组件
+> "在 `frontend/src/components/` 中新增 React 函数式组件。
+> 使用 TypeScript 严格类型，定义 Props interface。
+> 如果涉及实时数据，通过 WebSocket 订阅。"
+
+### 写测试
+> "在 `tests/` 对应目录写测试。
+> 包含 Happy Path + Edge Case + 安全测试。
+> 安全测试必须覆盖：Prompt 注入、越权操作、参数篡改。"
+
+## 重要提醒
+
+1. **永远不要让 LLM 编造银行数据** — 所有金额、账号、交易状态必须来自 API
+2. **每个操作都要有权限级别** — 不确定时默认用更高级别（宁严勿松）
+3. **审计日志不可遗漏** — 所有黄色和红色操作必须留痕
+4. **接口变更必须通知相关成员** — 避免联调时出错
+5. **先跑通 MVP 再扩展** — Week 1 目标：端到端跑通"查余额"

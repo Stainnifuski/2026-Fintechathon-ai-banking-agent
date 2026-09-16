@@ -1,0 +1,22 @@
+# Agent 配置文件
+llm:
+  model: "gpt-4"
+  temperature: 0.3
+  max_tokens: 4096
+  timeout: 30
+  retry_count: 3
+
+dialog:
+  max_turns: 20
+  session_timeout: 1800  # 30分钟
+  max_concurrent_sessions: 100
+
+transfer:
+  daily_limit: 50000
+  single_limit: 20000
+  small_amount_threshold: 1000  # 小额/大额分界
+
+security:
+  max_failed_attempts: 3
+  lockout_duration: 300  # 5分钟
+  mfa_code_expiry: 300
