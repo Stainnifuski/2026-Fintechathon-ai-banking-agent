@@ -1,0 +1,102 @@
+"""3号授权与风险服务端口的本地 MVP 适配器。"""
+
+from datetime import date
+from uuid import uuid4
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..domain import AuthorizationStatus, RiskReservationStatus
+from ..models.account import AccountORM
+from ..models.workflow import AuthorizationORM, RiskReservationORM
+
+YELLOW_LIMIT_FEN = 100_000
+
+
+class AuthorizationError(Exception):
+    def __init__(self, message: str, code: str = "AUTHORIZATION_REJECTED") -> None:
+        self.message = message
+        self.code = code
+        super().__init__(message)
+
+
+class CapabilityNotImplemented(Exception):
+    def __init__(self, capability: str) -> None:
+        self.capability = capability
+        super().__init__(f"{capability} 接口已定义，但当前适配器尚未实现")
+
+
+async def precheck_risk(
+    db: AsyncSession, *, user_id: str, from_account: str, amount_fen: int
+) -> str:
+    account = await db.get(AccountORM, from_account)
+    if account is None or account.user_id != user_id:
+        raise AuthorizationError("付款账户不属于当前用户", "PAYER_FORBIDDEN")
+    held = (
+        await db.execute(
+            select(RiskReservationORM).where(
+                RiskReservationORM.user_id == user_id,
+                RiskReservationORM.status == RiskReservationStatus.HELD,
+            )
+        )
+    ).scalars().all()
+    cumulative = round(account.daily_transfer_used * 100) + sum(item.amount_fen for item in held)
+    return "YELLOW" if cumulative + amount_fen <= YELLOW_LIMIT_FEN else "RED"
+
+
+def new_authorization(
+    *,
+    operation_id: str,
+    user_id: str,
+    plan_version: int,
+    param_digest: str,
+    risk_level: str,
+) -> AuthorizationORM:
+    return AuthorizationORM(
+        authorization_id=f"AUTH{uuid4().hex[:16].upper()}",
+        operation_id=operation_id,
+        user_id=user_id,
+        plan_version=plan_version,
+        status=AuthorizationStatus.PENDING_CONSENT,
+        risk_level=risk_level,
+        verification_level="CONSENT",
+        param_digest=param_digest,
+    )
+
+
+def record_consent(authorization: AuthorizationORM) -> None:
+    if authorization.status != AuthorizationStatus.PENDING_CONSENT:
+        raise AuthorizationError("授权不在待确认状态")
+    authorization.status = (
+        AuthorizationStatus.VALID
+        if authorization.risk_level == "YELLOW"
+        else AuthorizationStatus.PENDING_VERIFICATION
+    )
+
+
+def validate_for_acceptance(
+    authorization: AuthorizationORM, *, operation_digest: str, plan_version: int
+) -> None:
+    if authorization.status != AuthorizationStatus.VALID:
+        raise AuthorizationError("授权尚未生效或已经失效")
+    if authorization.param_digest != operation_digest or authorization.plan_version != plan_version:
+        raise AuthorizationError("授权绑定的参数或计划版本不匹配")
+
+
+def consume(authorization: AuthorizationORM) -> None:
+    if authorization.status != AuthorizationStatus.VALID:
+        raise AuthorizationError("授权不能被消费")
+    authorization.status = AuthorizationStatus.CONSUMED
+
+
+def create_risk_hold(
+    *, operation_id: str, user_id: str, amount_fen: int
+) -> RiskReservationORM:
+    return RiskReservationORM(
+        reservation_id=f"RSV{uuid4().hex[:16].upper()}",
+        operation_id=operation_id,
+        user_id=user_id,
+        amount_fen=amount_fen,
+        risk_date=date.today(),
+        status=RiskReservationStatus.HELD,
+    )

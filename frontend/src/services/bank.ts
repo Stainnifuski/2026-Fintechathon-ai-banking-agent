@@ -1,0 +1,54 @@
+import { apiClient } from './api';
+
+export interface User { user_id: string; name: string; phone: string; }
+export interface AuthResponse { access_token: string; token_type: string; user: User; }
+export interface Account { account_id: string; account_type: string; card_number: string; balance: number; daily_transfer_used: number; daily_transfer_limit: number; }
+export interface Recipient { user_id: string; name: string; account_id: string; bank: string; }
+export interface Transaction { tx_id: string; type: string; amount: number; counterparty: string; note?: string; timestamp: string; }
+export interface ConfirmationCard {
+  card_id: string; plan_version: number; from_account: string; to_account: string;
+  recipient_name: string; amount: number; currency: string; note?: string; risk_level: string;
+}
+export interface OperationView {
+  operation_id: string; status: string; amount: number; amount_fen: number; currency: string;
+  from_account: string; to_account: string; bank_status?: string; bank_tx_id?: string; failure_code?: string;
+}
+export interface TaskSnapshot {
+  task_id: string; phase: string; outcome: string; state_version: number; plan_version: number;
+  control_mode: string; control_epoch: number; cancel_requested: boolean; allowed_actions: string[];
+  message: string; operation: OperationView; authorization: { authorization_id: string; status: string; risk_level: string };
+  risk_reservation?: { reservation_id: string; status: string; amount_fen: number };
+  confirmation_card?: ConfirmationCard;
+}
+
+export const login = (phone: string, password: string) => apiClient.post<AuthResponse>('/auth/login', { phone, password }).then(r => r.data);
+export const register = (name: string, phone: string, password: string) => apiClient.post<AuthResponse>('/auth/register', { name, phone, password }).then(r => r.data);
+export const accounts = (userId: string) => apiClient.get<Account[]>(`/accounts/${userId}/accounts`).then(r => r.data);
+export const recipients = () => apiClient.get<Recipient[]>('/users/recipients').then(r => r.data);
+export const history = () => apiClient.get<Transaction[]>('/transactions/history').then(r => r.data);
+export const createTransferTask = (payload: {
+  request_id: string; operation_id: string; from_account: string; to_account: string; amount: number; note?: string;
+}) => apiClient.post<TaskSnapshot>('/tasks/transfers', payload).then(r => r.data);
+export const createChatTask = (payload: { request_id: string; operation_id: string; message: string }) =>
+  apiClient.post<TaskSnapshot>('/tasks/messages', payload).then(r => r.data);
+export const getTask = (taskId: string) => apiClient.get<TaskSnapshot>(`/tasks/${taskId}`).then(r => r.data);
+export const confirmTask = (task: TaskSnapshot, requestId: string) =>
+  apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/confirm`, {
+    request_id: requestId, state_version: task.state_version, plan_version: task.plan_version,
+  }).then(r => r.data);
+export const acceptTask = (task: TaskSnapshot, requestId: string) =>
+  apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/accept`, {
+    request_id: requestId, state_version: task.state_version,
+  }).then(r => r.data);
+export const cancelTask = (task: TaskSnapshot, requestId: string) =>
+  apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/cancel`, {
+    request_id: requestId, state_version: task.state_version,
+  }).then(r => r.data);
+export const reconcileTask = (task: TaskSnapshot, requestId: string) =>
+  apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/reconcile`, {
+    request_id: requestId, state_version: task.state_version,
+  }).then(r => r.data);
+export const verifyTask = (task: TaskSnapshot, requestId: string) =>
+  apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/verify`, {
+    request_id: requestId, state_version: task.state_version, challenge_id: 'placeholder', proof: 'placeholder',
+  }).then(r => r.data);

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import DateTime, Float, ForeignKey, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
 
@@ -15,9 +15,13 @@ class TransactionORM(Base):
     __tablename__ = "transactions"
 
     tx_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="交易ID")
+    operation_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True, comment="客户幂等操作编号（仅转出流水保存）"
+    )
     account_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("accounts.account_id"), nullable=False, comment="账户ID"
     )
+    account: Mapped["AccountORM"] = relationship(back_populates="transactions")
     type: Mapped[str] = mapped_column(
         String(20), nullable=False,
         comment="交易类型: transfer_in|transfer_out|purchase|refund|subscription",
@@ -61,10 +65,10 @@ class TransferRequestSchema(BaseModel):
     """转账请求 Schema。"""
 
     from_account: str
-    to_contact: str
+    to_account: str
     amount: float = Field(..., gt=0, description="转账金额，必须大于0")
     note: str | None = None
-    scheduled_time: str | None = None
+    operation_id: str = Field(..., min_length=8, max_length=64, description="客户端生成的幂等操作编号")
 
 
 class TransferResponseSchema(BaseModel):
@@ -74,6 +78,7 @@ class TransferResponseSchema(BaseModel):
     status: str
     amount: float
     from_account: str
-    to_contact: str
+    to_account: str
+    recipient_name: str
     message: str
     timestamp: datetime

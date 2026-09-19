@@ -60,8 +60,6 @@ async def get_current_user(
 ) -> dict:
     """FastAPI 依赖函数：从请求头提取并验证 JWT，返回当前用户信息。
 
-    MVP 阶段：如果未提供 Token，返回默认用户（方便开发调试）。
-
     Args:
         credentials: HTTP Bearer 认证凭据。
 
@@ -71,9 +69,12 @@ async def get_current_user(
     Raises:
         HTTPException: Token 无效时抛出 401。
     """
-    # MVP 阶段：未提供 Token 时返回默认用户
     if credentials is None:
-        return {"user_id": "U001", "name": "张三", "role": "user"}
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="请先登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     payload = verify_token(credentials.credentials)
     if payload is None:
@@ -83,8 +84,11 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌缺少用户信息")
     return {
-        "user_id": payload.get("sub", ""),
+        "user_id": user_id,
         "name": payload.get("name", ""),
         "role": payload.get("role", "user"),
     }

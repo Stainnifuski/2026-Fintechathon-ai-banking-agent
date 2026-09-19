@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Float, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
 
@@ -30,6 +30,8 @@ class AccountORM(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active", comment="账户状态"
     )
+    user: Mapped["UserORM"] = relationship(back_populates="accounts")
+    transactions: Mapped[list["TransactionORM"]] = relationship(back_populates="account")
 
 
 class AccountSchema(BaseModel):
@@ -56,3 +58,11 @@ class AccountBalanceSchema(BaseModel):
     card_number: str
     daily_transfer_used: float
     daily_transfer_limit: float
+
+
+class AccountCreateSchema(BaseModel):
+    """注册时创建的基础活期账户。"""
+
+    account_id: str
+    account_type: str
+    card_number: str

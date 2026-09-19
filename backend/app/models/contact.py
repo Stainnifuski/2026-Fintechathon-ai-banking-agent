@@ -4,7 +4,7 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Date, ForeignKey, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
 
@@ -18,6 +18,7 @@ class ContactORM(Base):
     user_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("users.user_id"), nullable=False, comment="用户ID"
     )
+    user: Mapped["UserORM"] = relationship(back_populates="contacts")
     name: Mapped[str] = mapped_column(String(64), nullable=False, comment="姓名")
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="昵称")
     phone: Mapped[str] = mapped_column(String(20), nullable=False, comment="手机号")

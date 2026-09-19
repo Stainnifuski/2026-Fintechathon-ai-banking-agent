@@ -11,8 +11,12 @@ from .database.connection import close_db, init_db
 from .database.seed import seed_data
 from .middleware.audit import AuditMiddleware
 from .routers.accounts import router as accounts_router
-from .routers.chat import router as chat_router
+from .routers.auth import router as auth_router
+from .routers.bank_operations import router as bank_operations_router
+from .routers.operations import router as operations_router
 from .routers.transactions import router as transactions_router
+from .routers.tasks import router as tasks_router
+from .routers.users import router as users_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,9 +60,13 @@ app.add_middleware(AuditMiddleware)
 
 # ──────────────────── 路由 ────────────────────
 
-app.include_router(chat_router)
+app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(transactions_router)
+app.include_router(tasks_router)
+app.include_router(operations_router)
+app.include_router(users_router)
+app.include_router(bank_operations_router)
 
 
 # ──────────────────── 健康检查 ────────────────────

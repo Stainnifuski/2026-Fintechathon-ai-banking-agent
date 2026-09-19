@@ -10,6 +10,7 @@ from ..models.user import UserORM
 from ..models.account import AccountORM
 from ..models.contact import ContactORM
 from ..models.transaction import TransactionORM
+from ..security.passwords import hash_password
 
 logger = logging.getLogger(__name__)
 
@@ -37,20 +38,23 @@ async def seed_data() -> None:
         user_zhangsan = UserORM(
             user_id="U001",
             name="张三",
-            phone="138****5678",
+            phone="13800000001",
             id_card="310***********1234",
+            password_hash=hash_password("password123"),
             risk_level="balanced",
             status="active",
         )
         user_lisi = UserORM(
             user_id="U002",
             name="李四",
-            phone="139****8765",
+            phone="13900000002",
             id_card="310***********5678",
+            password_hash=hash_password("password123"),
             risk_level="stable",
             status="active",
         )
         session.add_all([user_zhangsan, user_lisi])
+        await session.flush()
 
         # ──────────── 账户 ────────────
 
@@ -85,6 +89,7 @@ async def seed_data() -> None:
             status="active",
         )
         session.add_all([account_a001, account_a002, account_a003])
+        await session.flush()
 
         # ──────────── 联系人（张三的） ────────────
 
@@ -93,7 +98,7 @@ async def seed_data() -> None:
             user_id="U001",
             name="李四",
             nickname="老李",
-            phone="139****8765",
+            phone="13900000002",
             account_number="6222****7756",
             bank="中国工商银行",
             transfer_count=15,

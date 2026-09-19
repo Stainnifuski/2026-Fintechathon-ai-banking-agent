@@ -15,20 +15,15 @@ from ..models.base import Base
 
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://bankuser:bankpass@localhost:5432/banking_agent",
+    "sqlite+aiosqlite:///./banking_agent.db",
 )
-
-REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # ──────────────────── 引擎 & 会话 ────────────────────
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
-)
+engine_options: dict = {"echo": False}
+if not DATABASE_URL.startswith("sqlite"):
+    engine_options.update({"pool_size": 10, "max_overflow": 20, "pool_pre_ping": True})
+engine = create_async_engine(DATABASE_URL, **engine_options)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

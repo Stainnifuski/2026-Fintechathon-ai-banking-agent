@@ -16,7 +16,9 @@ async def get_user_accounts(user_id: str) -> list[dict]:
         账户信息字典列表。
     """
     async with AsyncSessionLocal() as session:
-        stmt = select(AccountORM).where(AccountORM.user_id == user_id)
+        stmt = select(AccountORM).where(AccountORM.user_id == user_id).order_by(
+            AccountORM.account_type.desc(), AccountORM.account_id
+        )
         result = await session.execute(stmt)
         accounts = result.scalars().all()
         return [
