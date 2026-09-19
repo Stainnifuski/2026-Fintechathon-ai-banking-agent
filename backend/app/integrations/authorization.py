@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..domain import AuthorizationStatus, RiskReservationStatus
-from ..models.account import AccountORM
 from ..models.workflow import AuthorizationORM, RiskReservationORM
 
 YELLOW_LIMIT_FEN = 100_000
@@ -25,13 +24,15 @@ class CapabilityNotImplemented(Exception):
         self.capability = capability
         super().__init__(f"{capability} 接口已定义，但当前适配器尚未实现")
 
-
+# 累计转账超过1000，为RED
 async def precheck_risk(
-    db: AsyncSession, *, user_id: str, from_account: str, amount_fen: int
+    db: AsyncSession,
+    *,
+    user_id: str,
+    amount_fen: int,
+    daily_transfer_used_fen: int,
 ) -> str:
-    account = await db.get(AccountORM, from_account)
-    if account is None or account.user_id != user_id:
-        raise AuthorizationError("付款账户不属于当前用户", "PAYER_FORBIDDEN")
+    """结合银行 API 返回的累计值与应用侧风险占用做分级。"""
     held = (
         await db.execute(
             select(RiskReservationORM).where(
@@ -40,7 +41,7 @@ async def precheck_risk(
             )
         )
     ).scalars().all()
-    cumulative = round(account.daily_transfer_used * 100) + sum(item.amount_fen for item in held)
+    cumulative = daily_transfer_used_fen + sum(item.amount_fen for item in held)
     return "YELLOW" if cumulative + amount_fen <= YELLOW_LIMIT_FEN else "RED"
 
 

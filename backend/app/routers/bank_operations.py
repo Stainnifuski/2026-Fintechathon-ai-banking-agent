@@ -9,10 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database.connection import get_db
 from ..services.bank import (
     BankError,
+    BankResponseLost,
     BankTransferCommand,
     TrustedExecutionContext,
     query_operation,
+    resolve_transfer_parties,
     submit_transfer,
+    validate_transfer_parties,
 )
 
 router = APIRouter(prefix="/api/v1/internal/bank", tags=["internal-bank"])
@@ -30,6 +33,7 @@ class InternalBankSubmit(BaseModel):
     subject_user_id: str
     authorization_id: str
     control_epoch: int = Field(ge=1)
+    simulate_response_loss: bool = False
 
 
 class InternalBankResult(BaseModel):
@@ -39,9 +43,68 @@ class InternalBankResult(BaseModel):
     error_code: str | None = None
 
 
+class TransferValidationRequest(BaseModel):
+    subject_user_id: str
+    from_account: str
+    to_account: str
+
+
+class TransferResolutionRequest(BaseModel):
+    subject_user_id: str
+    recipient_name: str = Field(min_length=1, max_length=100)
+
+
+class TransferValidationResponse(BaseModel):
+    from_account: str
+    to_account: str
+    recipient_name: str
+    daily_transfer_used_fen: int
+
+
+class TransferResolutionResponse(TransferValidationResponse):
+    recipient_user_id: str
+
+
 def require_internal_token(x_internal_token: str = Header(default="")) -> None:
     if x_internal_token != INTERNAL_BANK_TOKEN:
         raise HTTPException(status_code=403, detail="无效的内部执行凭据")
+
+
+def _raise_bank_error(error: BankError) -> None:
+    raise HTTPException(
+        status_code=error.status_code,
+        detail={"code": error.code, "message": error.message},
+    ) from error
+
+
+@router.post(
+    "/transfers/validate",
+    response_model=TransferValidationResponse,
+    dependencies=[Depends(require_internal_token)],
+)
+async def validate_transfer(
+    request: TransferValidationRequest, db: AsyncSession = Depends(get_db)
+) -> TransferValidationResponse:
+    try:
+        result = await validate_transfer_parties(db, **request.model_dump())
+        return TransferValidationResponse(**result.__dict__)
+    except BankError as error:
+        _raise_bank_error(error)
+
+
+@router.post(
+    "/transfers/resolve",
+    response_model=TransferResolutionResponse,
+    dependencies=[Depends(require_internal_token)],
+)
+async def resolve_transfer(
+    request: TransferResolutionRequest, db: AsyncSession = Depends(get_db)
+) -> TransferResolutionResponse:
+    try:
+        result = await resolve_transfer_parties(db, **request.model_dump())
+        return TransferResolutionResponse(**result.__dict__)
+    except BankError as error:
+        _raise_bank_error(error)
 
 
 @router.post(
@@ -69,13 +132,16 @@ async def submit(
                 authorization_id=request.authorization_id,
                 control_epoch=request.control_epoch,
             ),
+            simulate_response_loss=request.simulate_response_loss,
         )
         return InternalBankResult(**result.__dict__)
     except BankError as error:
         await db.rollback()
+        _raise_bank_error(error)
+    except BankResponseLost as error:
         raise HTTPException(
-            status_code=error.status_code,
-            detail={"code": error.code, "message": error.message},
+            status_code=504,
+            detail={"code": "BANK_RESPONSE_LOST", "message": str(error)},
         ) from error
 
 

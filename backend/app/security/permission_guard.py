@@ -13,9 +13,6 @@ from security.common import (
     get_permission_level,
 )
 
-from ..services.account_service import get_daily_transfer_used
-
-
 class PermissionDeniedError(Exception):
     """权限不足异常。"""
 
@@ -46,8 +43,8 @@ async def check_operation_permission(
     # 转账操作需要动态判定权限级别
     if action in ("transfer_small", "transfer_large", "transfer"):
         amount = params.get("amount", 0)
-        account_id = params.get("account_id", "")
-        daily_used = await get_daily_transfer_used(account_id) if account_id else 0.0
+        # 银行累计额必须由4号查询后作为可信事实传入，权限层不得直读银行表。
+        daily_used = params.get("daily_transfer_used", 0.0)
         level = get_transfer_permission(amount, daily_used)
     else:
         level = get_permission_level(action)

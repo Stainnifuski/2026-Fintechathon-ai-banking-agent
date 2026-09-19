@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain import BankOperationStatus, fen_to_yuan
 from ...models.account import AccountORM
+from ...models.bank_operation import BankOperationORM
 from ...models.transaction import TransactionORM
-from ...models.workflow import BankOperationORM
+from ...models.user import UserORM
 
 
 class BankError(Exception):
@@ -51,12 +52,107 @@ class BankOperationResult:
     error_code: str | None = None
 
 
+@dataclass(frozen=True)
+class TransferValidationResult:
+    from_account: str
+    to_account: str
+    recipient_name: str
+    daily_transfer_used_fen: int
+
+
+@dataclass(frozen=True)
+class ResolvedTransferPartiesResult(TransferValidationResult):
+    recipient_user_id: str
+
+
 def _result(operation: BankOperationORM) -> BankOperationResult:
     return BankOperationResult(
         operation_id=operation.operation_id,
         status=operation.status,
         bank_tx_id=operation.bank_tx_id,
         error_code=operation.error_code,
+    )
+
+
+async def validate_transfer_parties(
+    db: AsyncSession,
+    *,
+    subject_user_id: str,
+    from_account: str,
+    to_account: str,
+) -> TransferValidationResult:
+    """校验付款/收款账户并返回编排所需的最小银行事实。"""
+    rows = (
+        await db.execute(
+            select(AccountORM, UserORM)
+            .join(UserORM, UserORM.user_id == AccountORM.user_id)
+            .where(AccountORM.account_id.in_([from_account, to_account]))
+        )
+    ).all()
+    accounts = {account.account_id: (account, user) for account, user in rows}
+    sender_row = accounts.get(from_account)
+    receiver_row = accounts.get(to_account)
+    if sender_row is None or receiver_row is None:
+        raise BankError("付款或收款账户不存在", "ACCOUNT_NOT_FOUND", 404)
+    sender, sender_user = sender_row
+    receiver, receiver_user = receiver_row
+    if sender_user.user_id != subject_user_id:
+        raise BankError("付款账户不属于当前用户", "PAYER_FORBIDDEN", 403)
+    if sender.status != "active" or receiver.status != "active":
+        raise BankError("账户当前不可用", "ACCOUNT_INACTIVE", 403)
+    if from_account == to_account:
+        raise BankError("付款账户和收款账户不能相同", "SAME_ACCOUNT", 400)
+    return TransferValidationResult(
+        from_account=sender.account_id,
+        to_account=receiver.account_id,
+        recipient_name=receiver_user.name,
+        daily_transfer_used_fen=round(sender.daily_transfer_used * 100),
+    )
+
+
+async def resolve_transfer_parties(
+    db: AsyncSession, *, subject_user_id: str, recipient_name: str
+) -> ResolvedTransferPartiesResult:
+    """按用户和收款人姓名解析默认账户；歧义由银行目录明确拒绝。"""
+    sender = (
+        await db.execute(
+            select(AccountORM)
+            .where(
+                AccountORM.user_id == subject_user_id,
+                AccountORM.status == "active",
+            )
+            .order_by(AccountORM.account_id)
+        )
+    ).scalars().first()
+    if sender is None:
+        raise BankError("未找到可用付款账户", "PAYER_ACCOUNT_NOT_FOUND", 404)
+
+    recipients = (
+        await db.execute(
+            select(UserORM, AccountORM)
+            .join(AccountORM, AccountORM.user_id == UserORM.user_id)
+            .where(
+                UserORM.name == recipient_name,
+                UserORM.user_id != subject_user_id,
+                UserORM.status == "active",
+                AccountORM.status == "active",
+            )
+            .order_by(AccountORM.account_id)
+        )
+    ).all()
+    unique_users = {user.user_id for user, _ in recipients}
+    if len(unique_users) != 1:
+        raise BankError("未找到唯一收款人", "RECIPIENT_AMBIGUOUS", 409)
+    recipient_user_id = next(iter(unique_users))
+    recipient_user, receiver = next(
+        (user, account) for user, account in recipients if user.user_id == recipient_user_id
+    )
+    return ResolvedTransferPartiesResult(
+        from_account=sender.account_id,
+        to_account=receiver.account_id,
+        recipient_name=recipient_user.name,
+        recipient_user_id=recipient_user.user_id,
+        daily_transfer_used_fen=round(sender.daily_transfer_used * 100),
     )
 
 

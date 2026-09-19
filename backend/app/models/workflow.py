@@ -12,7 +12,9 @@ class TransferTaskORM(TimestampMixin, Base):
     __tablename__ = "transfer_tasks"
 
     task_id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.user_id"), index=True)
+    # 仅保存身份引用，不与模拟银行 users 表建立数据库外键。
+    # 5号的应用状态可以独立迁移，账户归属由4号 API 校验。
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
     phase: Mapped[str] = mapped_column(String(32), nullable=False)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False, default="NONE")
     control_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="AUTO")
@@ -150,19 +152,3 @@ class HumanTicketORM(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN")
     assignee_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reason: Mapped[str] = mapped_column(String(256), nullable=False)
-
-
-class BankOperationORM(TimestampMixin, Base):
-    """4号维护的银行受理事实。"""
-
-    __tablename__ = "bank_operations"
-
-    operation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    status: Mapped[str] = mapped_column(String(24), nullable=False)
-    param_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    from_account: Mapped[str] = mapped_column(String(32), nullable=False)
-    to_account: Mapped[str] = mapped_column(String(32), nullable=False)
-    amount_fen: Mapped[int] = mapped_column(Integer, nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="CNY")
-    bank_tx_id: Mapped[str | None] = mapped_column(String(40), nullable=True, unique=True)
-    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

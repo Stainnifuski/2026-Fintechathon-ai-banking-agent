@@ -31,8 +31,14 @@ from ...integrations.authorization import (
     record_consent,
     validate_for_acceptance,
 )
-from ...models.account import AccountORM
-from ...models.user import UserORM
+from ...integrations.bank_api import (
+    BankApi,
+    BankApiError,
+    BankOperationResult,
+    BankResponseUnknown,
+    BankTransferCommand,
+    TrustedExecutionContext,
+)
 from ...models.workflow import (
     AuthorizationORM,
     HumanTicketORM,
@@ -43,14 +49,6 @@ from ...models.workflow import (
     TransferPlanORM,
     TransferStepORM,
     TransferTaskORM,
-)
-from ..bank import (
-    BankError,
-    BankResponseLost,
-    BankTransferCommand,
-    TrustedExecutionContext,
-    query_operation,
-    submit_transfer,
 )
 
 
@@ -144,6 +142,20 @@ async def _current_operation(
     return operation
 
 
+async def _current_plan(db: AsyncSession, task: TransferTaskORM) -> TransferPlanORM:
+    plan = (
+        await db.execute(
+            select(TransferPlanORM).where(
+                TransferPlanORM.task_id == task.task_id,
+                TransferPlanORM.plan_version == task.current_plan_version,
+            )
+        )
+    ).scalar_one_or_none()
+    if plan is None:
+        raise TaskError("任务没有当前计划", 409, "PLAN_MISSING")
+    return plan
+
+
 async def _authorization(
     db: AsyncSession, operation_id: str
 ) -> AuthorizationORM:
@@ -174,9 +186,10 @@ def _check_version(task: TransferTaskORM, expected: int) -> None:
             "STALE_STATE_VERSION",
         )
 
-
+# 持久化一次转账申请
 async def create_transfer_task(
     db: AsyncSession,
+    bank: BankApi,
     *,
     user_id: str,
     request_id: str,
@@ -198,18 +211,22 @@ async def create_transfer_task(
     except ValueError as error:
         raise TaskError(str(error)) from error
 
-    sender = await db.get(AccountORM, from_account)
-    receiver = await db.get(AccountORM, to_account)
-    if sender is None or receiver is None:
-        raise TaskError("付款或收款账户不存在", 404, "ACCOUNT_NOT_FOUND")
-    if sender.user_id != user_id:
-        raise TaskError("无权使用该付款账户", 403, "PAYER_FORBIDDEN")
-    if sender.status != "active" or receiver.status != "active":
-        raise TaskError("账户当前不可用", 403, "ACCOUNT_INACTIVE")
+    try:
+        bank_validation = await bank.validate_transfer(
+            subject_user_id=user_id,
+            from_account=from_account,
+            to_account=to_account,
+        )
+    except BankApiError as error:
+        raise TaskError(error.message, error.status_code, error.code) from error
 
     digest = parameter_digest(from_account, to_account, amount_fen, "CNY", note)
+    # 3号风险检查
     risk_level = await precheck_risk(
-        db, user_id=user_id, from_account=from_account, amount_fen=amount_fen
+        db,
+        user_id=user_id,
+        amount_fen=amount_fen,
+        daily_transfer_used_fen=bank_validation.daily_transfer_used_fen,
     )
     task_id, plan_id, step_id = _id("TASK"), _id("PLAN"), _id("STEP")
     task = TransferTaskORM(
@@ -232,6 +249,7 @@ async def create_transfer_task(
             "amount_fen": amount_fen,
             "currency": "CNY",
             "note": note,
+            "recipient_name": bank_validation.recipient_name,
         },
     )
     step = TransferStepORM(
@@ -283,7 +301,7 @@ async def create_transfer_task(
     await db.commit()
     return await task_snapshot(db, task_id, user_id)
 
-
+# 点击同意后，进行状态更新和落盘
 async def confirm_task(
     db: AsyncSession,
     *,
@@ -304,6 +322,8 @@ async def confirm_task(
     authorization = await _authorization(db, operation.operation_id)
     if operation.status != OperationStatus.DRAFT:
         raise TaskError("当前操作不能确认", 409, "INVALID_OPERATION_STATE")
+
+    # 调整授权状态（黄->同意即可生效，红->同意后还要验证）
     record_consent(authorization)
     before = {"phase": task.phase, "operation": operation.status}
     if authorization.status == AuthorizationStatus.VALID:
@@ -327,9 +347,10 @@ async def confirm_task(
     await db.commit()
     return await task_snapshot(db, task_id, user_id)
 
-
+# 真正处理业务
 async def accept_task(
     db: AsyncSession,
+    bank: BankApi,
     *,
     task_id: str,
     user_id: str,
@@ -349,11 +370,19 @@ async def accept_task(
     if operation.status != OperationStatus.READY:
         raise TaskError("操作尚未准备就绪", 409, "OPERATION_NOT_READY")
 
+    try:
+        bank_validation = await bank.validate_transfer(
+            subject_user_id=user_id,
+            from_account=operation.from_account,
+            to_account=operation.to_account,
+        )
+    except BankApiError as error:
+        raise TaskError(error.message, error.status_code, error.code) from error
     latest_risk = await precheck_risk(
         db,
         user_id=user_id,
-        from_account=operation.from_account,
         amount_fen=operation.amount_fen,
+        daily_transfer_used_fen=bank_validation.daily_transfer_used_fen,
     )
     if latest_risk != authorization.risk_level:
         authorization.risk_level = latest_risk
@@ -418,17 +447,20 @@ async def accept_task(
     )
     # T06：授权消费、风险占用、操作受理和 outbox 必须先原子提交。
     await db.commit()
+    # 调用银行的业务
     await dispatch_task(
         db,
+        bank,
         task_id=task_id,
         user_id=user_id,
         simulate_response_loss=simulate_response_loss,
     )
     return await task_snapshot(db, task_id, user_id)
 
-
+# 会真正调用银行的转账API
 async def dispatch_task(
     db: AsyncSession,
+    bank: BankApi,
     *,
     task_id: str,
     user_id: str,
@@ -480,13 +512,13 @@ async def dispatch_task(
         control_epoch=task.control_epoch,
     )
     try:
-        result = await submit_transfer(
-            db,
+        # submit_transfer是真正把本地请求向银行服务提交
+        result = await bank.submit_transfer(
             command,
             context,
             simulate_response_loss=simulate_response_loss,
         )
-    except BankResponseLost as error:
+    except BankResponseUnknown as error:
         operation.status = OperationStatus.UNKNOWN
         operation.state_version += 1
         (await _step(db, operation.step_id)).status = StepStatus.RECONCILING
@@ -507,8 +539,11 @@ async def dispatch_task(
         )
         await db.commit()
         return
-    except BankError as error:
-        result = await query_operation(db, operation.operation_id)
+    except BankApiError as error:
+        try:
+            result = await bank.query_operation(operation.operation_id)
+        except BankResponseUnknown:
+            result = None
         if result is None:
             operation.status = OperationStatus.UNKNOWN
             operation.state_version += 1
@@ -540,7 +575,7 @@ async def _merge_bank_result(
     task: TransferTaskORM,
     operation: TransferOperationORM,
     outbox: OutboxEntryORM,
-    result,
+    result: BankOperationResult,
 ) -> None:
     risk = (
         await db.execute(
@@ -593,6 +628,7 @@ async def _merge_bank_result(
 
 async def reconcile_task(
     db: AsyncSession,
+    bank: BankApi,
     *,
     task_id: str,
     user_id: str,
@@ -607,7 +643,10 @@ async def reconcile_task(
     operation = await _current_operation(db, task)
     if operation.status not in {OperationStatus.UNKNOWN, OperationStatus.PROCESSING}:
         raise TaskError("当前操作不需要核对", 409, "RECONCILIATION_NOT_ALLOWED")
-    result = await query_operation(db, operation.operation_id)
+    try:
+        result = await bank.query_operation(operation.operation_id)
+    except BankApiError as error:
+        raise TaskError(error.message, 502, error.code) from error
     outbox = (
         await db.execute(
             select(OutboxEntryORM).where(OutboxEntryORM.operation_id == operation.operation_id)
@@ -701,6 +740,7 @@ async def cancel_task(
 
 async def modify_task(
     db: AsyncSession,
+    bank: BankApi,
     *,
     task_id: str,
     user_id: str,
@@ -726,31 +766,31 @@ async def modify_task(
         amount_fen = yuan_to_fen(amount)
     except ValueError as error:
         raise TaskError(str(error)) from error
-    sender = await db.get(AccountORM, from_account)
-    receiver = await db.get(AccountORM, to_account)
-    if sender is None or receiver is None or sender.user_id != user_id:
-        raise TaskError("付款或收款账户无效", 400, "ACCOUNT_INVALID")
+    try:
+        bank_validation = await bank.validate_transfer(
+            subject_user_id=user_id,
+            from_account=from_account,
+            to_account=to_account,
+        )
+    except BankApiError as error:
+        raise TaskError(error.message, error.status_code, error.code) from error
 
     old_operation.status = OperationStatus.SUPERSEDED
     old_operation.state_version += 1
     old_authorization = await _authorization(db, old_operation.operation_id)
     old_authorization.status = AuthorizationStatus.REVOKED
     (await _step(db, old_operation.step_id)).status = StepStatus.CANCELLED
-    old_plan = (
-        await db.execute(
-            select(TransferPlanORM).where(
-                TransferPlanORM.task_id == task_id,
-                TransferPlanORM.plan_version == task.current_plan_version,
-            )
-        )
-    ).scalar_one()
+    old_plan = await _current_plan(db, task)
     old_plan.is_current = False
 
     new_version = task.current_plan_version + 1
     plan_id, step_id = _id("PLAN"), _id("STEP")
     digest = parameter_digest(from_account, to_account, amount_fen, "CNY", note)
     risk_level = await precheck_risk(
-        db, user_id=user_id, from_account=from_account, amount_fen=amount_fen
+        db,
+        user_id=user_id,
+        amount_fen=amount_fen,
+        daily_transfer_used_fen=bank_validation.daily_transfer_used_fen,
     )
     new_plan = TransferPlanORM(
         plan_id=plan_id,
@@ -762,6 +802,7 @@ async def modify_task(
             "amount_fen": amount_fen,
             "currency": "CNY",
             "note": note,
+            "recipient_name": bank_validation.recipient_name,
         },
     )
     db.add(new_plan)
@@ -920,6 +961,7 @@ async def task_events(
 async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
     task = await _owned_task(db, task_id, user_id)
     operation = await _current_operation(db, task)
+    plan = await _current_plan(db, task)
     authorization = await _authorization(db, operation.operation_id)
     step = await _step(db, operation.step_id)
     risk = (
@@ -929,14 +971,6 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             )
         )
     ).scalar_one_or_none()
-    recipient = (
-        await db.execute(
-            select(UserORM)
-            .join(AccountORM, AccountORM.user_id == UserORM.user_id)
-            .where(AccountORM.account_id == operation.to_account)
-        )
-    ).scalar_one_or_none()
-
     allowed: list[str] = []
     if task.control_mode == ControlMode.AUTO and task.outcome == TaskOutcome.NONE:
         if task.phase == TaskPhase.WAITING_CONFIRMATION:
@@ -957,7 +991,7 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             "plan_version": operation.plan_version,
             "from_account": operation.from_account,
             "to_account": operation.to_account,
-            "recipient_name": recipient.name if recipient else operation.to_account,
+            "recipient_name": plan.params.get("recipient_name", operation.to_account),
             "amount": fen_to_yuan(operation.amount_fen),
             "currency": operation.currency,
             "note": operation.note,

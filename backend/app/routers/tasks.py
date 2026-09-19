@@ -3,14 +3,12 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.connection import get_db
 from ..integrations.authorization import AuthorizationError, CapabilityNotImplemented
+from ..integrations.bank_api import BankApi, BankApiError, get_bank_api
 from ..middleware.auth import get_current_user
-from ..models.account import AccountORM
-from ..models.user import UserORM
 from ..schemas.tasks import (
     ChatTaskCreate,
     ConfirmTaskRequest,
@@ -55,10 +53,11 @@ async def create_transfer(
     request: TransferTaskCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     try:
         result = await create_transfer_task(
-            db, user_id=current_user["user_id"], **request.model_dump()
+            db, bank, user_id=current_user["user_id"], **request.model_dump()
         )
         return TaskSnapshot(**result)
     except TaskError as error:
@@ -76,6 +75,7 @@ async def create_from_message(
     request: ChatTaskCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     match = _transfer_pattern.search(request.message.strip())
     if not match:
@@ -84,44 +84,24 @@ async def create_from_message(
             detail={"code": "MESSAGE_NOT_UNDERSTOOD", "message": "当前支持“转给 李四 100元”"},
         )
     recipient_name, amount_text = match.groups()
-    recipients = (
-        await db.execute(
-            select(UserORM, AccountORM)
-            .join(AccountORM, AccountORM.user_id == UserORM.user_id)
-            .where(
-                UserORM.name == recipient_name,
-                UserORM.user_id != current_user["user_id"],
-                UserORM.status == "active",
-                AccountORM.status == "active",
-            )
+    try:
+        parties = await bank.resolve_transfer_parties(
+            subject_user_id=current_user["user_id"], recipient_name=recipient_name
         )
-    ).all()
-    if len(recipients) != 1:
+    except BankApiError as error:
         raise HTTPException(
-            status_code=409,
-            detail={"code": "RECIPIENT_AMBIGUOUS", "message": "未找到唯一收款人"},
-        )
-    sender = (
-        await db.execute(
-            select(AccountORM)
-            .where(
-                AccountORM.user_id == current_user["user_id"],
-                AccountORM.status == "active",
-            )
-            .order_by(AccountORM.account_id)
-        )
-    ).scalars().first()
-    if sender is None:
-        raise HTTPException(status_code=404, detail="未找到可用付款账户")
-    _, receiver = recipients[0]
+            status_code=error.status_code,
+            detail={"code": error.code, "message": error.message},
+        ) from error
     try:
         result = await create_transfer_task(
             db,
+            bank,
             user_id=current_user["user_id"],
             request_id=request.request_id,
             operation_id=request.operation_id,
-            from_account=sender.account_id,
-            to_account=receiver.account_id,
+            from_account=parties.from_account,
+            to_account=parties.to_account,
             amount=float(amount_text),
         )
         return TaskSnapshot(**result)
@@ -193,11 +173,12 @@ async def accept(
     request: TaskActionRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     try:
         return TaskSnapshot(
             **await accept_task(
-                db, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
+                db, bank, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
             )
         )
     except TaskError as error:
@@ -239,11 +220,12 @@ async def modify(
     request: ModifyTaskRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     try:
         return TaskSnapshot(
             **await modify_task(
-                db, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
+                db, bank, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
             )
         )
     except TaskError as error:
@@ -275,11 +257,12 @@ async def reconcile(
     request: TaskActionRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     try:
         return TaskSnapshot(
             **await reconcile_task(
-                db, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
+                db, bank, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
             )
         )
     except TaskError as error:

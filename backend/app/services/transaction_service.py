@@ -1,13 +1,8 @@
-"""用户可见流水查询；转账写入只允许通过任务编排和模拟银行层。"""
+"""应用审计日志服务；银行流水访问位于模拟银行服务内。"""
 
 from uuid import uuid4
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from ..models.account import AccountORM
 from ..models.audit_log import AuditLogORM
-from ..models.transaction import TransactionORM
 
 
 async def create_audit_log(audit_data: dict) -> str:
@@ -25,21 +20,3 @@ async def create_audit_log(audit_data: dict) -> str:
         ))
         await session.commit()
     return audit_id
-
-
-async def get_transaction_history(db: AsyncSession, user_id: str, limit: int = 50) -> list[dict]:
-    records = (await db.execute(select(TransactionORM).join(AccountORM).where(
-        AccountORM.user_id == user_id).order_by(TransactionORM.timestamp.desc()).limit(limit))).scalars().all()
-    return [{"tx_id": tx.tx_id, "account_id": tx.account_id, "type": tx.type, "amount": tx.amount,
-             "counterparty": tx.counterparty, "category": tx.category, "note": tx.note,
-             "timestamp": tx.timestamp, "status": tx.status, "channel": tx.channel} for tx in records]
-
-
-async def get_transaction_detail(db: AsyncSession, user_id: str, tx_id: str) -> dict | None:
-    tx = (await db.execute(select(TransactionORM).join(AccountORM).where(
-        TransactionORM.tx_id == tx_id, AccountORM.user_id == user_id))).scalar_one_or_none()
-    if tx is None:
-        return None
-    return {"tx_id": tx.tx_id, "account_id": tx.account_id, "type": tx.type, "amount": tx.amount,
-            "counterparty": tx.counterparty, "category": tx.category, "note": tx.note,
-            "timestamp": tx.timestamp, "status": tx.status, "channel": tx.channel}

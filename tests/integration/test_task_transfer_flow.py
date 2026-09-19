@@ -6,12 +6,61 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.models import AccountORM, Base, UserORM
+from backend.app.integrations.bank_api import (
+    BankApiError,
+    BankOperationResult,
+    BankResponseUnknown,
+    ResolvedTransferParties,
+    TransferValidation,
+)
+from backend.app.services.bank import (
+    BankError,
+    BankResponseLost,
+    query_operation,
+    resolve_transfer_parties,
+    submit_transfer,
+    validate_transfer_parties,
+)
 from backend.app.services.orchestration import (
     accept_task,
     confirm_task,
     create_transfer_task,
     reconcile_task,
 )
+
+
+class InProcessBankApi:
+    """测试适配器：保持与生产 HTTP 客户端相同的接口边界。"""
+
+    def __init__(self, db) -> None:
+        self.db = db
+
+    async def validate_transfer(self, **kwargs) -> TransferValidation:
+        try:
+            result = await validate_transfer_parties(self.db, **kwargs)
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
+        return TransferValidation(**result.__dict__)
+
+    async def resolve_transfer_parties(self, **kwargs) -> ResolvedTransferParties:
+        try:
+            result = await resolve_transfer_parties(self.db, **kwargs)
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
+        return ResolvedTransferParties(**result.__dict__)
+
+    async def submit_transfer(self, command, context, **kwargs) -> BankOperationResult:
+        try:
+            result = await submit_transfer(self.db, command, context, **kwargs)
+        except BankResponseLost as error:
+            raise BankResponseUnknown(str(error), "BANK_RESPONSE_LOST") from error
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
+        return BankOperationResult(**result.__dict__)
+
+    async def query_operation(self, operation_id: str) -> BankOperationResult | None:
+        result = await query_operation(self.db, operation_id)
+        return BankOperationResult(**result.__dict__) if result else None
 
 
 @pytest_asyncio.fixture
@@ -50,8 +99,10 @@ async def db():
 
 
 async def _ready_task(db, suffix: str, amount: float = 100.0):
+    bank = InProcessBankApi(db)
     task = await create_transfer_task(
         db,
+        bank,
         user_id="U1",
         request_id=f"request-create-{suffix}",
         operation_id=f"operation-{suffix}",
@@ -59,7 +110,7 @@ async def _ready_task(db, suffix: str, amount: float = 100.0):
         to_account="A2",
         amount=amount,
     )
-    return await confirm_task(
+    ready = await confirm_task(
         db,
         task_id=task["task_id"],
         user_id="U1",
@@ -67,13 +118,15 @@ async def _ready_task(db, suffix: str, amount: float = 100.0):
         state_version=task["state_version"],
         plan_version=task["plan_version"],
     )
+    return ready, bank
 
 
 @pytest.mark.asyncio
 async def test_yellow_transfer_happy_path(db) -> None:
-    ready = await _ready_task(db, "happy")
+    ready, bank = await _ready_task(db, "happy")
     result = await accept_task(
         db,
+        bank,
         task_id=ready["task_id"],
         user_id="U1",
         request_id="request-accept-happy",
@@ -89,9 +142,10 @@ async def test_yellow_transfer_happy_path(db) -> None:
 
 @pytest.mark.asyncio
 async def test_lost_response_recovers_by_original_operation_id(db) -> None:
-    ready = await _ready_task(db, "lost", amount=50.0)
+    ready, bank = await _ready_task(db, "lost", amount=50.0)
     unknown = await accept_task(
         db,
+        bank,
         task_id=ready["task_id"],
         user_id="U1",
         request_id="request-accept-lost",
@@ -102,6 +156,7 @@ async def test_lost_response_recovers_by_original_operation_id(db) -> None:
     assert unknown["operation"]["status"] == "UNKNOWN"
     recovered = await reconcile_task(
         db,
+        bank,
         task_id=unknown["task_id"],
         user_id="U1",
         request_id="request-reconcile-lost",

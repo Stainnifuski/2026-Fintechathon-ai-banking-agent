@@ -31,6 +31,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://bankuser:bankpass@postgres:5432/banking_agent
+      BANK_API_BASE_URL: http://127.0.0.1:8000
     depends_on:
       postgres:
         condition: service_healthy

@@ -11,9 +11,9 @@ from .transaction import (
 )
 from .contact import ContactORM, ContactSchema
 from .audit_log import AuditLogORM, AuditLogSchema, AuditLogCreateSchema
+from .bank_operation import BankOperationORM
 from .workflow import (
     AuthorizationORM,
-    BankOperationORM,
     HumanTicketORM,
     OutboxEntryORM,
     RiskReservationORM,
