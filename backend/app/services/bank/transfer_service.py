@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...domain import BankOperationStatus, fen_to_yuan
 from ...models.account import AccountORM
 from ...models.bank_operation import BankOperationORM
+from ...models.payment_request import PaymentRequestORM
+from ...models.payment_request_payment import PaymentRequestPaymentORM
 from ...models.transaction import TransactionORM
 from ...models.user import UserORM
 
@@ -162,6 +164,32 @@ async def query_operation(db: AsyncSession, operation_id: str) -> BankOperationR
     return _result(operation) if operation else None
 
 
+async def release_payment_request_payment(
+    db: AsyncSession, *, operation_id: str, subject_user_id: str
+) -> None:
+    """转账任务在提交银行前取消时，释放其收款申请占用。"""
+    link = (
+        await db.execute(
+            select(PaymentRequestPaymentORM)
+            .where(PaymentRequestPaymentORM.operation_id == operation_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if link is None:
+        return
+    request = await db.get(
+        PaymentRequestORM, link.payment_request_id, with_for_update=True
+    )
+    if request is None or request.payer_user_id != subject_user_id:
+        raise BankError("无权释放该收款申请", "PAYMENT_REQUEST_FORBIDDEN", 403)
+    if request.status == "ACCEPTED":
+        request.status = "PENDING"
+        request.state_version += 1
+        request.responded_at = None
+        await db.delete(link)
+        await db.commit()
+
+
 async def submit_transfer(
     db: AsyncSession,
     command: BankTransferCommand,
@@ -179,6 +207,28 @@ async def submit_transfer(
                 409,
             )
         return _result(existing)
+
+    payment_link = (
+        await db.execute(
+            select(PaymentRequestPaymentORM).where(
+                PaymentRequestPaymentORM.operation_id == command.operation_id
+            )
+        )
+    ).scalar_one_or_none()
+    payment_request = None
+    if payment_link is not None:
+        payment_request = await db.get(
+            PaymentRequestORM, payment_link.payment_request_id, with_for_update=True
+        )
+        if payment_request is None or payment_request.status != "ACCEPTED":
+            raise BankError("收款申请当前不能付款", "PAYMENT_REQUEST_NOT_PAYABLE", 409)
+        if (
+            payment_link.payer_account_id != command.from_account
+            or payment_request.receive_account_id != command.to_account
+            or payment_request.amount_fen != command.amount_fen
+            or payment_request.payer_user_id != context.subject_user_id
+        ):
+            raise BankError("转账参数与收款申请不一致", "PAYMENT_REQUEST_MISMATCH", 409)
 
     accounts = {
         account.account_id: account
@@ -233,6 +283,11 @@ async def submit_transfer(
     )
     db.add(bank_operation)
     if error:
+        if payment_request is not None and payment_link is not None:
+            payment_request.status = "PENDING"
+            payment_request.state_version += 1
+            payment_request.responded_at = None
+            await db.delete(payment_link)
         await db.commit()
         raise BankError(error[1], error[0])
 
@@ -244,6 +299,10 @@ async def submit_transfer(
     receiver.balance += amount
     bank_operation.status = BankOperationStatus.SUCCEEDED
     bank_operation.bank_tx_id = bank_tx_id
+    if payment_request is not None:
+        payment_request.status = "PAID"
+        payment_request.state_version += 1
+        payment_request.responded_at = now
     db.add_all(
         [
             TransactionORM(

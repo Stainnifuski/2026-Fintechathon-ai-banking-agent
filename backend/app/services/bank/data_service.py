@@ -105,6 +105,7 @@ async def list_recipients(subject_user_id: str) -> list[dict]:
             {
                 "user_id": user.user_id,
                 "name": user.name,
+                "phone": f"{user.phone[:3]}****{user.phone[-4:]}",
                 "account_id": account.account_id,
                 "bank": "AI 模拟银行",
             }

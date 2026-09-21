@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
@@ -12,16 +12,23 @@ function App() {
   const [accounts, setAccounts] = useState<bank.Account[]>([]);
   const [recipients, setRecipients] = useState<bank.Recipient[]>([]);
   const [transactions, setTransactions] = useState<bank.Transaction[]>([]);
+  const [paymentRequests, setPaymentRequests] = useState<bank.PaymentRequest[]>([]);
   const [fromAccount, setFromAccount] = useState('');
   const [toUserId, setToUserId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [requestPayerIds, setRequestPayerIds] = useState<string[]>([]);
+  const [requestAccountId, setRequestAccountId] = useState('');
+  const [requestAmount, setRequestAmount] = useState('');
+  const [requestNote, setRequestNote] = useState('');
+  const [splitEqually, setSplitEqually] = useState(false);
   const [status, setStatus] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [chat, setChat] = useState<string[]>([]);
   const [activeTask, setActiveTask] = useState<bank.TaskSnapshot | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isActing, setIsActing] = useState(false);
+  const payerSelectorRef = useRef<HTMLDetailsElement>(null);
 
   const message = (error: unknown) => {
     const detail = (error as { response?: { data?: { detail?: string | { message?: string; capability?: string } } } })?.response?.data?.detail;
@@ -34,15 +41,27 @@ function App() {
   const load = async () => {
     if (!user) return;
     try {
-      const [a, r, h] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history()]);
-      setAccounts(a); setRecipients(r); setTransactions(h);
+      const [a, r, h, requests] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests()]);
+      setAccounts(a); setRecipients(r); setTransactions(h); setPaymentRequests(requests);
       const defaultFrom = a.find(acc => acc.account_type === 'savings')?.account_id || a[0]?.account_id || '';
       setFromAccount(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
       setToUserId(current => current && r.some(rec => rec.user_id === current) ? current : r[0]?.user_id || '');
+      setRequestPayerIds(current => current.filter(id => r.some(rec => rec.user_id === id)));
+      setRequestAccountId(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
     } catch (error) { setStatus(message(error)); }
   };
 
   useEffect(() => { load(); }, [user?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const closePayerSelector = (event: MouseEvent) => {
+      const selector = payerSelectorRef.current;
+      if (selector?.open && event.target instanceof Node && !selector.contains(event.target)) {
+        selector.open = false;
+      }
+    };
+    document.addEventListener('mousedown', closePayerSelector);
+    return () => document.removeEventListener('mousedown', closePayerSelector);
+  }, []);
   useEffect(() => {
     if (!activeTask || !['EXECUTING', 'RECONCILING'].includes(activeTask.phase)) return;
     const timer = window.setInterval(async () => {
@@ -79,6 +98,53 @@ function App() {
     } catch (error) { setStatus(message(error)); }
   };
 
+  const submitPaymentRequest = async (event: FormEvent) => {
+    event.preventDefault(); setStatus('');
+    if (requestPayerIds.length === 0 || !requestAccountId) return setStatus('请至少选择一位付款人和收款账户');
+    const amountFen = Math.round(Number(requestAmount) * 100);
+    if (splitEqually && amountFen % requestPayerIds.length !== 0) {
+      return setStatus('总金额无法精确均分到分，请调整金额');
+    }
+    setIsActing(true);
+    try {
+      await bank.createPaymentRequestBatch({
+        payer_user_ids: requestPayerIds, receive_account_id: requestAccountId,
+        amount: Number(requestAmount), split_equally: splitEqually,
+        note: requestNote || undefined, idempotency_key: newId(),
+      });
+      setRequestAmount(''); setRequestNote(''); setStatus(`已向 ${requestPayerIds.length} 人发出收款申请`); await load();
+    } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
+  };
+
+  const actOnPaymentRequest = async (request: bank.PaymentRequest, action: 'accept' | 'reject' | 'cancel') => {
+    if (isActing) return;
+    setIsActing(true); setStatus('');
+    try {
+      if (action === 'accept') {
+        if (!fromAccount) throw new Error('请选择付款账户');
+        let task = await bank.acceptPaymentRequest(request, fromAccount);
+        // 第一次点击仅创建并展示安全转账任务；第二次“确认付款”才记录授权。
+        // 低风险授权后立即提交银行，大额则停在 MFA 验证阶段。
+        if (request.status === 'ACCEPTED' && task.allowed_actions.includes('confirm')) {
+          task = await bank.confirmTask(task, newId());
+        }
+        if (request.status === 'ACCEPTED' && task.allowed_actions.includes('accept')) {
+          task = await bank.acceptTask(task, newId());
+        }
+        setActiveTask(task);
+        setStatus(task.message);
+        await load();
+        return;
+      }
+      else if (action === 'reject') await bank.rejectPaymentRequest(request);
+      else await bank.cancelPaymentRequest(request);
+      setStatus(action === 'reject' ? '已拒绝收款申请' : '已取消收款申请');
+      await load();
+    } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
+  };
+
   const sendChat = async () => {
     if (!chatInput.trim()) return;
     const input = chatInput; setChatInput('');
@@ -110,8 +176,18 @@ function App() {
 
   const logout = () => {
     localStorage.removeItem('token'); localStorage.removeItem('bank-user');
-    setUser(null); setAccounts([]); setChat([]); setActiveTask(null);
+    setUser(null); setAccounts([]); setPaymentRequests([]); setChat([]); setActiveTask(null);
   };
+
+  const requestAmountNumber = Number(requestAmount) || 0;
+  const splitIsExact = requestPayerIds.length > 0
+    && Math.round(requestAmountNumber * 100) % requestPayerIds.length === 0;
+  const perPersonAmount = splitEqually && requestPayerIds.length > 0
+    ? requestAmountNumber / requestPayerIds.length
+    : requestAmountNumber;
+  const requestTotal = splitEqually
+    ? requestAmountNumber
+    : requestAmountNumber * requestPayerIds.length;
 
   if (!user) return <main className="auth"><section className="card"><h1>AI 模拟银行</h1><p>任务状态机转账演示</p><form onSubmit={authenticate}>
     {loginMode === 'register' && <label>姓名<input required value={name} onChange={e => setName(e.target.value)} /></label>}
@@ -133,6 +209,22 @@ function App() {
         <label>备注（可选）<input value={note} onChange={e => setNote(e.target.value)} /></label>
         <button disabled={!fromAccount || !toUserId || isActing}>生成确认信息</button>
       </form></div>
+    </section>
+    <section className="grid">
+      <div className="card"><h2>发起收款申请</h2><form onSubmit={submitPaymentRequest}>
+        <label>向谁收款（可多选）<details className="multi-select" ref={payerSelectorRef}><summary>{requestPayerIds.length ? `已选择 ${requestPayerIds.length} 人：${recipients.filter(r => requestPayerIds.includes(r.user_id)).map(r => r.name).join('、')}` : '请选择联系人'}</summary><div>{recipients.map(r => <label className="check-option" key={r.user_id}><input type="checkbox" checked={requestPayerIds.includes(r.user_id)} onChange={e => setRequestPayerIds(ids => e.target.checked ? [...ids, r.user_id] : ids.filter(id => id !== r.user_id))} />{r.name} · {r.phone}</label>)}</div></details></label>
+        <label>收款账户<select value={requestAccountId} onChange={e => setRequestAccountId(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}</option>)}</select></label>
+        <label>{splitEqually ? 'AA 总金额（元）' : '每人收款金额（元）'}<input required min="0.01" step="0.01" type="number" value={requestAmount} onChange={e => setRequestAmount(e.target.value)} /></label>
+        <button type="button" className={splitEqually ? '' : 'secondary'} onClick={() => setSplitEqually(value => !value)}>AA 均分：{splitEqually ? '已开启' : '未开启'}</button>
+        {requestPayerIds.length > 0 && requestAmountNumber > 0 && <p className={splitEqually && !splitIsExact ? 'error' : 'notice'}>{splitEqually && !splitIsExact ? '该金额无法精确均分到分，请调整金额' : `将向每人收款 ¥${perPersonAmount.toFixed(2)}，共 ${requestPayerIds.length} 人，总申请金额 ¥${requestTotal.toFixed(2)}`}</p>}
+        <label>备注（可选）<input maxLength={256} value={requestNote} onChange={e => setRequestNote(e.target.value)} /></label>
+        <button disabled={requestPayerIds.length === 0 || !requestAccountId || (splitEqually && !splitIsExact) || isActing}>发出申请</button>
+      </form></div>
+      <div className="card"><h2>收款申请</h2>{paymentRequests.some(request => ['PENDING', 'ACCEPTED'].includes(request.status) && request.payer_user_id === user.user_id) && <label>付款账户<select value={fromAccount} onChange={e => setFromAccount(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}（¥{a.balance.toFixed(2)}）</option>)}</select></label>}{paymentRequests.length === 0 ? <p className="hint">暂无收款申请</p> : <ul className="history">{paymentRequests.map(request => {
+        const incoming = request.payer_user_id === user.user_id;
+        const canPay = incoming && ['PENDING', 'ACCEPTED'].includes(request.status);
+        return <li key={request.payment_request_id}><span>{incoming ? `${request.requester_name} 向你收款` : `向 ${request.payer_name} 收款`} {request.note && `· ${request.note}`}<small>{request.status} · {new Date(request.created_at).toLocaleString()}</small></span><strong>¥{request.amount.toFixed(2)}</strong>{(canPay || request.status === 'PENDING') && <div className="confirm">{canPay ? <><button disabled={isActing} onClick={() => actOnPaymentRequest(request, 'accept')}>{request.status === 'ACCEPTED' ? '确认付款' : '接受申请'}</button>{request.status === 'PENDING' && <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'reject')}>拒绝</button>}</> : <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'cancel')}>取消</button>}</div>}</li>;
+      })}</ul>}<p className="hint">接受申请后，所选付款账户将扣款并立即生成双方流水。</p></div>
     </section>
     {activeTask && <section className="card">
       <h2>转账任务 · {activeTask.phase}</h2><p>{activeTask.message}</p>

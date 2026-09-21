@@ -13,10 +13,12 @@ from backend.app.integrations.bank_api import (
     ResolvedTransferParties,
     TransferValidation,
 )
+from backend.app.integrations.authorization import CapabilityNotImplemented
 from backend.app.services.bank import (
     BankError,
     BankResponseLost,
     query_operation,
+    release_payment_request_payment,
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
@@ -26,6 +28,7 @@ from backend.app.services.orchestration import (
     confirm_task,
     create_transfer_task,
     reconcile_task,
+    verify_task,
 )
 
 
@@ -61,6 +64,9 @@ class InProcessBankApi:
     async def query_operation(self, operation_id: str) -> BankOperationResult | None:
         result = await query_operation(self.db, operation_id)
         return BankOperationResult(**result.__dict__) if result else None
+
+    async def release_payment_request(self, **kwargs) -> None:
+        await release_payment_request_payment(self.db, **kwargs)
 
 
 @pytest_asyncio.fixture
@@ -165,3 +171,41 @@ async def test_lost_response_recovers_by_original_operation_id(db) -> None:
     assert recovered["outcome"] == "SUCCEEDED"
     assert recovered["risk_reservation"]["status"] == "SETTLED"
     assert (await db.get(AccountORM, "A1")).balance == 4950.0
+
+
+@pytest.mark.asyncio
+async def test_high_risk_transfer_stops_at_unimplemented_verification(db) -> None:
+    bank = InProcessBankApi(db)
+    task = await create_transfer_task(
+        db,
+        bank,
+        user_id="U1",
+        request_id="request-create-mfa",
+        operation_id="operation-mfa",
+        from_account="A1",
+        to_account="A2",
+        amount=1500.0,
+    )
+    waiting = await confirm_task(
+        db,
+        task_id=task["task_id"],
+        user_id="U1",
+        request_id="request-confirm-mfa",
+        state_version=task["state_version"],
+        plan_version=task["plan_version"],
+    )
+    assert waiting["phase"] == "WAITING_VERIFICATION"
+    assert (await db.get(AccountORM, "A1")).balance == 5000.0
+
+    with pytest.raises(CapabilityNotImplemented):
+        await verify_task(
+            db,
+            task_id=task["task_id"],
+            user_id="U1",
+            request_id="request-verify-placeholder",
+            state_version=waiting["state_version"],
+            challenge_id="placeholder",
+            proof="placeholder",
+        )
+    assert (await db.get(AccountORM, "A1")).balance == 5000.0
+    assert (await db.get(AccountORM, "A2")).balance == 1000.0

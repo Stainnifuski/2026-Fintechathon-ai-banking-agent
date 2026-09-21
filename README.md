@@ -7,7 +7,7 @@
 
 1. 复制环境变量：`cp .env.example .env`，并设置一个随机的 `JWT_SECRET`。
 2. 启动完整环境：`docker compose up --build`。第一轮不依赖 Redis。
-3. 打开 `http://localhost:3000`；首次启动会创建演示用户：张三 `13800000001`、李四 `13900000002`，密码均为 `password123`。
+3. 打开 `http://localhost:3000`；首次启动会创建张三至周八共 6 个演示用户，手机号为 `13800000001` 至 `13800000006`，密码均为 `password123`。
 
 登录成功后页面会直接切换到账户面板，地址栏不会变化。若显示“登录失败”，请先确认后端健康检查 `http://localhost:8000/health` 返回 `status: ok`。
 

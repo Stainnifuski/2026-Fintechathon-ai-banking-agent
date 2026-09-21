@@ -12,6 +12,8 @@ from .transaction import (
 from .contact import ContactORM, ContactSchema
 from .audit_log import AuditLogORM, AuditLogSchema, AuditLogCreateSchema
 from .bank_operation import BankOperationORM
+from .payment_request import PaymentRequestORM
+from .payment_request_payment import PaymentRequestPaymentORM
 from .workflow import (
     AuthorizationORM,
     HumanTicketORM,
@@ -63,4 +65,6 @@ __all__ = [
     "StateEventORM",
     "HumanTicketORM",
     "BankOperationORM",
+    "PaymentRequestORM",
+    "PaymentRequestPaymentORM",
 ]

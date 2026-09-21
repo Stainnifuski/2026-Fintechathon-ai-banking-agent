@@ -81,6 +81,10 @@ class BankApi(Protocol):
 
     async def query_operation(self, operation_id: str) -> BankOperationResult | None: ...
 
+    async def release_payment_request(
+        self, *, operation_id: str, subject_user_id: str
+    ) -> None: ...
+
 
 class HttpBankApiClient:
     """通过模拟银行内部 API 访问银行能力，不接触银行数据库。"""
@@ -171,6 +175,17 @@ class HttpBankApiClient:
         if response.is_error:
             raise self._error(response)
         return BankOperationResult(**response.json())
+
+    async def release_payment_request(
+        self, *, operation_id: str, subject_user_id: str
+    ) -> None:
+        response = await self._request(
+            "POST",
+            f"/api/v1/internal/bank/payment-requests/{operation_id}/release",
+            json={"subject_user_id": subject_user_id},
+        )
+        if response.is_error:
+            raise self._error(response)
 
 
 def get_bank_api() -> BankApi:
