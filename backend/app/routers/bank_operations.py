@@ -13,6 +13,7 @@ from ..services.bank import (
     BankTransferCommand,
     TrustedExecutionContext,
     query_operation,
+    release_payment_request_payment,
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
@@ -63,6 +64,10 @@ class TransferValidationResponse(BaseModel):
 
 class TransferResolutionResponse(TransferValidationResponse):
     recipient_user_id: str
+
+
+class PaymentRequestRelease(BaseModel):
+    subject_user_id: str
 
 
 def require_internal_token(x_internal_token: str = Header(default="")) -> None:
@@ -166,3 +171,24 @@ async def query(
 async def directory(request: TransferResolutionRequest, db: AsyncSession = Depends(get_db)) -> dict:
     from ..services.bank.transfer_service import transfer_directory
     return await transfer_directory(db, **request.model_dump())
+
+
+@router.post(
+    "/payment-requests/{operation_id}/release",
+    status_code=204,
+    dependencies=[Depends(require_internal_token)],
+)
+async def release_payment_request(
+    operation_id: str,
+    request: PaymentRequestRelease,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    try:
+        await release_payment_request_payment(
+            db,
+            operation_id=operation_id,
+            subject_user_id=request.subject_user_id,
+        )
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)

@@ -20,9 +20,18 @@ from .transfer_service import (
     TransferValidationResult,
     TrustedExecutionContext,
     query_operation,
+    release_payment_request_payment,
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
+)
+from .payment_request_service import (
+    cancel_payment_request,
+    create_payment_request,
+    create_payment_request_batch,
+    list_payment_requests,
+    prepare_payment_request_payment,
+    respond_to_payment_request,
 )
 
 __all__ = [
@@ -41,8 +50,15 @@ __all__ = [
     "TransferValidationResult",
     "TrustedExecutionContext",
     "query_operation",
+    "release_payment_request_payment",
     "register_customer",
     "resolve_transfer_parties",
     "submit_transfer",
     "validate_transfer_parties",
+    "cancel_payment_request",
+    "create_payment_request",
+    "create_payment_request_batch",
+    "list_payment_requests",
+    "prepare_payment_request_payment",
+    "respond_to_payment_request",
 ]

@@ -723,6 +723,7 @@ async def reconcile_task(
 
 async def cancel_task(
     db: AsyncSession,
+    bank: BankApi,
     *,
     task_id: str,
     user_id: str,
@@ -732,6 +733,10 @@ async def cancel_task(
     task = await _owned_task(db, task_id, user_id)
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate == task_id:
+        operation = await _current_operation(db, task)
+        await bank.release_payment_request(
+            operation_id=operation.operation_id, subject_user_id=user_id
+        )
         return await task_snapshot(db, task_id, user_id)
     await _reserve_version(db, task, state_version)
     operation = await _current_operation(db, task)
@@ -762,6 +767,15 @@ async def cancel_task(
         after={"operation": operation.status, "cancel_requested": True},
     )
     await db.commit()
+    if operation.status == OperationStatus.CANCELLED:
+        try:
+            await bank.release_payment_request(
+                operation_id=operation.operation_id, subject_user_id=user_id
+            )
+        except BankApiError as error:
+            raise TaskError(
+                "任务已取消，但收款申请释放待重试", 502, error.code
+            ) from error
     return await task_snapshot(db, task_id, user_id)
 
 

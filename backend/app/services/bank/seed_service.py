@@ -18,43 +18,88 @@ logger = logging.getLogger(__name__)
 async def seed_bank_data() -> None:
     """通过模拟银行边界初始化客户、账户、联系人和流水。"""
     async with AsyncSessionLocal() as session:
-        if (await session.execute(select(UserORM).limit(1))).scalar_one_or_none():
-            logger.info("种子数据已存在，跳过初始化")
-            return
+        has_seed_data = (
+            await session.execute(select(UserORM).limit(1))
+        ).scalar_one_or_none() is not None
+        logger.info("正在同步模拟银行种子客户与联系人...")
 
-        logger.info("开始写入模拟银行种子数据...")
-        session.add_all([
-            UserORM(user_id="U001", name="张三", phone="13800000001",
-                    id_card="310***********1234", password_hash=hash_password("password123"),
-                    risk_level="balanced", status="active"),
-            UserORM(user_id="U002", name="李四", phone="13900000002",
-                    id_card="310***********5678", password_hash=hash_password("password123"),
-                    risk_level="stable", status="active"),
-        ])
+        user_specs = [
+            ("U001", "张三", "13800000001", "balanced"),
+            ("U002", "李四", "13800000002", "stable"),
+            ("U003", "王五", "13800000003", "balanced"),
+            ("U004", "赵六", "13800000004", "balanced"),
+            ("U005", "孙七", "13800000005", "stable"),
+            ("U006", "周八", "13800000006", "balanced"),
+        ]
+        for user_id, name, phone, risk_level in user_specs:
+            user = await session.get(UserORM, user_id)
+            if user is None:
+                session.add(
+                    UserORM(
+                        user_id=user_id,
+                        name=name,
+                        phone=phone,
+                        id_card=f"310***********{user_id[-3:]}0",
+                        password_hash=hash_password("password123"),
+                        risk_level=risk_level,
+                        status="active",
+                    )
+                )
+            else:
+                user.name = name
+                user.phone = phone
+                user.status = "active"
         await session.flush()
-        session.add_all([
-            AccountORM(account_id="A001", user_id="U001", account_type="savings",
-                       card_number="6222****8842", balance=50000.0, daily_transfer_used=0.0,
-                       daily_transfer_limit=50000.0, status="active"),
-            AccountORM(account_id="A002", user_id="U001", account_type="credit",
-                       card_number="6225****3301", balance=20000.0, daily_transfer_used=0.0,
-                       daily_transfer_limit=50000.0, status="active"),
-            AccountORM(account_id="A003", user_id="U002", account_type="savings",
-                       card_number="6222****7756", balance=30000.0, daily_transfer_used=0.0,
-                       daily_transfer_limit=50000.0, status="active"),
-        ])
+
+        account_specs = [
+            ("A001", "U001", "savings", "6222****8842", 50000.0),
+            ("A002", "U001", "credit", "6225****3301", 20000.0),
+            ("A003", "U002", "savings", "6222****7756", 30000.0),
+            ("A004", "U003", "savings", "6222****7757", 30000.0),
+            ("A005", "U004", "savings", "6222****7758", 30000.0),
+            ("A006", "U005", "savings", "6222****7759", 30000.0),
+            ("A007", "U006", "savings", "6222****7760", 30000.0),
+        ]
+        for account_id, user_id, kind, card_number, balance in account_specs:
+            if await session.get(AccountORM, account_id) is None:
+                session.add(
+                    AccountORM(
+                        account_id=account_id,
+                        user_id=user_id,
+                        account_type=kind,
+                        card_number=card_number,
+                        balance=balance,
+                        daily_transfer_used=0.0,
+                        daily_transfer_limit=50000.0,
+                        status="active",
+                    )
+                )
         await session.flush()
-        session.add_all([
-            ContactORM(contact_id="C001", user_id="U001", name="李四", nickname="老李",
-                       phone="13900000002", account_number="6222****7756", bank="中国工商银行",
-                       transfer_count=15, last_transfer=date(2026, 9, 10)),
-            ContactORM(contact_id="C002", user_id="U001", name="王五", nickname="老王",
-                       phone="137****4321", account_number="6228****9903", bank="中国建设银行",
-                       transfer_count=8, last_transfer=date(2026, 8, 25)),
-            ContactORM(contact_id="C003", user_id="U001", name="赵六", nickname=None,
-                       phone="136****6543", account_number="6217****5520", bank="中国农业银行",
-                       transfer_count=3, last_transfer=date(2026, 7, 15)),
-        ])
+
+        contact_specs = [
+            ("C001", "李四", "老李", "13800000002", "6222****7756", 15),
+            ("C002", "王五", "老王", "13800000003", "6222****7757", 8),
+            ("C003", "赵六", None, "13800000004", "6222****7758", 3),
+            ("C004", "孙七", None, "13800000005", "6222****7759", 0),
+            ("C005", "周八", None, "13800000006", "6222****7760", 0),
+        ]
+        for contact_id, name, nickname, phone, account_number, transfer_count in contact_specs:
+            contact = await session.get(ContactORM, contact_id)
+            if contact is None:
+                contact = ContactORM(contact_id=contact_id, user_id="U001")
+                session.add(contact)
+            contact.name = name
+            contact.nickname = nickname
+            contact.phone = phone
+            contact.account_number = account_number
+            contact.bank = "AI 模拟银行"
+            contact.transfer_count = transfer_count
+            contact.last_transfer = date(2026, 9, 10) if transfer_count else None
+
+        if has_seed_data:
+            await session.commit()
+            logger.info("模拟银行种子客户与联系人同步完成")
+            return
 
         now = datetime.now()
         specs = [

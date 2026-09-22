@@ -217,11 +217,12 @@ async def cancel(
     request: TaskActionRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     try:
         return TaskSnapshot(
             **await cancel_task(
-                db, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
+                db, bank, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
             )
         )
     except TaskError as error:
