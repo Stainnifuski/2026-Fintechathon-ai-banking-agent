@@ -13,6 +13,10 @@ function App() {
   const [recipients, setRecipients] = useState<bank.Recipient[]>([]);
   const [transactions, setTransactions] = useState<bank.Transaction[]>([]);
   const [paymentRequests, setPaymentRequests] = useState<bank.PaymentRequest[]>([]);
+  const [subscriptions, setSubscriptions] = useState<bank.Subscription[]>([]);
+  const [pendingSubscription, setPendingSubscription] = useState<bank.Subscription | null>(null);
+  const [pendingChargeSubscription, setPendingChargeSubscription] = useState<bank.Subscription | null>(null);
+  const [subscriptionChargeId, setSubscriptionChargeId] = useState('');
   const [fromAccount, setFromAccount] = useState('');
   const [toUserId, setToUserId] = useState('');
   const [amount, setAmount] = useState('');
@@ -45,8 +49,8 @@ function App() {
   const load = async () => {
     if (!user) return;
     try {
-      const [a, r, h, requests] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests()]);
-      setAccounts(a); setRecipients(r); setTransactions(h); setPaymentRequests(requests);
+      const [a, r, h, requests, subscriptionItems] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests(), bank.listSubscriptions()]);
+      setAccounts(a); setRecipients(r); setTransactions(h); setPaymentRequests(requests); setSubscriptions(subscriptionItems);
       const defaultFrom = a.find(acc => acc.account_type === 'savings')?.account_id || a[0]?.account_id || '';
       setFromAccount(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
       setToUserId(current => current && r.some(rec => rec.user_id === current) ? current : r[0]?.user_id || '');
@@ -163,6 +167,30 @@ function App() {
     finally { setIsActing(false); }
   };
 
+  const confirmSubscriptionCancellation = async () => {
+    if (!pendingSubscription || isActing) return;
+    setIsActing(true); setStatus('');
+    try {
+      const updated = await bank.cancelSubscription(pendingSubscription);
+      setSubscriptions(items => items.map(item => item.subscription_id === updated.subscription_id ? updated : item));
+      setPendingSubscription(null);
+      setStatus(`已取消 ${updated.merchant_name} 订阅，后续不会再自动扣费`);
+    } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
+  };
+
+  const confirmSubscriptionCharge = async () => {
+    if (!pendingChargeSubscription || !subscriptionChargeId || isActing) return;
+    setIsActing(true); setStatus('');
+    try {
+      const result = await bank.simulateSubscriptionCharge(pendingChargeSubscription, subscriptionChargeId);
+      setSubscriptions(items => items.map(item => item.subscription_id === result.subscription.subscription_id ? result.subscription : item));
+      setPendingChargeSubscription(null); setSubscriptionChargeId(''); setStatus(result.message);
+      await load();
+    } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
+  };
+
   const sendChat = async (candidateId?: string, retry = false) => {
     if (!user || isChatting || (!candidateId && !retry && !chatInput.trim())) return;
     const input = candidateId ? '选择候选' : chatInput.trim();
@@ -222,7 +250,9 @@ function App() {
 
   const logout = () => {
     localStorage.removeItem('token'); localStorage.removeItem('bank-user');
-    setUser(null); setAccounts([]); setPaymentRequests([]); setChat([]); setActiveTask(null);
+    setUser(null); setAccounts([]); setRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setPendingChargeSubscription(null); setSubscriptionChargeId('');
+    setChat([]); setActiveTask(null); setConversation(null); setRetryChat(null); setStatus('');
+    setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId('');
   };
 
   const requestAmountNumber = Number(requestAmount) || 0;
@@ -255,6 +285,15 @@ function App() {
         <label>备注（可选）<input value={note} onChange={e => setNote(e.target.value)} /></label>
         <button disabled={!fromAccount || !toUserId || isActing}>生成确认信息</button>
       </form></div>
+    </section>
+    <section className="card subscription-card">
+      <h2>订阅管理</h2>
+      {subscriptions.length === 0 ? <p className="hint">暂未识别到订阅扣费</p> : <ul className="history">{subscriptions.map(subscription => {
+        const active = subscription.status === 'ACTIVE';
+        return <li key={subscription.subscription_id}><span><strong>{subscription.merchant_name}</strong><small>{subscription.debit_account_label} · 每月 ¥{subscription.amount.toFixed(2)}</small><small>{active ? `下次扣费：${new Date(subscription.next_charge_at).toLocaleString()}` : `已于 ${subscription.cancelled_at ? new Date(subscription.cancelled_at).toLocaleString() : '-'} 取消`}</small>{subscription.source_transaction_id && <small>识别依据：历史流水 {subscription.source_transaction_id}</small>}</span><div className="subscription-action"><strong className={active ? 'in' : 'hint'}>{active ? '生效中' : '已取消'}</strong>{active ? <><button disabled={isActing} onClick={() => { setPendingSubscription(null); setPendingChargeSubscription(subscription); setSubscriptionChargeId(newId()); }}>模拟扣费</button><button className="secondary" disabled={isActing} onClick={() => { setPendingChargeSubscription(null); setSubscriptionChargeId(''); setPendingSubscription(subscription); }}>取消订阅</button></> : <small>不会继续扣费</small>}</div></li>;
+      })}</ul>}
+      {pendingSubscription && <div className="subscription-confirm"><p><strong>确认取消 {pendingSubscription.merchant_name}？</strong></p><p className="hint">确认后将停止后续模拟自动扣费，历史扣费流水不会删除。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => setPendingSubscription(null)}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCancellation}>{isActing ? '正在取消…' : '确认取消'}</button></div></div>}
+      {pendingChargeSubscription && <div className="subscription-confirm"><p><strong>模拟扣除 {pendingChargeSubscription.merchant_name} ¥{pendingChargeSubscription.amount.toFixed(2)}？</strong></p><p className="hint">确认后将真实减少演示账户余额、生成订阅流水，并把下次扣费日推进一个月。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingChargeSubscription(null); setSubscriptionChargeId(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCharge}>{isActing ? '正在扣费…' : '确认模拟扣费'}</button></div></div>}
     </section>
     <section className="grid">
       <div className="card"><h2>发起收款申请</h2><form onSubmit={submitPaymentRequest}>
@@ -291,7 +330,11 @@ function App() {
         <div className="row"><input value={chatInput} disabled={isChatting || !!retryChat} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !retryChat && sendChat()} placeholder="给李四转300元，备注聚餐" /><button disabled={isChatting || !!retryChat} onClick={() => sendChat()}>发送</button></div>
         {retryChat && !isChatting && <button onClick={() => sendChat(undefined, true)}>重试原消息（避免重复建单）</button>}
       </div>
-      <div className="card"><h2>最近流水</h2>{transactions.length === 0 ? <p className="hint">暂无流水</p> : <ul className="history">{transactions.slice(0, 8).map(tx => <li key={tx.tx_id}><span>{tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()}</small></span><strong className={tx.type === 'transfer_out' ? 'out' : 'in'}>{tx.type === 'transfer_out' ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>)}</ul>}</div>
+      <div className="card"><h2>最近流水</h2>{transactions.length === 0 ? <p className="hint">暂无流水</p> : <ul className="history">{transactions.slice(0, 8).map(tx => {
+        const outgoing = ['transfer_out', 'purchase', 'subscription'].includes(tx.type);
+        const label = tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type;
+        return <li key={tx.tx_id}><span>{label} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()}</small></span><strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
+      })}</ul>}</div>
     </section>
   </main>;
 }
