@@ -12,6 +12,17 @@ export interface PaymentRequest {
   status: 'PENDING' | 'ACCEPTED' | 'PAID' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
   state_version: number; expires_at: string; created_at: string; responded_at?: string;
 }
+export interface Subscription {
+  subscription_id: string; debit_account_id: string; debit_account_label: string;
+  merchant_name: string; amount: number; amount_fen: number; currency: string;
+  billing_cycle: 'MONTHLY'; next_charge_at: string;
+  status: 'ACTIVE' | 'CANCELLED'; state_version: number;
+  source_transaction_id?: string; cancelled_at?: string;
+}
+export interface SubscriptionChargeResult {
+  subscription: Subscription; transaction_id: string; charged_amount: number;
+  duplicate: boolean; message: string;
+}
 export interface ConfirmationCard {
   card_id: string; plan_version: number; from_account: string; to_account: string;
   recipient_name: string; amount: number; currency: string; note?: string; risk_level: string;
@@ -34,6 +45,16 @@ export const accounts = (userId: string) => apiClient.get<Account[]>(`/accounts/
 export const recipients = () => apiClient.get<Recipient[]>('/users/recipients').then(r => r.data);
 export const history = () => apiClient.get<Transaction[]>('/transactions/history').then(r => r.data);
 export const paymentRequests = () => apiClient.get<PaymentRequest[]>('/payment-requests').then(r => r.data);
+export const listSubscriptions = () => apiClient.get<Subscription[]>('/subscriptions').then(r => r.data);
+export const cancelSubscription = (subscription: Subscription) =>
+  apiClient.post<Subscription>(`/subscriptions/${subscription.subscription_id}/cancel`, {
+    state_version: subscription.state_version,
+  }).then(r => r.data);
+export const simulateSubscriptionCharge = (subscription: Subscription, idempotencyKey: string) =>
+  apiClient.post<SubscriptionChargeResult>(`/subscriptions/${subscription.subscription_id}/simulate-charge`, {
+    state_version: subscription.state_version,
+    idempotency_key: idempotencyKey,
+  }).then(r => r.data);
 export const createPaymentRequest = (payload: {
   payer_user_id: string; receive_account_id: string; amount: number; note?: string; idempotency_key: string;
 }) => apiClient.post<PaymentRequest>('/payment-requests', payload).then(r => r.data);

@@ -17,6 +17,7 @@ from .routers.operations import router as operations_router
 from .routers.payment_requests import router as payment_requests_router
 from .routers.transactions import router as transactions_router
 from .routers.tasks import router as tasks_router
+from .routers.subscriptions import router as subscriptions_router
 from .routers.users import router as users_router
 
 logging.basicConfig(
@@ -69,6 +70,7 @@ app.include_router(operations_router)
 app.include_router(users_router)
 app.include_router(bank_operations_router)
 app.include_router(payment_requests_router)
+app.include_router(subscriptions_router)
 
 
 # ──────────────────── 健康检查 ────────────────────

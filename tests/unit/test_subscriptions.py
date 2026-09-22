@@ -1,0 +1,135 @@
+"""订阅查询、归属隔离和取消行为。"""
+
+from datetime import datetime, timezone
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from backend.app.models import AccountORM, Base, SubscriptionORM, TransactionORM, UserORM
+from backend.app.services.bank import subscription_service
+from backend.app.services.bank.transfer_service import BankError
+
+
+@pytest_asyncio.fixture
+async def subscription_store(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(subscription_service, "AsyncSessionLocal", sessions)
+    async with sessions() as session:
+        session.add_all([
+            UserORM(user_id="U1", name="张三", phone="13800000001", id_card="demo", password_hash="hash", status="active"),
+            UserORM(user_id="U2", name="李四", phone="13800000002", id_card="demo", password_hash="hash", status="active"),
+            AccountORM(account_id="A1", user_id="U1", account_type="savings", card_number="6222****0001", balance=100, daily_transfer_used=0, daily_transfer_limit=50000, status="active"),
+            AccountORM(account_id="A2", user_id="U2", account_type="savings", card_number="6222****0002", balance=100, daily_transfer_used=0, daily_transfer_limit=50000, status="active"),
+            SubscriptionORM(subscription_id="SUB1", user_id="U1", debit_account_id="A1", merchant_name="网易云音乐", amount_fen=1500, currency="CNY", billing_cycle="MONTHLY", next_charge_at=datetime(2026, 10, 12, tzinfo=timezone.utc), status="ACTIVE", state_version=1, source_transaction_id="TX1"),
+        ])
+        await session.commit()
+    yield sessions
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_list_subscriptions_is_scoped_to_current_user(subscription_store) -> None:
+    owner_items = await subscription_service.list_subscriptions(user_id="U1")
+    other_items = await subscription_service.list_subscriptions(user_id="U2")
+
+    assert len(owner_items) == 1
+    assert owner_items[0]["merchant_name"] == "网易云音乐"
+    assert owner_items[0]["amount_fen"] == 1500
+    assert owner_items[0]["debit_account_label"] == "6222****0001"
+    assert other_items == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_subscription_updates_state_and_is_idempotent(subscription_store) -> None:
+    cancelled = await subscription_service.cancel_subscription(
+        subscription_id="SUB1", user_id="U1", state_version=1
+    )
+    assert cancelled["status"] == "CANCELLED"
+    assert cancelled["state_version"] == 2
+    assert cancelled["cancelled_at"] is not None
+
+    duplicate = await subscription_service.cancel_subscription(
+        subscription_id="SUB1", user_id="U1", state_version=1
+    )
+    assert duplicate["status"] == "CANCELLED"
+    assert duplicate["state_version"] == 2
+
+    with pytest.raises(BankError) as not_owner:
+        await subscription_service.cancel_subscription(
+            subscription_id="SUB1", user_id="U2", state_version=1
+        )
+    assert not_owner.value.code == "SUBSCRIPTION_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_simulated_charge_updates_balance_history_and_next_date(subscription_store) -> None:
+    result = await subscription_service.simulate_subscription_charge(
+        subscription_id="SUB1",
+        user_id="U1",
+        state_version=1,
+        idempotency_key="charge-request-1",
+    )
+
+    assert result["charged_amount"] == 15.0
+    assert result["duplicate"] is False
+    assert result["subscription"]["state_version"] == 2
+    assert result["subscription"]["next_charge_at"].date().isoformat() == "2026-11-12"
+
+    async with subscription_store() as session:
+        account = await session.get(AccountORM, "A1")
+        transaction = (
+            await session.execute(
+                select(TransactionORM).where(
+                    TransactionORM.operation_id == "charge-request-1"
+                )
+            )
+        ).scalar_one()
+    assert account.balance == 85.0
+    assert account.daily_transfer_used == 0
+    assert transaction.type == "subscription"
+    assert transaction.counterparty == "网易云音乐"
+    assert transaction.amount == 15.0
+
+    duplicate = await subscription_service.simulate_subscription_charge(
+        subscription_id="SUB1",
+        user_id="U1",
+        state_version=1,
+        idempotency_key="charge-request-1",
+    )
+    assert duplicate["duplicate"] is True
+    async with subscription_store() as session:
+        account = await session.get(AccountORM, "A1")
+        transactions = (
+            await session.execute(select(TransactionORM))
+        ).scalars().all()
+    assert account.balance == 85.0
+    assert len(transactions) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancelled_subscription_cannot_be_charged(subscription_store) -> None:
+    await subscription_service.cancel_subscription(
+        subscription_id="SUB1", user_id="U1", state_version=1
+    )
+
+    with pytest.raises(BankError) as cancelled:
+        await subscription_service.simulate_subscription_charge(
+            subscription_id="SUB1",
+            user_id="U1",
+            state_version=2,
+            idempotency_key="charge-request-2",
+        )
+    assert cancelled.value.code == "SUBSCRIPTION_NOT_ACTIVE"
+
+    async with subscription_store() as session:
+        account = await session.get(AccountORM, "A1")
+        transactions = (
+            await session.execute(select(TransactionORM))
+        ).scalars().all()
+    assert account.balance == 100
+    assert transactions == []
