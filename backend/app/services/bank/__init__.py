@@ -33,6 +33,11 @@ from .payment_request_service import (
     prepare_payment_request_payment,
     respond_to_payment_request,
 )
+from .subscription_service import (
+    cancel_subscription,
+    list_subscriptions,
+    simulate_subscription_charge,
+)
 
 __all__ = [
     "authenticate_customer",
@@ -61,4 +66,7 @@ __all__ = [
     "list_payment_requests",
     "prepare_payment_request_payment",
     "respond_to_payment_request",
+    "cancel_subscription",
+    "list_subscriptions",
+    "simulate_subscription_charge",
 ]

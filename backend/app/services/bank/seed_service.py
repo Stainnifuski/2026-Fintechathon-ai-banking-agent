@@ -1,7 +1,7 @@
 """4号模拟银行的演示数据初始化。"""
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -9,6 +9,7 @@ from ...database.connection import AsyncSessionLocal
 from ...models.account import AccountORM
 from ...models.contact import ContactORM
 from ...models.transaction import TransactionORM
+from ...models.subscription import SubscriptionORM
 from ...models.user import UserORM
 from ...security.passwords import hash_password
 
@@ -96,25 +97,70 @@ async def seed_bank_data() -> None:
             contact.transfer_count = transfer_count
             contact.last_transfer = date(2026, 9, 10) if transfer_count else None
 
-        if has_seed_data:
-            await session.commit()
-            logger.info("模拟银行种子客户与联系人同步完成")
-            return
-
         now = datetime.now()
-        specs = [
-            ("TX20260901001", "A001", "salary", 15000.0, "XX科技有限公司", "salary", "9月工资", 15, "app"),
-            ("TX20260905001", "A001", "transfer_out", 500.0, "李四", "transfer", "还上次吃饭的钱", 11, "agent"),
-            ("TX20260908001", "A001", "purchase", 128.0, "美团外卖", "dining", None, 8, "app"),
-            ("TX20260910001", "A001", "purchase", 299.0, "京东商城", "shopping", "买耳机", 6, "app"),
-            ("TX20260912001", "A001", "subscription", 15.0, "网易云音乐", "subscription", "会员自动续费", 4, "app"),
-            ("TX20260914001", "A002", "purchase", 66.0, "滴滴出行", "transport", None, 2, "pos"),
-        ]
-        session.add_all([
-            TransactionORM(tx_id=tx_id, account_id=account_id, type=kind, amount=amount,
-                           counterparty=counterparty, category=category, note=note,
-                           timestamp=now - timedelta(days=days_ago), status="completed", channel=channel)
-            for tx_id, account_id, kind, amount, counterparty, category, note, days_ago, channel in specs
-        ])
+        if not has_seed_data:
+            specs = [
+                ("TX20260901001", "A001", "salary", 15000.0, "XX科技有限公司", "salary", "9月工资", 15, "app"),
+                ("TX20260905001", "A001", "transfer_out", 500.0, "李四", "transfer", "还上次吃饭的钱", 11, "agent"),
+                ("TX20260908001", "A001", "purchase", 128.0, "美团外卖", "dining", None, 8, "app"),
+                ("TX20260910001", "A001", "purchase", 299.0, "京东商城", "shopping", "买耳机", 6, "app"),
+                ("TX20260912001", "A001", "subscription", 15.0, "网易云音乐", "subscription", "会员自动续费", 4, "app"),
+                ("TX20260914001", "A002", "purchase", 66.0, "滴滴出行", "transport", None, 2, "pos"),
+            ]
+            session.add_all([
+                TransactionORM(tx_id=tx_id, account_id=account_id, type=kind, amount=amount,
+                               counterparty=counterparty, category=category, note=note,
+                               timestamp=now - timedelta(days=days_ago), status="completed", channel=channel)
+                for tx_id, account_id, kind, amount, counterparty, category, note, days_ago, channel in specs
+            ])
+
+        if await session.get(TransactionORM, "TX20260918001") is None:
+            session.add(
+                TransactionORM(
+                    tx_id="TX20260918001",
+                    account_id="A001",
+                    type="subscription",
+                    amount=25.0,
+                    counterparty="腾讯视频",
+                    category="subscription",
+                    note="VIP 自动续费",
+                    timestamp=now - timedelta(days=2),
+                    status="completed",
+                    channel="app",
+                )
+            )
+
+        if await session.get(SubscriptionORM, "SUB001") is None:
+            session.add(
+                SubscriptionORM(
+                    subscription_id="SUB001",
+                    user_id="U001",
+                    debit_account_id="A001",
+                    merchant_name="网易云音乐",
+                    amount_fen=1500,
+                    currency="CNY",
+                    billing_cycle="MONTHLY",
+                    next_charge_at=datetime(2026, 10, 12, 2, 0, tzinfo=timezone.utc),
+                    status="ACTIVE",
+                    state_version=1,
+                    source_transaction_id="TX20260912001",
+                )
+            )
+        if await session.get(SubscriptionORM, "SUB002") is None:
+            session.add(
+                SubscriptionORM(
+                    subscription_id="SUB002",
+                    user_id="U001",
+                    debit_account_id="A001",
+                    merchant_name="腾讯视频",
+                    amount_fen=2500,
+                    currency="CNY",
+                    billing_cycle="MONTHLY",
+                    next_charge_at=datetime(2026, 10, 20, 2, 0, tzinfo=timezone.utc),
+                    status="ACTIVE",
+                    state_version=1,
+                    source_transaction_id="TX20260918001",
+                )
+            )
         await session.commit()
-        logger.info("模拟银行种子数据写入完成")
+        logger.info("模拟银行种子数据同步完成")

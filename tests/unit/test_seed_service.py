@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from backend.app.models import AccountORM, Base, ContactORM, UserORM
+from backend.app.models import AccountORM, Base, ContactORM, SubscriptionORM, UserORM
 from backend.app.services.bank import seed_service
 from backend.app.security.passwords import verify_password
 
@@ -32,6 +32,11 @@ async def test_seed_has_five_contacts_with_consecutive_phones(monkeypatch) -> No
             )
         ).scalars().all()
         account_count = await session.scalar(select(func.count()).select_from(AccountORM))
+        subscriptions = (
+            await session.execute(
+                select(SubscriptionORM).order_by(SubscriptionORM.subscription_id)
+            )
+        ).scalars().all()
     assert [user.phone for user in users] == [
         "13800000001",
         "13800000002",
@@ -49,5 +54,10 @@ async def test_seed_has_five_contacts_with_consecutive_phones(monkeypatch) -> No
         "13800000006",
     ]
     assert account_count == 7
+    assert len(subscriptions) == 2
+    assert [(item.merchant_name, item.status) for item in subscriptions] == [
+        ("网易云音乐", "ACTIVE"),
+        ("腾讯视频", "ACTIVE"),
+    ]
     assert all(verify_password("password123", user.password_hash) for user in users)
     await engine.dispose()
