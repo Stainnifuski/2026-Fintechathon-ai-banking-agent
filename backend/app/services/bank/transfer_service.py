@@ -279,3 +279,20 @@ async def submit_transfer(
     if simulate_response_loss:
         raise BankResponseLost("银行已记账，但响应在传输中丢失")
     return _result(bank_operation)
+
+
+async def transfer_directory(db: AsyncSession, *, subject_user_id: str, recipient_name: str) -> dict:
+    """4号受控目录。沿用账户ID排序的默认付款规则；不返回余额/完整卡号。"""
+    payers = (await db.execute(select(AccountORM).where(
+        AccountORM.user_id == subject_user_id, AccountORM.status == "active"
+    ).order_by(AccountORM.account_id))).scalars().all()
+    rows = (await db.execute(select(UserORM, AccountORM).join(
+        AccountORM, AccountORM.user_id == UserORM.user_id
+    ).where(UserORM.name == recipient_name, UserORM.user_id != subject_user_id,
+            UserORM.status == "active", AccountORM.status == "active")
+        .order_by(UserORM.user_id, AccountORM.account_id))).all()
+    return {
+        "payers": [{"account_id": a.account_id, "label": f"{'活期 savings' if a.account_type == 'savings' else a.account_type} · 尾号{a.card_number[-4:]}"} for a in payers],
+        "default_payer": payers[0].account_id if payers else None,
+        "recipients": [{"account_id": a.account_id, "label": f"{u.name} · 手机尾号{u.phone[-4:]} · 账户尾号{a.card_number[-4:]}"} for u, a in rows],
+    }

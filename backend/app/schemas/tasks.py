@@ -1,6 +1,8 @@
 """任务状态机 HTTP 契约。"""
 
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -10,7 +12,7 @@ class TransferTaskCreate(BaseModel):
     operation_id: str = Field(min_length=8, max_length=64)
     from_account: str
     to_account: str
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
     note: str | None = Field(default=None, max_length=256)
 
 
@@ -27,7 +29,7 @@ class ModifyTaskRequest(TaskActionRequest):
     operation_id: str = Field(min_length=8, max_length=64)
     from_account: str
     to_account: str
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
     note: str | None = Field(default=None, max_length=256)
 
 
@@ -116,3 +118,25 @@ class ChatTaskCreate(BaseModel):
     request_id: str = Field(min_length=8, max_length=64)
     operation_id: str = Field(min_length=8, max_length=64)
     message: str = Field(min_length=1, max_length=500)
+
+    session_id: str | None = Field(default=None, min_length=8, max_length=64)
+    session_version: int = Field(default=0, ge=0)
+    candidate_id: str | None = Field(default=None, max_length=64)
+    task_id: str | None = Field(default=None, max_length=40)
+    state_version: int | None = Field(default=None, ge=1)
+
+
+class CandidateView(BaseModel):
+    candidate_id: str
+    kind: Literal["recipient", "payer"]
+    label: str
+
+
+class ChatReply(BaseModel):
+    session_id: str
+    session_version: int
+    kind: Literal["clarification", "plan", "modification", "status", "unsupported", "error"]
+    message: str
+    mode: str
+    candidates: list[CandidateView] = Field(default_factory=list)
+    task: TaskSnapshot | None = None

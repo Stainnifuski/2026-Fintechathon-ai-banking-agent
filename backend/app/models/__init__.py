@@ -64,3 +64,5 @@ __all__ = [
     "HumanTicketORM",
     "BankOperationORM",
 ]
+
+from .conversation import ConversationORM, ChatReceiptORM

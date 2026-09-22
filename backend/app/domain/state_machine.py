@@ -173,12 +173,19 @@ def project_task_phase(
     return TaskPhase.PLANNING
 
 
-def yuan_to_fen(amount: float) -> int:
-    """严格把元转换为分，拒绝多于两位小数。"""
-    fen = round(amount * 100)
-    if amount <= 0 or abs(amount * 100 - fen) > 1e-7:
-        raise ValueError("金额必须大于 0 且最多两位小数")
-    return fen
+def yuan_to_fen(amount) -> int:
+    """兼容旧数字输入；字符串/Decimal为精确输入，拒绝超精度与非有限值。"""
+    from decimal import Decimal, InvalidOperation
+    try:
+        value = Decimal(str(amount))
+        if not value.is_finite() or value <= 0 or value.as_tuple().exponent < -2:
+            raise ValueError("金额必须大于 0 且最多两位小数")
+        fen = value * 100
+        if fen > 2_000_000_000:
+            raise ValueError("金额超出支持范围")
+        return int(fen)
+    except (InvalidOperation, TypeError) as error:
+        raise ValueError("无效金额") from error
 
 
 def fen_to_yuan(amount_fen: int) -> float:

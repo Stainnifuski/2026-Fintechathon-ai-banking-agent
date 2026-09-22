@@ -160,3 +160,9 @@ async def query(
             detail={"code": "NOT_FOUND", "message": "银行尚未受理该操作"},
         )
     return InternalBankResult(**result.__dict__)
+
+
+@router.post("/transfers/directory", dependencies=[Depends(require_internal_token)])
+async def directory(request: TransferResolutionRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    from ..services.bank.transfer_service import transfer_directory
+    return await transfer_directory(db, **request.model_dump())

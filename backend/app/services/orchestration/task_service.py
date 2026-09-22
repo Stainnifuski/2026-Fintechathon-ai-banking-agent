@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain import (
@@ -186,6 +186,27 @@ def _check_version(task: TransferTaskORM, expected: int) -> None:
             "STALE_STATE_VERSION",
         )
 
+async def _reserve_version(db: AsyncSession, task: TransferTaskORM, expected: int) -> None:
+    """锁定版本到本事务结束，防止并发修改与确认/受理跨过旧版本检查。"""
+    _check_version(task, expected)
+    result = await db.execute(update(TransferTaskORM).where(
+        TransferTaskORM.task_id == task.task_id,
+        TransferTaskORM.state_version == expected,
+    ).values(state_version=expected))
+    if result.rowcount != 1:
+        raise TaskError("任务版本已变化，请刷新后重试", 409, "STALE_STATE_VERSION")
+
+
+async def _require_complete_proposal(db: AsyncSession, task: TransferTaskORM) -> None:
+    """存在已保存但待消歧的修改时，旧卡片不得确认/受理。"""
+    from ...models.conversation import ConversationORM
+    states = (await db.execute(select(ConversationORM.state).where(
+        ConversationORM.user_id == task.user_id
+    ))).scalars().all()
+    if any(state.get("task_id") == task.task_id and state.get("editing") for state in states):
+        raise TaskError("修改仍需补充或选择，请完成修改后使用新卡片", 409, "PROPOSAL_INCOMPLETE")
+
+
 # 持久化一次转账申请
 async def create_transfer_task(
     db: AsyncSession,
@@ -198,6 +219,7 @@ async def create_transfer_task(
     to_account: str,
     amount: float,
     note: str | None = None,
+    commit: bool = True,
 ) -> dict:
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate:
@@ -298,7 +320,10 @@ async def create_transfer_task(
         before={},
         after={"phase": TaskPhase.WAITING_CONFIRMATION, "operation": OperationStatus.DRAFT},
     )
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return await task_snapshot(db, task_id, user_id)
 
 # 点击同意后，进行状态更新和落盘
@@ -315,7 +340,8 @@ async def confirm_task(
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate == task_id:
         return await task_snapshot(db, task_id, user_id)
-    _check_version(task, state_version)
+    await _reserve_version(db, task, state_version)
+    await _require_complete_proposal(db, task)
     if task.current_plan_version != plan_version:
         raise TaskError("确认卡版本已经失效", 409, "STALE_PLAN_VERSION")
     operation = await _current_operation(db, task)
@@ -362,7 +388,8 @@ async def accept_task(
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate == task_id:
         return await task_snapshot(db, task_id, user_id)
-    _check_version(task, state_version)
+    await _reserve_version(db, task, state_version)
+    await _require_complete_proposal(db, task)
     operation = await _current_operation(db, task)
     authorization = await _authorization(db, operation.operation_id)
     if task.cancel_requested or task.control_mode != ControlMode.AUTO:
@@ -639,7 +666,7 @@ async def reconcile_task(
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate == task_id:
         return await task_snapshot(db, task_id, user_id)
-    _check_version(task, state_version)
+    await _reserve_version(db, task, state_version)
     operation = await _current_operation(db, task)
     if operation.status not in {OperationStatus.UNKNOWN, OperationStatus.PROCESSING}:
         raise TaskError("当前操作不需要核对", 409, "RECONCILIATION_NOT_ALLOWED")
@@ -706,7 +733,7 @@ async def cancel_task(
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate == task_id:
         return await task_snapshot(db, task_id, user_id)
-    _check_version(task, state_version)
+    await _reserve_version(db, task, state_version)
     operation = await _current_operation(db, task)
     task.cancel_requested = True
     before = operation.status
@@ -751,12 +778,13 @@ async def modify_task(
     to_account: str,
     amount: float,
     note: str | None,
+    commit: bool = True,
 ) -> dict:
     task = await _owned_task(db, task_id, user_id)
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate == task_id:
         return await task_snapshot(db, task_id, user_id)
-    _check_version(task, state_version)
+    await _reserve_version(db, task, state_version)
     old_operation = await _current_operation(db, task)
     if old_operation.status not in {OperationStatus.DRAFT, OperationStatus.READY}:
         raise TaskError("应用受理后参数不可修改", 409, "PARAMETERS_IMMUTABLE")
@@ -852,7 +880,10 @@ async def modify_task(
         before={"operation_id": old_operation.operation_id},
         after={"operation_id": operation_id, "plan_version": new_version},
     )
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return await task_snapshot(db, task_id, user_id)
 
 

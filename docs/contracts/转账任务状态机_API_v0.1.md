@@ -8,7 +8,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/v1/tasks/transfers` | 根据结构化参数创建任务和确认卡 |
-| POST | `/api/v1/tasks/messages` | 从“转给 李四 100元”创建同类任务 |
+| POST | `/api/v1/tasks/messages` | 持久化多轮理解，返回 ChatReply（2026-09-22 变更） |
 | GET | `/api/v1/tasks/{task_id}` | 查询持久化任务快照；查询不触发转账 |
 | GET | `/api/v1/tasks/{task_id}/events` | 查询状态事件，可传 `since_event_id` |
 | POST | `/api/v1/tasks/{task_id}/confirm` | 对指定计划版本记录用户同意 |
@@ -49,3 +49,20 @@
 - 接口完整但暂未实现：真实 MFA、安全锁、独立后台 Outbox worker、SSE 推送和人工处理 UI。
 - 红色风险不会被伪造为验证通过；`verify` 明确返回 501。
 - 新接口以整数分保存权威金额；现有账户和展示流水仍保留元字段，以兼容演示账本。
+
+
+## 2026-09-22：2号即时转账对话契约增补
+
+`POST /api/v1/tasks/messages` 返回结构已从 TaskSnapshot 改为 ChatReply，现有前端 App.tsx 已同步适配。
+
+请求保留 `request_id`、`operation_id`、`message`。首轮不传 session_id；续轮必须传 `session_id`、`session_version`。修改已生成任务还需要绑定 `task_id` 和当前 `state_version`。候选选择传 `candidate_id`（message 可为“选择候选”）；不得传模型猜测的收款账号。每个新消息用新 request_id/operation_id，网络重试必须复用原请求全文和编号。
+
+返回：`session_id`、`session_version`、`mode`（offline/model）、`kind`（clarification/plan/modification/status/unsupported/error）、`message`、`candidates`、可空 `task: TaskSnapshot`。plan/modification 表示5号已保存待确认计划，不代表扣款。权威金额为 task.operation.amount_fen；任务编号、计划版本、授权和风险由5号/3号提供。
+
+候选只暴露 `candidate_id/kind/label`，kind 为 recipient 或 payer；账户映射仅保存在服务端会话内。有效期10分钟，并绑定会话版本；选择时重新查询4号目录。跨用户会话返回404；过期/伪造候选、旧会话版本、消息编号复用不同内容返回409。会话更新、任务创建/修改、消息回执在一个事务提交；相同消息不会重复生成业务。
+
+`GET /api/v1/tasks/conversations/{session_id}` 在可信身份下恢复版本、追问、候选和最新任务快照。自然语言确认/取消不执行写操作，要求使用现有带版本的确认/取消接口。修改未收齐参数时前端禁用旧卡片操作；服务端也阻止已持久化待消歧修改对应的旧卡片确认/受理；完整修改通过5号后旧计划和授权失效。
+
+4号新增内部只读接口 `POST /api/v1/internal/bank/transfers/directory`，使用既有内部令牌认证；请求 `subject_user_id/recipient_name`，返回 `payers/default_payer/recipients`。每项为 `account_id/label`，label仅姓名、账户类型和脱敏尾号，不含余额。查询范围沿用现有模拟银行用户目录（不是外部通讯录）。默认付款账户沿用原 resolve 的活跃账户ID升序首个规则；适配器不提供默认值且有多账户时追问。多个同名用户/账户不自动选择。
+
+金额兼容接口改为 Decimal 校验，推荐传元字符串；公共 yuan_to_fen 严格拒绝非有限值、零负值、超过两位小数，支持上限2,000,000,000分（存储安全边界，非风险授权限额）。旧元数字输入保持兼容。确认、修改、受理等带版本操作在事务内保留数据库版本锁；3号授权、5号执行与 UNKNOWN 语义不变。

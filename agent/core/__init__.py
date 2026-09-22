@@ -1,7 +1,6 @@
-"""Agent 核心模块，导出主要引擎类。"""
+"""即时转账理解与持久化建议入口，无执行权限。"""
+from .nlu_engine import NLUEngine
+from .dialog_manager import process_message, read_conversation
+from .task_planner import ChatReply
 
-from agent.core.nlu_engine import NLUEngine
-from agent.core.task_planner import TaskPlanner
-from agent.core.dialog_manager import DialogManager
-
-__all__ = ["NLUEngine", "TaskPlanner", "DialogManager"]
+__all__ = ["NLUEngine", "process_message", "read_conversation", "ChatReply"]

@@ -1,6 +1,5 @@
 """5号任务状态机 API：所有用户转账均从这里进入。"""
 
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,9 +35,9 @@ from ..services.orchestration import (
 )
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["transfer-tasks"])
-_transfer_pattern = re.compile(
-    r"(?:转给|转账给)\s*([^\s，,]+)\s*(\d+(?:\.\d{1,2})?)\s*(?:元|块)?"
-)
+from ..services.ai.nlu import get_nlu, NLUEngine
+from ..services.ai.conversation import process_message, read_conversation
+from ..schemas.tasks import ChatReply
 
 
 def _raise_task_error(error: TaskError) -> None:
@@ -70,49 +69,28 @@ async def create_transfer(
         ) from error
 
 
-@router.post("/messages", response_model=TaskSnapshot, status_code=status.HTTP_201_CREATED)
+@router.post("/messages", response_model=ChatReply, status_code=201)
 async def create_from_message(
     request: ChatTaskCreate,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     bank: BankApi = Depends(get_bank_api),
-) -> TaskSnapshot:
-    match = _transfer_pattern.search(request.message.strip())
-    if not match:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "MESSAGE_NOT_UNDERSTOOD", "message": "当前支持“转给 李四 100元”"},
-        )
-    recipient_name, amount_text = match.groups()
+    nlu: NLUEngine = Depends(get_nlu),
+) -> ChatReply:
     try:
-        parties = await bank.resolve_transfer_parties(
-            subject_user_id=current_user["user_id"], recipient_name=recipient_name
-        )
-    except BankApiError as error:
-        raise HTTPException(
-            status_code=error.status_code,
-            detail={"code": error.code, "message": error.message},
-        ) from error
+        return ChatReply(**await process_message(db, bank, nlu, user_id=current_user["user_id"], request=request))
+    except (TaskError, BankApiError, AuthorizationError) as error:
+        await db.rollback()
+        raise HTTPException(status_code=getattr(error, "status_code", 409),
+            detail={"code": error.code, "message": error.message}) from error
+
+
+@router.get("/conversations/{session_id}", response_model=ChatReply)
+async def get_conversation(session_id: str, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
-        result = await create_transfer_task(
-            db,
-            bank,
-            user_id=current_user["user_id"],
-            request_id=request.request_id,
-            operation_id=request.operation_id,
-            from_account=parties.from_account,
-            to_account=parties.to_account,
-            amount=float(amount_text),
-        )
-        return TaskSnapshot(**result)
+        return await read_conversation(db, session_id, current_user["user_id"])
     except TaskError as error:
-        await db.rollback()
         _raise_task_error(error)
-    except AuthorizationError as error:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409, detail={"code": error.code, "message": error.message}
-        ) from error
 
 
 @router.get("/{task_id}", response_model=TaskSnapshot)

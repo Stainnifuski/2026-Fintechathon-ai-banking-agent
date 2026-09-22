@@ -29,8 +29,18 @@ export const history = () => apiClient.get<Transaction[]>('/transactions/history
 export const createTransferTask = (payload: {
   request_id: string; operation_id: string; from_account: string; to_account: string; amount: number; note?: string;
 }) => apiClient.post<TaskSnapshot>('/tasks/transfers', payload).then(r => r.data);
-export const createChatTask = (payload: { request_id: string; operation_id: string; message: string }) =>
-  apiClient.post<TaskSnapshot>('/tasks/messages', payload).then(r => r.data);
+export interface ChatReply {
+  session_id: string; session_version: number; kind: string; message: string; mode: string;
+  candidates: { candidate_id: string; kind: string; label: string }[]; task?: TaskSnapshot;
+}
+export interface ChatRequest {
+  request_id: string; operation_id: string; message: string; session_id?: string;
+  session_version?: number; candidate_id?: string; task_id?: string; state_version?: number;
+}
+export const createChatTask = (payload: ChatRequest) =>
+  apiClient.post<ChatReply>('/tasks/messages', payload).then(r => r.data);
+export const getConversation = (id: string) =>
+  apiClient.get<ChatReply>(`/tasks/conversations/${id}`).then(r => r.data);
 export const getTask = (taskId: string) => apiClient.get<TaskSnapshot>(`/tasks/${taskId}`).then(r => r.data);
 export const confirmTask = (task: TaskSnapshot, requestId: string) =>
   apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/confirm`, {

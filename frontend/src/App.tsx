@@ -20,6 +20,10 @@ function App() {
   const [chatInput, setChatInput] = useState('');
   const [chat, setChat] = useState<string[]>([]);
   const [activeTask, setActiveTask] = useState<bank.TaskSnapshot | null>(null);
+  const [conversation, setConversation] = useState<bank.ChatReply | null>(null);
+  const [isChatting, setIsChatting] = useState(false);
+  const [retryChat, setRetryChat] = useState<bank.ChatRequest | null>(null);
+
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isActing, setIsActing] = useState(false);
 
@@ -55,6 +59,20 @@ function App() {
     return () => window.clearInterval(timer);
   }, [activeTask?.task_id, activeTask?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    setConversation(null); setActiveTask(null); setRetryChat(null); setChat([]);
+    if (!user) return;
+    let cancelled = false;
+    const saved = localStorage.getItem(`transfer-session-${user.user_id}`);
+    if (saved) bank.getConversation(saved).then(reply => {
+      if (cancelled) return;
+      setConversation(reply); setActiveTask(reply.task || null); setChat([`系统：${reply.message}`]);
+    }).catch(error => { if (!cancelled) setStatus(message(error)); });
+    const pending = localStorage.getItem(`transfer-pending-${user.user_id}`);
+    if (pending) setRetryChat(JSON.parse(pending));
+    return () => { cancelled = true; };
+  }, [user?.user_id]);
+
   const authenticate = async (event: FormEvent) => {
     event.preventDefault(); setStatus(''); setIsAuthenticating(true);
     try {
@@ -79,18 +97,46 @@ function App() {
     } catch (error) { setStatus(message(error)); }
   };
 
-  const sendChat = async () => {
-    if (!chatInput.trim()) return;
-    const input = chatInput; setChatInput('');
+  const sendChat = async (candidateId?: string, retry = false) => {
+    if (!user || isChatting || (!candidateId && !retry && !chatInput.trim())) return;
+    const input = candidateId ? '选择候选' : chatInput.trim();
+    const payload: bank.ChatRequest = retry && retryChat ? retryChat : {
+      request_id: newId(), operation_id: newId(), message: input,
+      session_id: conversation?.session_id, session_version: conversation?.session_version || 0,
+      candidate_id: candidateId, task_id: conversation?.task?.task_id,
+      state_version: activeTask?.task_id === conversation?.task?.task_id ? activeTask?.state_version : conversation?.task?.state_version,
+    };
+    setIsChatting(true); setRetryChat(payload);
+    localStorage.setItem(`transfer-pending-${user.user_id}`, JSON.stringify(payload));
     try {
-      const task = await bank.createChatTask({ request_id: newId(), operation_id: newId(), message: input });
-      setChat(items => [...items, `你：${input}`, `系统：${task.message}`]);
-      setActiveTask(task); setStatus(task.message);
-    } catch (error) { setChat(items => [...items, `你：${input}`, `系统：${message(error)}`]); }
+      const reply = await bank.createChatTask(payload);
+      setConversation(reply); setChatInput(''); setRetryChat(null);
+      localStorage.removeItem(`transfer-pending-${user.user_id}`);
+      localStorage.setItem(`transfer-session-${user.user_id}`, reply.session_id);
+      setChat(items => [...items, `你：${payload.message}`, `系统：${reply.message}`]);
+      if (reply.task) setActiveTask(reply.task);
+      setStatus(reply.message);
+    } catch (error) {
+      setStatus(message(error));
+      const code = (error as { response?: { status?: number } }).response?.status;
+      if (code && code < 500) {
+        setRetryChat(null); localStorage.removeItem(`transfer-pending-${user.user_id}`);
+        if (conversation) {
+          const latest = await bank.getConversation(conversation.session_id).catch(() => null);
+          if (latest) { setConversation(latest); if (latest.task) setActiveTask(latest.task); }
+        }
+      }
+    } finally { setIsChatting(false); }
+  };
+
+  const newConversation = () => {
+    if (!user || retryChat || isChatting) return;
+    localStorage.removeItem(`transfer-session-${user.user_id}`);
+    setConversation(null); setActiveTask(null); setChat([]); setChatInput('');
   };
 
   const actOnTask = async (action: 'confirm' | 'cancel' | 'reconcile' | 'verify') => {
-    if (!activeTask || isActing) return;
+    if (!activeTask || isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')) return;
     setIsActing(true);
     try {
       let task = action === 'confirm' ? await bank.confirmTask(activeTask, newId())
@@ -139,14 +185,20 @@ function App() {
       {activeTask.confirmation_card && <p>从 {activeTask.confirmation_card.from_account} 向 {activeTask.confirmation_card.recipient_name} 转账 <strong>¥{activeTask.confirmation_card.amount.toFixed(2)}</strong> · 风险级别 {activeTask.confirmation_card.risk_level}</p>}
       <p className="hint">应用操作：{activeTask.operation.status} · 银行状态：{activeTask.operation.bank_status || '尚未受理'} {activeTask.operation.bank_tx_id && `· 银行流水 ${activeTask.operation.bank_tx_id}`}</p>
       <div className="confirm">
-        {activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing} onClick={() => actOnTask('cancel')}>取消任务</button>}
-        {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing} onClick={() => actOnTask('confirm')}>确认并提交</button>}
-        {activeTask.allowed_actions.includes('verify') && <button disabled={isActing} onClick={() => actOnTask('verify')}>身份验证</button>}
-        {activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}
+        {activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('cancel')}>取消任务</button>}
+        {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('confirm')}>确认并提交</button>}
+        {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('verify')}>身份验证</button>}
+        {activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}
       </div>
     </section>}
     <section className="grid">
-      <div className="card"><h2>聊天创建任务</h2><p className="hint">可输入：转给 李四 100元。解析后进入同一持久化任务流程。</p><div className="chat">{chat.map((item, index) => <p key={`${index}-${item}`}>{item}</p>)}</div><div className="row"><input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="转给 李四 100元" /><button onClick={sendChat}>发送</button></div></div>
+      <div className="card"><h2>即时转账对话</h2><p className="hint">例如：给李四转钱 → 300元；改成500元。当前模式：{conversation?.mode === 'model' ? '模型理解' : '离线规则（有限表达）'}。</p>
+        <button className="secondary" disabled={isChatting || !!retryChat} onClick={newConversation}>新建转账会话</button>
+        <div className="chat">{chat.map((item, index) => <p key={index}>{item}</p>)}</div>
+        {conversation?.candidates.map(candidate => <button key={candidate.candidate_id} disabled={isChatting || !!retryChat} onClick={() => sendChat(candidate.candidate_id)}>{candidate.label}</button>)}
+        <div className="row"><input value={chatInput} disabled={isChatting || !!retryChat} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !retryChat && sendChat()} placeholder="给李四转300元，备注聚餐" /><button disabled={isChatting || !!retryChat} onClick={() => sendChat()}>发送</button></div>
+        {retryChat && !isChatting && <button onClick={() => sendChat(undefined, true)}>重试原消息（避免重复建单）</button>}
+      </div>
       <div className="card"><h2>最近流水</h2>{transactions.length === 0 ? <p className="hint">暂无流水</p> : <ul className="history">{transactions.slice(0, 8).map(tx => <li key={tx.tx_id}><span>{tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()}</small></span><strong className={tx.type === 'transfer_out' ? 'out' : 'in'}>{tx.type === 'transfer_out' ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>)}</ul>}</div>
     </section>
   </main>;
