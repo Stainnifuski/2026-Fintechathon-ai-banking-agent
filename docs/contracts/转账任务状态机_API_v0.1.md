@@ -7,7 +7,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/v1/tasks/transfers` | 根据结构化参数创建任务和确认卡 |
+| POST | `/api/v1/tasks/transfers` | 根据结构化参数创建任务和确认卡；可选 `scheduled_at` 创建一次性定时转账 |
 | POST | `/api/v1/tasks/messages` | 持久化多轮理解，返回 ChatReply（2026-09-22 变更） |
 | GET | `/api/v1/tasks/{task_id}` | 查询持久化任务快照；查询不触发转账 |
 | GET | `/api/v1/tasks/{task_id}/events` | 查询状态事件，可传 `since_event_id` |
@@ -24,6 +24,10 @@
 每个快照包含 `phase`、`outcome`、`state_version`、`plan_version`、`control_mode`、
 `allowed_actions`、步骤、应用操作、授权、风险占用、银行观察副本以及结构化确认卡。
 客户端只能展示并调用 `allowed_actions` 中的动作。
+
+一次性定时转账要求 `scheduled_at` 为带时区的未来 ISO 8601 时间。用户确认后任务进入
+`WAITING_EXECUTION`，此时只允许取消；到期扫描器通过现有 `accept_task` 重新校验账户和风险，
+再沿用原 `operation_id` 提交模拟银行。周期转账和自然语言定时创建不在当前范围内。
 
 ## 模拟银行内部接口
 

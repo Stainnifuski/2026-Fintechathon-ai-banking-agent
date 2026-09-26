@@ -14,6 +14,7 @@ class TransferTaskCreate(BaseModel):
     to_account: str
     amount: Decimal = Field(gt=0, decimal_places=2)
     note: str | None = Field(default=None, max_length=256)
+    scheduled_at: datetime | None = None
 
 
 class TaskActionRequest(BaseModel):
@@ -84,6 +85,7 @@ class ConfirmationCard(BaseModel):
     currency: str
     note: str | None = None
     risk_level: str
+    scheduled_at: datetime | None = None
 
 
 class TaskSnapshot(BaseModel):
@@ -97,6 +99,7 @@ class TaskSnapshot(BaseModel):
     cancel_requested: bool
     allowed_actions: list[str]
     message: str
+    scheduled_at: datetime | None = None
     step: StepView
     operation: OperationView
     authorization: AuthorizationView

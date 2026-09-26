@@ -2,6 +2,11 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
+const localDateTimeInput = (value: Date) => {
+  const localValue = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
+  return localValue.toISOString().slice(0, 16);
+};
+const suggestedScheduleTime = () => localDateTimeInput(new Date(Date.now() + 2 * 60_000));
 
 function App() {
   const [user, setUser] = useState<bank.User | null>(() => JSON.parse(localStorage.getItem('bank-user') || 'null'));
@@ -21,6 +26,8 @@ function App() {
   const [toUserId, setToUserId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [transferMode, setTransferMode] = useState<'instant' | 'scheduled'>('instant');
+  const [scheduledAt, setScheduledAt] = useState('');
   const [requestPayerIds, setRequestPayerIds] = useState<string[]>([]);
   const [requestAccountId, setRequestAccountId] = useState('');
   const [requestAmount, setRequestAmount] = useState('');
@@ -71,12 +78,15 @@ function App() {
     return () => document.removeEventListener('mousedown', closePayerSelector);
   }, []);
   useEffect(() => {
-    if (!activeTask || !['EXECUTING', 'RECONCILING'].includes(activeTask.phase)) return;
+    if (!activeTask || !['WAITING_EXECUTION', 'EXECUTING', 'RECONCILING'].includes(activeTask.phase)) return;
     const timer = window.setInterval(async () => {
       try {
         const task = await bank.getTask(activeTask.task_id);
         setActiveTask(task); setStatus(task.message);
-        if (task.phase === 'FINISHED') await load();
+        if (task.phase === 'FINISHED') {
+          if (user) localStorage.removeItem(`scheduled-task-${user.user_id}`);
+          await load();
+        }
       } catch (error) { setStatus(message(error)); }
     }, 1500);
     return () => window.clearInterval(timer);
@@ -86,13 +96,19 @@ function App() {
     setConversation(null); setActiveTask(null); setRetryChat(null); setChat([]);
     if (!user) return;
     let cancelled = false;
+    const scheduledTaskId = localStorage.getItem(`scheduled-task-${user.user_id}`);
     const saved = localStorage.getItem(`transfer-session-${user.user_id}`);
     if (saved) bank.getConversation(saved).then(reply => {
       if (cancelled) return;
-      setConversation(reply); setActiveTask(reply.task || null); setChat([`系统：${reply.message}`]);
+      setConversation(reply); if (!scheduledTaskId) setActiveTask(reply.task || null); setChat([`系统：${reply.message}`]);
     }).catch(error => { if (!cancelled) setStatus(message(error)); });
     const pending = localStorage.getItem(`transfer-pending-${user.user_id}`);
     if (pending) setRetryChat(JSON.parse(pending));
+    if (scheduledTaskId) bank.getTask(scheduledTaskId).then(task => {
+      if (cancelled) return;
+      if (task.phase === 'FINISHED') localStorage.removeItem(`scheduled-task-${user.user_id}`);
+      else setActiveTask(task);
+    }).catch(() => localStorage.removeItem(`scheduled-task-${user.user_id}`));
     return () => { cancelled = true; };
   }, [user?.user_id]);
 
@@ -111,11 +127,19 @@ function App() {
     event.preventDefault(); setStatus('');
     const recipient = recipients.find(item => item.user_id === toUserId);
     if (!fromAccount || !recipient) return setStatus('请选择付款账户和收款人');
+    if (transferMode === 'scheduled') {
+      if (!scheduledAt) return setStatus('请选择定时执行时间');
+      if (new Date(scheduledAt).getTime() <= Date.now()) return setStatus('定时执行时间必须晚于当前时间');
+    }
     try {
       const task = await bank.createTransferTask({
         request_id: newId(), operation_id: newId(), from_account: fromAccount,
         to_account: recipient.account_id, amount: Number(amount), note: note || undefined,
+        scheduled_at: transferMode === 'scheduled' ? new Date(scheduledAt).toISOString() : undefined,
       });
+      if (user && transferMode === 'scheduled') {
+        localStorage.setItem(`scheduled-task-${user.user_id}`, task.task_id);
+      }
       setActiveTask(task); setStatus(task.message);
     } catch (error) { setStatus(message(error)); }
   };
@@ -242,7 +266,8 @@ function App() {
       }
       setActiveTask(task); setStatus(task.message);
       if (task.phase === 'FINISHED') {
-        setAmount(''); setNote(''); await load();
+        if (user) localStorage.removeItem(`scheduled-task-${user.user_id}`);
+        setAmount(''); setNote(''); setScheduledAt(''); await load();
       }
     } catch (error) { setStatus(message(error)); }
     finally { setIsActing(false); }
@@ -252,7 +277,7 @@ function App() {
     localStorage.removeItem('token'); localStorage.removeItem('bank-user');
     setUser(null); setAccounts([]); setRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setPendingChargeSubscription(null); setSubscriptionChargeId('');
     setChat([]); setActiveTask(null); setConversation(null); setRetryChat(null); setStatus('');
-    setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId('');
+    setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId(''); setScheduledAt('');
   };
 
   const requestAmountNumber = Number(requestAmount) || 0;
@@ -283,6 +308,8 @@ function App() {
         <label>收款人<select value={toUserId} onChange={e => setToUserId(e.target.value)}>{recipients.map(r => <option value={r.user_id} key={r.user_id}>{r.name} · {r.bank}</option>)}</select></label>
         <label>金额（元）<input required min="0.01" step="0.01" type="number" value={amount} onChange={e => setAmount(e.target.value)} /></label>
         <label>备注（可选）<input value={note} onChange={e => setNote(e.target.value)} /></label>
+        <label>执行方式<select value={transferMode} onChange={e => { const mode = e.target.value as 'instant' | 'scheduled'; setTransferMode(mode); if (mode === 'scheduled' && !scheduledAt) setScheduledAt(suggestedScheduleTime()); }}><option value="instant">立即转账</option><option value="scheduled">定时转账</option></select></label>
+        {transferMode === 'scheduled' && <><label>执行时间<input required min={localDateTimeInput(new Date())} type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /><small>点击右侧日历图标选择日期和时间，例如：2026/09/26 21:31。系统按本机时间执行。</small></label><button type="button" className="secondary" onClick={() => setScheduledAt(suggestedScheduleTime())}>快速设置为约 2 分钟后</button></>}
         <button disabled={!fromAccount || !toUserId || isActing}>生成确认信息</button>
       </form></div>
     </section>
@@ -314,10 +341,11 @@ function App() {
     {activeTask && <section className="card">
       <h2>转账任务 · {activeTask.phase}</h2><p>{activeTask.message}</p>
       {activeTask.confirmation_card && <p>从 {activeTask.confirmation_card.from_account} 向 {activeTask.confirmation_card.recipient_name} 转账 <strong>¥{activeTask.confirmation_card.amount.toFixed(2)}</strong> · 风险级别 {activeTask.confirmation_card.risk_level}</p>}
+      {activeTask.scheduled_at && <p className="notice">计划执行时间：{new Date(activeTask.scheduled_at).toLocaleString()}</p>}
       <p className="hint">应用操作：{activeTask.operation.status} · 银行状态：{activeTask.operation.bank_status || '尚未受理'} {activeTask.operation.bank_tx_id && `· 银行流水 ${activeTask.operation.bank_tx_id}`}</p>
       <div className="confirm">
         {activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('cancel')}>取消任务</button>}
-        {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('confirm')}>确认并提交</button>}
+        {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('confirm')}>{activeTask.scheduled_at ? '确认定时转账' : '确认并提交'}</button>}
         {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('verify')}>身份验证</button>}
         {activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}
       </div>
@@ -333,7 +361,8 @@ function App() {
       <div className="card"><h2>最近流水</h2>{transactions.length === 0 ? <p className="hint">暂无流水</p> : <ul className="history">{transactions.slice(0, 8).map(tx => {
         const outgoing = ['transfer_out', 'purchase', 'subscription'].includes(tx.type);
         const label = tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type;
-        return <li key={tx.tx_id}><span>{label} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()}</small></span><strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
+        const counterparty = recipients.find(recipient => recipient.account_id === tx.counterparty)?.name || tx.counterparty;
+        return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()}</small></span><strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
       })}</ul>}</div>
     </section>
   </main>;

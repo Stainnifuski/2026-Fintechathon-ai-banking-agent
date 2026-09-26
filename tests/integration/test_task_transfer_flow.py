@@ -1,5 +1,7 @@
 """应用任务与模拟银行分层的集成测试。"""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -25,11 +27,13 @@ from backend.app.services.bank import (
 )
 from backend.app.services.orchestration import (
     accept_task,
+    cancel_task,
     confirm_task,
     create_transfer_task,
     reconcile_task,
     verify_task,
 )
+from backend.app.services.orchestration.scheduler import execute_due_scheduled_transfers
 
 
 class InProcessBankApi:
@@ -207,5 +211,96 @@ async def test_high_risk_transfer_stops_at_unimplemented_verification(db) -> Non
             challenge_id="placeholder",
             proof="placeholder",
         )
+    assert (await db.get(AccountORM, "A1")).balance == 5000.0
+    assert (await db.get(AccountORM, "A2")).balance == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_scheduled_transfer_waits_then_executes_once(db) -> None:
+    bank = InProcessBankApi(db)
+    execute_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    task = await create_transfer_task(
+        db,
+        bank,
+        user_id="U1",
+        request_id="request-create-scheduled",
+        operation_id="operation-scheduled",
+        from_account="A1",
+        to_account="A2",
+        amount=125.0,
+        scheduled_at=execute_at,
+    )
+    waiting = await confirm_task(
+        db,
+        task_id=task["task_id"],
+        user_id="U1",
+        request_id="request-confirm-scheduled",
+        state_version=task["state_version"],
+        plan_version=task["plan_version"],
+    )
+
+    assert waiting["phase"] == "WAITING_EXECUTION"
+    assert waiting["allowed_actions"] == ["cancel"]
+    assert waiting["scheduled_at"] == execute_at.isoformat()
+    assert (await db.get(AccountORM, "A1")).balance == 5000.0
+
+    early_count = await execute_due_scheduled_transfers(
+        db, bank, now=execute_at - timedelta(seconds=1)
+    )
+    assert early_count == 0
+    assert (await db.get(AccountORM, "A1")).balance == 5000.0
+
+    due_count = await execute_due_scheduled_transfers(
+        db, bank, now=execute_at + timedelta(seconds=1)
+    )
+    assert due_count == 1
+    assert (await db.get(AccountORM, "A1")).balance == 4875.0
+    assert (await db.get(AccountORM, "A2")).balance == 1125.0
+
+    duplicate_count = await execute_due_scheduled_transfers(
+        db, bank, now=execute_at + timedelta(minutes=1)
+    )
+    assert duplicate_count == 0
+    assert (await db.get(AccountORM, "A1")).balance == 4875.0
+
+
+@pytest.mark.asyncio
+async def test_cancelled_scheduled_transfer_never_executes(db) -> None:
+    bank = InProcessBankApi(db)
+    execute_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    task = await create_transfer_task(
+        db,
+        bank,
+        user_id="U1",
+        request_id="request-create-scheduled-cancel",
+        operation_id="operation-scheduled-cancel",
+        from_account="A1",
+        to_account="A2",
+        amount=80.0,
+        scheduled_at=execute_at,
+    )
+    waiting = await confirm_task(
+        db,
+        task_id=task["task_id"],
+        user_id="U1",
+        request_id="request-confirm-scheduled-cancel",
+        state_version=task["state_version"],
+        plan_version=task["plan_version"],
+    )
+    cancelled = await cancel_task(
+        db,
+        bank,
+        task_id=task["task_id"],
+        user_id="U1",
+        request_id="request-cancel-scheduled",
+        state_version=waiting["state_version"],
+    )
+
+    assert cancelled["phase"] == "FINISHED"
+    assert cancelled["outcome"] == "CANCELLED"
+    executed = await execute_due_scheduled_transfers(
+        db, bank, now=execute_at + timedelta(minutes=1)
+    )
+    assert executed == 0
     assert (await db.get(AccountORM, "A1")).balance == 5000.0
     assert (await db.get(AccountORM, "A2")).balance == 1000.0
