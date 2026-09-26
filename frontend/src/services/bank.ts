@@ -26,6 +26,7 @@ export interface SubscriptionChargeResult {
 export interface ConfirmationCard {
   card_id: string; plan_version: number; from_account: string; to_account: string;
   recipient_name: string; amount: number; currency: string; note?: string; risk_level: string;
+  scheduled_at?: string;
 }
 export interface OperationView {
   operation_id: string; status: string; amount: number; amount_fen: number; currency: string;
@@ -34,7 +35,7 @@ export interface OperationView {
 export interface TaskSnapshot {
   task_id: string; phase: string; outcome: string; state_version: number; plan_version: number;
   control_mode: string; control_epoch: number; cancel_requested: boolean; allowed_actions: string[];
-  message: string; operation: OperationView; authorization: { authorization_id: string; status: string; risk_level: string };
+  message: string; scheduled_at?: string; operation: OperationView; authorization: { authorization_id: string; status: string; risk_level: string };
   risk_reservation?: { reservation_id: string; status: string; amount_fen: number };
   confirmation_card?: ConfirmationCard;
 }
@@ -71,7 +72,8 @@ export const rejectPaymentRequest = (request: PaymentRequest) =>
 export const cancelPaymentRequest = (request: PaymentRequest) =>
   apiClient.post<PaymentRequest>(`/payment-requests/${request.payment_request_id}/cancel`, { state_version: request.state_version }).then(r => r.data);
 export const createTransferTask = (payload: {
-  request_id: string; operation_id: string; from_account: string; to_account: string; amount: number; note?: string;
+  request_id: string; operation_id: string; from_account: string; to_account: string;
+  amount: number; note?: string; scheduled_at?: string;
 }) => apiClient.post<TaskSnapshot>('/tasks/transfers', payload).then(r => r.data);
 export interface ChatReply {
   session_id: string; session_version: number; kind: string; message: string; mode: string;

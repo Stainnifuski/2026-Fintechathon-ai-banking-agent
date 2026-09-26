@@ -1,14 +1,16 @@
 """FastAPI 应用入口"""
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database.connection import close_db, init_db
+from .database.connection import AsyncSessionLocal, close_db, init_db
 from .database.seed import seed_data
+from .integrations.bank_api import get_bank_api
 from .middleware.audit import AuditMiddleware
 from .routers.accounts import router as accounts_router
 from .routers.auth import router as auth_router
@@ -19,6 +21,7 @@ from .routers.transactions import router as transactions_router
 from .routers.tasks import router as tasks_router
 from .routers.subscriptions import router as subscriptions_router
 from .routers.users import router as users_router
+from .services.orchestration.scheduler import scheduled_transfer_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +38,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("正在加载种子数据...")
     await seed_data()
     logger.info("AI Banking Agent API 启动完成 🚀")
-    yield
+    scheduler_task = asyncio.create_task(
+        scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()),
+        name="scheduled-transfer-loop",
+    )
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler_task
     logger.info("正在关闭数据库连接...")
     await close_db()
     logger.info("服务已关闭")

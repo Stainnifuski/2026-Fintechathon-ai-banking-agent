@@ -219,6 +219,7 @@ async def create_transfer_task(
     to_account: str,
     amount: float,
     note: str | None = None,
+    scheduled_at: datetime | None = None,
     commit: bool = True,
 ) -> dict:
     duplicate = await _deduplicated_task_id(db, request_id)
@@ -232,6 +233,13 @@ async def create_transfer_task(
         amount_fen = yuan_to_fen(amount)
     except ValueError as error:
         raise TaskError(str(error)) from error
+    scheduled_at_utc: datetime | None = None
+    if scheduled_at is not None:
+        if scheduled_at.tzinfo is None or scheduled_at.utcoffset() is None:
+            raise TaskError("定时执行时间必须包含时区", 422, "SCHEDULE_TIMEZONE_REQUIRED")
+        scheduled_at_utc = scheduled_at.astimezone(timezone.utc)
+        if scheduled_at_utc <= datetime.now(timezone.utc):
+            raise TaskError("定时执行时间必须晚于当前时间", 422, "SCHEDULE_TIME_IN_PAST")
 
     try:
         bank_validation = await bank.validate_transfer(
@@ -272,6 +280,7 @@ async def create_transfer_task(
             "currency": "CNY",
             "note": note,
             "recipient_name": bank_validation.recipient_name,
+            "scheduled_at": scheduled_at_utc.isoformat() if scheduled_at_utc else None,
         },
     )
     step = TransferStepORM(
@@ -346,6 +355,7 @@ async def confirm_task(
         raise TaskError("确认卡版本已经失效", 409, "STALE_PLAN_VERSION")
     operation = await _current_operation(db, task)
     authorization = await _authorization(db, operation.operation_id)
+    plan = await _current_plan(db, task)
     if operation.status != OperationStatus.DRAFT:
         raise TaskError("当前操作不能确认", 409, "INVALID_OPERATION_STATE")
 
@@ -355,7 +365,11 @@ async def confirm_task(
     if authorization.status == AuthorizationStatus.VALID:
         operation.status = OperationStatus.READY
         (await _step(db, operation.step_id)).status = StepStatus.READY
-        task.phase = TaskPhase.READY
+        task.phase = (
+            TaskPhase.WAITING_EXECUTION
+            if plan.params.get("scheduled_at")
+            else TaskPhase.READY
+        )
     else:
         task.phase = TaskPhase.WAITING_VERIFICATION
     operation.state_version += 1
@@ -1022,6 +1036,8 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             allowed = ["confirm", "modify", "cancel"]
         elif task.phase == TaskPhase.WAITING_VERIFICATION:
             allowed = ["verify", "modify", "cancel"]
+        elif task.phase == TaskPhase.WAITING_EXECUTION:
+            allowed = ["cancel"]
         elif task.phase == TaskPhase.READY:
             allowed = ["accept", "modify", "cancel"]
         elif task.phase == TaskPhase.RECONCILING:
@@ -1041,10 +1057,12 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             "currency": operation.currency,
             "note": operation.note,
             "risk_level": authorization.risk_level,
+            "scheduled_at": plan.params.get("scheduled_at"),
         }
     message = {
         TaskPhase.WAITING_CONFIRMATION: "请核对转账信息并确认",
         TaskPhase.WAITING_VERIFICATION: "请完成身份验证",
+        TaskPhase.WAITING_EXECUTION: "定时转账已确认，等待到达执行时间",
         TaskPhase.READY: "授权有效，可以提交银行",
         TaskPhase.EXECUTING: "转账正在处理中",
         TaskPhase.RECONCILING: "结果待核对，请勿重复转账",
@@ -1068,6 +1086,7 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
         "cancel_requested": task.cancel_requested,
         "allowed_actions": allowed,
         "message": message,
+        "scheduled_at": plan.params.get("scheduled_at"),
         "step": {"step_id": step.step_id, "status": step.status},
         "operation": {
             "operation_id": operation.operation_id,
