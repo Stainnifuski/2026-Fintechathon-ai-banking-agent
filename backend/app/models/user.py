@@ -2,8 +2,8 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import DateTime, String, func
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import BigInteger, Boolean, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
@@ -24,6 +24,18 @@ class UserORM(TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active", comment="账户状态"
+    )
+    # TOTP（Google Authenticator）多因素验证。secret 为 base32 共享密钥；
+    # totp_enabled 表示已完成绑定确认；totp_last_timestep 用于防重放。
+    # 注意：生产环境 secret 应加密存储，此处为演示明文保存。
+    totp_secret: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="TOTP 共享密钥(base32)"
+    )
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="是否已完成 TOTP 绑定"
+    )
+    totp_last_timestep: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, comment="最近成功验证的时间步(防重放)"
     )
     accounts: Mapped[list["AccountORM"]] = relationship(back_populates="user")
     contacts: Mapped[list["ContactORM"]] = relationship(back_populates="user")
@@ -74,3 +86,23 @@ class UserUpdateSchema(BaseModel):
     phone: str | None = None
     risk_level: str | None = None
     status: str | None = None
+
+
+class TotpStatusSchema(BaseModel):
+    """TOTP 绑定状态。"""
+
+    enabled: bool
+
+
+class TotpEnrollSchema(BaseModel):
+    """开始绑定时返回的扫码信息。"""
+
+    secret: str
+    otpauth_uri: str
+    qr_data_uri: str
+
+
+class TotpConfirmRequest(BaseModel):
+    """确认绑定请求。"""
+
+    code: str = Field(min_length=6, max_length=6)

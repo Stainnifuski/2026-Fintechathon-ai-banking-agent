@@ -1,10 +1,29 @@
 """银行拥有的可重复升级步骤。"""
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 
 from ...domain.phone import normalize_phone
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
+
+
+async def upgrade_legacy_user_mfa_columns(connection) -> None:
+    """补齐主分支新增的用户 TOTP 列；create_all 不会升级旧 users 表。"""
+    def add_missing(sync_connection) -> None:
+        inspector = inspect(sync_connection)
+        if "users" not in inspector.get_table_names():
+            return
+        columns = {column["name"] for column in inspector.get_columns("users")}
+        definitions = {
+            "totp_secret": "VARCHAR(64)",
+            "totp_enabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "totp_last_timestep": "BIGINT",
+        }
+        for name, definition in definitions.items():
+            if name not in columns:
+                sync_connection.execute(text(f"ALTER TABLE users ADD COLUMN {name} {definition}"))
+
+    await connection.run_sync(add_missing)
 
 
 async def upgrade_phone_registry(session_factory) -> None:

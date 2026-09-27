@@ -175,16 +175,21 @@ async def verify(
     request: VerificationRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     try:
         return TaskSnapshot(
             **await verify_task(
                 db,
+                bank,
                 task_id=task_id,
                 user_id=current_user["user_id"],
                 **request.model_dump(),
             )
         )
+    except TaskError as error:
+        await db.rollback()
+        _raise_task_error(error)
     except CapabilityNotImplemented as error:
         raise HTTPException(
             status_code=501,

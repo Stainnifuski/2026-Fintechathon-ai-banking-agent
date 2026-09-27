@@ -2,6 +2,8 @@
 
 from .data_service import (
     authenticate_customer,
+    begin_totp_enrollment,
+    confirm_totp_enrollment,
     get_customer,
     get_transaction,
     list_accounts,
@@ -10,6 +12,8 @@ from .data_service import (
     list_recipients,
     list_transactions,
     register_customer,
+    totp_status,
+    verify_totp_for_operation,
 )
 
 from .transfer_service import (
@@ -42,6 +46,10 @@ from .subscription_service import (
 
 __all__ = [
     "authenticate_customer",
+    "begin_totp_enrollment",
+    "confirm_totp_enrollment",
+    "totp_status",
+    "verify_totp_for_operation",
     "BankError",
     "BankOperationResult",
     "BankResponseLost",

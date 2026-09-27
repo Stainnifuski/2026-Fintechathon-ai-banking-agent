@@ -44,6 +44,11 @@ export interface TaskSnapshot {
 
 export const login = (phone: string, password: string) => apiClient.post<AuthResponse>('/auth/login', { phone, password }).then(r => r.data);
 export const register = (name: string, phone: string, password: string) => apiClient.post<AuthResponse>('/auth/register', { name, phone, password }).then(r => r.data);
+export interface TotpStatus { enabled: boolean; }
+export interface TotpEnroll { secret: string; otpauth_uri: string; qr_data_uri: string; }
+export const totpStatus = () => apiClient.get<TotpStatus>('/auth/totp/status').then(r => r.data);
+export const totpEnroll = () => apiClient.post<TotpEnroll>('/auth/totp/enroll').then(r => r.data);
+export const totpConfirm = (code: string) => apiClient.post<TotpStatus>('/auth/totp/confirm', { code }).then(r => r.data);
 export const accounts = (userId: string) => apiClient.get<Account[]>(`/accounts/${userId}/accounts`).then(r => r.data);
 export const recipients = () => apiClient.get<Recipient[]>('/users/recipients').then(r => r.data);
 export interface PhoneRecipientCandidate { account_id: string; label: string; }
@@ -110,10 +115,10 @@ export const reconcileTask = (task: TaskSnapshot, requestId: string) =>
   apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/reconcile`, {
     request_id: requestId, state_version: task.state_version,
   }).then(r => r.data);
-export const verifyTask = (task: TaskSnapshot, requestId: string) =>
+export const verifyTask = (task: TaskSnapshot, requestId: string, code: string) =>
   apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/verify`, {
     request_id: requestId, state_version: task.state_version,
-    challenge_id: 'placeholder', proof: 'placeholder',
+    challenge_id: 'totp', proof: code,
   }).then(r => r.data);
 
 

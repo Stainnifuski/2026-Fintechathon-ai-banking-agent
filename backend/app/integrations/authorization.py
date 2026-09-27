@@ -116,3 +116,24 @@ def create_risk_hold(
         risk_date=datetime.now(ZoneInfo(os.getenv("BANK_BUSINESS_TIMEZONE", "Asia/Shanghai"))).date(),
         status=RiskReservationStatus.HELD,
     )
+
+
+def verify_consent(authorization: AuthorizationORM) -> None:
+    """将通过 MFA 强验证的授权从待验证状态推进为有效。
+
+    验证凭据（TOTP 验证码）的真实校验由银行服务边界
+    （``verify_totp_for_operation``）完成，本函数只负责状态机推进，
+    调用前必须确保验证码已校验通过。
+
+    Args:
+        authorization: 待验证的授权记录。
+
+    Raises:
+        AuthorizationError: 授权不在待验证状态时抛出。
+    """
+    if authorization.status != AuthorizationStatus.PENDING_VERIFICATION:
+        raise AuthorizationError(
+            "授权不在待验证状态", "AUTHORIZATION_WRONG_STATE"
+        )
+    authorization.status = AuthorizationStatus.VALID
+    authorization.verification_level = "MFA"

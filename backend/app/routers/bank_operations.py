@@ -18,6 +18,7 @@ from ..services.bank import (
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
+    verify_totp_for_operation,
 )
 
 router = APIRouter(prefix="/api/v1/internal/bank", tags=["internal-bank"])
@@ -79,6 +80,11 @@ class PaymentRequestRelease(BaseModel):
     subject_user_id: str
 
 
+class InternalTotpVerification(BaseModel):
+    subject_user_id: str
+    proof: str = Field(min_length=6, max_length=6)
+
+
 def require_internal_token(x_internal_token: str = Header(default="")) -> None:
     if not INTERNAL_BANK_TOKEN or INTERNAL_BANK_TOKEN in {
         "dev-internal-token", "replace-with-a-separate-internal-secret"
@@ -93,6 +99,17 @@ def _raise_bank_error(error: BankError) -> None:
         status_code=error.status_code,
         detail={"code": error.code, "message": error.message},
     ) from error
+
+
+@router.post("/totp/verify", dependencies=[Depends(require_internal_token)])
+async def verify_totp(request: InternalTotpVerification, db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await verify_totp_for_operation(db, request.subject_user_id, request.proof)
+        await db.commit()
+        return {"verified": True}
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)
 
 
 @router.post(

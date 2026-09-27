@@ -69,7 +69,7 @@ node_modules/.bin/tsc && node_modules/.bin/vite build
 
 浏览器实测（独立临时数据库）：登录→“给李四转钱”→刷新→“三百元”→确认卡300→“改成500元”→确认卡500→确认提交。页面最终显示SUCCEEDED、银行流水号、余额50,000→49,500，和500元转出流水。全过程通过生产HTTP银行适配器；项目原banking_agent.db未修改。
 
-限制：真实模型已通过本文所列虚构测试场景，但不代表覆盖所有自然语言表达；未运行PostgreSQL/Docker部署或跨进程PostgreSQL压力测试（并发和恢复使用文件SQLite）；强验证仍返回501。离线表达覆盖有限，模型服务也可能拒绝或误解表达，所以最终始终展示可信账户和精确金额由用户确认。不会扩展到定时、AA或其它业务。待消歧修改由会话持久化，前端禁用旧卡片，服务端也阻止旧卡确认和受理；取消仍可通过现有任务接口进行。已提交的完整修改会失效旧计划和授权。
+限制：真实模型已通过本文所列虚构测试场景，但不代表覆盖所有自然语言表达；未运行PostgreSQL/Docker部署或跨进程PostgreSQL压力测试（并发和恢复使用文件SQLite）；当时强验证仍返回501（2026-09-27合入的最新 main 已加入 TOTP）。离线表达覆盖有限，模型服务也可能拒绝或误解表达，所以最终始终展示可信账户和精确金额由用户确认。不会扩展到定时、AA或其它业务。待消歧修改由会话持久化，前端禁用旧卡片，服务端也阻止旧卡确认和受理；取消仍可通过现有任务接口进行。已提交的完整修改会失效旧计划和授权。
 
 最终验证结果：`python -m pytest tests -q` 为 **60 passed**；TypeScript检查通过，Vite生产构建通过（89 modules）；`git diff --check` 无问题。测试依赖位于临时虚拟环境 `/private/tmp/fintech-ai-venv`，前端依赖仅安装到被忽略的node_modules；没有提交生成的锁文件或修改实际凭据。
 
@@ -101,7 +101,7 @@ python -m tests.live.deepseek_transfer_smoke --run-live --output /tmp/deepseek-t
 
 结构化报告：[deepseek_transfer_smoke_20260922.json](validation/deepseek_transfer_smoke_20260922.json)。报告仅包含虚构输入、提取结果、耗时和断言结果，无密钥、真实余额或真实流水。
 
-剩余既有边界：3号MFA强验证仍为501；PostgreSQL/Docker及多进程压力验证尚未进行。本次没有绕过这些边界，没有推送或合并代码。
+历史记录（2026-09-22）：当时3号MFA强验证仍为501，且尚未进行PostgreSQL/Docker及多进程压力验证。2026-09-27合入的最新 main 已增加 TOTP 验证器路径；本次仍未进行 PostgreSQL/Docker 及多进程压力验证。
 
 
 ## 远端更新整合（2026-09-22）

@@ -64,6 +64,8 @@ class ResolvedTransferParties(TransferValidation):
 
 
 class BankApi(Protocol):
+    async def verify_totp(self, *, subject_user_id: str, proof: str) -> None: ...
+
     async def transfer_directory(self, *, subject_user_id: str, recipient_name: str | None = None, recipient_phone: str | None = None) -> dict: ...
 
     async def validate_transfer(
@@ -118,6 +120,14 @@ class HttpBankApiClient:
             detail.get("code", "BANK_API_ERROR"),
             response.status_code,
         )
+
+    async def verify_totp(self, *, subject_user_id: str, proof: str) -> None:
+        response = await self._request(
+            "POST", "/api/v1/internal/bank/totp/verify",
+            json={"subject_user_id": subject_user_id, "proof": proof},
+        )
+        if response.is_error:
+            raise self._error(response)
 
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         try:

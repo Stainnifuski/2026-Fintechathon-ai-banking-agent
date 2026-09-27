@@ -1,4 +1,4 @@
-# 转账任务状态机 API v0.3
+# 转账任务状态机 API v0.4
 
 本契约将用户任务（5号）与模拟银行数据（4号）分开。5号禁止导入银行 ORM 或复用银行数据库会话，只能调用本节定义的内部 HTTP API。所有用户写操作必须携带唯一
 `request_id`；一笔业务意图在创建时取得 `operation_id`，超时、查询和恢复不得更换该编号。
@@ -12,7 +12,7 @@
 | GET | `/api/v1/tasks/{task_id}` | 查询持久化任务快照；查询不触发转账 |
 | GET | `/api/v1/tasks/{task_id}/events` | 查询状态事件，可传 `since_event_id` |
 | POST | `/api/v1/tasks/{task_id}/confirm` | 对指定计划版本记录用户同意 |
-| POST | `/api/v1/tasks/{task_id}/verify` | 强验证接口；当前本地适配器返回 501 |
+| POST | `/api/v1/tasks/{task_id}/verify` | 红色路径使用绑定的 TOTP 验证器证明，失败时保持未执行 |
 | POST | `/api/v1/tasks/{task_id}/modify` | 受理前修改参数，旧操作变为 `SUPERSEDED` |
 | POST | `/api/v1/tasks/{task_id}/accept` | 原子完成应用受理，然后调度银行提交 |
 | POST | `/api/v1/tasks/{task_id}/cancel` | 设置单调的取消标记；不能撤回已记账结果 |
@@ -39,6 +39,7 @@
 | POST | `/api/v1/internal/bank/transfers/resolve` | 按当前用户和收款人姓名解析默认付款/收款账户；不唯一时明确拒绝 |
 | POST | `/api/v1/internal/bank/operations` | 按 `operation_id` 幂等受理并记账 |
 | GET | `/api/v1/internal/bank/operations/{operation_id}` | 返回银行状态；404 的 code 为 `NOT_FOUND` |
+| POST | `/api/v1/internal/bank/totp/verify` | 最新 main 的 TOTP 校验与防重放；5号经内部接口调用，不读银行用户表 |
 
 同一 `operation_id` 加相同参数返回同一结果；同号异参返回 409。银行内部在一个事务中完成
 幂等登记、余额校验、付款扣减、收款入账和双边流水。成功凭证为独立 `bank_tx_id`。
@@ -49,8 +50,8 @@
 
 - 已实现：黄色风险确认、应用受理、Outbox 记录、同步调度、模拟银行记账、任务查询、取消、
   参数修改、`UNKNOWN` 核对恢复和人工执行权接口。
-- 接口完整但暂未实现：真实 MFA、安全锁、独立后台 Outbox worker、SSE 推送和人工处理 UI。
-- 红色风险不会被伪造为验证通过；`verify` 明确返回 501。
+- 最新 main 已加入 TOTP 验证器绑定、校验和防重放；未绑定或错误证明不能让红色任务执行。生产级密钥加密、跨服务原子证明和多进程审查仍待3号安全接入。
+- 仍未实现：独立后台 Outbox worker、SSE 推送和人工处理 UI。
 - 新接口以整数分保存权威金额；现有账户和展示流水仍保留元字段，以兼容演示账本。
 
 
@@ -73,13 +74,13 @@
 
 ## 2026-09-27：手机号、备注及银行防护（v0.3）
 
-- \`POST /api/v1/tasks/messages\` 的提取结构增加可空 \`recipient_phone\`。模型仅逐字提取原文，服务端确认原文存在，再由4号规范化；手机号绝不当作金额。默认接受完整中国大陆手机号与明确 \`+86\`、空格、连字符格式，掩码、残缺、尾号及其他地区格式报 \`INVALID_PHONE\`，不存在返回空候选。手机号格式有效不等于号码所有权已验证。
-- 银行目录按完整号码精确匹配。姓名与手机号同时提供时必须指向同一客户，否则 \`RECIPIENT_MISMATCH\`。候选仅对已认证用户的会话显示脱敏标签，10分钟过期；换号清除旧候选，选择时重新向银行核对账户映射及状态。已认证表单可调用 \`POST /api/v1/users/recipients/phone\`，请求 \`{"phone":"13800000002"}\`，响应为 \`[{"account_id":"A003","label":"李四 · 手机138****0002 · 账户尾号7756"}]\`；无公开全量号码查询接口，但演示环境尚无生产级查询限流。
-- \`POST /api/v1/tasks/transfers\` 与 \`/{task_id}/modify\` 可带 \`recipient_phone\`、\`note_source\`；旧客户端不传仍保留旧的 \`note=null\` 语义。新客户端 \`note_source\` 为 \`manual|automatic|cleared\`，\`cleared\` 要求 \`note=null\`，\`automatic\` 且未提供内容时填入“转账”。手动备注优先；明确用途的自动备注仅使用有限确定性规则。备注最长256个字符，不截断，拒绝控制字符和纯空白；备注内容永远是数据。确认卡含 \`recipient_phone_masked\`、\`note\`、\`note_source\`，操作快照与双方流水保存最终备注。
-- 手机号规范化值存于计划与参数摘要。创建、受理、银行提交均核对原号码当前仍属于已确认收款账户；映射变化返回 \`RECIPIENT_MAPPING_CHANGED\`，要求重新规划，不能自动改付其他账户。备注或手机号修改创建新计划版本、新操作号和摘要，撤销旧授权。受理后不可修改；\`WAITING_EXECUTION\` 的定时任务仍可修改并重新确认。
-- 银行对调用方传来的 \`param_digest\` 重新计算并比对，覆盖账户、整数分金额、币种、备注及存在时的规范化手机号；不同业务参数复用编号返回 \`IDEMPOTENCY_CONFLICT\` 或 \`PARAM_DIGEST_MISMATCH\`。付款主体和双方状态在提交时复核。同一账户转给自己返回 \`SAME_ACCOUNT\`。银行操作、余额与双边流水在同一事务提交；SQLite 通过数据库写锁串行化，PostgreSQL 路径按账户ID顺序取锁（尚未实测）。
-- 银行日限额按付款账户计算，用户风险阈值按其所有账户的业务日已完成转出总额加未决占用计算。业务日期默认 \`Asia/Shanghai\`，可由 \`BANK_BUSINESS_TIMEZONE\` 配置。成功交易计入银行事实；应用 \`HELD\` 占用防止未决并发绕过，\`SETTLED\` 不再重复计入，失败/取消释放，\`UNKNOWN\` 保留占用直至核对。跨日未决占用不因日期变化自动释放。
-- 受理时3号适配器通过 \`risk_subject_locks\` 按用户数据库行锁串行化复评与额度占用。现有调用点是创建计划和受理前；风险适配器异常返回 \`RISK_UNAVAILABLE\`，非 \`YELLOW/RED\` 返回 \`RISK_DECISION_INVALID\`，两者均阻止扣款。当前黄色要求明确确认；红色需要强验证，而 \`verify\` 仍返回501，不能绕过。后续3号可替换评估端口，提供策略版本、稳定原因码和可信证明；5号负责调度与占用释放，不由银行直接读取授权表。
-- 升级时新增 \`user_phone_registry\` 与 \`risk_subject_locks\` 表。前者对旧用户原号做规范化登记，检测等价号码冲突并停止，不改写客户或账务。重复执行可安全复用。回滚代码不撤销转账或自动删除表；先备份并按账务流程核对。PostgreSQL 迁移和跨进程压力测试未验证。
+- `POST /api/v1/tasks/messages` 的提取结构增加可空 `recipient_phone`。模型仅逐字提取原文，服务端确认原文存在，再由4号规范化；手机号绝不当作金额。默认接受完整中国大陆手机号与明确 `+86`、空格、连字符格式，掩码、残缺、尾号及其他地区格式报 `INVALID_PHONE`，不存在返回空候选。手机号格式有效不等于号码所有权已验证。
+- 银行目录按完整号码精确匹配。姓名与手机号同时提供时必须指向同一客户，否则 `RECIPIENT_MISMATCH`。候选仅对已认证用户的会话显示脱敏标签，10分钟过期；换号清除旧候选，选择时重新向银行核对账户映射及状态。已认证表单可调用 `POST /api/v1/users/recipients/phone`，请求 `{"phone":"13800000002"}`，响应为 `[{"account_id":"A003","label":"李四 · 手机138****0002 · 账户尾号7756"}]`；无公开全量号码查询接口，但演示环境尚无生产级查询限流。
+- `POST /api/v1/tasks/transfers` 与 `/{task_id}/modify` 可带 `recipient_phone`、`note_source`；旧客户端不传仍保留旧的 `note=null` 语义。新客户端 `note_source` 为 `manual|automatic|cleared`，`cleared` 要求 `note=null`，`automatic` 且未提供内容时填入“转账”。手动备注优先；明确用途的自动备注仅使用有限确定性规则。备注最长256个字符，不截断，拒绝控制字符和纯空白；备注内容永远是数据。确认卡含 `recipient_phone_masked`、`note`、`note_source`，操作快照与双方流水保存最终备注。
+- 手机号规范化值存于计划与参数摘要。创建、受理、银行提交均核对原号码当前仍属于已确认收款账户；映射变化返回 `RECIPIENT_MAPPING_CHANGED`，要求重新规划，不能自动改付其他账户。备注或手机号修改创建新计划版本、新操作号和摘要，撤销旧授权。受理后不可修改；`WAITING_EXECUTION` 的定时任务仍可修改并重新确认。
+- 银行对调用方传来的 `param_digest` 重新计算并比对，覆盖账户、整数分金额、币种、备注及存在时的规范化手机号；不同业务参数复用编号返回 `IDEMPOTENCY_CONFLICT` 或 `PARAM_DIGEST_MISMATCH`。付款主体和双方状态在提交时复核。同一账户转给自己返回 `SAME_ACCOUNT`。银行操作、余额与双边流水在同一事务提交；SQLite 通过数据库写锁串行化，PostgreSQL 路径按账户ID顺序取锁（尚未实测）。
+- 银行日限额按付款账户计算，用户风险阈值按其所有账户的业务日已完成转出总额加未决占用计算。业务日期默认 `Asia/Shanghai`，可由 `BANK_BUSINESS_TIMEZONE` 配置。成功交易计入银行事实；应用 `HELD` 占用防止未决并发绕过，`SETTLED` 不再重复计入，失败/取消释放，`UNKNOWN` 保留占用直至核对。跨日未决占用不因日期变化自动释放。
+- 受理时3号适配器通过 `risk_subject_locks` 按用户数据库行锁串行化复评与额度占用。现有调用点是创建计划和受理前；风险适配器异常返回 `RISK_UNAVAILABLE`，非 `YELLOW/RED` 返回 `RISK_DECISION_INVALID`，两者均阻止扣款。当前黄色要求明确确认；红色需要强验证，并由 TOTP 验证器校验，未绑定或错误证明不能扣款。后续3号可替换评估端口，提供策略版本、稳定原因码和可信证明；5号负责调度与占用释放，不由银行直接读取授权表。
+- 升级时新增 `user_phone_registry` 与 `risk_subject_locks` 表。前者对旧用户原号做规范化登记，检测等价号码冲突并停止，不改写客户或账务。重复执行可安全复用。回滚代码不撤销转账或自动删除表；先备份并按账务流程核对。PostgreSQL 迁移和跨进程压力测试未验证。
 
-稳定错误包括 \`INVALID_PHONE\`、\`PHONE_CONFLICT\`、\`RECIPIENT_MISMATCH\`、\`RECIPIENT_MAPPING_CHANGED\`、\`INVALID_NOTE\`、\`SAME_ACCOUNT\`、\`PAYER_FORBIDDEN\`、\`ACCOUNT_INACTIVE\`、\`CUSTOMER_INACTIVE\`、\`INSUFFICIENT_FUNDS\`、\`DAILY_LIMIT_EXCEEDED\`、\`PARAM_DIGEST_MISMATCH\`、\`IDEMPOTENCY_CONFLICT\`、\`BANK_BUSY\`、\`RISK_UNAVAILABLE\`、\`RISK_DECISION_INVALID\`。客户端以HTTP状态和错误码决定恢复路径，不得据超时猜测成功或重建操作号。
+稳定错误包括 `INVALID_PHONE`、`PHONE_CONFLICT`、`RECIPIENT_MISMATCH`、`RECIPIENT_MAPPING_CHANGED`、`INVALID_NOTE`、`SAME_ACCOUNT`、`PAYER_FORBIDDEN`、`ACCOUNT_INACTIVE`、`CUSTOMER_INACTIVE`、`INSUFFICIENT_FUNDS`、`DAILY_LIMIT_EXCEEDED`、`PARAM_DIGEST_MISMATCH`、`IDEMPOTENCY_CONFLICT`、`BANK_BUSY`、`RISK_UNAVAILABLE`、`RISK_DECISION_INVALID`。客户端以HTTP状态和错误码决定恢复路径，不得据超时猜测成功或重建操作号。

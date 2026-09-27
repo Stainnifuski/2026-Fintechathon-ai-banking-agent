@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database.connection import AsyncSessionLocal
 from ...models.account import AccountORM
@@ -16,6 +17,13 @@ from ...models.transaction import TransactionORM
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
 from ...security.passwords import hash_password, verify_password
+from ...security.totp import (
+    current_timestep,
+    generate_secret,
+    provisioning_uri,
+    qr_data_uri,
+    verify_code,
+)
 from .transfer_service import BankError, transfer_directory, _daily_used_fen
 from .phone import normalize_phone
 
@@ -216,6 +224,77 @@ async def get_customer(user_id: str) -> dict | None:
     async with AsyncSessionLocal() as session:
         user = await session.get(UserORM, user_id)
     return _user_dict(user) if user else None
+
+
+async def totp_status(user_id: str) -> dict:
+    """查询用户是否已绑定 TOTP 验证器。"""
+    async with AsyncSessionLocal() as session:
+        user = await session.get(UserORM, user_id)
+        if user is None:
+            raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
+        return {"enabled": user.totp_enabled}
+
+
+async def begin_totp_enrollment(user_id: str) -> dict:
+    """开始绑定：生成新密钥并置为未启用，返回扫码所需信息。
+
+    每次调用都会重置密钥，因此重新绑定会作废旧的验证器条目。
+    """
+    async with AsyncSessionLocal() as session:
+        user = await session.get(UserORM, user_id)
+        if user is None:
+            raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
+        secret = generate_secret()
+        user.totp_secret = secret
+        user.totp_enabled = False
+        user.totp_last_timestep = None
+        account_name = user.phone or user.name or user_id
+        await session.commit()
+    uri = provisioning_uri(secret, account_name=account_name)
+    return {"secret": secret, "otpauth_uri": uri, "qr_data_uri": qr_data_uri(uri)}
+
+
+async def confirm_totp_enrollment(user_id: str, code: str) -> dict:
+    """确认绑定：校验一次验证码，通过后正式启用 TOTP。"""
+    async with AsyncSessionLocal() as session:
+        user = await session.get(UserORM, user_id)
+        if user is None:
+            raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
+        if not user.totp_secret:
+            raise BankError("请先开始绑定流程", "TOTP_NOT_STARTED", 409)
+        if not verify_code(user.totp_secret, code):
+            raise BankError(
+                "验证码错误，请确认验证器时间已同步后重试", "TOTP_INVALID", 401
+            )
+        user.totp_enabled = True
+        user.totp_last_timestep = current_timestep()
+        await session.commit()
+    return {"enabled": True}
+
+
+async def verify_totp_for_operation(
+    session: AsyncSession, user_id: str, code: str
+) -> None:
+    """转账强验证时校验 TOTP 验证码，含防重放。校验失败抛 BankError。
+
+    使用调用方（编排层）的事务性会话，成功后写入的防重放时间步随
+    该事务一并提交；校验失败时抛出异常，由调用方回滚。
+    """
+    user = await session.get(UserORM, user_id)
+    if user is None:
+        raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
+    if not user.totp_enabled or not user.totp_secret:
+        raise BankError(
+            "尚未绑定验证器，请先在安全设置中绑定 Google Authenticator",
+            "TOTP_NOT_ENROLLED",
+            409,
+        )
+    if not verify_code(user.totp_secret, code):
+        raise BankError("验证码错误或已过期", "TOTP_INVALID", 401)
+    step = current_timestep()
+    if user.totp_last_timestep is not None and step <= user.totp_last_timestep:
+        raise BankError("该验证码已被使用，请等待新验证码", "TOTP_REPLAY", 409)
+    user.totp_last_timestep = step
 
 
 async def list_transactions(user_id: str, limit: int = 50) -> list[dict]:

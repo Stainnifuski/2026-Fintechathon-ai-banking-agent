@@ -1,13 +1,45 @@
 """旧库升级及重复初始化不得更改已有银行事实。"""
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.models import Base, AccountORM, TransactionORM, UserORM
 from backend.app.models.user_phone_registry import UserPhoneRegistryORM
-from backend.app.services.bank.migration_service import upgrade_phone_registry
+from backend.app.services.bank.migration_service import (
+    upgrade_legacy_user_mfa_columns, upgrade_phone_registry,
+)
 from backend.app.services.bank import seed_service
+
+
+@pytest.mark.asyncio
+async def test_merge_upgrade_adds_mfa_columns_to_legacy_users(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'pre-mfa.db'}")
+    async with engine.begin() as connection:
+        await connection.execute(text(
+            "CREATE TABLE users (user_id VARCHAR(32) PRIMARY KEY, "
+            "name VARCHAR(64), phone VARCHAR(20), id_card VARCHAR(32), "
+            "password_hash VARCHAR(256), risk_level VARCHAR(20), status VARCHAR(16), "
+            "created_at DATETIME, updated_at DATETIME)"
+        ))
+        await connection.execute(text(
+            "INSERT INTO users (user_id, name, phone, id_card, password_hash, risk_level, status) "
+            "VALUES ('U1', '甲', '13800000001', 'demo', 'hash', 'balanced', 'active')"
+        ))
+        await connection.run_sync(Base.metadata.create_all)
+        await upgrade_legacy_user_mfa_columns(connection)
+        await upgrade_legacy_user_mfa_columns(connection)
+        columns = await connection.run_sync(
+            lambda sync_connection: {c['name'] for c in inspect(sync_connection).get_columns('users')}
+        )
+        assert {'totp_secret', 'totp_enabled', 'totp_last_timestep'} <= columns
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    await upgrade_phone_registry(factory)
+    async with factory() as session:
+        user = await session.get(UserORM, 'U1')
+        assert user.totp_enabled is False
+        assert user.phone == '13800000001'
+    await engine.dispose()
 
 
 @pytest.mark.asyncio

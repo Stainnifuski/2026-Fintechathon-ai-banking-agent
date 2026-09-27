@@ -21,6 +21,41 @@ from tests.integration.test_task_transfer_flow import db
 
 
 @pytest.mark.asyncio
+async def test_internal_totp_boundary_requires_token_and_rejects_replay(db, monkeypatch):
+    import httpx
+    import pyotp
+    from backend.app.main import app
+    from backend.app.database.connection import get_db
+    from backend.app.routers import bank_operations
+
+    user = await db.get(UserORM, "U1")
+    secret = pyotp.random_base32()
+    user.totp_secret = secret
+    user.totp_enabled = True
+    await db.commit()
+    monkeypatch.setattr(bank_operations, "INTERNAL_BANK_TOKEN", "test-internal-token")
+
+    async def database():
+        yield db
+
+    app.dependency_overrides[get_db] = database
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            payload = {"subject_user_id": "U1", "proof": pyotp.TOTP(secret).now()}
+            path = "/api/v1/internal/bank/totp/verify"
+            assert (await client.post(path, json=payload)).status_code == 403
+            headers = {"X-Internal-Token": "test-internal-token"}
+            assert (await client.post(path, json=payload, headers=headers)).status_code == 200
+            replay = await client.post(path, json=payload, headers=headers)
+            assert replay.status_code == 409
+            assert replay.json()["detail"]["code"] == "TOTP_REPLAY"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_phone_note_and_mapping_change(db):
     plan = await send(db, req("给手机号13900000002转300元，备注房租"))
     card = plan["task"]["confirmation_card"]

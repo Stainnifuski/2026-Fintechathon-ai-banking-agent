@@ -2,11 +2,11 @@
 
 ## 环境与结果
 
-- Windows PowerShell；功能分支 `codex/feature`；起始母项目 main `fee9aaa9fa5f1199f4275c22f010d9693949d637`。
+- Windows PowerShell；功能分支 `codex/feature`；起始母项目 main `fee9aaa9fa5f1199f4275c22f010d9693949d637`，推送前更新并合入 `f7332639e9270fceade442733bf93d8ff7a595d2`。
 - Python 依赖安装至忽略目录 `.deps`。测试使用独立 SQLite，未读写仓库演示库 `banking_agent.db`。
-- 命令：`$env:PYTHONPATH='.deps'; $env:DATABASE_URL='sqlite+aiosqlite:///./.deps/dev-tests.db'; python -m pytest tests -q`，结果 **92 passed in 18.22s**。
+- 合入最新 main 后命令：`$env:PYTHONPATH='.deps'; $env:DATABASE_URL='sqlite+aiosqlite:///./.deps/dev-tests-merged.db'; python -m pytest tests -q`，结果 **94 passed in 14.55s**。
 - 前端在 `frontend` 运行 `node node_modules/typescript/bin/tsc -b` 和 `node node_modules/vite/bin/vite.js build`，均成功；Vite 构建 89 个模块。
-- 全新隔离库 `.deps/smoke-startup.db` 连续两次执行 `init_db()`、`seed_bank_data()`，无错误。模拟旧库迁移、冲突阻断和重复运行由 `test_phone_upgrade.py` 覆盖。
+- 全新隔离库 `.deps/smoke-startup.db` 连续两次执行 `init_db()`、`seed_bank_data()`，无错误；合入 main 后对同一隔离库再次执行两次并成功补齐 TOTP 列。模拟旧用户表、手机号冲突阻断和重复运行也由 `test_phone_upgrade.py` 覆盖。
 - 独立 UI 库 `.deps/ui-smoke.db` 启动 FastAPI 和 Vite。浏览器页面打开，显示张三账户及历史流水，能切换至“按手机号查询”并输入演示号码。自动点击查询和聊天发送未显示反馈，故**完整页面流程未验证通过**；HTTP 和任务闭环由集成测试覆盖。
 
 ## 本轮覆盖
@@ -14,7 +14,7 @@
 - 手机号规范化、精确目录、姓名/号码绑定、多账户候选、映射改变、非法号码。
 - 自动/手动/清空备注、危险文本不改变转账意图、计划版本和双边流水一致。
 - 银行原子记账、状态与限额、参数摘要重算、顺序和独立连接并发幂等；订阅同周期并发仅扣一次。
-- 用户级日累计及并发风险占用、未知风险失败关闭、红色强验证不可用；原有 AA、定时、姓名转账及订阅回归。
+- 用户级日累计及并发风险占用、未知风险失败关闭；合入最新 main 的 TOTP 未绑定、错误和有效验证码路径；原有 AA、定时、姓名转账及订阅回归。
 
 ## 人工页面验收
 
@@ -24,11 +24,11 @@
 2. 受理前手动改备注为“9月房租”，再显式清空；每次应产生新计划版本并要求重新确认。聊天另测 `给手机号13800000002转300元，备注9月房租` 和 `清空备注`。
 3. 仅在隔离演示库确认付款；查看张三转出与李四转入流水，金额和最终备注一致。
 4. 测不存在手机号、错误号码、换号码后旧候选及旧确认卡拒绝、超长备注、余额不足。
-5. 用户当日累计超过 1000 元触发红色强验证不可用且不扣款；模拟响应丢失时用原 operation_id 核对 UNKNOWN，不另建转账。
+5. 用户当日累计超过 1000 元触发红色强验证；未绑定和错误验证码不得扣款，绑定后有效验证码才可继续。模拟响应丢失时用原 operation_id 核对 UNKNOWN，不另建转账。
 
 ## 未验证及限制
 
 - PostgreSQL 实库、Docker、多进程压力测试未运行；SQLite 独立连接并发测试已运行。
 - 新增手机号语句的真实模型调用未运行；离线模式与 fake model 的服务端校验已覆盖。
 - UI 查询至最终回执的浏览器流程需人工验收，不声称端到端页面通过。
-- 真实号码所有权、生产级查询限流、完整风险策略版本及原因码、真正强验证、整数分账本迁移仍待接入。详情见 `docs/bank/手机号转账与风险边界.md`。
+- 真实号码所有权、生产级查询限流、完整风险策略版本及原因码、TOTP 密钥保护与跨服务证明绑定、整数分账本迁移仍待接入。详情见 `docs/bank/手机号转账与风险边界.md`。
