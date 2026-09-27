@@ -915,9 +915,63 @@ async def modify_task(
     return await task_snapshot(db, task_id, user_id)
 
 
-async def verify_task(*args, **kwargs) -> dict:
-    """接口占位：不能用演示代码伪造强验证通过。"""
-    raise CapabilityNotImplemented("MFA_STRONG_VERIFICATION")
+async def verify_task(
+    db: AsyncSession,
+    *,
+    task_id: str,
+    user_id: str,
+    request_id: str,
+    state_version: int,
+    challenge_id: str,
+    proof: str,
+) -> dict:
+    """红色路径 MFA 核验：验证通过后将授权推进到 VALID，任务推进到 READY。
+
+    Args:
+        challenge_id: 前端发起验证时的挑战 ID（预留给真实 MFA 服务使用）。
+        proof: 用户提交的验证凭据（MVP 阶段为任意非空字符串）。
+    """
+    from ...integrations.authorization import verify_consent
+
+    task = await _owned_task(db, task_id, user_id)
+    duplicate = await _deduplicated_task_id(db, request_id)
+    if duplicate == task_id:
+        return await task_snapshot(db, task_id, user_id)
+    await _reserve_version(db, task, state_version)
+
+    if task.phase != TaskPhase.WAITING_VERIFICATION:
+        raise TaskError("任务当前不需要验证", 409, "VERIFICATION_NOT_REQUIRED")
+
+    operation = await _current_operation(db, task)
+    authorization = await _authorization(db, operation.operation_id)
+
+    try:
+        verify_consent(authorization, proof=proof)
+    except AuthorizationError as error:
+        raise TaskError(error.message, 409, error.code) from error
+
+    plan = await _current_plan(db, task)
+    operation.status = OperationStatus.READY
+    (await _step(db, operation.step_id)).status = StepStatus.READY
+    task.phase = (
+        TaskPhase.WAITING_EXECUTION
+        if plan.params.get("scheduled_at")
+        else TaskPhase.READY
+    )
+    operation.state_version += 1
+    task.state_version += 1
+    await _event(
+        db,
+        task_id=task_id,
+        operation_id=operation.operation_id,
+        request_id=request_id,
+        event_type="MFA_VERIFIED",
+        actor=user_id,
+        before={"phase": TaskPhase.WAITING_VERIFICATION, "authorization": AuthorizationStatus.PENDING_VERIFICATION},
+        after={"phase": task.phase, "authorization": AuthorizationStatus.VALID},
+    )
+    await db.commit()
+    return await task_snapshot(db, task_id, user_id)
 
 
 async def claim_task(

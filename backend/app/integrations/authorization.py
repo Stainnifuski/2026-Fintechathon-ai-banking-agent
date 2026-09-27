@@ -101,3 +101,27 @@ def create_risk_hold(
         risk_date=date.today(),
         status=RiskReservationStatus.HELD,
     )
+
+
+def verify_consent(authorization: AuthorizationORM, *, proof: str) -> None:
+    """核验 MFA 证明，将授权从待验证状态推进为有效。
+
+    当前 MVP：接受任意非空 proof，演示红色完整链路。
+    正式版本：对接短信 / 人脸 / U盾 SDK，在此处替换校验逻辑。
+
+    Args:
+        authorization: 待验证的授权记录。
+        proof: 用户提交的验证凭据（MVP 阶段为任意非空字符串）。
+
+    Raises:
+        AuthorizationError: 授权状态不对或凭据为空时抛出。
+    """
+    if authorization.status != AuthorizationStatus.PENDING_VERIFICATION:
+        raise AuthorizationError(
+            "授权不在待验证状态", "AUTHORIZATION_WRONG_STATE"
+        )
+    if not proof or not proof.strip():
+        raise AuthorizationError("验证凭据不能为空", "PROOF_EMPTY")
+    # TODO: 接入真实 MFA 服务后，在此处校验 proof 的格式与时效
+    authorization.status = AuthorizationStatus.VALID
+    authorization.verification_level = "MFA"

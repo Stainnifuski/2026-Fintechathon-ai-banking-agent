@@ -261,7 +261,7 @@ function App() {
         : action === 'cancel' ? await bank.cancelTask(activeTask, newId())
         : action === 'reconcile' ? await bank.reconcileTask(activeTask, newId())
         : await bank.verifyTask(activeTask, newId());
-      if (action === 'confirm' && task.allowed_actions.includes('accept')) {
+      if ((action === 'confirm' || action === 'verify') && task.allowed_actions.includes('accept')) {
         task = await bank.acceptTask(task, newId());
       }
       setActiveTask(task); setStatus(task.message);
