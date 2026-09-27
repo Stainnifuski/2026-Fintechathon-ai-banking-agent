@@ -14,6 +14,8 @@ class TransferTaskCreate(BaseModel):
     to_account: str
     amount: Decimal = Field(gt=0, decimal_places=2)
     note: str | None = Field(default=None, max_length=256)
+    note_source: Literal["manual", "automatic", "cleared"] | None = None
+    recipient_phone: str | None = Field(default=None, max_length=32)
     scheduled_at: datetime | None = None
 
 
@@ -32,6 +34,8 @@ class ModifyTaskRequest(TaskActionRequest):
     to_account: str
     amount: Decimal = Field(gt=0, decimal_places=2)
     note: str | None = Field(default=None, max_length=256)
+    note_source: Literal["manual", "automatic", "cleared"] | None = None
+    recipient_phone: str | None = Field(default=None, max_length=32)
 
 
 class VerificationRequest(TaskActionRequest):
@@ -61,6 +65,7 @@ class OperationView(BaseModel):
     bank_status: str | None = None
     bank_tx_id: str | None = None
     failure_code: str | None = None
+    note: str | None = None
 
 
 class AuthorizationView(BaseModel):
@@ -84,6 +89,8 @@ class ConfirmationCard(BaseModel):
     amount: float
     currency: str
     note: str | None = None
+    note_source: str | None = None
+    recipient_phone_masked: str | None = None
     risk_level: str
     scheduled_at: datetime | None = None
 

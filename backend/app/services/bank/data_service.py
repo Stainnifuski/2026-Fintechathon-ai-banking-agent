@@ -5,14 +5,17 @@
 """
 
 from uuid import uuid4
+from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database.connection import AsyncSessionLocal
 from ...models.account import AccountORM
 from ...models.transaction import TransactionORM
 from ...models.user import UserORM
+from ...models.user_phone_registry import UserPhoneRegistryORM
 from ...security.passwords import hash_password, verify_password
 from ...security.totp import (
     current_timestep,
@@ -21,7 +24,8 @@ from ...security.totp import (
     qr_data_uri,
     verify_code,
 )
-from .transfer_service import BankError
+from .transfer_service import BankError, transfer_directory, _daily_used_fen
+from .phone import normalize_phone
 
 
 def _account_dict(account: AccountORM) -> dict:
@@ -73,7 +77,15 @@ async def list_accounts(user_id: str) -> list[dict]:
                 .order_by(AccountORM.account_type.desc(), AccountORM.account_id)
             )
         ).scalars().all()
-    return [_account_dict(account) for account in accounts]
+        views = []
+        now = datetime.now(timezone.utc)
+        for account in accounts:
+            view = _account_dict(account)
+            view["daily_transfer_used"] = (
+                await _daily_used_fen(session, account_ids=[account.account_id], now=now)
+            ) / 100
+            views.append(view)
+    return views
 
 
 async def list_balances(
@@ -84,7 +96,15 @@ async def list_balances(
         statement = statement.where(AccountORM.account_type == account_type)
     async with AsyncSessionLocal() as session:
         accounts = (await session.execute(statement)).scalars().all()
-    return [_account_dict(account) for account in accounts]
+        views = []
+        now = datetime.now(timezone.utc)
+        for account in accounts:
+            view = _account_dict(account)
+            view["daily_transfer_used"] = (
+                await _daily_used_fen(session, account_ids=[account.account_id], now=now)
+            ) / 100
+            views.append(view)
+    return views
 
 
 async def list_recipients(subject_user_id: str) -> list[dict]:
@@ -128,11 +148,19 @@ async def register_customer(
     password: str,
     risk_level: str,
 ) -> dict:
-    phone = phone.strip()
+    try:
+        phone = normalize_phone(phone)
+    except ValueError as error:
+        raise BankError(str(error), "INVALID_PHONE", 422) from error
     async with AsyncSessionLocal() as session:
-        existing = await session.execute(select(UserORM).where(UserORM.phone == phone))
-        if existing.scalar_one_or_none():
-            raise BankError("该手机号已注册", "PHONE_ALREADY_REGISTERED", 409)
+        existing = (await session.execute(select(UserORM))).scalars().all()
+        for user in existing:
+            try:
+                same_phone = normalize_phone(user.phone) == phone
+            except ValueError:
+                same_phone = False
+            if same_phone:
+                raise BankError("该手机号已注册", "PHONE_ALREADY_REGISTERED", 409)
 
         user_id = f"U{uuid4().hex[:10].upper()}"
         account_id = f"A{uuid4().hex[:10].upper()}"
@@ -158,16 +186,33 @@ async def register_customer(
         session.add(user)
         await session.flush()
         session.add(account)
-        await session.commit()
+        session.add(UserPhoneRegistryORM(canonical_phone=phone, user_id=user_id))
+        try:
+            await session.commit()
+        except IntegrityError as error:
+            await session.rollback()
+            raise BankError("该手机号已注册", "PHONE_ALREADY_REGISTERED", 409) from error
         await session.refresh(user)
         return _user_dict(user)
 
 
 async def authenticate_customer(phone: str, password: str) -> dict:
+    try:
+        phone = normalize_phone(phone)
+    except ValueError as error:
+        raise BankError("手机号或密码错误", "INVALID_CREDENTIALS", 401) from error
     async with AsyncSessionLocal() as session:
-        user = (
-            await session.execute(select(UserORM).where(UserORM.phone == phone.strip()))
-        ).scalar_one_or_none()
+        users = (await session.execute(select(UserORM))).scalars().all()
+    matches = []
+    for candidate in users:
+        try:
+            if normalize_phone(candidate.phone) == phone:
+                matches.append(candidate)
+        except ValueError:
+            continue
+    if len(matches) > 1:
+        raise BankError("手机号数据冲突，请联系管理员", "PHONE_CONFLICT", 409)
+    user = matches[0] if matches else None
     if user is None or not verify_password(password, user.password_hash):
         raise BankError("手机号或密码错误", "INVALID_CREDENTIALS", 401)
     if user.status != "active":
@@ -279,3 +324,16 @@ async def get_transaction(user_id: str, transaction_id: str) -> dict | None:
             )
         ).scalar_one_or_none()
     return _transaction_dict(transaction) if transaction else None
+
+
+
+async def lookup_recipient_phone(subject_user_id: str, phone: str) -> list[dict]:
+    """已认证用户的精确手机号查询，仅返回脱敏可收款账户候选。"""
+    async with AsyncSessionLocal() as session:
+        result = await transfer_directory(
+            session, subject_user_id=subject_user_id, recipient_phone=phone
+        )
+    return [
+        {"account_id": row["account_id"], "label": row["label"]}
+        for row in result["recipients"]
+    ]

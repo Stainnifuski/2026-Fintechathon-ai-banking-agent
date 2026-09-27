@@ -1,9 +1,11 @@
 """3号授权与风险服务端口的本地 MVP 适配器。"""
 
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import os
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..domain import AuthorizationStatus, RiskReservationStatus
@@ -23,6 +25,19 @@ class CapabilityNotImplemented(Exception):
     def __init__(self, capability: str) -> None:
         self.capability = capability
         super().__init__(f"{capability} 接口已定义，但当前适配器尚未实现")
+
+async def serialize_risk_subject(db: AsyncSession, user_id: str) -> None:
+    """数据库行锁保护同一用户的重新评估与额度占用。"""
+    await db.execute(
+        text("INSERT INTO risk_subject_locks (user_id, epoch) VALUES (:uid, 0) "
+             "ON CONFLICT (user_id) DO NOTHING"),
+        {"uid": user_id},
+    )
+    await db.execute(
+        text("UPDATE risk_subject_locks SET epoch = epoch + 1 WHERE user_id = :uid"),
+        {"uid": user_id},
+    )
+
 
 # 累计转账超过1000，为RED
 async def precheck_risk(
@@ -98,7 +113,7 @@ def create_risk_hold(
         operation_id=operation_id,
         user_id=user_id,
         amount_fen=amount_fen,
-        risk_date=date.today(),
+        risk_date=datetime.now(ZoneInfo(os.getenv("BANK_BUSINESS_TIMEZONE", "Asia/Shanghai"))).date(),
         status=RiskReservationStatus.HELD,
     )
 

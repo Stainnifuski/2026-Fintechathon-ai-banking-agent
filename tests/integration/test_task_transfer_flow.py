@@ -23,6 +23,7 @@ from backend.app.services.bank import (
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
+    verify_totp_for_operation,
 )
 from backend.app.services.orchestration import (
     TaskError,
@@ -41,6 +42,13 @@ class InProcessBankApi:
 
     def __init__(self, db) -> None:
         self.db = db
+
+    async def verify_totp(self, *, subject_user_id: str, proof: str) -> None:
+        try:
+            await verify_totp_for_operation(self.db, subject_user_id, proof)
+            await self.db.commit()
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
 
     async def validate_transfer(self, **kwargs) -> TransferValidation:
         try:
@@ -207,6 +215,7 @@ async def test_high_risk_transfer_requires_totp_verification(db) -> None:
     with pytest.raises(TaskError):
         await verify_task(
             db,
+            bank,
             task_id=task["task_id"],
             user_id="U1",
             request_id="request-verify-noenroll",
@@ -227,6 +236,7 @@ async def test_high_risk_transfer_requires_totp_verification(db) -> None:
     with pytest.raises(TaskError):
         await verify_task(
             db,
+            bank,
             task_id=task["task_id"],
             user_id="U1",
             request_id="request-verify-wrong",
@@ -240,6 +250,7 @@ async def test_high_risk_transfer_requires_totp_verification(db) -> None:
     # 正确的 TOTP 验证码通过强验证，授权生效。
     ready = await verify_task(
         db,
+        bank,
         task_id=task["task_id"],
         user_id="U1",
         request_id="request-verify-mfa",
@@ -288,7 +299,7 @@ async def test_scheduled_transfer_waits_then_executes_once(db) -> None:
     )
 
     assert waiting["phase"] == "WAITING_EXECUTION"
-    assert waiting["allowed_actions"] == ["cancel"]
+    assert waiting["allowed_actions"] == ["modify", "cancel"]
     assert waiting["scheduled_at"] == execute_at.isoformat()
     assert (await db.get(AccountORM, "A1")).balance == 5000.0
 

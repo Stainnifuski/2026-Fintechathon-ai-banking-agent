@@ -1,6 +1,7 @@
 """数据模型导出"""
 
 from .base import Base, PaginatedResponse, TimestampMixin
+from .user_phone_registry import UserPhoneRegistryORM
 from .user import UserORM, UserSchema, UserCreateSchema, UserUpdateSchema, LoginSchema, TokenSchema
 from .account import AccountORM, AccountSchema, AccountBalanceSchema
 from .transaction import (
@@ -34,6 +35,7 @@ __all__ = [
     "PaginatedResponse",
     # 用户
     "UserORM",
+    "UserPhoneRegistryORM",
     "UserSchema",
     "UserCreateSchema",
     "UserUpdateSchema",

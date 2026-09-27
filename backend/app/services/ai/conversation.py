@@ -8,13 +8,13 @@ from uuid import uuid4
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
-from ...integrations.bank_api import BankApi
+from ...integrations.bank_api import BankApi, BankApiError
 from sqlalchemy.exc import IntegrityError
 
 from ...models.conversation import ChatReceiptORM, ConversationORM
 from ...schemas.tasks import ChatReply, ChatTaskCreate
 from ..orchestration import TaskError, create_transfer_task, modify_task, task_snapshot
-from .nlu import UnderstandingError, amount_fen, NUM, NLUEngine
+from .nlu import UnderstandingError, amount_fen, NUM, PHONE, NLUEngine
 
 
 def digest(value) -> str:
@@ -70,7 +70,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
     if not request.candidate_id:
         try:
             result = await nlu.extract(request.message, {"missing_recipient": not slots.get("recipient")})
-            for key in ("recipient", "amount_text", "payer", "note"):
+            for key in ("recipient", "recipient_phone", "amount_text", "payer", "note"):
                 value = getattr(result, key)
                 if value is not None and value not in request.message:
                     raise UnderstandingError("提取参数没有明确出现在本次消息中，请重新描述")
@@ -102,7 +102,11 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             candidate = next((c for c in state.get("candidates", []) if c["candidate_id"] == request.candidate_id), None)
             if not candidate or state.get("candidate_expires", 0) < time.time():
                 raise TaskError("候选无效或已过期，请重新描述收款人", 409, "STALE_CANDIDATE")
-            directory = await bank.transfer_directory(subject_user_id=user_id, recipient_name=slots.get("recipient", ""))
+            directory = await bank.transfer_directory(
+                subject_user_id=user_id,
+                recipient_name=slots.get("recipient_name"),
+                recipient_phone=slots.get("recipient_phone"),
+            )
             pool = directory["recipients" if candidate["kind"] == "recipient" else "payers"]
             if not any(c["account_id"] == candidate["account_id"] for c in pool):
                 raise TaskError("候选已不可用，请重新查询", 409, "STALE_CANDIDATE")
@@ -126,13 +130,35 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                         raise TaskError("修改需要绑定当前任务和状态版本", 409, "STALE_STATE_VERSION")
                     state["editing"] = True
                     state["target_version"] = request.state_version
-            if result.recipient is not None:
+            recipient_phone = result.recipient_phone
+            recipient_name = result.recipient
+            if recipient_name and re.fullmatch(PHONE, recipient_name):
+                recipient_phone, recipient_name = recipient_name, None
+            if recipient_name is not None or recipient_phone is not None:
                 state["another_account"] = slots.get("to_account") if "另一个" in request.message else None
-                slots["recipient"] = result.recipient
+                if recipient_name is not None:
+                    slots["recipient_name"] = recipient_name
+                elif recipient_phone is not None:
+                    slots.pop("recipient_name", None)
+                if recipient_phone is not None:
+                    slots["recipient_phone"] = recipient_phone
+                elif recipient_name is not None:
+                    slots.pop("recipient_phone", None)
+                slots["recipient"] = recipient_phone or recipient_name
                 slots.pop("to_account", None)
                 state["candidates"] = []
             if result.amount_text is not None: slots["amount_fen"] = parsed_amount
-            if result.note is not None: slots["note"] = result.note
+            if re.search(r"清空备注|不要备注|删除备注|无备注", request.message):
+                slots["note"], slots["note_source"] = None, "cleared"
+            elif result.note is not None:
+                slots["note"], slots["note_source"] = result.note, "manual"
+            elif "note_source" not in slots:
+                purpose = re.search(
+                    r"(?:把|为|支付|今天|这次)(?:今天|这次)?(聚餐|房租|学费|餐费)(?:的|款|费用)?",
+                    request.message.split("备注", 1)[0],
+                )
+                slots["note"] = purpose.group(1) if purpose else "转账"
+                slots["note_source"] = "automatic"
             if result.payer is not None:
                 slots["payer"] = result.payer
                 slots.pop("from_account", None)
@@ -145,7 +171,14 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             if not slots.get("recipient"): missing.append("收款人")
             if not slots.get("amount_fen"): missing.append("金额")
             if slots.get("recipient"):
-                directory = await bank.transfer_directory(subject_user_id=user_id, recipient_name=slots["recipient"])
+                try:
+                    directory = await bank.transfer_directory(
+                        subject_user_id=user_id,
+                        recipient_name=slots.get("recipient_name"),
+                        recipient_phone=slots.get("recipient_phone"),
+                    )
+                except BankApiError as error:
+                    raise TaskError(error.message, error.status_code, error.code) from error
                 if not slots.get("from_account"):
                     payer = slots.get("payer")
                     # 模型可保留自然语言“账户”后缀；只在银行返回的集合内匹配。
@@ -162,14 +195,15 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                         choices = []
                     if len(choices) == 1: slots["to_account"] = choices[0]["account_id"]
                     elif choices: missing.append("同名收款人选择"); _candidates(state, "recipient", choices)
-                    else: missing.append("有效收款人（未找到该姓名）")
+                    else: missing.append("有效收款人（未找到该姓名或手机号）")
             if missing:
                 message = "请补充或选择：" + "、".join(missing)
             else:
                 params = dict(user_id=user_id, request_id="CHAT-" + receipt_id[:48],
                     operation_id=request.operation_id, from_account=slots["from_account"],
                     to_account=slots["to_account"], amount=Decimal(slots["amount_fen"]) / 100,
-                    note=slots.get("note"), commit=False)
+                    note=slots.get("note"), note_source=slots.get("note_source"),
+                    recipient_phone=slots.get("recipient_phone", ""), commit=False)
                 if task:
                     task = await modify_task(db, bank, task_id=task["task_id"], state_version=state["target_version"], **params)
                     kind = "modification"

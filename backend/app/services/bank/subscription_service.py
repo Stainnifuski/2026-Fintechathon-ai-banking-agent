@@ -4,7 +4,7 @@ import calendar
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from ...database.connection import AsyncSessionLocal
 from ...domain import fen_to_yuan
@@ -60,6 +60,11 @@ async def cancel_subscription(
     *, subscription_id: str, user_id: str, state_version: int
 ) -> dict:
     async with AsyncSessionLocal() as session:
+        if session.get_bind().dialect.name == "sqlite":
+            await session.execute(update(SubscriptionORM).where(
+                SubscriptionORM.subscription_id == subscription_id,
+                SubscriptionORM.user_id == user_id,
+            ).values(state_version=SubscriptionORM.state_version))
         subscription = (
             await session.execute(
                 select(SubscriptionORM)
@@ -99,6 +104,11 @@ async def simulate_subscription_charge(
 ) -> dict:
     """模拟一个月度扣费周期，并在同一银行事务内更新余额和流水。"""
     async with AsyncSessionLocal() as session:
+        if session.get_bind().dialect.name == "sqlite":
+            await session.execute(update(SubscriptionORM).where(
+                SubscriptionORM.subscription_id == subscription_id,
+                SubscriptionORM.user_id == user_id,
+            ).values(state_version=SubscriptionORM.state_version))
         row = (
             await session.execute(
                 select(SubscriptionORM, AccountORM)

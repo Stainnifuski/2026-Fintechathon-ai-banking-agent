@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...domain.phone import normalize_phone, mask_phone
 from ...domain import (
     AuthorizationStatus,
     BankOperationStatus,
@@ -29,6 +30,7 @@ from ...integrations.authorization import (
     new_authorization,
     precheck_risk,
     record_consent,
+    serialize_risk_subject,
     validate_for_acceptance,
 )
 from ...integrations.bank_api import (
@@ -60,6 +62,45 @@ class TaskError(Exception):
         super().__init__(message)
 
 
+def _validated_note(note: str | None, source: str | None) -> tuple[str | None, str | None]:
+    if source not in {None, "manual", "automatic", "cleared"}:
+        raise TaskError("备注来源无效", 422, "INVALID_NOTE_SOURCE")
+    if source == "cleared":
+        if note is not None:
+            raise TaskError("清空备注时不能同时提供内容", 422, "INVALID_NOTE")
+        return None, source
+    if source == "automatic" and note is None:
+        note = "转账"
+    if source == "manual" and (note is None or not note.strip()):
+        raise TaskError("手动备注不能为空", 422, "INVALID_NOTE")
+    if note is not None and (
+        len(note) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in note)
+        or (note and not note.strip())
+    ):
+        raise TaskError("备注为空白、过长或含控制字符", 422, "INVALID_NOTE")
+    return note, source
+
+
+async def _checked_risk_level(
+    db: AsyncSession, *, user_id: str, amount_fen: int,
+    daily_transfer_used_fen: int,
+) -> str:
+    try:
+        level = await precheck_risk(
+            db, user_id=user_id, amount_fen=amount_fen,
+            daily_transfer_used_fen=daily_transfer_used_fen,
+        )
+    except Exception as error:
+        raise TaskError(
+            "风险服务暂不可用，请稍后重试", 503, "RISK_UNAVAILABLE"
+        ) from error
+    if level not in {"YELLOW", "RED"}:
+        raise TaskError(
+            "风险服务返回无效等级，已阻止转账", 503, "RISK_DECISION_INVALID"
+        )
+    return level
+
+
 def _id(prefix: str) -> str:
     return f"{prefix}{uuid4().hex[:16].upper()}"
 
@@ -70,6 +111,7 @@ def parameter_digest(
     amount_fen: int,
     currency: str,
     note: str | None,
+    recipient_phone: str | None = None,
 ) -> str:
     payload = {
         "from_account": from_account,
@@ -78,6 +120,8 @@ def parameter_digest(
         "currency": currency,
         "note": note or "",
     }
+    if recipient_phone is not None:
+        payload["recipient_phone"] = normalize_phone(recipient_phone)
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     ).hexdigest()
@@ -219,12 +263,15 @@ async def create_transfer_task(
     to_account: str,
     amount: float,
     note: str | None = None,
+    recipient_phone: str | None = None,
+    note_source: str | None = None,
     scheduled_at: datetime | None = None,
     commit: bool = True,
 ) -> dict:
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate:
         return await task_snapshot(db, duplicate, user_id)
+    note, note_source = _validated_note(note, note_source)
     if await db.get(TransferOperationORM, operation_id):
         raise TaskError("operation_id 已被其它任务使用", 409, "OPERATION_ID_CONFLICT")
     if from_account == to_account:
@@ -246,13 +293,18 @@ async def create_transfer_task(
             subject_user_id=user_id,
             from_account=from_account,
             to_account=to_account,
+            **({"recipient_phone": recipient_phone} if recipient_phone else {}),
         )
     except BankApiError as error:
         raise TaskError(error.message, error.status_code, error.code) from error
 
-    digest = parameter_digest(from_account, to_account, amount_fen, "CNY", note)
+    try:
+        canonical_phone = normalize_phone(recipient_phone) if recipient_phone else None
+    except ValueError as error:
+        raise TaskError(str(error), 422, "INVALID_PHONE") from error
+    digest = parameter_digest(from_account, to_account, amount_fen, "CNY", note, canonical_phone)
     # 3号风险检查
-    risk_level = await precheck_risk(
+    risk_level = await _checked_risk_level(
         db,
         user_id=user_id,
         amount_fen=amount_fen,
@@ -279,6 +331,8 @@ async def create_transfer_task(
             "amount_fen": amount_fen,
             "currency": "CNY",
             "note": note,
+            "note_source": note_source,
+            "recipient_phone": canonical_phone,
             "recipient_name": bank_validation.recipient_name,
             "scheduled_at": scheduled_at_utc.isoformat() if scheduled_at_utc else None,
         },
@@ -411,15 +465,19 @@ async def accept_task(
     if operation.status != OperationStatus.READY:
         raise TaskError("操作尚未准备就绪", 409, "OPERATION_NOT_READY")
 
+    await serialize_risk_subject(db, user_id)
+    plan = await _current_plan(db, task)
+    phone_binding = plan.params.get("recipient_phone")
     try:
         bank_validation = await bank.validate_transfer(
             subject_user_id=user_id,
             from_account=operation.from_account,
             to_account=operation.to_account,
+            **({"recipient_phone": phone_binding} if phone_binding else {}),
         )
     except BankApiError as error:
         raise TaskError(error.message, error.status_code, error.code) from error
-    latest_risk = await precheck_risk(
+    latest_risk = await _checked_risk_level(
         db,
         user_id=user_id,
         amount_fen=operation.amount_fen,
@@ -538,6 +596,7 @@ async def dispatch_task(
     )
     await db.commit()
 
+    plan = await _current_plan(db, task)
     command = BankTransferCommand(
         operation_id=operation.operation_id,
         from_account=operation.from_account,
@@ -545,6 +604,7 @@ async def dispatch_task(
         amount_fen=operation.amount_fen,
         currency=operation.currency,
         note=operation.note,
+        recipient_phone=plan.params.get("recipient_phone"),
         param_digest=operation.param_digest,
     )
     context = TrustedExecutionContext(
@@ -806,6 +866,8 @@ async def modify_task(
     to_account: str,
     amount: float,
     note: str | None,
+    recipient_phone: str | None = None,
+    note_source: str | None = None,
     commit: bool = True,
 ) -> dict:
     task = await _owned_task(db, task_id, user_id)
@@ -818,15 +880,20 @@ async def modify_task(
         raise TaskError("应用受理后参数不可修改", 409, "PARAMETERS_IMMUTABLE")
     if await db.get(TransferOperationORM, operation_id):
         raise TaskError("新的 operation_id 已存在", 409, "OPERATION_ID_CONFLICT")
+    note, note_source = _validated_note(note, note_source)
     try:
         amount_fen = yuan_to_fen(amount)
     except ValueError as error:
         raise TaskError(str(error)) from error
+    old_plan = await _current_plan(db, task)
+    if recipient_phone is None and to_account == old_operation.to_account:
+        recipient_phone = old_plan.params.get("recipient_phone")
     try:
         bank_validation = await bank.validate_transfer(
             subject_user_id=user_id,
             from_account=from_account,
             to_account=to_account,
+            **({"recipient_phone": recipient_phone} if recipient_phone else {}),
         )
     except BankApiError as error:
         raise TaskError(error.message, error.status_code, error.code) from error
@@ -836,13 +903,16 @@ async def modify_task(
     old_authorization = await _authorization(db, old_operation.operation_id)
     old_authorization.status = AuthorizationStatus.REVOKED
     (await _step(db, old_operation.step_id)).status = StepStatus.CANCELLED
-    old_plan = await _current_plan(db, task)
     old_plan.is_current = False
 
     new_version = task.current_plan_version + 1
     plan_id, step_id = _id("PLAN"), _id("STEP")
-    digest = parameter_digest(from_account, to_account, amount_fen, "CNY", note)
-    risk_level = await precheck_risk(
+    try:
+        canonical_phone = normalize_phone(recipient_phone) if recipient_phone else None
+    except ValueError as error:
+        raise TaskError(str(error), 422, "INVALID_PHONE") from error
+    digest = parameter_digest(from_account, to_account, amount_fen, "CNY", note, canonical_phone)
+    risk_level = await _checked_risk_level(
         db,
         user_id=user_id,
         amount_fen=amount_fen,
@@ -858,7 +928,10 @@ async def modify_task(
             "amount_fen": amount_fen,
             "currency": "CNY",
             "note": note,
+            "note_source": note_source,
+            "recipient_phone": canonical_phone,
             "recipient_name": bank_validation.recipient_name,
+            "scheduled_at": old_plan.params.get("scheduled_at"),
         },
     )
     db.add(new_plan)
@@ -917,6 +990,7 @@ async def modify_task(
 
 async def verify_task(
     db: AsyncSession,
+    bank: BankApi,
     *,
     task_id: str,
     user_id: str,
@@ -932,8 +1006,6 @@ async def verify_task(
         proof: 用户从 Google Authenticator 等验证器 App 读取的 6 位验证码。
     """
     from ...integrations.authorization import verify_consent
-    from ...services.bank import BankError, verify_totp_for_operation
-
     task = await _owned_task(db, task_id, user_id)
     duplicate = await _deduplicated_task_id(db, request_id)
     if duplicate == task_id:
@@ -945,11 +1017,15 @@ async def verify_task(
 
     operation = await _current_operation(db, task)
     authorization = await _authorization(db, operation.operation_id)
+    if authorization.status != AuthorizationStatus.PENDING_VERIFICATION:
+        raise TaskError("授权不在待验证状态", 409, "AUTHORIZATION_WRONG_STATE")
 
-    # 先由银行服务边界校验 TOTP 验证码（含防重放），通过后再推进授权状态。
+    # 由模拟银行内部 API 校验 TOTP；编排不直接读取银行客户表。
     try:
-        await verify_totp_for_operation(db, user_id, proof)
-    except BankError as error:
+        await bank.verify_totp(subject_user_id=user_id, proof=proof)
+    except BankResponseUnknown as error:
+        raise TaskError("验证结果未知，请等待新验证码后重试", 503, error.code) from error
+    except BankApiError as error:
         raise TaskError(error.message, error.status_code, error.code) from error
 
     try:
@@ -1098,7 +1174,7 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
         elif task.phase == TaskPhase.WAITING_VERIFICATION:
             allowed = ["verify", "modify", "cancel"]
         elif task.phase == TaskPhase.WAITING_EXECUTION:
-            allowed = ["cancel"]
+            allowed = ["modify", "cancel"]
         elif task.phase == TaskPhase.READY:
             allowed = ["accept", "modify", "cancel"]
         elif task.phase == TaskPhase.RECONCILING:
@@ -1117,6 +1193,11 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             "amount": fen_to_yuan(operation.amount_fen),
             "currency": operation.currency,
             "note": operation.note,
+            "note_source": plan.params.get("note_source"),
+            "recipient_phone_masked": (
+                mask_phone(plan.params["recipient_phone"])
+                if plan.params.get("recipient_phone") else None
+            ),
             "risk_level": authorization.risk_level,
             "scheduled_at": plan.params.get("scheduled_at"),
         }
@@ -1160,6 +1241,7 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             "bank_status": operation.bank_status,
             "bank_tx_id": operation.bank_tx_id,
             "failure_code": operation.failure_code,
+            "note": operation.note,
         },
         "authorization": {
             "authorization_id": authorization.authorization_id,

@@ -12,7 +12,6 @@ from backend.app.services.ai.conversation import process_message, read_conversat
 from backend.app.services.ai.nlu import NLUEngine
 from backend.app.schemas.tasks import ChatTaskCreate
 from backend.app.services.orchestration import TaskError, confirm_task, accept_task, reconcile_task
-from backend.app.integrations.authorization import CapabilityNotImplemented
 from backend.app.services.orchestration.task_service import verify_task
 
 
@@ -139,7 +138,13 @@ async def test_red_and_unknown_use_trusted_state(db):
     red = (await send(db, req('给李四转2000元')))['task']
     confirmed = await confirm_task(db, task_id=red['task_id'], user_id='U1', request_id=str(uuid4()), state_version=red['state_version'], plan_version=1)
     assert confirmed['phase'] == 'WAITING_VERIFICATION'
-    with pytest.raises(CapabilityNotImplemented): await verify_task()
+    with pytest.raises(TaskError, match="尚未绑定验证器"):
+        await verify_task(
+            db, Bank(db), task_id=red['task_id'], user_id='U1',
+            request_id=str(uuid4()), state_version=confirmed['state_version'],
+            challenge_id='totp', proof='000000',
+        )
+    await db.rollback()
     plan = await send(db, req('给李四转100元'))
     task = plan['task']
     ready = await confirm_task(db, task_id=task['task_id'], user_id='U1', request_id=str(uuid4()), state_version=task['state_version'], plan_version=1)

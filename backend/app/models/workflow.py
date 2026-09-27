@@ -95,6 +95,15 @@ class AuthorizationORM(TimestampMixin, Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class RiskSubjectLockORM(Base):
+    """按用户串行化受理时的风险重新评估和占用。"""
+
+    __tablename__ = "risk_subject_locks"
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class RiskReservationORM(TimestampMixin, Base):
     __tablename__ = "risk_reservations"
 

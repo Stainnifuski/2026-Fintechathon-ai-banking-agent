@@ -1,6 +1,7 @@
 """4号模拟银行内部协议；仅可信应用执行器可调用。"""
 
 import os
+import hmac
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -17,20 +18,22 @@ from ..services.bank import (
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
+    verify_totp_for_operation,
 )
 
 router = APIRouter(prefix="/api/v1/internal/bank", tags=["internal-bank"])
-INTERNAL_BANK_TOKEN = os.getenv("INTERNAL_BANK_TOKEN", "dev-internal-token")
+INTERNAL_BANK_TOKEN = os.getenv("INTERNAL_BANK_TOKEN")
 
 
 class InternalBankSubmit(BaseModel):
     operation_id: str = Field(min_length=8, max_length=64)
     from_account: str
     to_account: str
-    amount_fen: int = Field(gt=0)
+    amount_fen: int = Field(gt=0, strict=True)
     currency: str = "CNY"
     param_digest: str = Field(min_length=64, max_length=64)
     note: str | None = None
+    recipient_phone: str | None = None
     subject_user_id: str
     authorization_id: str
     control_epoch: int = Field(ge=1)
@@ -48,11 +51,18 @@ class TransferValidationRequest(BaseModel):
     subject_user_id: str
     from_account: str
     to_account: str
+    recipient_phone: str | None = None
 
 
 class TransferResolutionRequest(BaseModel):
     subject_user_id: str
     recipient_name: str = Field(min_length=1, max_length=100)
+
+
+class TransferDirectoryRequest(BaseModel):
+    subject_user_id: str
+    recipient_name: str | None = Field(default=None, max_length=100)
+    recipient_phone: str | None = Field(default=None, max_length=32)
 
 
 class TransferValidationResponse(BaseModel):
@@ -70,8 +80,17 @@ class PaymentRequestRelease(BaseModel):
     subject_user_id: str
 
 
+class InternalTotpVerification(BaseModel):
+    subject_user_id: str
+    proof: str = Field(min_length=6, max_length=6)
+
+
 def require_internal_token(x_internal_token: str = Header(default="")) -> None:
-    if x_internal_token != INTERNAL_BANK_TOKEN:
+    if not INTERNAL_BANK_TOKEN or INTERNAL_BANK_TOKEN in {
+        "dev-internal-token", "replace-with-a-separate-internal-secret"
+    }:
+        raise HTTPException(status_code=503, detail="内部银行凭据未安全配置")
+    if not hmac.compare_digest(x_internal_token, INTERNAL_BANK_TOKEN):
         raise HTTPException(status_code=403, detail="无效的内部执行凭据")
 
 
@@ -80,6 +99,17 @@ def _raise_bank_error(error: BankError) -> None:
         status_code=error.status_code,
         detail={"code": error.code, "message": error.message},
     ) from error
+
+
+@router.post("/totp/verify", dependencies=[Depends(require_internal_token)])
+async def verify_totp(request: InternalTotpVerification, db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await verify_totp_for_operation(db, request.subject_user_id, request.proof)
+        await db.commit()
+        return {"verified": True}
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)
 
 
 @router.post(
@@ -131,6 +161,7 @@ async def submit(
                 currency=request.currency,
                 param_digest=request.param_digest,
                 note=request.note,
+                recipient_phone=request.recipient_phone,
             ),
             TrustedExecutionContext(
                 subject_user_id=request.subject_user_id,
@@ -168,9 +199,12 @@ async def query(
 
 
 @router.post("/transfers/directory", dependencies=[Depends(require_internal_token)])
-async def directory(request: TransferResolutionRequest, db: AsyncSession = Depends(get_db)) -> dict:
+async def directory(request: TransferDirectoryRequest, db: AsyncSession = Depends(get_db)) -> dict:
     from ..services.bank.transfer_service import transfer_directory
-    return await transfer_directory(db, **request.model_dump())
+    try:
+        return await transfer_directory(db, **request.model_dump())
+    except BankError as error:
+        _raise_bank_error(error)
 
 
 @router.post(
