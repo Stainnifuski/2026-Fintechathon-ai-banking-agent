@@ -15,7 +15,6 @@ from backend.app.integrations.bank_api import (
     ResolvedTransferParties,
     TransferValidation,
 )
-from backend.app.integrations.authorization import CapabilityNotImplemented
 from backend.app.services.bank import (
     BankError,
     BankResponseLost,
@@ -26,6 +25,7 @@ from backend.app.services.bank import (
     validate_transfer_parties,
 )
 from backend.app.services.orchestration import (
+    TaskError,
     accept_task,
     cancel_task,
     confirm_task,
@@ -178,7 +178,9 @@ async def test_lost_response_recovers_by_original_operation_id(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_high_risk_transfer_stops_at_unimplemented_verification(db) -> None:
+async def test_high_risk_transfer_requires_totp_verification(db) -> None:
+    import pyotp
+
     bank = InProcessBankApi(db)
     task = await create_transfer_task(
         db,
@@ -201,18 +203,64 @@ async def test_high_risk_transfer_stops_at_unimplemented_verification(db) -> Non
     assert waiting["phase"] == "WAITING_VERIFICATION"
     assert (await db.get(AccountORM, "A1")).balance == 5000.0
 
-    with pytest.raises(CapabilityNotImplemented):
+    # 未绑定验证器时，强验证被拒绝，资金不动。
+    with pytest.raises(TaskError):
         await verify_task(
             db,
             task_id=task["task_id"],
             user_id="U1",
-            request_id="request-verify-placeholder",
+            request_id="request-verify-noenroll",
             state_version=waiting["state_version"],
-            challenge_id="placeholder",
-            proof="placeholder",
+            challenge_id="totp",
+            proof="000000",
         )
+    await db.rollback()
+
+    # 为用户绑定 TOTP 验证器。
+    secret = pyotp.random_base32()
+    user = await db.get(UserORM, "U1")
+    user.totp_secret = secret
+    user.totp_enabled = True
+    await db.commit()
+
+    # 错误验证码同样被拒绝。
+    with pytest.raises(TaskError):
+        await verify_task(
+            db,
+            task_id=task["task_id"],
+            user_id="U1",
+            request_id="request-verify-wrong",
+            state_version=waiting["state_version"],
+            challenge_id="totp",
+            proof="000000",
+        )
+    await db.rollback()
     assert (await db.get(AccountORM, "A1")).balance == 5000.0
-    assert (await db.get(AccountORM, "A2")).balance == 1000.0
+
+    # 正确的 TOTP 验证码通过强验证，授权生效。
+    ready = await verify_task(
+        db,
+        task_id=task["task_id"],
+        user_id="U1",
+        request_id="request-verify-mfa",
+        state_version=waiting["state_version"],
+        challenge_id="totp",
+        proof=pyotp.TOTP(secret).now(),
+    )
+    assert ready["phase"] == "READY"
+    assert ready["authorization"]["status"] == "VALID"
+
+    executed = await accept_task(
+        db,
+        bank,
+        task_id=task["task_id"],
+        user_id="U1",
+        request_id="request-accept-mfa",
+        state_version=ready["state_version"],
+    )
+    assert executed["outcome"] == "SUCCEEDED"
+    assert (await db.get(AccountORM, "A1")).balance == 3500.0
+    assert (await db.get(AccountORM, "A2")).balance == 2500.0
 
 
 @pytest.mark.asyncio

@@ -185,6 +185,9 @@ async def verify(
                 **request.model_dump(),
             )
         )
+    except TaskError as error:
+        await db.rollback()
+        _raise_task_error(error)
     except CapabilityNotImplemented as error:
         raise HTTPException(
             status_code=501,

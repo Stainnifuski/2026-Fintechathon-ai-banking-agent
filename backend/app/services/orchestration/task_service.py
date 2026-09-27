@@ -925,13 +925,14 @@ async def verify_task(
     challenge_id: str,
     proof: str,
 ) -> dict:
-    """红色路径 MFA 核验：验证通过后将授权推进到 VALID，任务推进到 READY。
+    """红色路径 MFA 核验：TOTP 验证码通过后将授权推进到 VALID，任务推进到 READY。
 
     Args:
-        challenge_id: 前端发起验证时的挑战 ID（预留给真实 MFA 服务使用）。
-        proof: 用户提交的验证凭据（MVP 阶段为任意非空字符串）。
+        challenge_id: 前端发起验证时的挑战 ID（TOTP 无状态，固定传占位值即可）。
+        proof: 用户从 Google Authenticator 等验证器 App 读取的 6 位验证码。
     """
     from ...integrations.authorization import verify_consent
+    from ...services.bank import BankError, verify_totp_for_operation
 
     task = await _owned_task(db, task_id, user_id)
     duplicate = await _deduplicated_task_id(db, request_id)
@@ -945,8 +946,14 @@ async def verify_task(
     operation = await _current_operation(db, task)
     authorization = await _authorization(db, operation.operation_id)
 
+    # 先由银行服务边界校验 TOTP 验证码（含防重放），通过后再推进授权状态。
     try:
-        verify_consent(authorization, proof=proof)
+        await verify_totp_for_operation(db, user_id, proof)
+    except BankError as error:
+        raise TaskError(error.message, error.status_code, error.code) from error
+
+    try:
+        verify_consent(authorization)
     except AuthorizationError as error:
         raise TaskError(error.message, 409, error.code) from error
 

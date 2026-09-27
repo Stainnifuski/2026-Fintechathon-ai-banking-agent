@@ -43,6 +43,12 @@ function App() {
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isActing, setIsActing] = useState(false);
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [enrollData, setEnrollData] = useState<bank.TotpEnroll | null>(null);
+  const [enrollCode, setEnrollCode] = useState('');
   const payerSelectorRef = useRef<HTMLDetailsElement>(null);
 
   const message = (error: unknown) => {
@@ -63,6 +69,7 @@ function App() {
       setToUserId(current => current && r.some(rec => rec.user_id === current) ? current : r[0]?.user_id || '');
       setRequestPayerIds(current => current.filter(id => r.some(rec => rec.user_id === id)));
       setRequestAccountId(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
+      bank.totpStatus().then(s => setTotpEnabled(s.enabled)).catch(() => {});
     } catch (error) { setStatus(message(error)); }
   };
 
@@ -253,15 +260,14 @@ function App() {
     setConversation(null); setActiveTask(null); setChat([]); setChatInput('');
   };
 
-  const actOnTask = async (action: 'confirm' | 'cancel' | 'reconcile' | 'verify') => {
+  const actOnTask = async (action: 'confirm' | 'cancel' | 'reconcile') => {
     if (!activeTask || isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')) return;
     setIsActing(true);
     try {
       let task = action === 'confirm' ? await bank.confirmTask(activeTask, newId())
         : action === 'cancel' ? await bank.cancelTask(activeTask, newId())
-        : action === 'reconcile' ? await bank.reconcileTask(activeTask, newId())
-        : await bank.verifyTask(activeTask, newId());
-      if ((action === 'confirm' || action === 'verify') && task.allowed_actions.includes('accept')) {
+        : await bank.reconcileTask(activeTask, newId());
+      if (action === 'confirm' && task.allowed_actions.includes('accept')) {
         task = await bank.acceptTask(task, newId());
       }
       setActiveTask(task); setStatus(task.message);
@@ -273,11 +279,59 @@ function App() {
     finally { setIsActing(false); }
   };
 
+  const errorCode = (error: unknown) =>
+    (error as { response?: { data?: { detail?: { code?: string } } } })?.response?.data?.detail?.code;
+
+  // 提交 TOTP 验证码完成红色路径强验证。
+  const submitMfa = async () => {
+    if (!activeTask || mfaCode.length !== 6 || isActing) return;
+    setIsActing(true); setStatus('');
+    try {
+      let task = await bank.verifyTask(activeTask, newId(), mfaCode);
+      if (task.allowed_actions.includes('accept')) {
+        task = await bank.acceptTask(task, newId());
+      }
+      setActiveTask(task); setStatus(task.message);
+      setMfaOpen(false); setMfaCode('');
+      if (task.phase === 'FINISHED') {
+        if (user) localStorage.removeItem(`scheduled-task-${user.user_id}`);
+        setAmount(''); setNote(''); setScheduledAt(''); await load();
+      }
+    } catch (error) {
+      setStatus(message(error));
+      // 尚未绑定验证器时，直接引导去绑定。
+      if (errorCode(error) === 'TOTP_NOT_ENROLLED') { setMfaOpen(false); setMfaCode(''); openEnroll(); }
+    } finally { setIsActing(false); }
+  };
+
+  // 打开绑定弹窗：向后端申请新密钥与二维码。
+  const openEnroll = async () => {
+    if (isActing) return;
+    setStatus('');
+    try {
+      const data = await bank.totpEnroll();
+      setEnrollData(data); setEnrollCode(''); setEnrollOpen(true);
+    } catch (error) { setStatus(message(error)); }
+  };
+
+  // 确认绑定：校验一次验证码后正式启用。
+  const submitEnroll = async () => {
+    if (enrollCode.length !== 6 || isActing) return;
+    setIsActing(true); setStatus('');
+    try {
+      await bank.totpConfirm(enrollCode);
+      setTotpEnabled(true); setEnrollOpen(false); setEnrollData(null); setEnrollCode('');
+      setStatus('验证器绑定成功，后续大额转账可用它完成身份验证');
+    } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
+  };
+
   const logout = () => {
     localStorage.removeItem('token'); localStorage.removeItem('bank-user');
     setUser(null); setAccounts([]); setRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setPendingChargeSubscription(null); setSubscriptionChargeId('');
     setChat([]); setActiveTask(null); setConversation(null); setRetryChat(null); setStatus('');
     setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId(''); setScheduledAt('');
+    setTotpEnabled(false); setMfaOpen(false); setMfaCode(''); setEnrollOpen(false); setEnrollData(null); setEnrollCode('');
   };
 
   const requestAmountNumber = Number(requestAmount) || 0;
@@ -299,7 +353,7 @@ function App() {
   <p className="hint">演示账户：张三 13800000001 / password123</p>{status && <p className="notice">{status}</p>}</section></main>;
 
   return <main className="app">
-    <header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><button className="secondary" onClick={logout}>退出登录</button></header>
+    <header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><div className="confirm"><button className="secondary" disabled={isActing} onClick={openEnroll}>{totpEnabled ? '🔐 已绑定验证器' : '🔐 绑定验证器'}</button><button className="secondary" onClick={logout}>退出登录</button></div></header>
     {status && <p className="notice">{status}</p>}
     <section className="grid">
       <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong><small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
@@ -346,7 +400,7 @@ function App() {
       <div className="confirm">
         {activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('cancel')}>取消任务</button>}
         {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('confirm')}>{activeTask.scheduled_at ? '确认定时转账' : '确认并提交'}</button>}
-        {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('verify')}>身份验证</button>}
+        {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => { setMfaCode(''); setMfaOpen(true); }}>身份验证</button>}
         {activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}
       </div>
     </section>}
@@ -365,6 +419,30 @@ function App() {
         return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()}</small></span><strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
       })}</ul>}</div>
     </section>
+    {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
+      <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+        <h2>🔐 身份验证</h2>
+        <p className="hint">请打开 Google Authenticator（或其他验证器 App），输入当前显示的 6 位验证码。</p>
+        <input inputMode="numeric" maxLength={6} value={mfaCode} placeholder="6 位验证码" onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && submitMfa()} />
+        <div className="confirm">
+          <button className="secondary" disabled={isActing} onClick={() => { setMfaOpen(false); setMfaCode(''); }}>取消</button>
+          <button disabled={isActing || mfaCode.length !== 6} onClick={submitMfa}>{isActing ? '验证中…' : '提交验证'}</button>
+        </div>
+      </div>
+    </div>}
+    {enrollOpen && enrollData && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setEnrollOpen(false); setEnrollData(null); setEnrollCode(''); } }}>
+      <div className="card" style={{ width: 400, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+        <h2>🔐 绑定验证器</h2>
+        <p className="hint">用 Google Authenticator 扫描二维码，或手动输入下方密钥，然后回填一次验证码完成绑定。</p>
+        <div style={{ textAlign: 'center' }}><img src={enrollData.qr_data_uri} alt="TOTP 二维码" style={{ width: 200, height: 200 }} /></div>
+        <p className="hint">手动输入密钥：<code>{enrollData.secret}</code></p>
+        <input inputMode="numeric" maxLength={6} value={enrollCode} placeholder="输入 App 显示的 6 位验证码" onChange={e => setEnrollCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && submitEnroll()} />
+        <div className="confirm">
+          <button className="secondary" disabled={isActing} onClick={() => { setEnrollOpen(false); setEnrollData(null); setEnrollCode(''); }}>取消</button>
+          <button disabled={isActing || enrollCode.length !== 6} onClick={submitEnroll}>{isActing ? '绑定中…' : '确认绑定'}</button>
+        </div>
+      </div>
+    </div>}
   </main>;
 }
 
