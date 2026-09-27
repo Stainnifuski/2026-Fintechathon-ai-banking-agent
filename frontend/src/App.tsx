@@ -9,7 +9,9 @@ const localDateTimeInput = (value: Date) => {
 const suggestedScheduleTime = () => localDateTimeInput(new Date(Date.now() + 2 * 60_000));
 
 function App() {
-  const [user, setUser] = useState<bank.User | null>(() => JSON.parse(localStorage.getItem('bank-user') || 'null'));
+  const [user, setUser] = useState<bank.User | null>(() =>
+    localStorage.getItem('token') ? JSON.parse(localStorage.getItem('bank-user') || 'null') : null
+  );
   const [loginMode, setLoginMode] = useState<'login' | 'register'>('login');
   const [phone, setPhone] = useState('13800000001');
   const [name, setName] = useState('');
@@ -78,7 +80,11 @@ function App() {
       setRequestPayerIds(current => current.filter(id => r.some(rec => rec.user_id === id)));
       setRequestAccountId(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
       bank.totpStatus().then(s => setTotpEnabled(s.enabled)).catch(() => {});
-    } catch (error) { setStatus(message(error)); }
+    } catch (error) {
+      if (!localStorage.getItem('token')) {
+        logout(); setStatus('登录已过期，请重新登录');
+      } else setStatus(message(error));
+    }
   };
 
   useEffect(() => { load(); }, [user?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -379,6 +385,9 @@ function App() {
     setUser(null); setAccounts([]); setRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setPendingChargeSubscription(null); setSubscriptionChargeId('');
     setChat([]); setActiveTask(null); setConversation(null); setRetryChat(null); setStatus('');
     setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId(''); setScheduledAt('');
+    setRecipientMode('name'); setRecipientPhone(''); setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone('');
+    setAmount(''); setNote(''); setClearNote(false); setEditingNote(null); setEditNoteCleared(false); setTransferMode('instant');
+    setRequestAmount(''); setRequestNote(''); setSplitEqually(false); setChatInput('');
     setTotpEnabled(false); setMfaOpen(false); setMfaCode(''); setEnrollOpen(false); setEnrollData(null); setEnrollCode('');
   };
 

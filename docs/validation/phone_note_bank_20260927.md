@@ -4,10 +4,18 @@
 
 - Windows PowerShell；功能分支 `codex/feature`；起始母项目 main `fee9aaa9fa5f1199f4275c22f010d9693949d637`，推送前更新并合入 `f7332639e9270fceade442733bf93d8ff7a595d2`。
 - Python 依赖安装至忽略目录 `.deps`。测试使用独立 SQLite，未读写仓库演示库 `banking_agent.db`。
-- 合入最新 main 后命令：`$env:PYTHONPATH='.deps'; $env:DATABASE_URL='sqlite+aiosqlite:///./.deps/dev-tests-merged.db'; python -m pytest tests -q`，结果 **94 passed in 14.55s**。
+- 合入最新 main 后命令：`$env:PYTHONPATH='.deps'; $env:DATABASE_URL='sqlite+aiosqlite:///./.deps/acceptance-tests.db'; python -m pytest tests -q`，复验结果 **94 passed in 14.89s**。
 - 前端在 `frontend` 运行 `node node_modules/typescript/bin/tsc -b` 和 `node node_modules/vite/bin/vite.js build`，均成功；Vite 构建 89 个模块。
 - 全新隔离库 `.deps/smoke-startup.db` 连续两次执行 `init_db()`、`seed_bank_data()`，无错误；合入 main 后对同一隔离库再次执行两次并成功补齐 TOTP 列。模拟旧用户表、手机号冲突阻断和重复运行也由 `test_phone_upgrade.py` 覆盖。
-- 独立 UI 库 `.deps/ui-smoke.db` 启动 FastAPI 和 Vite。浏览器页面打开，显示张三账户及历史流水，能切换至“按手机号查询”并输入演示号码。自动点击查询和聊天发送未显示反馈，故**完整页面流程未验证通过**；HTTP 和任务闭环由集成测试覆盖。
+- 独立 UI 库 `.deps/acceptance-ui-20260927.db` 启动 FastAPI 和 Vite。发现 Windows 上 Vite 代理的 `localhost:8000` 命中旧服务；改为明确的 `127.0.0.1:8000` 后，用端口 3001 的当前源码完成真实浏览器流程。旧登录令牌失效时会返回登录页，登出会清除上一用户的手机号候选及表单草稿。
+
+## 本轮页面验收结果
+
+- 张三登录，表单按 `+86 138-0000-0002` 精确查询，显示“李四 · 手机138****0002 · 账户尾号7756”。300 元确认卡显示银行身份、CNY、自动备注“转账”和 YELLOW。
+- 受理前将备注改为“9月房租”并显式清空，两次均生成需重新确认的计划。隔离库中点击确认后任务为 `FINISHED/SUCCEEDED`，银行流水号已显示；张三余额 50000→49700、当日转出额 300。李四登录后余额 30000→30300，并显示 300 元转入流水。
+- 聊天输入“把今天聚餐的20元转给13800000002”，确认卡显示自动备注“聚餐”；刷新后同一草稿与确认卡恢复。该聊天草稿未点击付款。
+- 李四查询张三号码时显示两张脱敏账户候选，未自动选首张；退出李四并登录张三后，上一用户的手机号、候选和选择均已清除。
+- 浏览器用张三创建 1100 元聊天任务，确认卡为 RED；点击确认后停在 `WAITING_VERIFICATION`，余额仍为 49700 元。随后取消任务，状态为 `FINISHED/CANCELLED`，银行未受理。
 
 ## 本轮覆盖
 
@@ -30,5 +38,5 @@
 
 - PostgreSQL 实库、Docker、多进程压力测试未运行；SQLite 独立连接并发测试已运行。
 - 新增手机号语句的真实模型调用未运行；离线模式与 fake model 的服务端校验已覆盖。
-- UI 查询至最终回执的浏览器流程需人工验收，不声称端到端页面通过。
+- 本轮浏览器已覆盖上述表单成功链路、聊天确认卡与刷新、跨用户候选清除及红色未验证阻断；TOTP 有效验证码、UNKNOWN 与 PostgreSQL 页面部署仍未做浏览器验收。
 - 真实号码所有权、生产级查询限流、完整风险策略版本及原因码、TOTP 密钥保护与跨服务证明绑定、整数分账本迁移仍待接入。详情见 `docs/bank/手机号转账与风险边界.md`。
