@@ -55,6 +55,8 @@ async def init_db() -> None:
     """初始化数据库，创建所有表。"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    from ..services.bank.migration_service import upgrade_phone_registry
+    await upgrade_phone_registry(AsyncSessionLocal)
 
 
 async def close_db() -> None:

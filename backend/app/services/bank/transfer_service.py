@@ -1,11 +1,17 @@
 """4号模拟银行：按 operation_id 幂等受理、记账和查询。"""
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
+import hashlib
+import json
+import os
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from ...domain import BankOperationStatus, fen_to_yuan
 from ...models.account import AccountORM
@@ -14,6 +20,7 @@ from ...models.payment_request import PaymentRequestORM
 from ...models.payment_request_payment import PaymentRequestPaymentORM
 from ...models.transaction import TransactionORM
 from ...models.user import UserORM
+from .phone import normalize_phone, mask_phone
 
 
 class BankError(Exception):
@@ -44,6 +51,7 @@ class BankTransferCommand:
     currency: str
     param_digest: str
     note: str | None = None
+    recipient_phone: str | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +75,81 @@ class ResolvedTransferPartiesResult(TransferValidationResult):
     recipient_user_id: str
 
 
+def _digest(command: BankTransferCommand) -> str:
+    payload = {
+        "from_account": command.from_account,
+        "to_account": command.to_account,
+        "amount_fen": command.amount_fen,
+        "currency": command.currency,
+        "note": command.note or "",
+    }
+    if command.recipient_phone is not None:
+        payload["recipient_phone"] = normalize_phone(command.recipient_phone)
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _money_fen(value: float) -> int:
+    try:
+        amount = Decimal(str(value)) * 100
+        if not amount.is_finite() or amount != amount.to_integral_value() or amount < 0:
+            raise ValueError("银行历史金额无效")
+        return int(amount)
+    except (InvalidOperation, TypeError) as error:
+        raise ValueError("银行历史金额无效") from error
+
+
+def _business_day_start(now: datetime) -> datetime:
+    try:
+        zone = ZoneInfo(os.getenv("BANK_BUSINESS_TIMEZONE", "Asia/Shanghai"))
+    except (KeyError, ValueError) as error:
+        raise BankError("银行业务时区配置无效", "BANK_TIMEZONE_INVALID", 503) from error
+    local = now.astimezone(zone)
+    return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+async def _daily_used_fen(
+    db: AsyncSession, *, account_ids: list[str], now: datetime
+) -> int:
+    if not account_ids:
+        return 0
+    start = _business_day_start(now)
+    rows = (await db.execute(
+        select(TransactionORM.amount).where(
+            TransactionORM.account_id.in_(account_ids),
+            TransactionORM.type == "transfer_out",
+            TransactionORM.status == "completed",
+            TransactionORM.timestamp >= start,
+        )
+    )).scalars().all()
+    try:
+        return sum(_money_fen(value) for value in rows)
+    except ValueError as error:
+        raise BankError("历史流水金额异常，已阻止转账", "BANK_LEDGER_INVALID", 503) from error
+
+
+def _validate_command(command: BankTransferCommand, context: TrustedExecutionContext) -> None:
+    if type(command.amount_fen) is not int or not 0 < command.amount_fen <= 2_000_000_000:
+        raise BankError("银行不支持该金额", "INVALID_AMOUNT", 422)
+    if command.currency != "CNY":
+        raise BankError("银行不支持该币种", "INVALID_CURRENCY", 422)
+    if command.from_account == command.to_account:
+        raise BankError("付款账户和收款账户不能相同", "SAME_ACCOUNT", 400)
+    if (not context.subject_user_id or not context.authorization_id
+            or type(context.control_epoch) is not int or context.control_epoch < 1):
+        raise BankError("可信执行上下文无效", "EXECUTION_CONTEXT_INVALID", 403)
+    if command.note is not None:
+        if len(command.note) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in command.note):
+            raise BankError("备注超过256字或含控制字符", "INVALID_NOTE", 422)
+    try:
+        actual_digest = _digest(command)
+    except ValueError as error:
+        raise BankError(str(error), "INVALID_PHONE", 422) from error
+    if command.param_digest != actual_digest:
+        raise BankError("银行参数摘要与实际命令不一致", "PARAM_DIGEST_MISMATCH", 409)
+
+
 def _result(operation: BankOperationORM) -> BankOperationResult:
     return BankOperationResult(
         operation_id=operation.operation_id,
@@ -82,6 +165,7 @@ async def validate_transfer_parties(
     subject_user_id: str,
     from_account: str,
     to_account: str,
+    recipient_phone: str | None = None,
 ) -> TransferValidationResult:
     """校验付款/收款账户并返回编排所需的最小银行事实。"""
     rows = (
@@ -100,6 +184,15 @@ async def validate_transfer_parties(
     receiver, receiver_user = receiver_row
     if sender_user.user_id != subject_user_id:
         raise BankError("付款账户不属于当前用户", "PAYER_FORBIDDEN", 403)
+    if sender_user.status != "active" or receiver_user.status != "active":
+        raise BankError("客户当前不可用", "CUSTOMER_INACTIVE", 403)
+    if recipient_phone is not None:
+        try:
+            mapped = normalize_phone(recipient_phone) == normalize_phone(receiver_user.phone)
+        except ValueError as error:
+            raise BankError(str(error), "INVALID_PHONE", 422) from error
+        if not mapped:
+            raise BankError("手机号映射已变化，请重新确认", "RECIPIENT_MAPPING_CHANGED", 409)
     if sender.status != "active" or receiver.status != "active":
         raise BankError("账户当前不可用", "ACCOUNT_INACTIVE", 403)
     if from_account == to_account:
@@ -108,7 +201,13 @@ async def validate_transfer_parties(
         from_account=sender.account_id,
         to_account=receiver.account_id,
         recipient_name=receiver_user.name,
-        daily_transfer_used_fen=round(sender.daily_transfer_used * 100),
+        daily_transfer_used_fen=await _daily_used_fen(
+            db,
+            account_ids=(await db.execute(select(AccountORM.account_id).where(
+                AccountORM.user_id == subject_user_id
+            ))).scalars().all(),
+            now=datetime.now(timezone.utc),
+        ),
     )
 
 
@@ -143,8 +242,8 @@ async def resolve_transfer_parties(
         )
     ).all()
     unique_users = {user.user_id for user, _ in recipients}
-    if len(unique_users) != 1:
-        raise BankError("未找到唯一收款人", "RECIPIENT_AMBIGUOUS", 409)
+    if len(unique_users) != 1 or len(recipients) != 1:
+        raise BankError("未找到唯一收款账户", "RECIPIENT_AMBIGUOUS", 409)
     recipient_user_id = next(iter(unique_users))
     recipient_user, receiver = next(
         (user, account) for user, account in recipients if user.user_id == recipient_user_id
@@ -154,7 +253,13 @@ async def resolve_transfer_parties(
         to_account=receiver.account_id,
         recipient_name=recipient_user.name,
         recipient_user_id=recipient_user.user_id,
-        daily_transfer_used_fen=round(sender.daily_transfer_used * 100),
+        daily_transfer_used_fen=await _daily_used_fen(
+            db,
+            account_ids=(await db.execute(select(AccountORM.account_id).where(
+                AccountORM.user_id == subject_user_id
+            ))).scalars().all(),
+            now=datetime.now(timezone.utc),
+        ),
     )
 
 
@@ -197,161 +302,211 @@ async def submit_transfer(
     *,
     simulate_response_loss: bool = False,
 ) -> BankOperationResult:
-    """幂等执行内部转账；银行账务更新与双边流水在一个事务中提交。"""
-    existing = await db.get(BankOperationORM, command.operation_id)
-    if existing:
-        if existing.param_digest != command.param_digest:
-            raise BankError(
-                "同一操作编号不能用于不同的银行参数",
-                "IDEMPOTENCY_CONFLICT",
-                409,
+    """银行端重算摘要，在数据库写锁下执行幂等检查与原子双边记账。"""
+    _validate_command(command, context)
+    try:
+        # SQLite 的 with_for_update 无效；空更新先取得跨连接写锁。
+        if db.get_bind().dialect.name == "sqlite":
+            await db.execute(
+                update(AccountORM)
+                .where(AccountORM.account_id == min(command.from_account, command.to_account))
+                .values(balance=AccountORM.balance)
             )
-        return _result(existing)
+        else:
+            await db.execute(
+                select(AccountORM.account_id)
+                .where(AccountORM.account_id.in_([command.from_account, command.to_account]))
+                .order_by(AccountORM.account_id)
+                .with_for_update()
+            )
 
-    payment_link = (
-        await db.execute(
+        rows = (await db.execute(select(AccountORM, UserORM).join(
+            UserORM, UserORM.user_id == AccountORM.user_id
+        ).where(AccountORM.account_id.in_([command.from_account, command.to_account])))).all()
+        accounts = {account.account_id: (account, user) for account, user in rows}
+        sender_row = accounts.get(command.from_account)
+        receiver_row = accounts.get(command.to_account)
+        if sender_row is None or receiver_row is None:
+            raise BankError("付款或收款账户不存在", "ACCOUNT_NOT_FOUND", 404)
+        sender, sender_user = sender_row
+        receiver, receiver_user = receiver_row
+        if sender.user_id != context.subject_user_id:
+            raise BankError("无权使用付款账户", "PAYER_FORBIDDEN", 403)
+        if sender_user.status != "active" or receiver_user.status != "active":
+            raise BankError("客户当前不可用", "CUSTOMER_INACTIVE", 403)
+        if command.recipient_phone is not None:
+            try:
+                mapped = normalize_phone(command.recipient_phone) == normalize_phone(receiver_user.phone)
+            except ValueError as error:
+                raise BankError(str(error), "INVALID_PHONE", 422) from error
+            if not mapped:
+                raise BankError("手机号映射已变化，请重新确认", "RECIPIENT_MAPPING_CHANGED", 409)
+        if sender.status != "active" or receiver.status != "active":
+            raise BankError("账户当前不可用", "ACCOUNT_INACTIVE", 403)
+
+        existing = await db.get(BankOperationORM, command.operation_id)
+        if existing is not None:
+            if (existing.param_digest != _digest(command)
+                    or existing.from_account != command.from_account
+                    or existing.to_account != command.to_account
+                    or existing.amount_fen != command.amount_fen
+                    or existing.currency != command.currency):
+                raise BankError("幂等参数冲突", "IDEMPOTENCY_CONFLICT", 409)
+            result = _result(existing)
+            await db.rollback()
+            return result
+
+        payment_link = (await db.execute(
             select(PaymentRequestPaymentORM).where(
                 PaymentRequestPaymentORM.operation_id == command.operation_id
             )
+        )).scalar_one_or_none()
+        payment_request = None
+        if payment_link is not None:
+            payment_request = await db.get(PaymentRequestORM, payment_link.payment_request_id)
+            if payment_request is None or payment_request.status != "ACCEPTED":
+                raise BankError("收款申请当前不能付款", "PAYMENT_REQUEST_NOT_PAYABLE", 409)
+            if (
+                payment_link.payer_account_id != command.from_account
+                or payment_request.receive_account_id != command.to_account
+                or payment_request.amount_fen != command.amount_fen
+                or payment_request.payer_user_id != context.subject_user_id
+            ):
+                raise BankError("转账参数与收款申请不一致", "PAYMENT_REQUEST_MISMATCH", 409)
+
+        now = datetime.now(timezone.utc)
+        daily_used_fen = await _daily_used_fen(
+            db, account_ids=[sender.account_id], now=now
         )
-    ).scalar_one_or_none()
-    payment_request = None
-    if payment_link is not None:
-        payment_request = await db.get(
-            PaymentRequestORM, payment_link.payment_request_id, with_for_update=True
+        try:
+            balance_fen = _money_fen(sender.balance)
+            receiver_balance_fen = _money_fen(receiver.balance)
+            limit_fen = _money_fen(sender.daily_transfer_limit)
+        except ValueError as error:
+            raise BankError("银行账户金额异常", "BANK_LEDGER_INVALID", 503) from error
+        error: tuple[str, str] | None = None
+        if balance_fen < command.amount_fen:
+            error = ("INSUFFICIENT_FUNDS", "余额不足")
+        elif daily_used_fen + command.amount_fen > limit_fen:
+            error = ("DAILY_LIMIT_EXCEEDED", "超过付款账户日转账限额")
+
+        bank_operation = BankOperationORM(
+            operation_id=command.operation_id,
+            status=BankOperationStatus.FAILED if error else BankOperationStatus.SUCCEEDED,
+            param_digest=_digest(command),
+            from_account=command.from_account,
+            to_account=command.to_account,
+            amount_fen=command.amount_fen,
+            currency=command.currency,
+            error_code=error[0] if error else None,
         )
-        if payment_request is None or payment_request.status != "ACCEPTED":
-            raise BankError("收款申请当前不能付款", "PAYMENT_REQUEST_NOT_PAYABLE", 409)
-        if (
-            payment_link.payer_account_id != command.from_account
-            or payment_request.receive_account_id != command.to_account
-            or payment_request.amount_fen != command.amount_fen
-            or payment_request.payer_user_id != context.subject_user_id
-        ):
-            raise BankError("转账参数与收款申请不一致", "PAYMENT_REQUEST_MISMATCH", 409)
+        db.add(bank_operation)
+        if error:
+            if payment_request is not None and payment_link is not None:
+                payment_request.status = "PENDING"
+                payment_request.state_version += 1
+                payment_request.responded_at = None
+                await db.delete(payment_link)
+            await db.commit()
+            raise BankError(error[1], error[0])
 
-    accounts = {
-        account.account_id: account
-        for account in (
-            await db.execute(
-                select(AccountORM)
-                .where(AccountORM.account_id.in_([command.from_account, command.to_account]))
-                .with_for_update()
-            )
-        )
-        .scalars()
-        .all()
-    }
-    sender = accounts.get(command.from_account)
-    receiver = accounts.get(command.to_account)
-    if sender is None or receiver is None:
-        raise BankError("付款或收款账户不存在", "ACCOUNT_NOT_FOUND", 404)
-    if sender.user_id != context.subject_user_id:
-        raise BankError("可信执行上下文无权使用该付款账户", "PAYER_FORBIDDEN", 403)
-    if sender.status != "active" or receiver.status != "active":
-        raise BankError("账户当前不可用", "ACCOUNT_INACTIVE", 403)
-
-    amount = fen_to_yuan(command.amount_fen)
-    error: tuple[str, str] | None = None
-    if command.currency != "CNY" or command.amount_fen <= 0:
-        error = ("INVALID_AMOUNT", "银行不支持该币种或金额")
-    elif round(sender.balance * 100) < command.amount_fen:
-        error = ("INSUFFICIENT_FUNDS", "余额不足")
-    elif round((sender.daily_transfer_used + amount) * 100) > round(
-        sender.daily_transfer_limit * 100
-    ):
-        error = ("DAILY_LIMIT_EXCEEDED", "超过付款账户日转账限额")
-
-    # 锁账户后再次检查，防止并发请求都在加锁前看不到银行操作。
-    concurrent = await db.get(BankOperationORM, command.operation_id)
-    if concurrent is not None:
-        if concurrent.param_digest != command.param_digest:
-            await db.rollback()
-            raise BankError("幂等参数冲突", "IDEMPOTENCY_CONFLICT", 409)
-        await db.rollback()
-        return _result(concurrent)
-
-    bank_operation = BankOperationORM(
-        operation_id=command.operation_id,
-        status=BankOperationStatus.FAILED if error else BankOperationStatus.ACCEPTED,
-        param_digest=command.param_digest,
-        from_account=command.from_account,
-        to_account=command.to_account,
-        amount_fen=command.amount_fen,
-        currency=command.currency,
-        error_code=error[0] if error else None,
-    )
-    db.add(bank_operation)
-    if error:
-        if payment_request is not None and payment_link is not None:
-            payment_request.status = "PENDING"
+        bank_tx_id = f"BTX{uuid4().hex[:18].upper()}"
+        credit_tx_id = f"TX{uuid4().hex[:18].upper()}"
+        amount = fen_to_yuan(command.amount_fen)
+        sender.balance = fen_to_yuan(balance_fen - command.amount_fen)
+        sender.daily_transfer_used = fen_to_yuan(daily_used_fen + command.amount_fen)
+        receiver.balance = fen_to_yuan(receiver_balance_fen + command.amount_fen)
+        bank_operation.bank_tx_id = bank_tx_id
+        if payment_request is not None:
+            payment_request.status = "PAID"
             payment_request.state_version += 1
-            payment_request.responded_at = None
-            await db.delete(payment_link)
+            payment_request.responded_at = now
+        db.add_all([
+            TransactionORM(
+                tx_id=bank_tx_id, operation_id=command.operation_id,
+                account_id=sender.account_id, type="transfer_out", amount=amount,
+                counterparty=receiver.account_id, category="transfer",
+                note=command.note, timestamp=now, status="completed", channel="app",
+            ),
+            TransactionORM(
+                tx_id=credit_tx_id, operation_id=None,
+                account_id=receiver.account_id, type="transfer_in", amount=amount,
+                counterparty=sender.account_id, category="transfer",
+                note=command.note, timestamp=now, status="completed", channel="app",
+            ),
+        ])
         await db.commit()
-        raise BankError(error[1], error[0])
-
-    now = datetime.now(timezone.utc)
-    bank_tx_id = f"BTX{uuid4().hex[:18].upper()}"
-    credit_tx_id = f"TX{uuid4().hex[:18].upper()}"
-    sender.balance -= amount
-    sender.daily_transfer_used += amount
-    receiver.balance += amount
-    bank_operation.status = BankOperationStatus.SUCCEEDED
-    bank_operation.bank_tx_id = bank_tx_id
-    if payment_request is not None:
-        payment_request.status = "PAID"
-        payment_request.state_version += 1
-        payment_request.responded_at = now
-    db.add_all(
-        [
-            TransactionORM(
-                tx_id=bank_tx_id,
-                operation_id=command.operation_id,
-                account_id=sender.account_id,
-                type="transfer_out",
-                amount=amount,
-                counterparty=receiver.account_id,
-                category="transfer",
-                note=command.note,
-                timestamp=now,
-                status="completed",
-                channel="app",
-            ),
-            TransactionORM(
-                tx_id=credit_tx_id,
-                operation_id=None,
-                account_id=receiver.account_id,
-                type="transfer_in",
-                amount=amount,
-                counterparty=sender.account_id,
-                category="transfer",
-                note=command.note,
-                timestamp=now,
-                status="completed",
-                channel="app",
-            ),
-        ]
-    )
-    await db.commit()
-    await db.refresh(bank_operation)
-    if simulate_response_loss:
-        raise BankResponseLost("银行已记账，但响应在传输中丢失")
-    return _result(bank_operation)
+        if simulate_response_loss:
+            raise BankResponseLost("银行已记账，但响应在传输中丢失")
+        return _result(bank_operation)
+    except BankError:
+        await db.rollback()
+        raise
+    except IntegrityError as error:
+        await db.rollback()
+        raise BankError("银行操作编号或流水冲突", "BANK_INTEGRITY_CONFLICT", 409) from error
+    except OperationalError as error:
+        await db.rollback()
+        raise BankError("银行账本繁忙，请按原操作编号核对", "BANK_BUSY", 503) from error
 
 
-async def transfer_directory(db: AsyncSession, *, subject_user_id: str, recipient_name: str) -> dict:
-    """4号受控目录。沿用账户ID排序的默认付款规则；不返回余额/完整卡号。"""
+async def transfer_directory(
+    db: AsyncSession,
+    *,
+    subject_user_id: str,
+    recipient_name: str | None = None,
+    recipient_phone: str | None = None,
+) -> dict:
+    """受控目录：姓名或规范化手机号精确查询；只返回脱敏候选。"""
+    if not recipient_name and not recipient_phone:
+        raise BankError("请提供收款人姓名或手机号", "RECIPIENT_REQUIRED", 422)
+    normalized_phone = None
+    if recipient_phone is not None:
+        try:
+            normalized_phone = normalize_phone(recipient_phone)
+        except ValueError as error:
+            raise BankError(str(error), "INVALID_PHONE", 422) from error
+    subject = await db.get(UserORM, subject_user_id)
+    if subject is None or subject.status != "active":
+        raise BankError("付款用户不可用", "PAYER_INACTIVE", 403)
     payers = (await db.execute(select(AccountORM).where(
         AccountORM.user_id == subject_user_id, AccountORM.status == "active"
     ).order_by(AccountORM.account_id))).scalars().all()
-    rows = (await db.execute(select(UserORM, AccountORM).join(
-        AccountORM, AccountORM.user_id == UserORM.user_id
-    ).where(UserORM.name == recipient_name, UserORM.user_id != subject_user_id,
-            UserORM.status == "active", AccountORM.status == "active")
-        .order_by(UserORM.user_id, AccountORM.account_id))).all()
+
+    users = (await db.execute(select(UserORM).where(
+        UserORM.user_id != subject_user_id
+    ))).scalars().all()
+    if normalized_phone is not None:
+        matches = []
+        for user in users:
+            try:
+                if normalize_phone(user.phone) == normalized_phone:
+                    matches.append(user)
+            except ValueError:
+                continue
+        if len(matches) > 1:
+            raise BankError("手机号映射冲突，请联系管理员", "PHONE_CONFLICT", 409)
+        if recipient_name and matches and matches[0].name != recipient_name:
+            raise BankError("姓名与手机号不指向同一收款人", "RECIPIENT_MISMATCH", 409)
+        users = matches
+    else:
+        users = [user for user in users if user.name == recipient_name]
+    users = [user for user in users if user.status == "active"]
+    user_ids = [user.user_id for user in users]
+    accounts = (await db.execute(select(AccountORM).where(
+        AccountORM.user_id.in_(user_ids), AccountORM.status == "active"
+    ).order_by(AccountORM.user_id, AccountORM.account_id))).scalars().all() if user_ids else []
+    by_id = {user.user_id: user for user in users}
     return {
-        "payers": [{"account_id": a.account_id, "label": f"{'活期 savings' if a.account_type == 'savings' else a.account_type} · 尾号{a.card_number[-4:]}"} for a in payers],
+        "payers": [{"account_id": account.account_id,
+                    "label": f"{account.account_type} · 尾号{account.card_number[-4:]}"}
+                   for account in payers],
         "default_payer": payers[0].account_id if payers else None,
-        "recipients": [{"account_id": a.account_id, "label": f"{u.name} · 手机尾号{u.phone[-4:]} · 账户尾号{a.card_number[-4:]}"} for u, a in rows],
+        "recipients": [
+            {"account_id": account.account_id,
+             "recipient_user_id": account.user_id,
+             "phone_masked": mask_phone(by_id[account.user_id].phone),
+             "label": f"{by_id[account.user_id].name} · 手机{mask_phone(by_id[account.user_id].phone)} · 账户尾号{account.card_number[-4:]}"}
+            for account in accounts
+        ],
     }

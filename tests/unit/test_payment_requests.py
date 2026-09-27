@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.models import AccountORM, Base, TransactionORM, UserORM
+from backend.app.services.orchestration.task_service import parameter_digest
 from backend.app.services.bank import payment_request_service
 from backend.app.services.bank.transfer_service import (
     BankError,
@@ -94,7 +95,7 @@ async def test_create_list_and_accept_payment_request(payment_request_store) -> 
                 to_account="A1",
                 amount_fen=1234,
                 currency="CNY",
-                param_digest="a" * 64,
+                param_digest=parameter_digest("A2", "A1", 1234, "CNY", "午餐"),
                 note="午餐",
             ),
             TrustedExecutionContext(
@@ -181,7 +182,7 @@ async def test_failed_payment_keeps_request_and_ledger_unchanged(
                     to_account="A1",
                     amount_fen=15000,
                     currency="CNY",
-                    param_digest="b" * 64,
+                    param_digest=parameter_digest("A2", "A1", 15000, "CNY", "金额超过余额"),
                     note="金额超过余额",
                 ),
                 TrustedExecutionContext(

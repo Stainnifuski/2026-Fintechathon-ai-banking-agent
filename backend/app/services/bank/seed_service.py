@@ -11,7 +11,10 @@ from ...models.contact import ContactORM
 from ...models.transaction import TransactionORM
 from ...models.subscription import SubscriptionORM
 from ...models.user import UserORM
+from ...models.user_phone_registry import UserPhoneRegistryORM
 from ...security.passwords import hash_password
+from .phone import normalize_phone
+from .transfer_service import BankError
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +35,20 @@ async def seed_bank_data() -> None:
             ("U005", "孙七", "13800000005", "stable"),
             ("U006", "周八", "13800000006", "balanced"),
         ]
+        existing_users = (await session.execute(select(UserORM))).scalars().all()
+        mapped_phones = {}
+        for existing_user in existing_users:
+            try:
+                canonical = normalize_phone(existing_user.phone)
+            except ValueError:
+                continue
+            owner = mapped_phones.setdefault(canonical, existing_user.user_id)
+            if owner != existing_user.user_id:
+                raise BankError("历史手机号存在等价冲突，种子初始化已停止", "PHONE_CONFLICT", 409)
         for user_id, name, phone, risk_level in user_specs:
+            owner = mapped_phones.get(phone)
+            if owner is not None and owner != user_id:
+                raise BankError("演示手机号已被其他客户占用", "PHONE_CONFLICT", 409)
             user = await session.get(UserORM, user_id)
             if user is None:
                 session.add(
@@ -46,10 +62,13 @@ async def seed_bank_data() -> None:
                         status="active",
                     )
                 )
-            else:
-                user.name = name
-                user.phone = phone
-                user.status = "active"
+        await session.flush()
+        for user_id, _, phone, _ in user_specs:
+            registry = await session.get(UserPhoneRegistryORM, phone)
+            if registry is None:
+                session.add(UserPhoneRegistryORM(canonical_phone=phone, user_id=user_id))
+            elif registry.user_id != user_id:
+                raise BankError("演示手机号映射冲突", "PHONE_CONFLICT", 409)
         await session.flush()
 
         account_specs = [
@@ -89,13 +108,13 @@ async def seed_bank_data() -> None:
             if contact is None:
                 contact = ContactORM(contact_id=contact_id, user_id="U001")
                 session.add(contact)
-            contact.name = name
-            contact.nickname = nickname
-            contact.phone = phone
-            contact.account_number = account_number
-            contact.bank = "AI 模拟银行"
-            contact.transfer_count = transfer_count
-            contact.last_transfer = date(2026, 9, 10) if transfer_count else None
+                contact.name = name
+                contact.nickname = nickname
+                contact.phone = phone
+                contact.account_number = account_number
+                contact.bank = "AI 模拟银行"
+                contact.transfer_count = transfer_count
+                contact.last_transfer = date(2026, 9, 10) if transfer_count else None
 
         now = datetime.now()
         if not has_seed_data:

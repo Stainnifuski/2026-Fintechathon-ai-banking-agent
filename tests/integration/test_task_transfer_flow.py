@@ -240,7 +240,7 @@ async def test_scheduled_transfer_waits_then_executes_once(db) -> None:
     )
 
     assert waiting["phase"] == "WAITING_EXECUTION"
-    assert waiting["allowed_actions"] == ["cancel"]
+    assert waiting["allowed_actions"] == ["modify", "cancel"]
     assert waiting["scheduled_at"] == execute_at.isoformat()
     assert (await db.get(AccountORM, "A1")).balance == 5000.0
 

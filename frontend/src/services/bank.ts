@@ -25,12 +25,14 @@ export interface SubscriptionChargeResult {
 }
 export interface ConfirmationCard {
   card_id: string; plan_version: number; from_account: string; to_account: string;
-  recipient_name: string; amount: number; currency: string; note?: string; risk_level: string;
+  recipient_name: string; recipient_phone_masked?: string; amount: number; currency: string;
+  note?: string | null; note_source?: 'manual' | 'automatic' | 'cleared'; risk_level: string;
   scheduled_at?: string;
 }
 export interface OperationView {
   operation_id: string; status: string; amount: number; amount_fen: number; currency: string;
   from_account: string; to_account: string; bank_status?: string; bank_tx_id?: string; failure_code?: string;
+  note?: string | null;
 }
 export interface TaskSnapshot {
   task_id: string; phase: string; outcome: string; state_version: number; plan_version: number;
@@ -44,6 +46,9 @@ export const login = (phone: string, password: string) => apiClient.post<AuthRes
 export const register = (name: string, phone: string, password: string) => apiClient.post<AuthResponse>('/auth/register', { name, phone, password }).then(r => r.data);
 export const accounts = (userId: string) => apiClient.get<Account[]>(`/accounts/${userId}/accounts`).then(r => r.data);
 export const recipients = () => apiClient.get<Recipient[]>('/users/recipients').then(r => r.data);
+export interface PhoneRecipientCandidate { account_id: string; label: string; }
+export const lookupPhoneRecipients = (phone: string) =>
+  apiClient.post<PhoneRecipientCandidate[]>('/users/recipients/phone', { phone }).then(r => r.data);
 export const history = () => apiClient.get<Transaction[]>('/transactions/history').then(r => r.data);
 export const paymentRequests = () => apiClient.get<PaymentRequest[]>('/payment-requests').then(r => r.data);
 export const listSubscriptions = () => apiClient.get<Subscription[]>('/subscriptions').then(r => r.data);
@@ -73,7 +78,8 @@ export const cancelPaymentRequest = (request: PaymentRequest) =>
   apiClient.post<PaymentRequest>(`/payment-requests/${request.payment_request_id}/cancel`, { state_version: request.state_version }).then(r => r.data);
 export const createTransferTask = (payload: {
   request_id: string; operation_id: string; from_account: string; to_account: string;
-  amount: number; note?: string; scheduled_at?: string;
+  amount: number; note?: string | null; note_source?: 'manual' | 'automatic' | 'cleared';
+  recipient_phone?: string; scheduled_at?: string;
 }) => apiClient.post<TaskSnapshot>('/tasks/transfers', payload).then(r => r.data);
 export interface ChatReply {
   session_id: string; session_version: number; kind: string; message: string; mode: string;
@@ -109,3 +115,12 @@ export const verifyTask = (task: TaskSnapshot, requestId: string) =>
     request_id: requestId, state_version: task.state_version,
     challenge_id: 'placeholder', proof: 'placeholder',
   }).then(r => r.data);
+
+
+
+export const modifyTask = (task: TaskSnapshot, payload: {
+  operation_id: string; from_account: string; to_account: string; amount: number;
+  note: string | null; note_source: 'manual' | 'cleared';
+}) => apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/modify`, {
+  request_id: crypto.randomUUID(), state_version: task.state_version, ...payload,
+}).then(r => r.data);

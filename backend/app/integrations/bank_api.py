@@ -32,6 +32,7 @@ class BankTransferCommand:
     currency: str
     param_digest: str
     note: str | None = None
+    recipient_phone: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,10 +64,11 @@ class ResolvedTransferParties(TransferValidation):
 
 
 class BankApi(Protocol):
-    async def transfer_directory(self, *, subject_user_id: str, recipient_name: str) -> dict: ...
+    async def transfer_directory(self, *, subject_user_id: str, recipient_name: str | None = None, recipient_phone: str | None = None) -> dict: ...
 
     async def validate_transfer(
-        self, *, subject_user_id: str, from_account: str, to_account: str
+        self, *, subject_user_id: str, from_account: str, to_account: str,
+        recipient_phone: str | None = None,
     ) -> TransferValidation: ...
 
     async def resolve_transfer_parties(
@@ -93,7 +95,11 @@ class HttpBankApiClient:
 
     def __init__(self, base_url: str | None = None, token: str | None = None) -> None:
         self.base_url = (base_url or os.getenv("BANK_API_BASE_URL", "http://127.0.0.1:8000")).rstrip("/")
-        self.token = token or os.getenv("INTERNAL_BANK_TOKEN", "dev-internal-token")
+        self.token = token or os.getenv("INTERNAL_BANK_TOKEN")
+        if not self.token or self.token in {
+            "dev-internal-token", "replace-with-a-separate-internal-secret"
+        }:
+            raise BankApiError("内部银行凭据未安全配置", "INTERNAL_BANK_TOKEN_MISSING", 503)
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -124,7 +130,8 @@ class HttpBankApiClient:
         return response
 
     async def validate_transfer(
-        self, *, subject_user_id: str, from_account: str, to_account: str
+        self, *, subject_user_id: str, from_account: str, to_account: str,
+        recipient_phone: str | None = None,
     ) -> TransferValidation:
         response = await self._request(
             "POST",
@@ -133,6 +140,7 @@ class HttpBankApiClient:
                 "subject_user_id": subject_user_id,
                 "from_account": from_account,
                 "to_account": to_account,
+                "recipient_phone": recipient_phone,
             },
         )
         if response.is_error:
@@ -151,9 +159,10 @@ class HttpBankApiClient:
             raise self._error(response)
         return ResolvedTransferParties(**response.json())
 
-    async def transfer_directory(self, *, subject_user_id: str, recipient_name: str) -> dict:
+    async def transfer_directory(self, *, subject_user_id: str, recipient_name: str | None = None, recipient_phone: str | None = None) -> dict:
         response = await self._request("POST", "/api/v1/internal/bank/transfers/directory",
-            json={"subject_user_id": subject_user_id, "recipient_name": recipient_name})
+            json={"subject_user_id": subject_user_id, "recipient_name": recipient_name,
+                  "recipient_phone": recipient_phone})
         if response.is_error:
             raise self._error(response)
         return response.json()

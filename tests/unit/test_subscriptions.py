@@ -133,3 +133,43 @@ async def test_cancelled_subscription_cannot_be_charged(subscription_store) -> N
         ).scalars().all()
     assert account.balance == 100
     assert transactions == []
+
+
+
+@pytest.mark.asyncio
+async def test_concurrent_charge_with_distinct_keys_uses_one_cycle(tmp_path, monkeypatch) -> None:
+    import asyncio
+    from sqlalchemy import func
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'subscriptions-race.db'}",
+        connect_args={"timeout": 5},
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(subscription_service, "AsyncSessionLocal", factory)
+    async with factory() as session:
+        session.add_all([
+            UserORM(user_id="U1", name="张三", phone="13800000001", id_card="demo", password_hash="hash", status="active"),
+            AccountORM(account_id="A1", user_id="U1", account_type="savings", card_number="6222****0001", balance=100, daily_transfer_used=0, daily_transfer_limit=50000, status="active"),
+            SubscriptionORM(subscription_id="SUB1", user_id="U1", debit_account_id="A1", merchant_name="演示订阅", amount_fen=1500, currency="CNY", billing_cycle="MONTHLY", next_charge_at=datetime(2026, 10, 12, tzinfo=timezone.utc), status="ACTIVE", state_version=1),
+        ])
+        await session.commit()
+
+    async def charge(key: str):
+        try:
+            return await subscription_service.simulate_subscription_charge(
+                subscription_id="SUB1", user_id="U1", state_version=1,
+                idempotency_key=key,
+            )
+        except BankError as error:
+            return error.code
+
+    results = await asyncio.gather(charge("charge-one"), charge("charge-two"))
+    assert sum(isinstance(item, dict) for item in results) == 1
+    assert "STALE_STATE_VERSION" in results
+    async with factory() as session:
+        assert (await session.get(AccountORM, "A1")).balance == 85
+        assert await session.scalar(select(func.count()).select_from(TransactionORM)) == 1
+    await engine.dispose()
