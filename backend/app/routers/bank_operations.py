@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.connection import get_db
+from ..schemas.bank import (
+    BankOperationResultView, TransferDirectoryView, TotpVerificationView, BANK_ERROR_RESPONSES,
+)
 from ..services.bank import (
     BankError,
     BankResponseLost,
@@ -21,7 +24,7 @@ from ..services.bank import (
     verify_totp_for_operation,
 )
 
-router = APIRouter(prefix="/api/v1/internal/bank", tags=["internal-bank"])
+router = APIRouter(prefix="/api/v1/internal/bank", tags=["internal-bank"], responses=BANK_ERROR_RESPONSES)
 INTERNAL_BANK_TOKEN = os.getenv("INTERNAL_BANK_TOKEN")
 
 
@@ -40,11 +43,7 @@ class InternalBankSubmit(BaseModel):
     simulate_response_loss: bool = False
 
 
-class InternalBankResult(BaseModel):
-    operation_id: str
-    status: str
-    bank_tx_id: str | None = None
-    error_code: str | None = None
+InternalBankResult = BankOperationResultView
 
 
 class TransferValidationRequest(BaseModel):
@@ -89,9 +88,9 @@ def require_internal_token(x_internal_token: str = Header(default="")) -> None:
     if not INTERNAL_BANK_TOKEN or INTERNAL_BANK_TOKEN in {
         "dev-internal-token", "replace-with-a-separate-internal-secret"
     }:
-        raise HTTPException(status_code=503, detail="内部银行凭据未安全配置")
+        raise HTTPException(status_code=503, detail={"code": "INTERNAL_BANK_TOKEN_MISSING", "message": "内部银行凭据未安全配置"})
     if not hmac.compare_digest(x_internal_token, INTERNAL_BANK_TOKEN):
-        raise HTTPException(status_code=403, detail="无效的内部执行凭据")
+        raise HTTPException(status_code=403, detail={"code": "INTERNAL_BANK_TOKEN_INVALID", "message": "无效的内部执行凭据"})
 
 
 def _raise_bank_error(error: BankError) -> None:
@@ -101,7 +100,7 @@ def _raise_bank_error(error: BankError) -> None:
     ) from error
 
 
-@router.post("/totp/verify", dependencies=[Depends(require_internal_token)])
+@router.post("/totp/verify", response_model=TotpVerificationView, dependencies=[Depends(require_internal_token)])
 async def verify_totp(request: InternalTotpVerification, db: AsyncSession = Depends(get_db)) -> dict:
     try:
         await verify_totp_for_operation(db, request.subject_user_id, request.proof)
@@ -198,7 +197,7 @@ async def query(
     return InternalBankResult(**result.__dict__)
 
 
-@router.post("/transfers/directory", dependencies=[Depends(require_internal_token)])
+@router.post("/transfers/directory", response_model=TransferDirectoryView, dependencies=[Depends(require_internal_token)])
 async def directory(request: TransferDirectoryRequest, db: AsyncSession = Depends(get_db)) -> dict:
     from ..services.bank.transfer_service import transfer_directory
     try:

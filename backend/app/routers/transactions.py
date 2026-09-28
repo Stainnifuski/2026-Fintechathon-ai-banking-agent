@@ -1,12 +1,14 @@
 """受认证保护的银行转账及交易查询接口。"""
 
+from ..schemas.bank import BANK_ERROR_RESPONSES
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..middleware.auth import get_current_user
 from ..models.transaction import TransactionSchema
 from ..services.bank import get_transaction, list_transactions
 
-router = APIRouter(prefix="/api/v1/transactions", tags=["transactions"])
+router = APIRouter(prefix="/api/v1/transactions", tags=["transactions"], responses=BANK_ERROR_RESPONSES)
 
 
 @router.get("/history", response_model=list[TransactionSchema])

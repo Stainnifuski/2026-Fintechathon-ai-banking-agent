@@ -1,10 +1,12 @@
 """账户数据模型"""
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Float, ForeignKey, String
+from decimal import Decimal
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
+from ..domain.money import exact_fen, decimal_yuan
 
 
 class AccountORM(TimestampMixin, Base):
@@ -20,13 +22,33 @@ class AccountORM(TimestampMixin, Base):
         String(16), nullable=False, comment="账户类型: savings|checking|credit"
     )
     card_number: Mapped[str] = mapped_column(String(32), nullable=False, comment="卡号(脱敏)")
-    balance: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, comment="余额")
-    daily_transfer_used: Mapped[float] = mapped_column(
-        Float, nullable=False, default=0.0, comment="今日已转金额"
-    )
-    daily_transfer_limit: Mapped[float] = mapped_column(
-        Float, nullable=False, default=50000.0, comment="日转账限额"
-    )
+    balance_fen: Mapped[int] = mapped_column(BigInteger, CheckConstraint("balance_fen >= 0 AND balance_fen = CAST(balance_fen AS BIGINT)"), nullable=False, default=0)
+    daily_transfer_used_fen: Mapped[int] = mapped_column(BigInteger, CheckConstraint("daily_transfer_used_fen >= 0 AND daily_transfer_used_fen = CAST(daily_transfer_used_fen AS BIGINT)"), nullable=False, default=0)
+    daily_transfer_limit_fen: Mapped[int] = mapped_column(BigInteger, CheckConstraint("daily_transfer_limit_fen >= 0 AND daily_transfer_limit_fen = CAST(daily_transfer_limit_fen AS BIGINT)"), nullable=False, default=5_000_000)
+
+    @property
+    def balance(self) -> Decimal:
+        return decimal_yuan(self.balance_fen)
+
+    @balance.setter
+    def balance(self, value: Decimal | float | int | str) -> None:
+        self.balance_fen = exact_fen(value)
+
+    @property
+    def daily_transfer_used(self) -> Decimal:
+        return decimal_yuan(self.daily_transfer_used_fen)
+
+    @daily_transfer_used.setter
+    def daily_transfer_used(self, value: Decimal | float | int | str) -> None:
+        self.daily_transfer_used_fen = exact_fen(value)
+
+    @property
+    def daily_transfer_limit(self) -> Decimal:
+        return decimal_yuan(self.daily_transfer_limit_fen)
+
+    @daily_transfer_limit.setter
+    def daily_transfer_limit(self, value: Decimal | float | int | str) -> None:
+        self.daily_transfer_limit_fen = exact_fen(value)
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active", comment="账户状态"
     )

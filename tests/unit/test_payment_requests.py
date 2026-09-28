@@ -112,12 +112,12 @@ async def test_create_list_and_accept_payment_request(payment_request_store) -> 
                 select(TransactionORM).order_by(TransactionORM.type)
             )
         ).scalars().all()
-    assert payer_account.balance == 87.66
-    assert payer_account.daily_transfer_used == 12.34
-    assert receive_account.balance == 112.34
-    assert {(item.account_id, item.type, item.amount) for item in transactions} == {
-        ("A1", "transfer_in", 12.34),
-        ("A2", "transfer_out", 12.34),
+    assert payer_account.balance_fen == 8766
+    assert payer_account.daily_transfer_used_fen == 1234
+    assert receive_account.balance_fen == 11234
+    assert {(item.account_id, item.type, item.amount_fen) for item in transactions} == {
+        ("A1", "transfer_in", 1234),
+        ("A2", "transfer_out", 1234),
     }
 
     with pytest.raises(BankError) as stale_action:

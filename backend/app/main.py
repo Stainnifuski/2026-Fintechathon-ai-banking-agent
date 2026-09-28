@@ -12,6 +12,7 @@ from .database.connection import AsyncSessionLocal, close_db, init_db
 from .database.seed import seed_data
 from .integrations.bank_api import get_bank_api
 from .middleware.audit import AuditMiddleware
+from .middleware.errors import install_error_handlers
 from .routers.accounts import router as accounts_router
 from .routers.auth import router as auth_router
 from .routers.bank_operations import router as bank_operations_router
@@ -71,6 +72,7 @@ app.add_middleware(
 )
 
 app.add_middleware(AuditMiddleware)
+install_error_handlers(app)
 
 # ──────────────────── 路由 ────────────────────
 

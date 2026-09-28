@@ -31,7 +31,6 @@ function App() {
   const [phoneCandidates, setPhoneCandidates] = useState<bank.PhoneRecipientCandidate[]>([]);
   const [selectedPhoneAccount, setSelectedPhoneAccount] = useState('');
   const [lookedUpPhone, setLookedUpPhone] = useState('');
-  const [clearNote, setClearNote] = useState(false);
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [editNoteCleared, setEditNoteCleared] = useState(false);
   const [amount, setAmount] = useState('');
@@ -165,8 +164,8 @@ function App() {
         request_id: newId(), operation_id: newId(), from_account: fromAccount,
         to_account: recipientMode === 'phone' ? phoneChoice!.account_id : recipient!.account_id,
         recipient_phone: recipientMode === 'phone' ? recipientPhone : undefined,
-        amount: Number(amount), note: clearNote ? null : (note || '转账'),
-        note_source: clearNote ? 'cleared' : note ? 'manual' : 'automatic',
+        amount: Number(amount), note: note.trim() ? note : null,
+        note_source: note.trim() ? 'manual' : 'cleared',
         scheduled_at: transferMode === 'scheduled' ? new Date(scheduledAt).toISOString() : undefined,
       });
       if (user && transferMode === 'scheduled') {
@@ -183,7 +182,7 @@ function App() {
       const candidates = await bank.lookupPhoneRecipients(recipientPhone);
       setPhoneCandidates(candidates); setLookedUpPhone(recipientPhone);
       setSelectedPhoneAccount(candidates.length === 1 ? candidates[0].account_id : '');
-      if (!candidates.length) setStatus('未找到可收款账户，请核对完整手机号');
+      if (!candidates.length) setStatus('未找到可收款账户，请核对手机号');
     } catch (error) { setStatus(message(error)); }
   };
 
@@ -386,7 +385,7 @@ function App() {
     setChat([]); setActiveTask(null); setConversation(null); setRetryChat(null); setStatus('');
     setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId(''); setScheduledAt('');
     setRecipientMode('name'); setRecipientPhone(''); setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone('');
-    setAmount(''); setNote(''); setClearNote(false); setEditingNote(null); setEditNoteCleared(false); setTransferMode('instant');
+    setAmount(''); setNote(''); setEditingNote(null); setEditNoteCleared(false); setTransferMode('instant');
     setRequestAmount(''); setRequestNote(''); setSplitEqually(false); setChatInput('');
     setTotpEnabled(false); setMfaOpen(false); setMfaCode(''); setEnrollOpen(false); setEnrollData(null); setEnrollCode('');
   };
@@ -419,12 +418,11 @@ function App() {
         <label>收款方式<select value={recipientMode} onChange={e => setRecipientMode(e.target.value as 'name' | 'phone')}><option value="name">按姓名选择</option><option value="phone">按手机号查询</option></select></label>
         {recipientMode === 'name'
           ? <label>收款人<select value={toUserId} onChange={e => setToUserId(e.target.value)}>{recipients.map(r => <option value={r.user_id} key={r.user_id}>{r.name} · {r.bank}</option>)}</select></label>
-          : <><label>完整手机号<input value={recipientPhone} onChange={e => { setRecipientPhone(e.target.value); setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone(''); }} placeholder="+86 138-0000-0002" /></label>
+          : <><label>手机号<input value={recipientPhone} onChange={e => { setRecipientPhone(e.target.value); setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone(''); }} /></label>
             <button type="button" className="secondary" onClick={lookupPhone}>查询收款账户</button>
             {phoneCandidates.length > 0 && <label>收款账户<select value={selectedPhoneAccount} onChange={e => setSelectedPhoneAccount(e.target.value)}><option value="">请选择脱敏候选</option>{phoneCandidates.map(candidate => <option value={candidate.account_id} key={candidate.account_id}>{candidate.label}</option>)}</select></label>}</>}
         <label>金额（元）<input required min="0.01" step="0.01" type="number" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-        <label>备注（留空自动填“转账”）<input maxLength={256} disabled={clearNote} value={note} onChange={e => setNote(e.target.value)} /></label>
-        <label><input type="checkbox" checked={clearNote} onChange={e => setClearNote(e.target.checked)} />不要备注</label>
+        <label>备注（可选）<input maxLength={256} value={note} onChange={e => setNote(e.target.value)} /></label>
         <label>执行方式<select value={transferMode} onChange={e => { const mode = e.target.value as 'instant' | 'scheduled'; setTransferMode(mode); if (mode === 'scheduled' && !scheduledAt) setScheduledAt(suggestedScheduleTime()); }}><option value="instant">立即转账</option><option value="scheduled">定时转账</option></select></label>
         {transferMode === 'scheduled' && <><label>执行时间<input required min={localDateTimeInput(new Date())} type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /><small>点击右侧日历图标选择日期和时间，例如：2026/09/26 21:31。系统按本机时间执行。</small></label><button type="button" className="secondary" onClick={() => setScheduledAt(suggestedScheduleTime())}>快速设置为约 2 分钟后</button></>}
         <button disabled={!fromAccount || (recipientMode === 'name' ? !toUserId : !selectedPhoneAccount) || isActing}>生成确认信息</button>

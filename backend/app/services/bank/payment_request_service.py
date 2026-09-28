@@ -1,6 +1,7 @@
 """4号模拟银行：收款申请的数据访问与权限校验。"""
 
 import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -11,9 +12,11 @@ from ...database.connection import AsyncSessionLocal
 from ...domain import fen_to_yuan, yuan_to_fen
 from ...models.account import AccountORM
 from ...models.payment_request import PaymentRequestORM
+from ...models.payment_request_batch import PaymentRequestBatchORM
 from ...models.payment_request_payment import PaymentRequestPaymentORM
 from ...models.user import UserORM
 from .transfer_service import BankError
+from .audit_service import record_bank_event
 
 PENDING = "PENDING"
 REJECTED = "REJECTED"
@@ -140,6 +143,10 @@ async def create_payment_request(
             expires_at=_now() + timedelta(days=7),
         )
         session.add(record)
+        record_bank_event(session, event_key=record.payment_request_id,
+            subject_user_id=requester_user_id, action="payment_request_create", result="success",
+            facts={"payment_request_id": record.payment_request_id, "amount_fen": amount_fen},
+            decision_chain=["participants_checked", "ownership_checked", "request_created"])
         try:
             await session.commit()
         except IntegrityError as error:
@@ -202,8 +209,23 @@ async def create_payment_request_batch(
         ).hexdigest()
         for payer_id in payer_ids
     }
+    batch_id = hashlib.sha256(f"{requester_user_id}:{idempotency_key}".encode()).hexdigest()
+    request_digest = hashlib.sha256(json.dumps({
+        "payers": sorted(payer_ids), "receive_account_id": receive_account_id,
+        "amount_fen": total_fen, "split_equally": split_equally, "note": note or "",
+    }, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
     async with AsyncSessionLocal() as session:
+        # 同一申请人的批次串行化；SQLite使用数据库写锁，PG使用客户行锁。
+        if session.get_bind().dialect.name == "sqlite":
+            await session.execute(update(UserORM).where(UserORM.user_id == requester_user_id)
+                                  .values(status=UserORM.status))
+        else:
+            await session.execute(select(UserORM.user_id).where(
+                UserORM.user_id == requester_user_id).with_for_update())
+        batch = await session.get(PaymentRequestBatchORM, batch_id)
+        if batch is not None and batch.request_digest != request_digest:
+            raise BankError("幂等键已用于不同的批量收款申请", "IDEMPOTENCY_CONFLICT", 409)
         users = {
             user.user_id: user
             for user in (
@@ -237,6 +259,12 @@ async def create_payment_request_batch(
                 )
             )
         ).scalars().all()
+        if existing_records and len(existing_records) != len(payer_ids):
+            raise BankError("历史批次参与人不一致", "IDEMPOTENCY_CONFLICT", 409)
+        if batch is None:
+            session.add(PaymentRequestBatchORM(
+                batch_id=batch_id, requester_user_id=requester_user_id,
+                idempotency_key=idempotency_key, request_digest=request_digest))
         existing_by_payer = {item.payer_user_id: item for item in existing_records}
         records: list[PaymentRequestORM] = []
         for payer_id in payer_ids:
@@ -268,8 +296,17 @@ async def create_payment_request_batch(
                 expires_at=_now() + timedelta(days=7),
             )
             session.add(record)
+            record_bank_event(session, event_key=record.payment_request_id,
+                subject_user_id=requester_user_id, action="payment_request_create", result="success",
+                facts={"batch_id": batch_id, "payment_request_id": record.payment_request_id,
+                       "amount_fen": amount_fen},
+                decision_chain=["participants_checked", "ownership_checked", "batch_request_created"])
             records.append(record)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as error:
+            await session.rollback()
+            raise BankError("批量收款申请冲突，请按原编号重试", "PAYMENT_REQUEST_CONFLICT", 409) from error
         for record in records:
             await session.refresh(record)
         return [
@@ -372,6 +409,10 @@ async def respond_to_payment_request(
                 )
             ).scalars()
         }
+        record_bank_event(session, event_key=f"{payment_request_id}:{state_version + 1}",
+            subject_user_id=payer_user_id, action="payment_request_reject", result="cancelled",
+            facts={"payment_request_id": payment_request_id, "state_version": state_version + 1},
+            decision_chain=["payer_ownership_checked", "version_checked", "request_rejected"])
         await session.commit()
         await session.refresh(record)
         return _view(record, users[record.requester_user_id], users[record.payer_user_id])
@@ -448,6 +489,10 @@ async def prepare_payment_request_payment(
         if record.status == PENDING:
             record.status = "ACCEPTED"
             record.state_version += 1
+        record_bank_event(session, event_key=operation_id, subject_user_id=payer_user_id,
+            action="payment_request_accept", result="success",
+            facts={"operation_id": operation_id, "payment_request_id": payment_request_id},
+            decision_chain=["payer_ownership_checked", "version_checked", "payment_reserved"])
         await session.commit()
         return {
             "operation_id": operation_id,
@@ -507,6 +552,10 @@ async def cancel_payment_request(
                 )
             ).scalars()
         }
+        record_bank_event(session, event_key=f"{payment_request_id}:{state_version + 1}",
+            subject_user_id=requester_user_id, action="payment_request_cancel", result="cancelled",
+            facts={"payment_request_id": payment_request_id, "state_version": state_version + 1},
+            decision_chain=["requester_ownership_checked", "version_checked", "request_cancelled"])
         await session.commit()
         await session.refresh(record)
         return _view(record, users[record.requester_user_id], users[record.payer_user_id])

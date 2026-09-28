@@ -5,11 +5,12 @@ from pydantic import BaseModel, Field
 from ..middleware.auth import get_current_user
 from ..services.bank import list_recipients as bank_list_recipients
 from ..services.bank import lookup_recipient_phone, BankError
+from ..schemas.bank import RecipientView, PhoneRecipientView, BANK_ERROR_RESPONSES
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+router = APIRouter(prefix="/api/v1/users", tags=["users"], responses=BANK_ERROR_RESPONSES)
 
 
-@router.get("/recipients")
+@router.get("/recipients", response_model=list[RecipientView])
 async def list_recipients(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
@@ -22,7 +23,7 @@ class PhoneLookupRequest(BaseModel):
     phone: str = Field(min_length=1, max_length=32)
 
 
-@router.post("/recipients/phone")
+@router.post("/recipients/phone", response_model=list[PhoneRecipientView])
 async def lookup_phone(
     request: PhoneLookupRequest,
     current_user: dict = Depends(get_current_user),

@@ -5,6 +5,74 @@ from sqlalchemy import inspect, select, text
 from ...domain.phone import normalize_phone
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
+from ...domain.money import exact_fen, decimal_yuan, ledger_fen
+
+MONEY_COLUMNS = {
+    "accounts": ("account_id", ("balance", "daily_transfer_used", "daily_transfer_limit")),
+    "transactions": ("tx_id", ("amount",)),
+}
+
+
+async def migrate_bank_money(connection, *, rollback: bool = False) -> None:
+    """整批预检后原子迁移金额列；rollback从当前整数账本还原元列。"""
+    dialect = connection.dialect.name
+    if dialect == "sqlite":
+        # sqlite驱动默认不会为DDL开启事务，显式开始确保DDL也可回滚。
+        active = await connection.run_sync(lambda conn: conn.connection.driver_connection.in_transaction)
+        if not active:
+            await connection.execute(text("BEGIN IMMEDIATE"))
+    if dialect == "postgresql":
+        await connection.execute(text("LOCK TABLE accounts, transactions IN ACCESS EXCLUSIVE MODE"))
+
+    plans = []
+    for table, (key, names) in MONEY_COLUMNS.items():
+        columns = await connection.run_sync(lambda conn, table=table: {
+            col["name"] for col in inspect(conn).get_columns(table)
+        })
+        source_names = [f"{name}_fen" if rollback else name for name in names]
+        target_names = [name if rollback else f"{name}_fen" for name in names]
+        if not set(source_names) & columns:
+            if not set(target_names) <= columns:
+                raise RuntimeError(f"{table}金额列不完整，停止升级")
+            continue
+        if not set(source_names) <= columns or set(target_names) & columns:
+            raise RuntimeError(f"{table}存在混合金额结构，停止升级")
+        rows = (await connection.execute(text(
+            f"SELECT {key}, {', '.join(source_names)} FROM {table}"
+        ))).mappings().all()
+        converted = []
+        for row in rows:
+            values = {"row_key": row[key]}
+            for source, target in zip(source_names, target_names):
+                try:
+                    if rollback:
+                        fen = ledger_fen(row[source])
+                        value = float(decimal_yuan(fen))
+                        if exact_fen(value) != fen:
+                            raise ValueError("旧浮点结构无法精确表达当前账目")
+                    else:
+                        value = exact_fen(row[source])
+                        if table == "transactions" and value == 0:
+                            raise ValueError("流水金额必须大于零")
+                except ValueError as error:
+                    raise RuntimeError(f"{table}/{row[key]}/{source}金额异常，停止迁移") from error
+                values[target] = value
+            converted.append(values)
+        plans.append((table, key, source_names, target_names, converted))
+
+    # 所有表均检查通过之后才改列，不舍入或删除异常数据。
+    for table, key, sources, targets, rows in plans:
+        for target in targets:
+            minimum = 1 if table == "transactions" else 0
+            definition = "DOUBLE PRECISION NOT NULL DEFAULT 0" if rollback else (
+                f"BIGINT NOT NULL DEFAULT {minimum} CHECK ({target} >= {minimum} AND {target} = CAST({target} AS BIGINT))"
+            )
+            await connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {target} {definition}"))
+        if rows:
+            assignments = ', '.join(f"{name} = :{name}" for name in targets)
+            await connection.execute(text(f"UPDATE {table} SET {assignments} WHERE {key} = :row_key"), rows)
+        for source in sources:
+            await connection.execute(text(f"ALTER TABLE {table} DROP COLUMN {source}"))
 
 
 async def upgrade_legacy_user_mfa_columns(connection) -> None:

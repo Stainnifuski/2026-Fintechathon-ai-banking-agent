@@ -1,5 +1,7 @@
 """受认证保护的收款申请接口；路由层不访问数据库。"""
 
+from ..schemas.bank import BANK_ERROR_RESPONSES
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +27,7 @@ from ..services.bank import (
 )
 from ..services.orchestration import TaskError, create_transfer_task
 
-router = APIRouter(prefix="/api/v1/payment-requests", tags=["payment-requests"])
+router = APIRouter(prefix="/api/v1/payment-requests", tags=["payment-requests"], responses=BANK_ERROR_RESPONSES)
 
 
 def _raise_bank_error(error: BankError) -> None:

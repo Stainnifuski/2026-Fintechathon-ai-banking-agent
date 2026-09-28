@@ -1,5 +1,7 @@
 """注册、登录及当前用户接口。"""
 
+from ..schemas.bank import BANK_ERROR_RESPONSES
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from ..middleware.auth import create_access_token, get_current_user
 from ..models.user import (
@@ -21,11 +23,11 @@ from ..services.bank import (
     totp_status,
 )
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/api/v1/auth", tags=["auth"], responses=BANK_ERROR_RESPONSES)
 
 
 def _raise_bank_error(error: BankError) -> None:
-    raise HTTPException(status_code=error.status_code, detail=error.message) from error
+    raise HTTPException(status_code=error.status_code, detail={"code": error.code, "message": error.message}) from error
 
 
 @router.post("/register", response_model=TokenSchema, status_code=status.HTTP_201_CREATED)

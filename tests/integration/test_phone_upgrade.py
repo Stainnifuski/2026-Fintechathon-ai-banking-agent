@@ -1,6 +1,7 @@
 """旧库升级及重复初始化不得更改已有银行事实。"""
 
 import pytest
+from decimal import Decimal
 from sqlalchemy import func, inspect, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -113,6 +114,6 @@ async def test_repeated_seed_preserves_customer_status_balance_and_transactions(
     await seed_service.seed_bank_data()
     async with factory() as session:
         assert (await session.get(UserORM, "U001")).status == "frozen"
-        assert (await session.get(AccountORM, "A001")).balance == 123.45
+        assert (await session.get(AccountORM, "A001")).balance == Decimal("123.45")
         assert await session.scalar(select(func.count()).select_from(TransactionORM)) == original_count
     await engine.dispose()

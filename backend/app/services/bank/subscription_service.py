@@ -12,6 +12,8 @@ from ...models.account import AccountORM
 from ...models.subscription import SubscriptionORM
 from ...models.transaction import TransactionORM
 from .transfer_service import BankError
+from ...domain.money import ledger_fen
+from .audit_service import record_bank_event
 
 
 ACTIVE = "ACTIVE"
@@ -90,6 +92,10 @@ async def cancel_subscription(
         subscription.state_version += 1
         subscription.cancelled_at = datetime.now(timezone.utc)
         account = await session.get(AccountORM, subscription.debit_account_id)
+        record_bank_event(session, event_key=f"{subscription_id}:{subscription.state_version}",
+            subject_user_id=user_id, action="subscription_cancel", result="cancelled",
+            facts={"subscription_id": subscription_id, "state_version": subscription.state_version},
+            decision_chain=["ownership_checked", "version_checked", "subscription_cancelled"])
         await session.commit()
         await session.refresh(subscription)
         return _view(subscription, account)
@@ -155,7 +161,11 @@ async def simulate_subscription_charge(
         if subscription.currency != "CNY" or subscription.amount_fen <= 0:
             raise BankError("订阅金额或币种无效", "INVALID_AMOUNT", 409)
 
-        balance_fen = round(account.balance * 100)
+        try:
+            balance_fen = ledger_fen(account.balance_fen)
+            ledger_fen(subscription.amount_fen)
+        except ValueError as error:
+            raise BankError("银行账户金额异常", "BANK_LEDGER_INVALID", 503) from error
         if balance_fen < subscription.amount_fen:
             raise BankError("扣费账户余额不足", "INSUFFICIENT_FUNDS", 409)
 
@@ -165,7 +175,7 @@ async def simulate_subscription_charge(
             operation_id=idempotency_key,
             account_id=account.account_id,
             type="subscription",
-            amount=fen_to_yuan(subscription.amount_fen),
+            amount_fen=subscription.amount_fen,
             counterparty=subscription.merchant_name,
             category="subscription",
             note="模拟自动续费",
@@ -173,17 +183,22 @@ async def simulate_subscription_charge(
             status="completed",
             channel="app",
         )
-        account.balance = fen_to_yuan(balance_fen - subscription.amount_fen)
+        account.balance_fen = balance_fen - subscription.amount_fen
         subscription.next_charge_at = _next_month(subscription.next_charge_at)
         subscription.state_version += 1
         session.add(transaction)
+        record_bank_event(session, event_key=idempotency_key, subject_user_id=user_id,
+            action="subscription_charge", result="success",
+            facts={"operation_id": idempotency_key, "subscription_id": subscription_id,
+                   "bank_tx_id": transaction.tx_id, "amount_fen": subscription.amount_fen},
+            decision_chain=["ownership_checked", "version_checked", "balance_checked", "debit_committed"])
         await session.commit()
         await session.refresh(subscription)
         await session.refresh(account)
         return {
             "subscription": _view(subscription, account),
             "transaction_id": transaction.tx_id,
-            "charged_amount": transaction.amount,
+            "charged_amount": fen_to_yuan(transaction.amount_fen),
             "duplicate": False,
             "message": (
                 f"已模拟扣除 {subscription.merchant_name} "

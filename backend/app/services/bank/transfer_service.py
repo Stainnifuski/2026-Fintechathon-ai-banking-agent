@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 import hashlib
 import json
@@ -21,6 +20,8 @@ from ...models.payment_request_payment import PaymentRequestPaymentORM
 from ...models.transaction import TransactionORM
 from ...models.user import UserORM
 from .phone import normalize_phone, mask_phone
+from ...domain.money import ledger_fen
+from .audit_service import record_bank_event
 
 
 class BankError(Exception):
@@ -90,16 +91,6 @@ def _digest(command: BankTransferCommand) -> str:
     ).hexdigest()
 
 
-def _money_fen(value: float) -> int:
-    try:
-        amount = Decimal(str(value)) * 100
-        if not amount.is_finite() or amount != amount.to_integral_value() or amount < 0:
-            raise ValueError("银行历史金额无效")
-        return int(amount)
-    except (InvalidOperation, TypeError) as error:
-        raise ValueError("银行历史金额无效") from error
-
-
 def _business_day_start(now: datetime) -> datetime:
     try:
         zone = ZoneInfo(os.getenv("BANK_BUSINESS_TIMEZONE", "Asia/Shanghai"))
@@ -116,7 +107,7 @@ async def _daily_used_fen(
         return 0
     start = _business_day_start(now)
     rows = (await db.execute(
-        select(TransactionORM.amount).where(
+        select(TransactionORM.amount_fen).where(
             TransactionORM.account_id.in_(account_ids),
             TransactionORM.type == "transfer_out",
             TransactionORM.status == "completed",
@@ -124,7 +115,7 @@ async def _daily_used_fen(
         )
     )).scalars().all()
     try:
-        return sum(_money_fen(value) for value in rows)
+        return sum(ledger_fen(value) for value in rows)
     except ValueError as error:
         raise BankError("历史流水金额异常，已阻止转账", "BANK_LEDGER_INVALID", 503) from error
 
@@ -140,7 +131,7 @@ def _validate_command(command: BankTransferCommand, context: TrustedExecutionCon
             or type(context.control_epoch) is not int or context.control_epoch < 1):
         raise BankError("可信执行上下文无效", "EXECUTION_CONTEXT_INVALID", 403)
     if command.note is not None:
-        if len(command.note) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in command.note):
+        if not command.note.strip() or len(command.note) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in command.note):
             raise BankError("备注超过256字或含控制字符", "INVALID_NOTE", 422)
     try:
         actual_digest = _digest(command)
@@ -292,6 +283,10 @@ async def release_payment_request_payment(
         request.state_version += 1
         request.responded_at = None
         await db.delete(link)
+        record_bank_event(db, event_key=operation_id, subject_user_id=subject_user_id,
+            action="payment_request_release", result="cancelled",
+            facts={"operation_id": operation_id, "payment_request_id": request.payment_request_id},
+            decision_chain=["payer_ownership_checked", "unsubmitted_payment_released"])
         await db.commit()
 
 
@@ -310,7 +305,7 @@ async def submit_transfer(
             await db.execute(
                 update(AccountORM)
                 .where(AccountORM.account_id == min(command.from_account, command.to_account))
-                .values(balance=AccountORM.balance)
+                .values(balance_fen=AccountORM.balance_fen)
             )
         else:
             await db.execute(
@@ -379,9 +374,10 @@ async def submit_transfer(
             db, account_ids=[sender.account_id], now=now
         )
         try:
-            balance_fen = _money_fen(sender.balance)
-            receiver_balance_fen = _money_fen(receiver.balance)
-            limit_fen = _money_fen(sender.daily_transfer_limit)
+            balance_fen = ledger_fen(sender.balance_fen)
+            receiver_balance_fen = ledger_fen(receiver.balance_fen)
+            limit_fen = ledger_fen(sender.daily_transfer_limit_fen)
+            ledger_fen(receiver_balance_fen + command.amount_fen)
         except ValueError as error:
             raise BankError("银行账户金额异常", "BANK_LEDGER_INVALID", 503) from error
         error: tuple[str, str] | None = None
@@ -407,15 +403,18 @@ async def submit_transfer(
                 payment_request.state_version += 1
                 payment_request.responded_at = None
                 await db.delete(payment_link)
+            record_bank_event(db, event_key=command.operation_id,
+                subject_user_id=context.subject_user_id, action="bank_transfer", result="failed",
+                facts={"operation_id": command.operation_id, "error_code": error[0], "amount_fen": command.amount_fen},
+                decision_chain=["trusted_executor", "ownership_and_status_checked", error[0]])
             await db.commit()
             raise BankError(error[1], error[0])
 
         bank_tx_id = f"BTX{uuid4().hex[:18].upper()}"
         credit_tx_id = f"TX{uuid4().hex[:18].upper()}"
-        amount = fen_to_yuan(command.amount_fen)
-        sender.balance = fen_to_yuan(balance_fen - command.amount_fen)
-        sender.daily_transfer_used = fen_to_yuan(daily_used_fen + command.amount_fen)
-        receiver.balance = fen_to_yuan(receiver_balance_fen + command.amount_fen)
+        sender.balance_fen = balance_fen - command.amount_fen
+        sender.daily_transfer_used_fen = daily_used_fen + command.amount_fen
+        receiver.balance_fen = receiver_balance_fen + command.amount_fen
         bank_operation.bank_tx_id = bank_tx_id
         if payment_request is not None:
             payment_request.status = "PAID"
@@ -424,17 +423,25 @@ async def submit_transfer(
         db.add_all([
             TransactionORM(
                 tx_id=bank_tx_id, operation_id=command.operation_id,
-                account_id=sender.account_id, type="transfer_out", amount=amount,
+                account_id=sender.account_id, type="transfer_out", amount_fen=command.amount_fen,
                 counterparty=receiver.account_id, category="transfer",
                 note=command.note, timestamp=now, status="completed", channel="app",
             ),
             TransactionORM(
                 tx_id=credit_tx_id, operation_id=None,
-                account_id=receiver.account_id, type="transfer_in", amount=amount,
+                account_id=receiver.account_id, type="transfer_in", amount_fen=command.amount_fen,
                 counterparty=sender.account_id, category="transfer",
                 note=command.note, timestamp=now, status="completed", channel="app",
             ),
         ])
+        record_bank_event(db, event_key=command.operation_id,
+            subject_user_id=context.subject_user_id, action="bank_transfer", result="success",
+            facts={"operation_id": command.operation_id, "bank_tx_id": bank_tx_id,
+                   "amount_fen": command.amount_fen, "currency": command.currency,
+                   "param_digest": command.param_digest, "authorization_id": context.authorization_id,
+                   "control_epoch": context.control_epoch},
+            decision_chain=["trusted_executor", "ownership_and_status_checked", "digest_checked",
+                            "balance_and_daily_limit_checked", "double_entry_committed"])
         await db.commit()
         if simulate_response_loss:
             raise BankResponseLost("银行已记账，但响应在传输中丢失")

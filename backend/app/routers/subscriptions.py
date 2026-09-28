@@ -1,5 +1,7 @@
 """受认证保护的订阅查询与取消接口。"""
 
+from ..schemas.bank import BANK_ERROR_RESPONSES
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..middleware.auth import get_current_user
@@ -16,7 +18,7 @@ from ..services.bank import (
     simulate_subscription_charge,
 )
 
-router = APIRouter(prefix="/api/v1/subscriptions", tags=["subscriptions"])
+router = APIRouter(prefix="/api/v1/subscriptions", tags=["subscriptions"], responses=BANK_ERROR_RESPONSES)
 
 
 def _raise_bank_error(error: BankError) -> None:

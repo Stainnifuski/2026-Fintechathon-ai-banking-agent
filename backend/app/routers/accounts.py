@@ -1,12 +1,14 @@
 """账户路由"""
 
+from ..schemas.bank import BANK_ERROR_RESPONSES
+
 from fastapi import APIRouter, Depends, HTTPException
 from ..models.account import AccountBalanceSchema, AccountSchema
 from ..middleware.auth import get_current_user
 from ..services.bank import list_accounts as bank_list_accounts
 from ..services.bank import list_balances as bank_list_balances
 
-router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
+router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"], responses=BANK_ERROR_RESPONSES)
 
 
 @router.get("/{user_id}/balance", response_model=list[AccountBalanceSchema])

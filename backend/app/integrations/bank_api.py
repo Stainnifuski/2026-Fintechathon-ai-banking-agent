@@ -115,6 +115,8 @@ class HttpBankApiClient:
             detail = {}
         if isinstance(detail, str):
             return BankApiError(detail, status_code=response.status_code)
+        if not isinstance(detail, dict):
+            return BankApiError("模拟银行请求参数无效", "VALIDATION_ERROR", response.status_code)
         return BankApiError(
             detail.get("message", "模拟银行接口调用失败"),
             detail.get("code", "BANK_API_ERROR"),

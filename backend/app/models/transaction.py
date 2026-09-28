@@ -3,10 +3,12 @@
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import DateTime, Float, ForeignKey, String, func
+from decimal import Decimal
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
+from ..domain.money import exact_fen, decimal_yuan
 
 
 class TransactionORM(Base):
@@ -26,7 +28,17 @@ class TransactionORM(Base):
         String(20), nullable=False,
         comment="交易类型: transfer_in|transfer_out|purchase|refund|subscription",
     )
-    amount: Mapped[float] = mapped_column(Float, nullable=False, comment="金额")
+    amount_fen: Mapped[int] = mapped_column(BigInteger, CheckConstraint("amount_fen > 0 AND amount_fen = CAST(amount_fen AS BIGINT)"), nullable=False, comment="金额（整数分）")
+
+    @property
+    def amount(self) -> Decimal:
+        return decimal_yuan(self.amount_fen)
+
+    @amount.setter
+    def amount(self, value: Decimal | float | int | str) -> None:
+        self.amount_fen = exact_fen(value)
+        if self.amount_fen == 0:
+            raise ValueError("流水金额必须大于零")
     counterparty: Mapped[str] = mapped_column(String(64), nullable=False, comment="交易对手")
     category: Mapped[str] = mapped_column(
         String(20), nullable=False,

@@ -49,7 +49,7 @@ def test_only_bank_package_imports_bank_owned_orms() -> None:
     bank_root = app_root / "services/bank"
     models_root = app_root / "models"
     forbidden_names = {
-        "AccountORM", "BankOperationORM", "ContactORM", "PaymentRequestORM",
+        "AccountORM", "BankOperationORM", "ContactORM", "PaymentRequestORM", "PaymentRequestBatchORM",
         "PaymentRequestPaymentORM", "SubscriptionORM",
         "TransactionORM", "UserORM",
     }
