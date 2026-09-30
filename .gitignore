@@ -208,6 +208,9 @@ tempCodeRunnerFile.py
 frontend/node_modules/
 frontend/dist/
 
+# Local browser validation artifacts
+output/playwright/
+
 # Ruff stuff:
 .ruff_cache/
 

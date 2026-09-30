@@ -1,0 +1,47 @@
+.bills { margin-bottom: 24px; }
+.bill-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.bill-heading h2 { font-size: 24px; margin-bottom: 7px; }
+.bill-eyebrow { font-size: 10px; letter-spacing: 2px; color: #1769e0; font-weight: 700; margin: 0 0 9px; }
+.bill-badge { white-space: nowrap; color: #087443; background: #eaf6ef; border-radius: 20px; padding: 7px 12px; font-size: 12px; }
+.bill-filters { display: grid; grid-template-columns: .8fr 1fr 1.4fr 1fr auto; align-items: end; gap: 12px; margin: 20px 0; }
+.bill-question { background: #f6f9ff; padding: 15px; border-radius: 12px; display: block; }
+.bill-question .row { margin-top: 8px; }
+.bill-question button { flex-shrink: 0; }
+.bill-question p { margin: 8px 0 0; }
+.bill-reply { border-left: 3px solid #1769e0; padding: 12px 16px; margin-top: 16px; background: #f6f9ff; }
+.bill-reply p { white-space: pre-line; line-height: 1.8; margin-bottom: 0; }
+.bill-period { display: grid; gap: 7px; margin: 24px 0 16px; }
+.bill-period span { font-size: 13px; color: #536176; }
+.bill-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.bill-metrics > div { display: grid; gap: 12px; background: #f4f7fc; padding: 18px; border-radius: 12px; min-width: 0; }
+.bill-metrics > div:first-child { background: #1769e0; color: white; }
+.bill-metrics span { font-size: 13px; }
+.bill-metrics strong { font-size: clamp(17px, 2.2vw, 26px); overflow-wrap: anywhere; }
+.bill-submetrics { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #536176; margin: 16px 0; }
+.bill-comparison { font-size: 14px; padding-bottom: 20px; border-bottom: 1px solid #e8edf4; }
+.bill-comparison small { display: block; margin-top: 7px; }
+.bill-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.bill-charts > div { min-width: 0; }
+.bills h3 { font-size: 15px; margin: 18px 0 14px; }
+.bill-category-list { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+.bill-category-list button { font-size: 12px; font-weight: 500; }
+.bill-report { border-radius: 12px; background: #f7f9fc; padding: 6px 18px 14px; }
+.bill-report p { font-size: 14px; line-height: 1.7; margin: 8px 0; }
+.bill-alerts { margin: 24px 0; }
+.bill-alerts h3 span { font-size: 12px; color: #536176; }
+.bill-alerts article { display: flex; align-items: center; gap: 20px; justify-content: space-between; border-left: 3px solid #e8a346; background: #fffbf3; padding: 14px; margin-top: 10px; border-radius: 6px; }
+.bill-alerts article p { color: #536176; font-size: 13px; line-height: 1.7; margin-bottom: 0; }
+.bill-alerts article button { flex-shrink: 0; }
+.bill-table { overflow: auto; margin-top: 14px; }
+.bill-table table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.bill-table th { text-align: left; background: #f6f8fb; color: #536176; font-weight: 500; white-space: nowrap; }
+.bill-table td, .bill-table th { padding: 12px; border-bottom: 1px solid #edf0f5; }
+.bill-table td { min-width: 130px; }
+.bill-table td:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bill-table small { display: block; margin-top: 5px; overflow-wrap: anywhere; }
+.bill-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin: 16px 0; font-size: 12px; }
+.bill-empty { text-align: center; color: #657187; padding: 30px 15px; background: #f8fafc; border-radius: 10px; font-size: 14px; }
+.bill-notices { font-size: 12px; color: #657187; border-top: 1px solid #e8edf4; padding-top: 15px; line-height: 1.8; }
+.bill-notices summary { cursor: pointer; }
+@media (max-width: 800px) { .bill-filters { grid-template-columns: 1fr 1fr; } .bill-filters button { grid-column: span 2; } }
+@media (max-width: 600px) { .bills { padding: 18px 14px; } .bill-charts { grid-template-columns: 1fr; gap: 0; } .bill-metrics { grid-template-columns: 1fr 1fr; } .bill-alerts article { display: grid; gap: 8px; } .bill-alerts article button { justify-self: start; } .bill-heading { align-items: start; } }

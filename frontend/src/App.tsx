@@ -1,5 +1,7 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
+
+const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const localDateTimeInput = (value: Date) => {
@@ -19,6 +21,7 @@ function App() {
   const [accounts, setAccounts] = useState<bank.Account[]>([]);
   const [recipients, setRecipients] = useState<bank.Recipient[]>([]);
   const [transactions, setTransactions] = useState<bank.Transaction[]>([]);
+  const [bankRevision, setBankRevision] = useState(0);
   const [paymentRequests, setPaymentRequests] = useState<bank.PaymentRequest[]>([]);
   const [subscriptions, setSubscriptions] = useState<bank.Subscription[]>([]);
   const [pendingSubscription, setPendingSubscription] = useState<bank.Subscription | null>(null);
@@ -73,6 +76,7 @@ function App() {
     try {
       const [a, r, h, requests, subscriptionItems] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests(), bank.listSubscriptions()]);
       setAccounts(a); setRecipients(r); setTransactions(h); setPaymentRequests(requests); setSubscriptions(subscriptionItems);
+      setBankRevision(value => value + 1);
       const defaultFrom = a.find(acc => acc.account_type === 'savings')?.account_id || a[0]?.account_id || '';
       setFromAccount(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
       setToUserId(current => current && r.some(rec => rec.user_id === current) ? current : r[0]?.user_id || '');
@@ -411,6 +415,7 @@ function App() {
   return <main className="app">
     <header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><div className="confirm"><button className="secondary" disabled={isActing} onClick={openEnroll}>{totpEnabled ? '🔐 已绑定验证器' : '🔐 绑定验证器'}</button><button className="secondary" onClick={logout}>退出登录</button></div></header>
     {status && <p className="notice">{status}</p>}
+    <Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} /></Suspense>
     <section className="grid">
       <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong><small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
       <div className="card"><h2>创建转账任务</h2><form onSubmit={submitTransfer}>
@@ -489,9 +494,10 @@ function App() {
       </div>
       <div className="card"><h2>最近流水</h2>{transactions.length === 0 ? <p className="hint">暂无流水</p> : <ul className="history">{transactions.slice(0, 8).map(tx => {
         const outgoing = ['transfer_out', 'purchase', 'subscription'].includes(tx.type);
-        const label = tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type;
+        const label = tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type === 'refund' ? '退款' : tx.type === 'salary' ? '工资' : tx.type;
+        const statusLabel = ({ completed: '已完成', pending: '处理中', failed: '失败', cancelled: '已取消' } as Record<string, string>)[tx.status] || tx.status;
         const counterparty = recipients.find(recipient => recipient.account_id === tx.counterparty)?.name || tx.counterparty;
-        return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()}</small></span><strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
+        return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()} · {statusLabel}</small></span><strong className={tx.status !== 'completed' ? 'hint' : outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
       })}</ul>}</div>
     </section>
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>

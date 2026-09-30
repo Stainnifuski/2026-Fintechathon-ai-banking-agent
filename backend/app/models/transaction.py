@@ -26,7 +26,7 @@ class TransactionORM(Base):
     account: Mapped["AccountORM"] = relationship(back_populates="transactions")
     type: Mapped[str] = mapped_column(
         String(20), nullable=False,
-        comment="交易类型: transfer_in|transfer_out|purchase|refund|subscription",
+        comment="交易类型: transfer_in|transfer_out|purchase|refund|subscription|salary",
     )
     amount_fen: Mapped[int] = mapped_column(BigInteger, CheckConstraint("amount_fen > 0 AND amount_fen = CAST(amount_fen AS BIGINT)"), nullable=False, comment="金额（整数分）")
 

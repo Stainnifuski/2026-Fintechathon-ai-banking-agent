@@ -4,7 +4,7 @@ export interface User { user_id: string; name: string; phone: string; }
 export interface AuthResponse { access_token: string; token_type: string; user: User; }
 export interface Account { account_id: string; account_type: string; card_number: string; balance: number; daily_transfer_used: number; daily_transfer_limit: number; }
 export interface Recipient { user_id: string; name: string; phone: string; account_id: string; bank: string; }
-export interface Transaction { tx_id: string; type: string; amount: number; counterparty: string; note?: string; timestamp: string; }
+export interface Transaction { tx_id: string; type: string; amount: number; counterparty: string; note?: string; timestamp: string; status: string; }
 export interface PaymentRequest {
   payment_request_id: string; requester_user_id: string; requester_name: string;
   payer_user_id: string; payer_name: string; receive_account_id: string;

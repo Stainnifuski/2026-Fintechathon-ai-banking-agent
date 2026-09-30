@@ -1,0 +1,108 @@
+"""Read-only billing contracts. All amounts are integer CNY cents."""
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+Period = Literal["month", "year"]
+Category = Literal["dining", "shopping", "transport", "entertainment", "subscription", "other"]
+
+
+class BillQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    period: Period = "month"
+    date: str | None = Field(default=None, max_length=7)
+    account_id: str | None = Field(default=None, max_length=32)
+    category: Category | None = None
+
+
+class BillMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=500)
+    context: BillQuery = Field(default_factory=BillQuery)
+
+
+class Totals(BaseModel):
+    inflow_fen: int = 0
+    outflow_fen: int = 0
+    net_inflow_fen: int = 0
+    consumption_fen: int = 0
+    refund_fen: int = 0
+    net_consumption_fen: int = 0
+    transfer_in_fen: int = 0
+    transfer_out_fen: int = 0
+    salary_fen: int = 0
+    count: int = 0
+    consumption_count: int = 0
+    unknown_count: int = 0
+
+
+class CategoryTotal(BaseModel):
+    category: str
+    label: str
+    amount_fen: int
+    count: int
+    share_percent: float
+    previous_fen: int
+    change_fen: int
+    change_percent: float | None
+
+
+class TrendPoint(BaseModel):
+    date: str
+    consumption_fen: int
+
+
+class BillTransaction(BaseModel):
+    tx_id: str
+    account_id: str
+    type: str
+    category: str
+    amount_fen: int
+    timestamp: datetime
+    counterparty: str
+    note: str | None
+    status: str
+
+
+class Anomaly(BaseModel):
+    kind: Literal["large", "duplicate", "increase"]
+    title: str
+    reason: str
+    tx_ids: list[str] = Field(default_factory=list)
+    category: str | None = None
+
+
+class BillAnalysis(BaseModel):
+    query: BillQuery
+    timezone: str = "Asia/Shanghai"
+    currency: str = "CNY"
+    start: datetime
+    end_exclusive: datetime
+    previous_start: datetime
+    previous_end_exclusive: datetime
+    as_of: datetime
+    partial: bool
+    totals: Totals
+    previous_totals: Totals
+    change_fen: int
+    change_percent: float | None
+    categories: list[CategoryTotal]
+    trend: list[TrendPoint]
+    anomalies: list[Anomaly]
+    report: list[str]
+    notices: list[str]
+
+
+class BillPage(BaseModel):
+    items: list[BillTransaction]
+    total: int
+    page: int
+    page_size: int
+
+
+class BillReply(BaseModel):
+    kind: Literal["analysis", "clarification"]
+    mode: Literal["offline", "model", "fallback"]
+    message: str
+    analysis: BillAnalysis | None = None
