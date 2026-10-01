@@ -61,6 +61,10 @@ async def init_db() -> None:
         await upgrade_legacy_user_mfa_columns(conn)
         await migrate_bank_money(conn)
     await upgrade_phone_registry(AsyncSessionLocal)
+    from ..services.bank.wealth_catalog import seed_catalog
+    async with AsyncSessionLocal() as session:
+        await seed_catalog(session)
+        await session.commit()
 
 
 async def close_db() -> None:

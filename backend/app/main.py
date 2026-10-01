@@ -23,6 +23,8 @@ from .routers.tasks import router as tasks_router
 from .routers.subscriptions import router as subscriptions_router
 from .routers.users import router as users_router
 from .routers.bills import router as bills_router
+from .routers.wealth_bank import router as wealth_bank_router
+from .routers.wealth import router as wealth_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
 
 logging.basicConfig(
@@ -87,6 +89,8 @@ app.include_router(bank_operations_router)
 app.include_router(payment_requests_router)
 app.include_router(subscriptions_router)
 app.include_router(bills_router)
+app.include_router(wealth_bank_router)
+app.include_router(wealth_router)
 
 
 # ──────────────────── 健康检查 ────────────────────

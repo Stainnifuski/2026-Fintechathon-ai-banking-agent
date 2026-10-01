@@ -381,7 +381,8 @@ async def submit_transfer(
         except ValueError as error:
             raise BankError("银行账户金额异常", "BANK_LEDGER_INVALID", 503) from error
         error: tuple[str, str] | None = None
-        if balance_fen < command.amount_fen:
+        from .available_funds import available_cash
+        if await available_cash(db, sender.account_id, balance_fen) < command.amount_fen:
             error = ("INSUFFICIENT_FUNDS", "余额不足")
         elif daily_used_fen + command.amount_fen > limit_fen:
             error = ("DAILY_LIMIT_EXCEEDED", "超过付款账户日转账限额")

@@ -76,3 +76,4 @@ __all__ = [
 ]
 
 from .conversation import ConversationORM, ChatReceiptORM
+from . import wealth

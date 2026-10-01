@@ -1,0 +1,250 @@
+"""理财可信页面入口；银行事实只通过内部HTTP获取。"""
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..database.connection import get_db
+from ..domain.wealth_risk import QUESTIONS, QUESTIONNAIRE_VERSION
+from ..integrations.bank_api import BankApiError, BankResponseUnknown
+from ..integrations.wealth_bank_api import HttpWealthBankApi
+from ..integrations import wealth_authorization as policy
+from ..middleware.auth import get_current_user
+from ..models.wealth import WealthAuthorizationORM, WealthProfileORM
+from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion
+from ..services.orchestration import wealth_plan
+
+router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
+
+
+def fail(error: BankApiError | policy.WealthPolicyError) -> None:
+    """错误传递保留事实未知语义。"""
+    code = "RESULT_UNKNOWN" if isinstance(error, BankResponseUnknown) else error.code
+    raise HTTPException(error.status_code, detail={"code": code, "message": error.message}) from error
+
+
+def get_wealth_bank() -> HttpWealthBankApi:
+    """可替换HTTP客户端用于隔离集成测试。"""
+    return HttpWealthBankApi()
+
+
+@router.get("/products")
+async def products(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
+    """鉴权客观产品探索。"""
+    try:
+        return await bank.products()
+    except BankApiError as error:
+        fail(error)
+
+
+@router.get("/compare")
+async def compare(product_ids: str, user: dict = Depends(get_current_user),
+                  bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
+    """2至3个唯一产品客观对比，全部字段来自银行。"""
+    keys = product_ids.split(",")
+    if not 2 <= len(keys) <= 3 or len(set(keys)) != len(keys):
+        raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至3个不同产品"})
+    try:
+        rows = [row for row in await bank.products() if row["product_id"] in keys]
+        if len(rows) != len(keys):
+            raise HTTPException(404, detail={"code": "PRODUCT_UNAVAILABLE", "message": "部分产品不存在"})
+        return rows
+    except BankApiError as error:
+        fail(error)
+
+
+@router.get("/questionnaire")
+async def questionnaire(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """本人独立回答；AI不能提交问卷或选择答案。"""
+    profile = await db.get(WealthProfileORM, user["user_id"])
+    return {"version": QUESTIONNAIRE_VERSION, "profile_version": profile.version if profile else 1,
+        "questions": [{"id": key, "title": title, "options": options} for key, title, options in QUESTIONS],
+        "notice": "比赛模拟量表，未经专业效度验证；请本人回答，日2次/滚动12个月8次"}
+
+
+@router.post("/assessments")
+async def assess(request: AssessmentSubmission, user: dict = Depends(get_current_user),
+                 db: AsyncSession = Depends(get_db)) -> dict:
+    """版本化评分与有效期。"""
+    try:
+        return await policy.submit_assessment(db, user["user_id"], request)
+    except policy.WealthPolicyError as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.get("/assessments/current")
+async def assessment(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict | None:
+    """本人最新评估，不返回敏感原始答案。"""
+    row = await policy.latest_assessment(db, user["user_id"])
+    return policy.assessment_view(row) if row else None
+
+
+@router.post("/assessments/{assessment_id}/confirm")
+async def confirm_assessment(assessment_id: str, user: dict = Depends(get_current_user),
+                             db: AsyncSession = Depends(get_db)) -> dict:
+    """明确确认最新结果。"""
+    try:
+        return await policy.confirm_assessment(db, user["user_id"], assessment_id)
+    except policy.WealthPolicyError as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.get("/assets")
+async def assets(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """现金、占款、持仓批次、应收、订单和亏损。"""
+    try:
+        return await bank.assets(user["user_id"])
+    except BankApiError as error:
+        fail(error)
+
+
+@router.post("/previews")
+async def preview(request: InvestmentCommand, user: dict = Depends(get_current_user),
+                  db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """银行预检通过后固定逐笔授权，不扣款。"""
+    try:
+        view = await bank.precheck(user["user_id"], request)
+        row = await policy.new_preview_authorization(db, user["user_id"], request)
+        await db.commit()
+        return {**view, "authorization_id": row.authorization_id, "authorization_status": row.status,
+                "expires_at": policy.aware(row.expires_at).isoformat()}
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.get("/previews")
+async def previews(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """刷新找回本人未消费预览；老卡仍由服务端再次验证。"""
+    rows = (await db.scalars(select(WealthAuthorizationORM).where(
+        WealthAuthorizationORM.user_id == user["user_id"], WealthAuthorizationORM.status != "CONSUMED")
+        .order_by(WealthAuthorizationORM.created_at.desc()))).all()
+    return [{"authorization_id": row.authorization_id, "command": row.command,
+        "digest": row.param_digest, "status": row.status, "expires_at": policy.aware(row.expires_at).isoformat()} for row in rows]
+
+
+@router.post("/previews/{authorization_id}/confirm")
+async def confirm(authorization_id: str, request: PersonalConfirmation, user: dict = Depends(get_current_user),
+                  db: AsyncSession = Depends(get_db)) -> dict:
+    """聊天好的不能调用；必须明确绑定预览和披露版本。"""
+    try:
+        return await policy.record_confirmation(db, user["user_id"], authorization_id, request)
+    except policy.WealthPolicyError as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post("/previews/{authorization_id}/verify")
+async def verify(authorization_id: str, request: StrongVerification, user: dict = Depends(get_current_user),
+                 bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """验证码只进入可信验证组件和银行，不进入模型消息。"""
+    try:
+        return await bank.call("POST", "/verify", {"subject_user_id": user["user_id"],
+            "authorization_id": authorization_id, "proof": request.proof})
+    except BankApiError as error:
+        fail(error)
+
+
+@router.post("/previews/{authorization_id}/execute")
+async def execute(authorization_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                  bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """原号查询及受理；网络失败不以成功或失败覆盖未知事实。"""
+    try:
+        row = await db.get(WealthAuthorizationORM, authorization_id)
+        if row is None or row.user_id != user["user_id"]:
+            raise policy.WealthPolicyError("预览不存在", "NOT_FOUND", 404)
+        command = InvestmentCommand.model_validate(row.command)
+        # HTTP调用前结束只读事务，避免跨网络持有数据库锁。
+        await db.rollback()
+        try:
+            return await bank.query(user["user_id"], command.operation_id)
+        except BankResponseUnknown:
+            raise
+        except BankApiError as error:
+            if error.status_code != 404:
+                raise
+        return await bank.submit(user["user_id"], command, authorization_id)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        fail(error)
+
+
+@router.get("/orders/{operation_id}")
+async def order(operation_id: str, user: dict = Depends(get_current_user),
+                bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """原号恢复查询。"""
+    try:
+        return await bank.query(user["user_id"], operation_id)
+    except BankApiError as error:
+        fail(error)
+
+
+@router.post("/orders/{operation_id}/cancel")
+async def cancel(operation_id: str, request: PersonalConfirmation, user: dict = Depends(get_current_user),
+                 bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """撤单也需明确确认并核对当前订单摘要。"""
+    try:
+        current = await bank.query(user["user_id"], operation_id)
+        if current["digest"] != request.digest:
+            raise policy.WealthPolicyError("订单已变化", "STALE_PLAN")
+        return await bank.call("POST", f"/orders/{operation_id}/cancel", {"subject_user_id": user["user_id"]})
+    except (BankApiError, policy.WealthPolicyError) as error:
+        fail(error)
+
+
+@router.get("/plans")
+async def plans(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """刷新后找回原版本方案、在途和已完成效果。"""
+    from ..models.wealth import WealthPlanORM
+    rows = (await db.scalars(select(WealthPlanORM).where(WealthPlanORM.user_id == user["user_id"])
+                              .order_by(WealthPlanORM.created_at.desc()))).all()
+    return [wealth_plan.plan_view(row) for row in rows]
+
+
+@router.post("/plans")
+async def create_plan(request: PlanInput, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                      bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """新资金或存量诊断，确定性规则不直接交易。"""
+    try:
+        return await wealth_plan.create(db, user["user_id"], bank, request.model_dump())
+    except (BankApiError, policy.WealthPolicyError, ValueError) as error:
+        await db.rollback()
+        if isinstance(error, ValueError):
+            raise HTTPException(422, detail={"code": "INVALID_PLAN", "message": str(error)}) from error
+        fail(error)
+
+
+@router.put("/plans/{plan_id}")
+async def edit_plan(plan_id: str, request: PlanInput, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                    bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """修改保留现金/期限/排除产品即新版本，旧确认失效。"""
+    try:
+        return await wealth_plan.create(db, user["user_id"], bank, request.model_dump(), plan_id)
+    except (BankApiError, policy.WealthPolicyError, ValueError) as error:
+        await db.rollback()
+        if isinstance(error, ValueError):
+            raise HTTPException(422, detail={"code": "INVALID_PLAN", "message": str(error)}) from error
+        fail(error)
+
+
+@router.get("/plans/{plan_id}/progress")
+async def plan_progress(plan_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                        bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """继续核对在途，不假造成功或释放未知占款。"""
+    try:
+        return await wealth_plan.progress(db, user["user_id"], plan_id, bank)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post("/plans/{plan_id}/execute")
+async def execute_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                       bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """逐笔确认和验证全部满足后执行，纯购买批次原子占款。"""
+    try:
+        return await wealth_plan.execute(db, user["user_id"], plan_id, request.version, bank)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)

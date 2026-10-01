@@ -166,7 +166,8 @@ async def simulate_subscription_charge(
             ledger_fen(subscription.amount_fen)
         except ValueError as error:
             raise BankError("银行账户金额异常", "BANK_LEDGER_INVALID", 503) from error
-        if balance_fen < subscription.amount_fen:
+        from .available_funds import available_cash
+        if await available_cash(session, account.account_id, balance_fen) < subscription.amount_fen:
             raise BankError("扣费账户余额不足", "INSUFFICIENT_FUNDS", 409)
 
         now = datetime.now(timezone.utc)
