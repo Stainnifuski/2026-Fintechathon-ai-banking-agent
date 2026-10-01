@@ -42,7 +42,7 @@ python -m backend.app.services.bank.wealth_migration --rollback
 ## 其他组员须注意
 
 - 1/2号：用公开API和银行返回卡片，不由模型编金额/份额/状态；验证码只走可信组件。对话只生成意图，不能代答问卷或同意协议。页面初始确认未勾选。刷新从previews/plans/messages恢复。
-- 3号：申购和赎回都RED。每笔授权独立；产品风险、本人承受能力和动作安全级别不同。旧User.risk_level不能申购，强验证不能提升适当性；画像改版须重评。沿用TOTP防重放，每笔等新时间步。
+- 3号：申购和赎回都RED。每笔授权独立；产品风险、本人承受能力和动作安全级别不同。旧User.risk_level不能申购，强验证不能提升适当性；画像改版须重评。默认使用绑定逐笔订单的模拟授权，后续调用3号统一高风险授权；不需要等待验证码。
 - 5号：只通过HttpWealthBankApi访问4号；纯购买计划1—5笔原子batch，不能按子单拆开占款。修改plan_version使旧授权失效；原号查询404仍不能判断永未受理；保留未知/成功事实。
 - 共享扣款：使用available_fen，不仅balance。转账、定时、AA最终付款复用转账扣款，订阅同样检查占款；不得另写直接减余额路径。
 - 账单：投资流水是资金流，消费原额仍仅purchase/subscription，避免把调仓误判消费。时间范围仍按真实账单时钟；隔离演示业务钟推进到未来时，未来流水不会提前出现在“截至现在”报告。
@@ -54,25 +54,8 @@ python -m backend.app.services.bank.wealth_migration --rollback
 
 模拟简化及真实上线待审查见 [安全自评](security.md)，不能把本次验收当作监管许可或生产安全认证。
 
-## 2026-10-01 用户确认的演示验证修订
+## 2026-10-01 普通演示库模拟授权修订
 
-用户选择仅在虚构演示库模拟验证并成交，替代当前演示里的验证码输入要求；正式模式仍保留TOTP。
+理财默认点击模拟授权，取消独立库名称限制；既有.env的WEALTH_DEMO_VERIFICATION_ENABLED=false需改为true。迁移表结构不变，提供者版本为demo-click-v2。管理员时钟仍保留隔离库要求。旧记录不可改写。
 
-### 使用
-
-设置每笔是否采用和采用金额后点“预览采用方案（统一确认）”。同一页面展示全部采用订单、申购总支出、保留现金、每笔费用/净值/风险/披露和时间。确认框初始不勾；“一次确认整份方案”将所有逐笔确认原子保存。再点“确认高风险操作（模拟验证并提交方案）”，不需要绑定或输入验证码。银行按原有规则受理、占款、计价和结算；受理不等于立即到账。单产品也支持该演示按钮。
-
-### 开关与数据库
-
-仅服务器 `WEALTH_DEMO_VERIFICATION_ENABLED=true` 且实际数据库名为bank_test_wealth_*或SQLite文件名wealth-demo*/wealth_test*才可用；默认false，不由前端/请求切换。原banking_agent不能启用。独立3010/8010启用，原3000/8000不变。
-
-迁移版本2新增wealth_verifications：authorization_id主键关联逐笔授权，method=SIMULATED_CLICK/TOTP、provider_version、simulated、replacement_required、verified_at。模拟记录为demo-click-v1/true/true；不存验证码。订单details.verification和审计保留模拟来源；模拟验证审计result=simulated，不冒充真实强验证成功。模拟按钮不改变本人适当性、归属、摘要、10分钟有效期或账务幂等。
-
-### 以后替换真实验证
-
-1. 停写备份并升级版本2；不要将历史模拟记录改成TOTP或删除标记。
-2. 关闭WEALTH_DEMO_VERIFICATION_ENABLED；银行将拒绝尚未受理的模拟授权。旧模拟已受理账务保留，不自动反向交易。
-3. 在可信页面接入真实提供者，沿用逐笔摘要、本人确认、真实时钟及独立验证证据；现有TOTP路径可直接使用，组合仍须逐笔验证证据后原子受理。
-4. 新操作号重新预览/确认/真实验证，不能把旧模拟授权升级成真实凭据。新增其他提供者时更新方法约束、验证器接口和相关鉴权、防重放/失效测试。
-
-这是演示工作流，不是生产强验证已完成的声明；详见契约与安全自评。
+replacement_required表示后续替换为3号统一高风险授权适配器，不代表将来必须开发真实验证。接口、模拟标志、停用兼容路径及协作方案见[模拟授权说明](simulated_authorization.md)。
