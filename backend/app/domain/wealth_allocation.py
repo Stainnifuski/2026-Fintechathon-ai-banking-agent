@@ -33,7 +33,8 @@ def candidates(products: list[dict], capacity: int, horizon_days: int,
 
 
 def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
-             capacity: int, horizon_days: int, excluded: list[str], purchase_allowed: bool = True) -> dict:
+             capacity: int, horizon_days: int, excluded: list[str], purchase_allowed: bool = True,
+             exposure_fen: dict[str, int] | None = None, max_items: int = 5) -> dict:
     """费用包含在每笔总支出，最多5笔，保留未分配尾款不强制花光。"""
     if type(budget_fen) is not int or type(reserve_fen) is not int or not 0 <= reserve_fen <= budget_fen:
         raise ValueError("现金保留不能超过本次预算")
@@ -41,6 +42,12 @@ def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
     eligible = candidates(products, capacity, horizon_days, excluded) if purchase_allowed else []
     categories = {category: [p for p in eligible if p["category"] == category] for category in WEIGHTS[capacity]}
     active = {category: weight for category, weight in WEIGHTS[capacity].items() if categories[category]}
+    if exposure_fen is not None:
+        total = sum(exposure_fen.values())
+        before = {**exposure_fen, "cash": max(0, exposure_fen.get("cash", 0)-investable)}
+        active = {category: max(0, total*WEIGHTS[capacity][category]//100-before.get(category, 0))
+                  for category in active}
+        active = {category: deficit for category, deficit in active.items() if deficit > 0}
     rows = []
     weight_sum = sum(active.values())
     cap = investable * MAX_CONCENTRATION_PERCENT // 100
@@ -48,7 +55,7 @@ def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
         target = investable * weight // weight_sum
         left = target
         for product in categories[category]:
-            if len(rows) == 5:
+            if len(rows) >= max_items:
                 break
             amount = min(left, cap, product["rules"]["max_amount_fen"])
             if amount >= product["rules"]["min_amount_fen"]:

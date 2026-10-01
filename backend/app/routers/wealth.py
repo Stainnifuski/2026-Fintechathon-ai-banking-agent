@@ -11,8 +11,8 @@ from ..integrations.wealth_bank_api import HttpWealthBankApi
 from ..integrations import wealth_authorization as policy
 from ..middleware.auth import get_current_user
 from ..models.wealth import WealthAuthorizationORM, WealthProfileORM
-from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion
-from ..services.orchestration import wealth_plan
+from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan
+from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
 
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 
@@ -152,20 +152,7 @@ async def execute(authorization_id: str, user: dict = Depends(get_current_user),
                   bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     """原号查询及受理；网络失败不以成功或失败覆盖未知事实。"""
     try:
-        row = await db.get(WealthAuthorizationORM, authorization_id)
-        if row is None or row.user_id != user["user_id"]:
-            raise policy.WealthPolicyError("预览不存在", "NOT_FOUND", 404)
-        command = InvestmentCommand.model_validate(row.command)
-        # HTTP调用前结束只读事务，避免跨网络持有数据库锁。
-        await db.rollback()
-        try:
-            return await bank.query(user["user_id"], command.operation_id)
-        except BankResponseUnknown:
-            raise
-        except BankApiError as error:
-            if error.status_code != 404:
-                raise
-        return await bank.submit(user["user_id"], command, authorization_id)
+        return await wealth_execution.execute(db, user["user_id"], authorization_id, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         fail(error)
 
@@ -178,6 +165,12 @@ async def order(operation_id: str, user: dict = Depends(get_current_user),
         return await bank.query(user["user_id"], operation_id)
     except BankApiError as error:
         fail(error)
+
+
+@router.get("/executions")
+async def executions(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """刷新找回SUBMITTING/UNKNOWN，保留原操作号。"""
+    return await wealth_execution.observations(db, user["user_id"])
 
 
 @router.post("/orders/{operation_id}/cancel")
@@ -247,4 +240,67 @@ async def execute_plan(plan_id: str, request: PlanVersion, user: dict = Depends(
         return await wealth_plan.execute(db, user["user_id"], plan_id, request.version, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
+        fail(error)
+
+
+@router.post("/plans/{plan_id}/adopt")
+async def adopt_plan(plan_id: str, request: AdoptPlan, user: dict = Depends(get_current_user),
+                      db: AsyncSession = Depends(get_db)) -> dict:
+    """部分采用或降低金额，旧版本确认撤销。"""
+    try:
+        return await wealth_plan.adopt(db, user["user_id"], plan_id, request)
+    except (policy.WealthPolicyError, ValueError) as error:
+        await db.rollback()
+        if isinstance(error, ValueError):
+            raise HTTPException(422, detail={"code": "INVALID_PLAN", "message": str(error)}) from error
+        fail(error)
+
+
+@router.get("/messages/history")
+async def message_history(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict | None:
+    """本人最近会话刷新恢复，只返回受控模拟消息。"""
+    from ..models.wealth import WealthConversationORM
+    row = (await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id == user["user_id"])
+        .order_by(WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).first()
+    return {"session_id": row.session_id, "version": row.version, **row.data} if row else None
+
+
+@router.get("/profile")
+async def profile(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """受控本人模拟画像与目标。"""
+    return await wealth_profile.read(db, user["user_id"])
+
+
+@router.put("/profile")
+async def update_profile(request: ProfileUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """财务改版重新评估，外部资产保持只读诊断。"""
+    try:
+        return await wealth_profile.update_profile(db, user["user_id"], request)
+    except policy.WealthPolicyError as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post("/goals")
+async def goal(request: GoalInput, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+               bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """跨目标资产标签不重叠；不会创建外部资金交易。"""
+    try:
+        return await wealth_profile.save_goal(db, user["user_id"], request, bank)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post("/messages")
+async def message(request: WealthMessage, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                   bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    """离线有限理解和待确认卡片，可信事实解释；不接受验证码。"""
+    from ..services.ai.wealth import message as respond
+    try:
+        return await respond(db, user["user_id"], bank, request.message, request.session_id, request.version)
+    except (BankApiError, policy.WealthPolicyError, ValueError) as error:
+        await db.rollback()
+        if isinstance(error, ValueError):
+            raise HTTPException(422, detail={"code": "CLARIFICATION_REQUIRED", "message": str(error)}) from error
         fail(error)

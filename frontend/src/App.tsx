@@ -2,6 +2,7 @@ import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
+const Wealth = lazy(() => import('./components/Wealth'));
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const localDateTimeInput = (value: Date) => {
@@ -415,6 +416,7 @@ function App() {
   return <main className="app">
     <header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><div className="confirm"><button className="secondary" disabled={isActing} onClick={openEnroll}>{totpEnabled ? '🔐 已绑定验证器' : '🔐 绑定验证器'}</button><button className="secondary" onClick={logout}>退出登录</button></div></header>
     {status && <p className="notice">{status}</p>}
+    <Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={user.user_id} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense>
     <Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} /></Suspense>
     <section className="grid">
       <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong><small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
@@ -493,8 +495,8 @@ function App() {
         {retryChat && !isChatting && <button onClick={() => sendChat(undefined, true)}>重试原消息（避免重复建单）</button>}
       </div>
       <div className="card"><h2>最近流水</h2>{transactions.length === 0 ? <p className="hint">暂无流水</p> : <ul className="history">{transactions.slice(0, 8).map(tx => {
-        const outgoing = ['transfer_out', 'purchase', 'subscription'].includes(tx.type);
-        const label = tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type === 'refund' ? '退款' : tx.type === 'salary' ? '工资' : tx.type;
+        const outgoing = ['transfer_out', 'purchase', 'subscription', 'investment_purchase'].includes(tx.type);
+        const label = tx.type === 'investment_purchase' ? '理财申购' : tx.type === 'investment_redemption' ? '理财赎回到账' : tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type === 'refund' ? '退款' : tx.type === 'salary' ? '工资' : tx.type;
         const statusLabel = ({ completed: '已完成', pending: '处理中', failed: '失败', cancelled: '已取消' } as Record<string, string>)[tx.status] || tx.status;
         const counterparty = recipients.find(recipient => recipient.account_id === tx.counterparty)?.name || tx.counterparty;
         return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()} · {statusLabel}</small></span><strong className={tx.status !== 'completed' ? 'hint' : outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;

@@ -66,6 +66,8 @@ class AccountSchema(BaseModel):
     account_type: str
     card_number: str
     balance: float
+    available_fen: int | None = None
+    held_fen: int | None = None
     daily_transfer_used: float
     daily_transfer_limit: float
     status: str
@@ -77,6 +79,8 @@ class AccountBalanceSchema(BaseModel):
     account_id: str
     account_type: str
     balance: float
+    available_fen: int | None = None
+    held_fen: int | None = None
     card_number: str
     daily_transfer_used: float
     daily_transfer_limit: float

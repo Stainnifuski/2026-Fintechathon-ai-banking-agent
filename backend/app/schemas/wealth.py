@@ -57,7 +57,15 @@ class InvestmentCommand(StrictRequest):
 class PersonalConfirmation(StrictRequest):
     digest: str = Field(min_length=64, max_length=64)
     disclosure_version: int = Field(ge=1, strict=True)
-    accepted: Literal[True]
+    accepted: bool = Field(strict=True)
+
+    @field_validator("accepted")
+    @classmethod
+    def explicit_true(cls, value: bool) -> bool:
+        """禁止1等转换成同意，且必须明确选择true。"""
+        if value is not True:
+            raise ValueError("必须本人明确同意")
+        return value
 
 
 class StrongVerification(StrictRequest):
@@ -75,7 +83,20 @@ class ProfileUpdate(StrictRequest):
     monthly_income_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
     monthly_expenses_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
     liabilities_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
-    external_assets: list[dict] = Field(default_factory=list, max_length=30)
+    external_assets: list["ExternalAsset"] = Field(default_factory=list, max_length=30)
+
+
+class ExternalAsset(StrictRequest):
+    asset_id: str = Field(min_length=1, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$")
+    label: str = Field(min_length=1, max_length=64)
+    category: Literal["cash", "bond", "mixed", "equity", "index", "other"]
+    amount_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
+    currency: Literal["CNY"] = "CNY"
+
+
+class GoalAllocation(StrictRequest):
+    asset_ref: str = Field(min_length=1, max_length=100)
+    amount_fen: int = Field(gt=0, le=2_000_000_000, strict=True)
 
 
 class GoalInput(StrictRequest):
@@ -86,7 +107,7 @@ class GoalInput(StrictRequest):
     due_date: date
     liquidity: Literal["immediate", "flexible", "long_term"]
     priority: int = Field(ge=1, le=5, strict=True)
-    allocations: list[dict] = Field(default_factory=list, max_length=30)
+    allocations: list[GoalAllocation] = Field(default_factory=list, max_length=30)
 
 
 class PlanInput(StrictRequest):
@@ -101,3 +122,19 @@ class PlanInput(StrictRequest):
 
 class PlanVersion(StrictRequest):
     version: int = Field(ge=1, strict=True)
+
+
+class WealthMessage(StrictRequest):
+    message: str = Field(min_length=1, max_length=500)
+    session_id: str | None = Field(default=None, max_length=64)
+    version: int | None = Field(default=None, ge=1, strict=True)
+
+
+class AdoptItem(StrictRequest):
+    operation_id: str = Field(max_length=64)
+    amount_fen: int | None = Field(default=None, gt=0, le=2_000_000_000, strict=True)
+    units: str | None = None
+
+
+class AdoptPlan(PlanVersion):
+    items: list[AdoptItem] = Field(max_length=5)

@@ -18,8 +18,8 @@ from .transfer_service import BankError
 
 TZ = ZoneInfo("Asia/Shanghai")
 CONSUMPTION = ("purchase", "subscription")
-INCOMING = ("salary", "transfer_in", "refund")
-OUTGOING = (*CONSUMPTION, "transfer_out")
+INCOMING = ("salary", "transfer_in", "refund", "investment_redemption")
+OUTGOING = (*CONSUMPTION, "transfer_out", "investment_purchase")
 LABELS = {"dining": "餐饮", "shopping": "购物", "transport": "交通",
           "entertainment": "娱乐", "subscription": "订阅", "other": "其他"}
 
@@ -134,7 +134,7 @@ async def aggregate(db, predicates, start, end, period):
             categories[cat][0] += amount
             categories[cat][1] += count
             trend[day_key] += amount
-        elif kind in INCOMING or kind == "transfer_out":
+        elif kind in INCOMING or kind in ("transfer_out", "investment_purchase"):
             totals[kind + "_fen"] += amount
     totals["net_inflow_fen"] = totals["inflow_fen"] - totals["outflow_fen"]
     totals["net_consumption_fen"] = totals["consumption_fen"] - totals["refund_fen"]

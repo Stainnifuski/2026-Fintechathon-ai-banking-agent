@@ -171,3 +171,29 @@ class WealthClockORM(Base):
     clock_id: Mapped[str] = mapped_column(String(16), primary_key=True)
     business_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     calendar_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class WealthConversationORM(TimestampMixin, Base):
+    """有限离线对话持久化，验证代码不进入此表。"""
+    __tablename__ = "wealth_conversations"
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    data: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class WealthExecutionORM(TimestampMixin, Base):
+    """5号网络提交观察，与银行权威订单状态分离。"""
+    __tablename__ = "wealth_executions"
+    operation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    authorization_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class WealthSchemaVersionORM(Base):
+    """可重复增量升级标记；不修改既有账户金额。"""
+    __tablename__ = "wealth_schema_versions"
+    schema_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)

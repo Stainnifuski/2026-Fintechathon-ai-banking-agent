@@ -26,6 +26,7 @@ from ...security.totp import (
 )
 from .transfer_service import BankError, transfer_directory, _daily_used_fen
 from .phone import normalize_phone
+from .available_funds import available_cash, held_cash
 
 
 def _account_dict(account: AccountORM) -> dict:
@@ -81,6 +82,8 @@ async def list_accounts(user_id: str) -> list[dict]:
         now = datetime.now(timezone.utc)
         for account in accounts:
             view = _account_dict(account)
+            view["available_fen"] = await available_cash(session, account.account_id, account.balance_fen)
+            view["held_fen"] = await held_cash(session, account.account_id)
             view["daily_transfer_used"] = (
                 await _daily_used_fen(session, account_ids=[account.account_id], now=now)
             ) / 100
@@ -100,6 +103,8 @@ async def list_balances(
         now = datetime.now(timezone.utc)
         for account in accounts:
             view = _account_dict(account)
+            view["available_fen"] = await available_cash(session, account.account_id, account.balance_fen)
+            view["held_fen"] = await held_cash(session, account.account_id)
             view["daily_transfer_used"] = (
                 await _daily_used_fen(session, account_ids=[account.account_id], now=now)
             ) / 100

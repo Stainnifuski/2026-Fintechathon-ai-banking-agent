@@ -26,6 +26,7 @@ from .routers.bills import router as bills_router
 from .routers.wealth_bank import router as wealth_bank_router
 from .routers.wealth import router as wealth_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
+from .services.bank.wealth_worker import settlement_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,12 +47,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()),
         name="scheduled-transfer-loop",
     )
+    wealth_task = asyncio.create_task(settlement_loop(AsyncSessionLocal), name="wealth-settlement-loop")
     try:
         yield
     finally:
         scheduler_task.cancel()
         with suppress(asyncio.CancelledError):
             await scheduler_task
+        wealth_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await wealth_task
     logger.info("正在关闭数据库连接...")
     await close_db()
     logger.info("服务已关闭")

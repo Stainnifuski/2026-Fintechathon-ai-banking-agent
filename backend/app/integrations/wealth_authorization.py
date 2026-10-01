@@ -3,13 +3,15 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+import hashlib
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..domain.wealth_command import command_digest
 from ..domain.wealth_risk import QUESTIONNAIRE_VERSION, score
-from ..models.wealth import WealthAssessmentORM, WealthAuthorizationORM, WealthProfileORM, WealthPlanORM
+from ..models.wealth import WealthAssessmentORM, WealthAuthorizationORM, WealthProfileORM, WealthPlanORM, WealthGoalORM
+from ..models.audit_log import AuditLogORM
 from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation
 
 
@@ -23,6 +25,18 @@ class WealthPolicyError(Exception):
 def aware(value: datetime) -> datetime:
     """SQLite无时区值按UTC存储契约解释。"""
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def confirmation_audit(db: AsyncSession, row: WealthAuthorizationORM) -> None:
+    """3号逐笔本人确认审计，无问卷答案、验证码或隐藏思维链。"""
+    db.add(AuditLogORM(audit_id=hashlib.sha256(f"wealth-consent:{row.authorization_id}".encode()).hexdigest(),
+        session_id=row.operation_id, user_id=row.user_id, intent="wealth_consent", permission_level="red",
+        action="investment_personal_confirmation", params={"operation_id": row.operation_id,
+            "authorization_id": row.authorization_id, "digest": row.param_digest,
+            "product_version": row.command["product_version"], "disclosure_version": row.command["disclosure_version"],
+            "plan_version": row.command["plan_version"]}, user_confirmed=True,
+        result="success", decision_chain=["authenticated_subject", "explicit_unchecked_by_default_component",
+                                          "order_and_disclosure_digest_bound", "strong_verification_still_required"]))
 
 
 async def lock_profile(db: AsyncSession, user_id: str) -> WealthProfileORM:
@@ -92,7 +106,7 @@ async def confirm_assessment(db: AsyncSession, user_id: str, assessment_id: str)
     return assessment_view(row)
 
 
-async def require_suitability(db: AsyncSession, user_id: str, product_risk: int) -> dict:
+async def require_suitability(db: AsyncSession, user_id: str, product_risk: int, *, allow_cash_only: bool = False) -> dict:
     """服务端保守硬匹配；强验证不能覆盖此限制。"""
     row = await latest_assessment(db, user_id)
     profile = await db.get(WealthProfileORM, user_id)
@@ -100,9 +114,17 @@ async def require_suitability(db: AsyncSession, user_id: str, product_risk: int)
         raise WealthPolicyError("请本人完成并确认风险评估", "RISK_ASSESSMENT_REQUIRED")
     if aware(row.expires_at) <= datetime.now(timezone.utc) or profile is None or row.profile_version != profile.version:
         raise WealthPolicyError("风险评估已过期或财务条件已变化", "RISK_ASSESSMENT_EXPIRED")
-    if not row.result["purchase_allowed"] or product_risk > row.result["capacity_level"]:
+    if not allow_cash_only and (not row.result["purchase_allowed"] or product_risk > row.result["capacity_level"]):
         raise WealthPolicyError("产品风险或支付条件不匹配，可保留现金", "SUITABILITY_MISMATCH")
-    return row.result
+    return {**row.result, "assessment_id": row.assessment_id, "expires_at": aware(row.expires_at).isoformat()}
+
+
+async def require_payment_capacity(db: AsyncSession, user_id: str, available_fen: int, amount_fen: int) -> None:
+    """已申报近期支出必须保留；未知支出不伪造估算，画像改变使评估失效。"""
+    profile = await db.get(WealthProfileORM, user_id)
+    reserve = profile.data.get("monthly_expenses_fen", 0) if profile else 0
+    if amount_fen > max(0, available_fen-reserve):
+        raise WealthPolicyError("申购后不足以保留本人已申报的一月支出，请降低金额或保留现金", "PAYMENT_CAPACITY_MISMATCH")
 
 
 async def require_current_plan(db: AsyncSession, user_id: str, command: InvestmentCommand) -> None:
@@ -116,6 +138,10 @@ async def require_current_plan(db: AsyncSession, user_id: str, command: Investme
             if item["command"]["operation_id"] == command.operation_id), None)
         if child is None or command_digest(InvestmentCommand.model_validate(child["command"])) != command_digest(command):
             raise WealthPolicyError("订单不属于当前方案清单", "STALE_PLAN")
+        profile = await db.get(WealthProfileORM, user_id)
+        goals = (await db.scalars(select(WealthGoalORM).where(WealthGoalORM.user_id == user_id))).all()
+        if profile.version != plan.data["profile_version"] or {g.goal_id: g.version for g in goals} != plan.data["goal_versions"]:
+            raise WealthPolicyError("财务画像或目标已改变，请重新生成方案", "STALE_PLAN")
 
 
 async def new_preview_authorization(db: AsyncSession, user_id: str, command: InvestmentCommand) -> WealthAuthorizationORM:
@@ -160,6 +186,7 @@ async def record_confirmation(db: AsyncSession, user_id: str, authorization_id: 
     if row.status == "AWAITING_CONFIRMATION":
         row.confirmed_at = datetime.now(timezone.utc)
         row.status = "AWAITING_MFA"
+        confirmation_audit(db, row)
     await db.commit()
     return {"authorization_id": row.authorization_id, "status": row.status}
 

@@ -13,6 +13,8 @@ from ...integrations.bank_api import BankApiError, BankResponseUnknown
 from ...integrations.wealth_authorization import WealthPolicyError, require_suitability, lock_profile
 from ...models.wealth import WealthPlanORM, WealthProfileORM, WealthGoalORM, WealthAuthorizationORM
 from ...schemas.wealth import InvestmentCommand
+from ...schemas.wealth import AdoptPlan
+from ...domain.wealth import units
 
 
 async def owned_plan(db: AsyncSession, user_id: str, plan_id: str) -> WealthPlanORM:
@@ -32,7 +34,9 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
                  plan_id: str | None = None) -> dict:
     """新资金/持仓调整先读取事实，随后短事务保存版本化计划。"""
     facts, products = await bank.assets(user_id), await bank.products()
-    suitability = await require_suitability(db, user_id, 1)
+    suitability = await require_suitability(db, user_id, 1, allow_cash_only=True)
+    profile = await db.get(WealthProfileORM, user_id)
+    external = list(profile.data.get("external_assets", [])) if profile else []
     budget, reserve = request["budget_fen"], request["reserve_fen"]
     account = next((a for a in facts["cash"] if a["account_id"] == request["account_id"] and a["account_type"] != "credit"), None)
     if account is None:
@@ -49,25 +53,63 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"])
     goal_versions = {g.goal_id: g.version for g in goals}
+    category_values = {}
+    for lot in facts["lots"]:
+        category_values[lot["category"]] = category_values.get(lot["category"], 0)+(lot["market_value_fen"] or 0)
+    for asset in external:
+        category_values[asset["category"]] = category_values.get(asset["category"], 0)+asset["amount_fen"]
+    category_values["cash"] = category_values.get("cash", 0)+sum(a["balance_fen"] for a in facts["cash"] if a["account_type"] != "credit")
+    diagnostic = {"category_values_fen": category_values, "external_value_fen": sum(a["amount_fen"] for a in external),
+        "liabilities_fen": profile.data.get("liabilities_fen", 0) if profile else 0,
+        "note": "包括外部模拟资产的全景诊断，与银行可交易资产分开；锁定和在途不作为即时交易资金"}
+    total_value = sum(category_values.values())
+    diagnostic["allocation"] = [{"category": category,
+        "current_fen": category_values.get(category, 0), "target_percent": weight,
+        "target_fen": total_value*weight//100,
+        "difference_fen": total_value*weight//100-category_values.get(category, 0)}
+        for category, weight in WEIGHTS[suitability["capacity_level"]].items()]
+    diagnostic["goal_shortfall_fen"] = max(0, goal_reserve-budget)
+    diagnostic["expense_reserve_fen"] = profile.data.get("monthly_expenses_fen", 0) if profile else 0
+    effective_reserve = max(effective_reserve, min(budget, diagnostic["expense_reserve_fen"]))
+    config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+        capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
+        excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
+        exposure_fen=category_values if request["kind"] == "adjustment" or facts["lots"] or external else None)
     await db.rollback()
     await lock_profile(db, user_id)
     row = await owned_plan(db, user_id, plan_id) if plan_id else None
     if row and (row.version != request.get("version") or row.status in {"EXECUTING", "WAITING_SETTLEMENT", "COMPLETED"}):
         raise WealthPolicyError("方案版本已改变或已受理，请先核对在途", "STALE_PLAN")
+    if row and any(item["status"] in {"SUBMITTING", "UNKNOWN", "ACCEPTED", "PENDING_PRICING", "PENDING_CASH"} for item in row.data["items"]):
+        raise WealthPolicyError("仍有在途或未知步骤，请先核对银行事实，不能覆盖原方案", "STALE_PLAN")
     if row:
+        previous_history = list(row.data.get("history", []))
+        if row.data.get("stage") == "SELL" and all(item["status"] == "SETTLED" for item in row.data["items"]):
+            previous_history.append({"version": row.version, "stage": "SELL", "items": row.data["items"]})
+            # 原卖出成功事实保留，新版本购买必须全部新授权。
+            request = {**request, "kind": "new_cash"}
+        elif any(item["status"] == "SETTLED" for item in row.data["items"]):
+            previous_history.append({"version": row.version, "stage": row.data["stage"],
+                "items": [item for item in row.data["items"] if item["status"] == "SETTLED"]})
         row.version += 1
     else:
+        previous_history = []
         row = WealthPlanORM(plan_id=f"WP{uuid4().hex}", user_id=user_id, version=1,
             status="AWAITING_CONFIRMATION", data={})
         db.add(row)
+    prior_count = sum(len(stage["items"]) for stage in previous_history)
+    if prior_count:
+        config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+            capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
+            excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
+            exposure_fen=category_values, max_items=max(0, 5-prior_count))
     items = []
     if request["kind"] == "adjustment":
         # 先用新增现金改善配置；预算能投资时不先卖出，避免不必要费用。
         if not config["items"]:
-            total = sum(lot["market_value_fen"] or 0 for lot in facts["lots"])
+            total = sum(category_values.values())
             target = WEIGHTS[suitability["capacity_level"]]
-            current = {category: sum(lot["market_value_fen"] or 0 for lot in facts["lots"] if lot["category"] == category)
-                       for category in {lot["category"] for lot in facts["lots"]}}
+            current = dict(category_values)
             for lot in facts["lots"]:
                 if len(items) >= 5:
                     break
@@ -99,6 +141,8 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     profile = await db.get(WealthProfileORM, user_id)
     row.status = "AWAITING_CONFIRMATION" if items else "COMPLETED"
     row.data = {"request": request, "configuration": config, "items": items,
+        "history": previous_history,
+        "diagnostic": diagnostic,
         "profile_version": profile.version, "snapshot": facts, "goal_versions": goal_versions,
         "stage": "SELL" if items and items[0]["command"]["direction"] == "redeem" else "BUY",
         "external_assets": profile.data.get("external_assets", []),
@@ -115,7 +159,7 @@ async def progress(db: AsyncSession, user_id: str, plan_id: str, bank: HttpWealt
     items = [dict(item) for item in data["items"]]
     await db.rollback()
     for item in items:
-        if item["status"] in {"AWAITING_CONFIRMATION", "PAUSED"}:
+        if item["status"] in {"AWAITING_CONFIRMATION", "PAUSED", "REJECTED", "CANCELLED"}:
             continue
         try:
             fact = await bank.query(user_id, item["command"]["operation_id"])
@@ -131,6 +175,9 @@ async def progress(db: AsyncSession, user_id: str, plan_id: str, bank: HttpWealt
         row.status = "AWAITING_CONFIRMATION" if data["stage"] == "SELL" else "COMPLETED"
         if data["stage"] == "SELL":
             data["next_action"] = "赎回已到账，请刷新可用现金并创建新购买版本，重新确认与强验证"
+    elif "PAUSED" in statuses or statuses & {"REJECTED", "CANCELLED"}:
+        row.status = "PAUSED"
+        data["next_action"] = "未提交步骤已暂停；继续核对在途及成功订单，调整需创建新版本，不自动回滚"
     elif statuses & {"UNKNOWN", "SUBMITTING", "ACCEPTED", "PENDING_PRICING", "PENDING_CASH"}:
         row.status = "WAITING_SETTLEMENT"
     elif "SETTLED" in statuses:
@@ -170,7 +217,11 @@ async def execute(db: AsyncSession, user_id: str, plan_id: str, version: int, ba
             for index, item in enumerate(submissions):
                 try:
                     await bank.submit(user_id, InvestmentCommand.model_validate(item["command"]), item["authorization_id"])
-                except BankApiError:
+                except BankApiError as error:
+                    if not isinstance(error, BankResponseUnknown):
+                        for child in data["items"]:
+                            if child["command"]["operation_id"] == item["command"]["operation_id"]:
+                                child["status"] = "REJECTED"
                     # 后续尚未提交的卖出明确暂停，当前笔仍保留UNKNOWN核对。
                     for unsubmitted in submissions[index+1:]:
                         for child in data["items"]:
@@ -180,7 +231,47 @@ async def execute(db: AsyncSession, user_id: str, plan_id: str, version: int, ba
     except BankApiError as error:
         await lock_profile(db, user_id)
         row = await owned_plan(db, user_id, plan_id)
+        if data["stage"] == "BUY" and not isinstance(error, BankResponseUnknown):
+            data["items"] = [{**item, "status": "PAUSED"} if item["status"] == "SUBMITTING" else item for item in data["items"]]
         row.data = {**data, "last_error": {"code": error.code, "message": error.message}}
         row.status = "PAUSED"
         await db.commit()
     return await progress(db, user_id, plan_id, bank)
+
+
+async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan) -> dict:
+    """部分采用或减少金额/份额产生新版本，拒绝变相增加授权范围。"""
+    await lock_profile(db, user_id)
+    row = await owned_plan(db, user_id, plan_id)
+    if row.version != request.version or row.status != "AWAITING_CONFIRMATION" or any(
+        child["status"] != "AWAITING_CONFIRMATION" for child in row.data["items"]):
+        raise WealthPolicyError("仅未受理当前方案可部分采用", "STALE_PLAN")
+    previous = {child["command"]["operation_id"]: child for child in row.data["items"]}
+    if len({item.operation_id for item in request.items}) != len(request.items):
+        raise WealthPolicyError("选项不能重复", "INVALID_PLAN", 422)
+    children = []
+    for selected in request.items:
+        if selected.operation_id not in previous:
+            raise WealthPolicyError("选项不属于当前方案", "INVALID_PLAN", 422)
+        child = previous[selected.operation_id]
+        cmd = InvestmentCommand.model_validate(child["command"])
+        if selected.amount_fen is not None:
+            if cmd.direction != "purchase" or selected.amount_fen > cmd.amount_fen:
+                raise WealthPolicyError("部分采用只能减少当前申购金额", "INVALID_PLAN", 422)
+            cmd.amount_fen = selected.amount_fen
+        if selected.units is not None:
+            if cmd.direction != "redeem" or units(selected.units) > units(cmd.units):
+                raise WealthPolicyError("部分采用只能减少当前赎回份额", "INVALID_PLAN", 422)
+            cmd.units = format(units(selected.units), ".4f")
+        cmd.operation_id, cmd.plan_version = f"WO{uuid4().hex}", row.version+1
+        children.append({**child, "command": cmd.model_dump(), "status": "AWAITING_CONFIRMATION"})
+    data = dict(row.data)
+    data["items"] = children
+    if data["stage"] == "BUY":
+        spent = sum(child["command"]["amount_fen"] for child in children)
+        data["configuration"] = {**data["configuration"], "investment_fen": spent,
+            "retained_cash_fen": data["request"]["budget_fen"]-spent}
+    row.data, row.version = data, row.version+1
+    row.status = "AWAITING_CONFIRMATION" if children else "COMPLETED"
+    await db.commit()
+    return plan_view(row)

@@ -17,6 +17,18 @@ NOW = datetime(2026, 10, 15, 12, tzinfo=TZ)
 QUERY = BillQuery(date="2026-09")
 
 
+@pytest.mark.asyncio
+async def test_investment_cashflows_are_not_consumption(db):
+    db.add_all([tx("wealth-out", 100000, "investment_purchase", category="investment"),
+                tx("wealth-in", 99000, "investment_redemption", category="investment")])
+    await db.commit()
+    result = await analyze(db, "U1", QUERY, now=NOW)
+    assert result["totals"]["consumption_fen"] == 0
+    assert result["totals"]["outflow_fen"] == 100000
+    assert result["totals"]["inflow_fen"] == 99000
+    assert result["totals"]["unknown_count"] == 0
+
+
 def tx(key, amount, kind="purchase", category="dining", account="A1", when="2026-09-10T04:00:00", **kwargs):
     return TransactionORM(tx_id=key, account_id=account, type=kind, category=category,
                           amount_fen=amount, timestamp=datetime.fromisoformat(when),

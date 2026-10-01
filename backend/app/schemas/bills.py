@@ -32,6 +32,8 @@ class Totals(BaseModel):
     transfer_in_fen: int = 0
     transfer_out_fen: int = 0
     salary_fen: int = 0
+    investment_purchase_fen: int = 0
+    investment_redemption_fen: int = 0
     count: int = 0
     consumption_count: int = 0
     unknown_count: int = 0

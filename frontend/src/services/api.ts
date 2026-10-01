@@ -37,8 +37,10 @@ apiClient.interceptors.response.use(
 
       switch (status) {
         case 401:
-          localStorage.removeItem('token');
-          console.error('认证失败，请重新登录');
+          if (error.response?.data?.detail?.code !== 'TOTP_INVALID') {
+            localStorage.removeItem('token');
+            console.error('认证失败，请重新登录');
+          }
           break;
         case 403:
           console.error('没有权限执行此操作');

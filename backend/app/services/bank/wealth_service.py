@@ -3,6 +3,7 @@
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import hashlib
 
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +33,11 @@ def scaled(value: str) -> int:
 def quantity(value: int) -> str:
     """数据库份额以精确字符串返回，不传浮点数。"""
     return format(Decimal(value) / 10000, ".4f")
+
+
+def stable_id(prefix: str, value: str) -> str:
+    """派生标识固定长度，最长原操作号不会超出旧流水主键。"""
+    return prefix+hashlib.sha256(value.encode()).hexdigest()[:32-len(prefix)]
 
 
 async def business_now(db: AsyncSession) -> datetime:
@@ -184,13 +190,17 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     row = await product_version(db, command)
     now = await business_now(db)
     estimate = None
+    suitability = None
     price = await latest_nav(db, row.version_id, now)
     if command.direction == "purchase":
-        await require_suitability(db, user_id, row.risk_level)
+        suitability = await require_suitability(db, user_id, row.risk_level)
         if not row.rules["min_amount_fen"] <= command.amount_fen <= row.rules["max_amount_fen"]:
             raise BankError("金额不符合产品申购限制", "INVALID_AMOUNT", 422)
         if await available_cash(db, account.account_id, account.balance_fen) < command.amount_fen:
             raise BankError("可用现金不足（在途赎回不可使用）", "INSUFFICIENT_AVAILABLE_FUNDS", 409)
+        from ...integrations.wealth_authorization import require_payment_capacity
+        await require_payment_capacity(db, user_id,
+            await available_cash(db, account.account_id, account.balance_fen), command.amount_fen)
         if price:
             estimate = asdict(purchase(command.amount_fen, price.price, row.rules["purchase_fee_rate"]))
     else:
@@ -203,8 +213,9 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
             for lot, free in lots:
                 take = min(remaining, free)
                 if take:
+                    lot_version = await db.get(WealthProductVersionORM, lot.version_id)
                     estimates.append(asdict(redeem(quantity(take), price.price,
-                        redemption_rate(row.rules, (now.astimezone(TZ).date()-lot.acquired_date).days),
+                        redemption_rate(lot_version.rules, (now.astimezone(TZ).date()-lot.acquired_date).days),
                         lot_units=quantity(lot.units_scaled), lot_cost_fen=lot.cost_fen)))
                     remaining -= take
             estimate = {"cash_fen": sum(item["cash_fen"] for item in estimates),
@@ -212,6 +223,7 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     priced = pricing_date(now, row.rules["cutoff"])
     return {"command": command.model_dump(), "digest": command_digest(command),
         "product_name": row.name, "product_risk_level": row.risk_level, "operation_security_level": "RED",
+        "suitability": {**suitability, "matched": True} if suitability else None,
         "disclosure": row.disclosure, "rules": row.rules, "estimate": estimate,
         "estimated_nav": price.price if price else None, "estimated_nav_date": price.nav_date.isoformat() if price else None,
         "pricing_date": priced.isoformat(), "confirm_date": advance_business(priced, row.rules["confirm_business_days"]).isoformat(),
@@ -276,7 +288,7 @@ async def accept_many(db: AsyncSession, user_id: str,
             for lot, free in await eligible_lots(db, user_id, command, now):
                 take = min(remaining, free)
                 if take:
-                    db.add(WealthUnitHoldORM(hold_id=f"{row.operation_id}:{lot.lot_id}",
+                    db.add(WealthUnitHoldORM(hold_id=hashlib.sha256(f"{row.operation_id}:{lot.lot_id}".encode()).hexdigest(),
                         operation_id=row.operation_id, lot_id=lot.lot_id, units_scaled=take, status="HELD"))
                     remaining -= take
         authorization.status = "CONSUMED"
@@ -341,14 +353,14 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
                 raise BankError("占款事实异常，需要核对", "BANK_LEDGER_INVALID", 503)
             account.balance_fen -= value.gross_fen - value.refund_fen
             hold.status = "CONSUMED"
-            db.add(WealthLotORM(lot_id=f"LOT{row.operation_id}", operation_id=row.operation_id,
+            db.add(WealthLotORM(lot_id=stable_id("LOT", row.operation_id), operation_id=row.operation_id,
                 user_id=row.user_id, account_id=row.account_id, version_id=row.version_id,
                 units_scaled=scaled(value.units), cost_fen=value.gross_fen-value.refund_fen,
                 acquired_date=row.confirm_date, unlock_date=row.confirm_date+timedelta(days=version.rules["holding_days"])))
             row.units_scaled = scaled(value.units)
             row.details = {**row.details, "actual": asdict(value), "actual_nav": price.price, "waiting_reason": None}
             row.status = "SETTLED"
-            db.add(TransactionORM(tx_id=f"WPT{row.operation_id}", account_id=row.account_id,
+            db.add(TransactionORM(tx_id=stable_id("WPT", row.operation_id), account_id=row.account_id,
                 type="investment_purchase", amount_fen=value.gross_fen-value.refund_fen,
                 counterparty=version.name, category="investment", note=None,
                 timestamp=now, status="completed", channel="app"))
@@ -358,8 +370,9 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
             values = []
             for hold in holds:
                 lot = await db.get(WealthLotORM, hold.lot_id, populate_existing=True)
+                lot_version = await db.get(WealthProductVersionORM, lot.version_id)
                 value = redeem(quantity(hold.units_scaled), price.price,
-                    redemption_rate(version.rules, (row.pricing_date-lot.acquired_date).days),
+                    redemption_rate(lot_version.rules, (row.pricing_date-lot.acquired_date).days),
                     lot_units=quantity(lot.units_scaled), lot_cost_fen=lot.cost_fen)
                 lot.units_scaled -= hold.units_scaled
                 lot.cost_fen -= value.cost_fen
@@ -386,7 +399,7 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
             kind="cash", data={"cash_fen": cash}, created_at=now)
         db.add(event)
         if cash > 0:
-            db.add(TransactionORM(tx_id=f"WRT{row.operation_id}", account_id=row.account_id,
+            db.add(TransactionORM(tx_id=stable_id("WRT", row.operation_id), account_id=row.account_id,
                 type="investment_redemption", amount_fen=cash, counterparty=version.name,
                 category="investment", note=None, timestamp=now, status="completed", channel="app"))
         record_bank_event(db, event_key=event.event_id, subject_user_id=row.user_id,
