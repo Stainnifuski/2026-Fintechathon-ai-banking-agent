@@ -1,20 +1,20 @@
-"""演示验证隔离开关；以后替换提供者，历史证据永不改写成真实验证。"""
+"""理财模拟授权适配点；后续对接3号统一高风险授权，历史证据保持原样。"""
 
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def demo_verification_enabled(db: AsyncSession) -> bool:
-    """检查实际数据库名而非请求参数；默认关闭，普通业务库无法启用。"""
-    name = db.get_bind().url.database or ""
-    basename = name.replace("\\", "/").split("/")[-1]
-    return (os.getenv("WEALTH_DEMO_VERIFICATION_ENABLED") == "true"
-            and (name.startswith("bank_test_wealth_") or name.startswith("wealth_test")
-                 or basename.startswith(("wealth-demo", "wealth_test"))))
+    """普通演示库默认启用；显式false可停用，数据库名不决定授权方式。"""
+    return os.getenv("WEALTH_DEMO_VERIFICATION_ENABLED", "true").lower() == "true"
 
 
 def verification_mode(db: AsyncSession) -> dict:
-    """向可信页面明确说明当前提供者，不向AI授予验证工具。"""
+    """只返回服务端策略；前端不能指定风险级别或签发授权证据。"""
     demo = demo_verification_enabled(db)
     return {"mode": "SIMULATED_CLICK" if demo else "TOTP", "simulated": demo,
-            "replacement_required": demo, "provider_version": "demo-click-v1" if demo else "totp-v1"}
+            "replacement_required": demo,
+            "provider_version": "demo-click-v2" if demo else "totp-v1",
+            "permission_level": "red", "authorization_method": "simulated_payment_password" if demo else "totp",
+            "integration_target": "project_unified_high_risk_authorization",
+            "notice": "演示仅记录本人点击授权，不采集或验证支付密码、短信码、生物识别。"}

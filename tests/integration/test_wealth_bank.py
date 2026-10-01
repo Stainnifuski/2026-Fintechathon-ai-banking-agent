@@ -41,7 +41,7 @@ async def store(tmp_path, request):
             await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
         engine = create_async_engine(url, connect_args={"server_settings": {"search_path": schema}})
     else:
-        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'wealth_test.db'}")
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'banking_agent.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -820,6 +820,7 @@ async def test_group_confirmation_demo_evidence_and_execution(store, http_store,
     assert len(views) == 2
     body = {'version': 2, 'items': [{'authorization_id': v['authorization_id'], 'digest': v['digest'],
         'disclosure_version': v['command']['disclosure_version'], 'accepted': True} for v in views]}
+    monkeypatch.setenv('WEALTH_DEMO_VERIFICATION_ENABLED', 'false')
     assert (await client.post(base+'/verify/demo', json={'version': 2})).status_code == 403
     monkeypatch.setenv('WEALTH_DEMO_VERIFICATION_ENABLED', 'true')
     assert (await client.get('/api/v1/wealth/verification-mode')).json()['mode'] == 'SIMULATED_CLICK'
@@ -845,7 +846,7 @@ async def test_group_confirmation_demo_evidence_and_execution(store, http_store,
         logs = (await db.scalars(select(AuditLogORM).where(AuditLogORM.action == 'investment_demo_verification'))).all()
         assert len(logs) == 2 and all(row.result == 'simulated' and row.params['simulated'] for row in logs)
         assert not (await db.get(UserORM, 'U1')).totp_enabled
-    monkeypatch.delenv('WEALTH_DEMO_VERIFICATION_ENABLED')
+    monkeypatch.setenv('WEALTH_DEMO_VERIFICATION_ENABLED', 'false')
     blocked = await client.post(base+'/execute', json={'version': 2})
     assert blocked.status_code == 200  # known bank refusal is preserved in plan progress
     assert blocked.json()['status'] == 'PAUSED'
@@ -897,14 +898,44 @@ async def test_group_old_version_and_other_subject_rejected(store, http_store, m
     assert (await client.post(base+'/verify/demo', json={'version': 1})).status_code == 409
 
 
-def test_demo_verification_rejects_ordinary_database_even_if_enabled(monkeypatch):
+def test_simulated_authorization_defaults_on_for_normal_database(monkeypatch):
     from types import SimpleNamespace
-    from backend.app.integrations.wealth_verification import demo_verification_enabled
-    monkeypatch.setenv('WEALTH_DEMO_VERIFICATION_ENABLED', 'true')
-    def database(name):
-        return SimpleNamespace(get_bind=lambda: SimpleNamespace(url=SimpleNamespace(database=name)))
-    assert not demo_verification_enabled(database('banking_agent'))
-    assert not demo_verification_enabled(database('/demo/banking_agent.db'))
-    assert demo_verification_enabled(database('/demo/wealth-demo.db'))
-    monkeypatch.delenv('WEALTH_DEMO_VERIFICATION_ENABLED')
-    assert not demo_verification_enabled(database('/demo/wealth-demo.db'))
+    from backend.app.integrations.wealth_verification import demo_verification_enabled, verification_mode
+    monkeypatch.delenv('WEALTH_DEMO_VERIFICATION_ENABLED', raising=False)
+    for name in ('banking_agent', '/demo/banking_agent.db', '/demo/wealth-demo.db'):
+        db = SimpleNamespace(get_bind=lambda: SimpleNamespace(url=SimpleNamespace(database=name)))
+        assert demo_verification_enabled(db)
+        mode = verification_mode(db)
+        assert mode['simulated'] and mode['permission_level'] == 'red'
+        assert mode['provider_version'] == 'demo-click-v2'
+        assert mode['integration_target'] == 'project_unified_high_risk_authorization'
+    monkeypatch.setenv('WEALTH_DEMO_VERIFICATION_ENABLED', 'false')
+    assert not demo_verification_enabled(db)
+
+@pytest.mark.asyncio
+async def test_default_simulated_authorization_without_totp(store, http_store, monkeypatch):
+    """普通库默认模拟；未确认不能授权，重试不重复受理，证据保持模拟。"""
+    monkeypatch.delenv('WEALTH_DEMO_VERIFICATION_ENABLED', raising=False)
+    client, _, _ = http_store
+    async with store() as db:
+        await assess(db)
+        assert not (await db.get(UserORM, 'U1')).totp_enabled
+    response = await client.post('/api/v1/wealth/previews', json=command('default-demo').model_dump())
+    assert response.status_code == 200
+    view = response.json()
+    base = '/api/v1/wealth/previews/' + view['authorization_id']
+    assert (await client.post(base+'/verify/demo', json={})).status_code == 409
+    assert (await client.post(base+'/execute', json={})).status_code == 403
+    assert (await client.post(base+'/confirm', json={'digest': view['digest'],
+        'disclosure_version': 1, 'accepted': True})).status_code == 200
+    verified = await client.post(base+'/verify/demo', json={})
+    assert verified.status_code == 200
+    assert verified.json()['authorization_method'] == 'simulated_payment_password'
+    for _ in range(2):
+        result = await client.post(base+'/execute', json={})
+        assert result.status_code == 200
+        assert result.json()['details']['verification']['simulated'] is True
+    async with store() as db:
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM)) == 1
+        evidence = await db.get(WealthVerificationORM, view['authorization_id'])
+        assert evidence.simulated and evidence.provider_version == 'demo-click-v2'
