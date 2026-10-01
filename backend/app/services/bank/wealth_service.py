@@ -95,7 +95,7 @@ async def demo_verify_authorizations(db: AsyncSession, user_id: str, authorizati
     from ...integrations.wealth_authorization import owned_authorization, lock_profile
     from ...integrations.wealth_verification import demo_verification_enabled, verification_mode
     if not demo_verification_enabled(db):
-        raise BankError("模拟验证仅允许显式启用的独立虚构库", "DEMO_VERIFICATION_DISABLED", 403)
+        raise BankError("理财模拟授权已由服务端停用", "DEMO_VERIFICATION_DISABLED", 403)
     if not 1 <= len(authorization_ids) <= 5 or len(set(authorization_ids)) != len(authorization_ids):
         raise BankError("模拟验证每次1至5笔且不能重复", "INVALID_PLAN", 422)
     await lock_profile(db, user_id)
@@ -110,12 +110,12 @@ async def demo_verify_authorizations(db: AsyncSession, user_id: str, authorizati
             continue
         row.status, row.verified_at = "VALID", datetime.now(timezone.utc)
         db.add(WealthVerificationORM(authorization_id=row.authorization_id, method="SIMULATED_CLICK",
-            provider_version="demo-click-v1", simulated=True, replacement_required=True, verified_at=row.verified_at))
+            provider_version="demo-click-v2", simulated=True, replacement_required=True, verified_at=row.verified_at))
         record_bank_event(db, event_key=row.authorization_id, subject_user_id=user_id,
             action="investment_demo_verification", result="simulated", facts={
                 "authorization_id": row.authorization_id, "operation_id": row.operation_id,
                 "digest": row.param_digest, **verification_mode(db)},
-            decision_chain=["isolated_fictional_database", "personal_confirmation_checked", "simulated_click_only", "real_verification_replacement_required"])
+            decision_chain=["simulation_application", "personal_confirmation_checked", "simulated_click_only", "unified_authorization_adapter_pending"])
     await db.commit()
     return {"status": "VALID", "authorization_ids": authorization_ids, **verification_mode(db)}
 
@@ -501,3 +501,4 @@ async def assets(db: AsyncSession, user_id: str) -> dict:
             + sum(lot["market_value_fen"] or 0 for lot in lots),
         "valuation_complete": all(lot["market_value_fen"] is not None for lot in lots),
         "business_at": now.isoformat(), "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
+
