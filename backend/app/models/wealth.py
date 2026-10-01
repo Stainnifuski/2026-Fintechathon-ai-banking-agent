@@ -99,6 +99,17 @@ class WealthAuthorizationORM(Base):
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class WealthVerificationORM(Base):
+    """逐笔验证证据；模拟点击必须显式标记，禁止作为真实强验证凭据。"""
+    __tablename__ = "wealth_verifications"
+    authorization_id: Mapped[str] = mapped_column(ForeignKey("wealth_authorizations.authorization_id"), primary_key=True)
+    method: Mapped[str] = mapped_column(String(32), CheckConstraint("method IN ('TOTP','SIMULATED_CLICK')"), nullable=False)
+    provider_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    simulated: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    replacement_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class WealthOrderORM(TimestampMixin, Base):
     """4号权威订单，原操作号及完整摘要唯一。"""
     __tablename__ = "wealth_orders"

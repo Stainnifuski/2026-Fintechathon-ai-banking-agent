@@ -13,7 +13,7 @@ from ...integrations.bank_api import BankApiError, BankResponseUnknown
 from ...integrations.wealth_authorization import WealthPolicyError, require_suitability, lock_profile
 from ...models.wealth import WealthPlanORM, WealthProfileORM, WealthGoalORM, WealthAuthorizationORM
 from ...schemas.wealth import InvestmentCommand
-from ...schemas.wealth import AdoptPlan
+from ...schemas.wealth import AdoptPlan, PlanConfirmation, PersonalConfirmation
 from ...domain.wealth import units
 
 
@@ -23,6 +23,67 @@ async def owned_plan(db: AsyncSession, user_id: str, plan_id: str) -> WealthPlan
     if row is None or row.user_id != user_id:
         raise WealthPolicyError("方案不存在", "NOT_FOUND", 404)
     return row
+
+
+async def confirmation_commands(db: AsyncSession, user_id: str, plan_id: str, version: int) -> list[InvestmentCommand]:
+    """只预览当前未提交整份方案，不能通过删掉验证项遗漏某笔。"""
+    row = await owned_plan(db, user_id, plan_id)
+    if row.version != version or row.status != "AWAITING_CONFIRMATION":
+        raise WealthPolicyError("方案已更新或已经受理，请核对当前版本", "STALE_PLAN")
+    commands = [InvestmentCommand.model_validate(item["command"]) for item in row.data["items"]
+                if item["status"] == "AWAITING_CONFIRMATION"]
+    if not commands:
+        raise WealthPolicyError("没有待确认订单；保留现金无需验证", "INVALID_PLAN", 422)
+    return commands
+
+
+async def preview_all(db: AsyncSession, user_id: str, plan_id: str, version: int, bank: HttpWealthBankApi) -> dict:
+    """整页预览，每笔仍绑定独立操作号和披露摘要。"""
+    from ...integrations import wealth_authorization as policy
+    commands = await confirmation_commands(db, user_id, plan_id, version)
+    await db.rollback()
+    views = [await bank.precheck(user_id, command) for command in commands]
+    items = []
+    for command, view in zip(commands, views):
+        auth = await policy.new_preview_authorization(db, user_id, command)
+        items.append({**view, "command": command.model_dump(), "authorization_id": auth.authorization_id,
+            "authorization_status": auth.status, "digest": auth.param_digest, "expires_at": auth.expires_at.isoformat()})
+    await db.commit()
+    return {"plan_id": plan_id, "version": version, "items": items}
+
+
+async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: PlanConfirmation, bank: HttpWealthBankApi) -> dict:
+    """一次本人确认，所有逐笔记录原子落库；任一失效则全部拒绝。"""
+    from ...integrations import wealth_authorization as policy
+    commands = await confirmation_commands(db, user_id, plan_id, request.version)
+    rows = [await policy.owned_authorization(db, user_id, item.authorization_id) for item in request.items]
+    if len(rows) != len(commands) or {row.operation_id for row in rows} != {cmd.operation_id for cmd in commands}:
+        raise WealthPolicyError("必须确认当前方案全部选中订单，不能重复或遗漏", "STALE_PLAN")
+    await db.rollback()
+    for command in commands:
+        await bank.precheck(user_id, command)
+    await policy.lock_profile(db, user_id)
+    await confirmation_commands(db, user_id, plan_id, request.version)
+    for item in request.items:
+        await policy.record_confirmation(db, user_id, item.authorization_id,
+            PersonalConfirmation(digest=item.digest, disclosure_version=item.disclosure_version, accepted=item.accepted), commit=False)
+    await db.commit()
+    return {"plan_id": plan_id, "version": request.version, "status": "AWAITING_MFA"}
+
+
+async def demo_verify_all(db: AsyncSession, user_id: str, plan_id: str, version: int, bank: HttpWealthBankApi) -> dict:
+    """仅发给受控银行演示提供者，不能由聊天触发。"""
+    from ...integrations import wealth_authorization as policy
+    commands = await confirmation_commands(db, user_id, plan_id, version)
+    ids = []
+    for command in commands:
+        row = (await db.scalars(select(WealthAuthorizationORM).where(WealthAuthorizationORM.operation_id == command.operation_id))).one_or_none()
+        if row is None:
+            raise WealthPolicyError("请先预览并确认整份方案", "CONFIRMATION_REQUIRED")
+        row = await policy.owned_authorization(db, user_id, row.authorization_id)
+        ids.append(row.authorization_id)
+    await db.rollback()
+    return await bank.call("POST", "/verify/demo", {"subject_user_id": user_id, "authorization_ids": ids})
 
 
 def plan_view(row: WealthPlanORM) -> dict:

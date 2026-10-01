@@ -27,7 +27,7 @@ python -m backend.app.services.bank.wealth_migration
 # docker compose run --rm --no-deps backend python -m app.services.bank.wealth_migration
 ```
 
-3. 增量添加wealth_*表，schema版本1；PG将transactions.type从20拓宽到32。目录/NAV只补缺，不播种账户、余额或流水。CLI单事务包含DDL及种子；SQLite显式BEGIN IMMEDIATE。重复执行核对版本并保留历史价格。启动也会执行兼容升级；正式切换前仍推荐停机跑CLI及副本核对。
+3. 增量添加wealth_*表，schema版本2（兼容升级1→2）；PG将transactions.type从20拓宽到32。目录/NAV只补缺，不播种账户、余额或流水。CLI单事务包含DDL及种子；SQLite显式BEGIN IMMEDIATE。重复执行核对版本并保留历史价格。启动也会执行兼容升级；正式切换前仍推荐停机跑CLI及副本核对。
 4. 核对账户和流水行数、金额、所有字段指纹；检查占款、份额、流水、审计及版本；再启新版后端/前端。旧代码不能与新占款账本混跑。
 5. 本次已有真实PG运行账本副本实际升级两次、空业务回退及重新升级：7账户/7流水，账户分合计22000000、流水分合计1603300，所有字段指纹一致；源库也未变。备份留本地忽略目录 `.deps/wealth-migration/before.dump`，不提交Git。
 
@@ -53,3 +53,26 @@ python -m backend.app.services.bank.wealth_migration --rollback
 本任务没有真实资料、行情、付费模型调用或第三方UI资产。原始答案存在受控评估表，凭据和答案不进对话/业务审计；审计留规则版本和确认事实，不存隐藏思维链。测试秘密、隔离数据库、备份和截图均被Git忽略。财务画像只允许虚构CNY数据；无自动删用户/金融记录功能，清除隔离演示和审计保留需分别决定。
 
 模拟简化及真实上线待审查见 [安全自评](security.md)，不能把本次验收当作监管许可或生产安全认证。
+
+## 2026-10-01 用户确认的演示验证修订
+
+用户选择仅在虚构演示库模拟验证并成交，替代当前演示里的验证码输入要求；正式模式仍保留TOTP。
+
+### 使用
+
+设置每笔是否采用和采用金额后点“预览采用方案（统一确认）”。同一页面展示全部采用订单、申购总支出、保留现金、每笔费用/净值/风险/披露和时间。确认框初始不勾；“一次确认整份方案”将所有逐笔确认原子保存。再点“确认高风险操作（模拟验证并提交方案）”，不需要绑定或输入验证码。银行按原有规则受理、占款、计价和结算；受理不等于立即到账。单产品也支持该演示按钮。
+
+### 开关与数据库
+
+仅服务器 `WEALTH_DEMO_VERIFICATION_ENABLED=true` 且实际数据库名为bank_test_wealth_*或SQLite文件名wealth-demo*/wealth_test*才可用；默认false，不由前端/请求切换。原banking_agent不能启用。独立3010/8010启用，原3000/8000不变。
+
+迁移版本2新增wealth_verifications：authorization_id主键关联逐笔授权，method=SIMULATED_CLICK/TOTP、provider_version、simulated、replacement_required、verified_at。模拟记录为demo-click-v1/true/true；不存验证码。订单details.verification和审计保留模拟来源；模拟验证审计result=simulated，不冒充真实强验证成功。模拟按钮不改变本人适当性、归属、摘要、10分钟有效期或账务幂等。
+
+### 以后替换真实验证
+
+1. 停写备份并升级版本2；不要将历史模拟记录改成TOTP或删除标记。
+2. 关闭WEALTH_DEMO_VERIFICATION_ENABLED；银行将拒绝尚未受理的模拟授权。旧模拟已受理账务保留，不自动反向交易。
+3. 在可信页面接入真实提供者，沿用逐笔摘要、本人确认、真实时钟及独立验证证据；现有TOTP路径可直接使用，组合仍须逐笔验证证据后原子受理。
+4. 新操作号重新预览/确认/真实验证，不能把旧模拟授权升级成真实凭据。新增其他提供者时更新方法约束、验证器接口和相关鉴权、防重放/失效测试。
+
+这是演示工作流，不是生产强验证已完成的声明；详见契约与安全自评。

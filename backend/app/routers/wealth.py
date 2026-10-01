@@ -11,7 +11,7 @@ from ..integrations.wealth_bank_api import HttpWealthBankApi
 from ..integrations import wealth_authorization as policy
 from ..middleware.auth import get_current_user
 from ..models.wealth import WealthAuthorizationORM, WealthProfileORM
-from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan
+from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan, PlanConfirmation
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
 
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
@@ -26,6 +26,49 @@ def fail(error: BankApiError | policy.WealthPolicyError) -> None:
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+@router.get("/verification-mode")
+async def verification_mode(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        return await bank.call("GET", "/verification-mode")
+    except BankApiError as error:
+        fail(error)
+
+
+@router.post("/previews/{authorization_id}/verify/demo")
+async def demo_verify(authorization_id: str, user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        return await bank.call("POST", "/verify/demo", {"subject_user_id": user["user_id"], "authorization_ids": [authorization_id]})
+    except BankApiError as error:
+        fail(error)
+
+
+@router.post("/plans/{plan_id}/preview")
+async def preview_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        return await wealth_plan.preview_all(db, user["user_id"], plan_id, request.version, bank)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post("/plans/{plan_id}/confirm")
+async def confirm_plan(plan_id: str, request: PlanConfirmation, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        return await wealth_plan.confirm_all(db, user["user_id"], plan_id, request, bank)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post("/plans/{plan_id}/verify/demo")
+async def demo_verify_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        return await wealth_plan.demo_verify_all(db, user["user_id"], plan_id, request.version, bank)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
 
 
 @router.get("/products")

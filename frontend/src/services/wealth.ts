@@ -16,6 +16,7 @@ export interface Order {
   operation_id: string; account_id: string; version_id: string; direction: string;
   amount_fen: number; units: string; digest: string; status: string; pricing_date: string;
   confirm_date: string; cash_date: string; details: { waiting_reason?: string | null;
+    verification?: { method: string; simulated: boolean; replacement_required: boolean };
     actual_nav?: string; actual?: { units?: string; fee_fen: number; cash_fen?: number; realized_pnl_fen?: number } };
 }
 export interface Assets {
@@ -33,6 +34,8 @@ export interface Preview { authorization_id: string; authorization_status: strin
   estimated_nav: string | null; estimated_nav_date: string | null; pricing_date: string; confirm_date: string; cash_date: string; expires_at: string }
 export interface PlanRequest { kind: 'new_cash' | 'adjustment'; account_id: string; version: number; budget_fen: number;
   reserve_fen: number; horizon_days: number; excluded_products: string[] }
+export interface VerificationMode { mode: 'SIMULATED_CLICK' | 'TOTP'; simulated: boolean; replacement_required: boolean }
+export interface PlanPreview { plan_id: string; version: number; items: Preview[] }
 export interface Plan { plan_id: string; version: number; status: string; stage: string; next_action?: string; request: PlanRequest;
   history?: { version: number; stage: string; items: { command: Command; status: string; bank_result?: Order }[] }[];
   diagnostic?: { note: string; goal_shortfall_fen: number; allocation: { category: string; current_fen: number; target_percent: number; target_fen: number; difference_fen: number }[] };

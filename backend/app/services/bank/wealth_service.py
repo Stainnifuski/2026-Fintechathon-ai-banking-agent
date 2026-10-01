@@ -19,7 +19,7 @@ from ...models.user import UserORM
 from ...models.transaction import TransactionORM
 from ...models.wealth import (WealthCashHoldORM, WealthClockORM, WealthLotORM,
     WealthNavORM, WealthOrderORM, WealthProductORM, WealthProductVersionORM,
-    WealthSettlementORM, WealthUnitHoldORM)
+    WealthSettlementORM, WealthUnitHoldORM, WealthVerificationORM)
 from ...schemas.wealth import InvestmentCommand
 from .available_funds import available_cash, held_cash
 from .audit_service import record_bank_event
@@ -80,12 +80,44 @@ async def verify_authorization(db: AsyncSession, user_id: str, authorization_id:
         raise
     row.status = "VALID"
     row.verified_at = datetime.now(timezone.utc)
+    db.add(WealthVerificationORM(authorization_id=row.authorization_id, method="TOTP",
+        provider_version="totp-v1", simulated=False, replacement_required=False, verified_at=row.verified_at))
     record_bank_event(db, event_key=row.authorization_id, subject_user_id=row.user_id,
         action="investment_verification", result="success", facts={"authorization_id": row.authorization_id,
             "operation_id": row.operation_id, "digest": row.param_digest},
         decision_chain=["personal_confirmation_checked", "totp_replay_prevented", "bound_authorization_verified"])
     await db.commit()
     return {"authorization_id": row.authorization_id, "status": row.status}
+
+
+async def demo_verify_authorizations(db: AsyncSession, user_id: str, authorization_ids: list[str]) -> dict:
+    """显式虚构演示点击；原子记录逐笔模拟证据，绝不声称TOTP成功。"""
+    from ...integrations.wealth_authorization import owned_authorization, lock_profile
+    from ...integrations.wealth_verification import demo_verification_enabled, verification_mode
+    if not demo_verification_enabled(db):
+        raise BankError("模拟验证仅允许显式启用的独立虚构库", "DEMO_VERIFICATION_DISABLED", 403)
+    if not 1 <= len(authorization_ids) <= 5 or len(set(authorization_ids)) != len(authorization_ids):
+        raise BankError("模拟验证每次1至5笔且不能重复", "INVALID_PLAN", 422)
+    await lock_profile(db, user_id)
+    rows = [await owned_authorization(db, user_id, aid) for aid in authorization_ids]
+    for row in rows:
+        if row.status not in {"AWAITING_MFA", "VALID"} or not row.confirmed_at:
+            raise WealthPolicyError("请先本人确认所有订单", "CONFIRMATION_REQUIRED")
+        if row.status == "VALID" and await db.get(WealthVerificationORM, row.authorization_id) is None:
+            raise WealthPolicyError("旧验证记录不转换为模拟验证", "AUTHORIZATION_REQUIRED")
+    for row in rows:
+        if row.status == "VALID":
+            continue
+        row.status, row.verified_at = "VALID", datetime.now(timezone.utc)
+        db.add(WealthVerificationORM(authorization_id=row.authorization_id, method="SIMULATED_CLICK",
+            provider_version="demo-click-v1", simulated=True, replacement_required=True, verified_at=row.verified_at))
+        record_bank_event(db, event_key=row.authorization_id, subject_user_id=user_id,
+            action="investment_demo_verification", result="simulated", facts={
+                "authorization_id": row.authorization_id, "operation_id": row.operation_id,
+                "digest": row.param_digest, **verification_mode(db)},
+            decision_chain=["isolated_fictional_database", "personal_confirmation_checked", "simulated_click_only", "real_verification_replacement_required"])
+    await db.commit()
+    return {"status": "VALID", "authorization_ids": authorization_ids, **verification_mode(db)}
 
 
 async def advance_clock(db: AsyncSession, business_at: datetime) -> dict:
@@ -296,6 +328,11 @@ async def accept_many(db: AsyncSession, user_id: str,
             cash_date=advance_business(priced, version.rules["cash_business_days"]),
             details={"preview": preview["estimate"], "estimated_nav": preview["estimated_nav"],
                      "calculation_version": "mock-units-v1", "calendar_version": CALENDAR_VERSION})
+        evidence = await db.get(WealthVerificationORM, auth_id)
+        row.details = {**row.details, "verification": {
+            "method": evidence.method if evidence else "LEGACY_TOTP",
+            "simulated": evidence.simulated if evidence else False,
+            "replacement_required": evidence.replacement_required if evidence else False}}
         db.add(row)
         await db.flush()
         if command.direction == "purchase":
@@ -313,8 +350,11 @@ async def accept_many(db: AsyncSession, user_id: str,
         record_bank_event(db, event_key=row.operation_id, subject_user_id=user_id,
             action="investment_accept", result="success",
             facts={"operation_id": row.operation_id, "authorization_id": auth_id,
-                   "digest": row.param_digest, "version_id": row.version_id, "direction": row.direction},
-            decision_chain=["subject_checked", "suitability_checked", "bound_confirmation_and_mfa_checked", "funds_or_units_reserved"])
+                   "digest": row.param_digest, "version_id": row.version_id, "direction": row.direction,
+                   "verification": row.details["verification"]},
+            decision_chain=["subject_checked", "suitability_checked",
+                "bound_confirmation_and_simulated_verification_checked" if evidence and evidence.simulated else "bound_confirmation_and_mfa_checked",
+                "funds_or_units_reserved"])
         await db.flush()
         results.append(order_view(row))
     await db.commit()

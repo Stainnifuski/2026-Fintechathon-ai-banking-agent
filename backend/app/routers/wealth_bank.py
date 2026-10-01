@@ -41,6 +41,10 @@ class Batch(Subject):
     submissions: list[InternalInvestmentSubmission] = Field(min_length=1, max_length=5)
 
 
+class DemoVerify(Subject):
+    authorization_ids: list[str] = Field(min_length=1, max_length=5)
+
+
 class Advance(StrictRequest):
     business_at: datetime
 
@@ -78,6 +82,21 @@ async def verify(request: Verify, db: AsyncSession = Depends(get_db)) -> dict:
     """锁住本人验证码时间步，与逐笔强验证事实同事务提交。"""
     try:
         return await bank.verify_authorization(db, request.subject_user_id, request.authorization_id, request.proof)
+    except (BankError, WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.get("/verification-mode")
+async def verification_mode(db: AsyncSession = Depends(get_db)) -> dict:
+    from ..integrations.wealth_verification import verification_mode as mode
+    return mode(db)
+
+
+@router.post("/verify/demo")
+async def demo_verify(request: DemoVerify, db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        return await bank.demo_verify_authorizations(db, request.subject_user_id, request.authorization_ids)
     except (BankError, WealthPolicyError) as error:
         await db.rollback()
         fail(error)

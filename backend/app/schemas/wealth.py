@@ -138,3 +138,11 @@ class AdoptItem(StrictRequest):
 
 class AdoptPlan(PlanVersion):
     items: list[AdoptItem] = Field(max_length=5)
+
+
+class BoundConfirmation(PersonalConfirmation):
+    authorization_id: str = Field(max_length=64)
+
+
+class PlanConfirmation(PlanVersion):
+    items: list[BoundConfirmation] = Field(min_length=1, max_length=5)
