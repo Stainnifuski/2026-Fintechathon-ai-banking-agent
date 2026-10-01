@@ -124,3 +124,16 @@ npm run build
 - [本次验证记录](docs/validation/phone_note_bank_20260927.md)
 
 - [4号接口、数据库升级与组员交接 v0.5](docs/bank/接口与数据库交接_v0.5.md)
+
+## 理财模拟扩展（2026-10-01）
+
+阶段0/A/B/C/D已完成：8个虚构产品、产品推荐/对比、本人风险评估、披露确认和TOTP申购/赎回、新资金配置、现有持仓调整、外部资产与用途目标、持仓成本/盈亏、占款/结算/撤单、版本绑定授权及原号恢复。有限离线聊天只产生意图；执行经过可信页面和银行服务端校验。
+
+本轮完整回归 **202项通过、零跳过**（隔离SQLite和PostgreSQL），前端类型检查/构建通过；浏览器检查申购、赎回、方案改版和刷新恢复。独立演示入口 http://localhost:3010，原3000/8000保留。升级现有库前必须备份并按迁移交接执行；不要混跑旧扣款代码。
+
+- [理财演示与启动](docs/wealth/demo.md)
+- [公开及内部API契约](docs/wealth/contract.md)
+- [第4号数据库迁移与团队交接](docs/wealth/handoff.md)
+- [安全自评与模拟限制](docs/wealth/security.md)
+- [实际验收证据](docs/validation/wealth_20261001.md)
+- [实施进度](implementation_progress.md)

@@ -230,3 +230,6 @@ __marimo__/
 *.db-journal
 *.db-shm
 *.db-wal
+
+# TypeScript incremental build cache
+frontend/tsconfig.tsbuildinfo

@@ -57,6 +57,9 @@ async def main(rollback_requested: bool) -> None:
     engine = create_async_engine(url)
     try:
         async with engine.begin() as conn:
+            if conn.dialect.name == "sqlite":
+                # SQLite驱动默认DDL可提前提交；显式BEGIN让新表与种子共同回滚。
+                await conn.exec_driver_sql("BEGIN IMMEDIATE")
             if not rollback_requested:
                 tables = [table for table in Base.metadata.sorted_tables if table.name.startswith("wealth_")]
                 await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=tables))

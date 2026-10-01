@@ -84,3 +84,7 @@
 - 升级时新增 `user_phone_registry` 与 `risk_subject_locks` 表。前者对旧用户原号做规范化登记，检测等价号码冲突并停止，不改写客户或账务。重复执行可安全复用。回滚代码不撤销转账或自动删除表；先备份并按账务流程核对。PostgreSQL 迁移和跨进程压力测试未验证。
 
 稳定错误包括 `INVALID_PHONE`、`PHONE_CONFLICT`、`RECIPIENT_MISMATCH`、`RECIPIENT_MAPPING_CHANGED`、`INVALID_NOTE`、`SAME_ACCOUNT`、`PAYER_FORBIDDEN`、`ACCOUNT_INACTIVE`、`CUSTOMER_INACTIVE`、`INSUFFICIENT_FUNDS`、`DAILY_LIMIT_EXCEEDED`、`PARAM_DIGEST_MISMATCH`、`IDEMPOTENCY_CONFLICT`、`BANK_BUSY`、`RISK_UNAVAILABLE`、`RISK_DECISION_INVALID`。客户端以HTTP状态和错误码决定恢复路径，不得据超时猜测成功或重建操作号。
+
+## 理财共享兼容说明（2026-10-01）
+
+原转账状态机、姓名/手机号/备注、定时及AA保留。银行账户新增可选available_fen/held_fen；转账最终扣款与理财占款共用账户锁和可用余额。理财订单/方案有独立状态、披露与绑定授权，不复用转账确认卡或以旧User.risk_level替代本人适当性。详见 [理财API](../wealth/contract.md) 与 [团队交接](../wealth/handoff.md)。

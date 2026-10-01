@@ -768,3 +768,34 @@ async def test_cash_only_plan_and_disclosure_change_invalidate_old_authorization
         "budget_fen": 2_000_000, "reserve_fen": 500_000, "horizon_days": 90})
     assert cash_only.status_code == 200, cash_only.text
     assert cash_only.json()["items"] == [] and cash_only.json()["configuration"]["retained_cash_fen"] == 2_000_000
+
+
+@pytest.mark.asyncio
+async def test_verification_failed_attempts_are_limited_without_storing_code(store, monkeypatch):
+    """失败审计只存业务原因，用户锁保护持久化限流且不消费授权。"""
+    import pyotp
+    from backend.app.models.audit_log import AuditLogORM
+    from backend.app.services.bank import data_service
+    monkeypatch.setattr(data_service, "verify_code", lambda secret, proof: False)
+    async with store() as db:
+        await assess(db)
+        user = await db.get(UserORM, "U1")
+        user.totp_secret, user.totp_enabled = pyotp.random_base32(), True
+        cmd = command("failed-verification-limit")
+        row = await new_preview_authorization(db, "U1", cmd)
+        aid, digest = row.authorization_id, row.param_digest
+        await db.commit()
+        await record_confirmation(db, "U1", aid, PersonalConfirmation(digest=digest, disclosure_version=1, accepted=True))
+        for _ in range(5):
+            with pytest.raises(BankError) as invalid:
+                await bank.verify_authorization(db, "U1", aid, "000000")
+            assert invalid.value.code == "TOTP_INVALID"
+            await db.rollback()
+        with pytest.raises(BankError) as limited:
+            await bank.verify_authorization(db, "U1", aid, "000000")
+        assert limited.value.code == "VERIFICATION_RATE_LIMITED" and limited.value.status_code == 429
+        await db.rollback()
+        assert (await db.get(WealthAuthorizationORM, aid)).status == "AWAITING_MFA"
+        denied = (await db.scalars(select(AuditLogORM).where(AuditLogORM.result == "failed"))).all()
+        assert len(denied) == 5
+        assert all("000000" not in str(row.params) and "proof" not in row.params for row in denied)

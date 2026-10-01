@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
+from uuid import uuid4
 
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +60,24 @@ async def verify_authorization(db: AsyncSession, user_id: str, authorization_id:
     row = await owned_authorization(db, user_id, authorization_id)
     if row.status != "AWAITING_MFA":
         raise WealthPolicyError("请先确认本人订单及披露", "CONFIRMATION_REQUIRED")
-    await verify_totp_for_operation(db, user_id, proof)
+    from ...models.audit_log import AuditLogORM
+    since = datetime.now(timezone.utc)-timedelta(minutes=10)
+    failures = await db.scalar(select(func.count()).select_from(AuditLogORM).where(
+        AuditLogORM.user_id == user_id, AuditLogORM.action == "investment_verification",
+        AuditLogORM.result == "failed", AuditLogORM.timestamp >= since))
+    if failures >= 5:
+        raise BankError("验证失败次数过多，请10分钟后重新预览并验证", "VERIFICATION_RATE_LIMITED", 429)
+    try:
+        await verify_totp_for_operation(db, user_id, proof)
+    except BankError as error:
+        if error.code in {"TOTP_INVALID", "TOTP_REPLAY"}:
+            db.add(AuditLogORM(audit_id=f"WVFAIL{uuid4().hex}", session_id=row.operation_id, user_id=user_id,
+                intent="wealth_verification", action="investment_verification", permission_level="red",
+                user_confirmed=True, mfa_method="totp", result="failed",
+                params={"authorization_id": authorization_id, "code": error.code},
+                decision_chain=["personal_confirmation_checked", "strong_verification_denied", "no_credential_stored"]))
+            await db.commit()
+        raise
     row.status = "VALID"
     row.verified_at = datetime.now(timezone.utc)
     record_bank_event(db, event_key=row.authorization_id, subject_user_id=row.user_id,

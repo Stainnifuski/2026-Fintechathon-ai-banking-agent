@@ -127,11 +127,15 @@ async def previews(user: dict = Depends(get_current_user), db: AsyncSession = De
 
 @router.post("/previews/{authorization_id}/confirm")
 async def confirm(authorization_id: str, request: PersonalConfirmation, user: dict = Depends(get_current_user),
-                  db: AsyncSession = Depends(get_db)) -> dict:
+                  db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     """聊天好的不能调用；必须明确绑定预览和披露版本。"""
     try:
+        row = await policy.owned_authorization(db, user["user_id"], authorization_id)
+        command = InvestmentCommand.model_validate(row.command)
+        await db.rollback()
+        await bank.precheck(user["user_id"], command)
         return await policy.record_confirmation(db, user["user_id"], authorization_id, request)
-    except policy.WealthPolicyError as error:
+    except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
 

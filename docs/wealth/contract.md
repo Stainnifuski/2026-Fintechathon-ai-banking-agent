@@ -1,37 +1,70 @@
-# 理财计算、状态与接口契约草案 v1
+# 理财计算、状态与API契约 v1
 
-所有产品与资金为比赛模拟。以下冻结设计供实现与测试核对，接口尚未实现时不作为可调用能力。
+状态：已实现，供1/2/3/4/5号联调。仅比赛模拟环境、虚构CNY产品和资金。基线main `bc10571`，任务正文v1.1。
 
-## 计算
+## 角色与认证
 
-现金整数分，净值Decimal(8位)，份额Decimal(4位)。申购外扣费用模型：净申购额=总额/(1+费率)，先净额按分向下取整，费用为总额减净额；份额=净额/净值向下取4位，剩余未转换资金按分返还，低于分的尾差显式记入尾差账。赎回按批次计算份额×成交净值，毛额按分四舍五入、费用按分四舍五入、净到账=毛额−费用。成本按赎回份额比例分摊，最后一次全部赎回消除成本尾差。
+前端及助手使用 `/api/v1/wealth`，所有入口要求 Bearer JWT，主体由JWT获取，不接受客户端自行指定用户。5号通过 `HttpWealthBankApi` 调用 `/api/v1/internal/bank/wealth`；内部请求使用 `X-Internal-Token`，不可发送到浏览器或模型。只有4号银行包访问账户、流水、产品、份额与占款ORM。3号保留原风险等级接口，新增独立理财评估和授权；`User.risk_level` 不代替本人评估。
 
-例：10000元、费率1%、净值1.23456789；净额9900.99元、费用99.01元，份额向下取4位，展示预估与实际各自净值日期。结算必须使用指定计价日净值；缺失时等待，禁止借用未来净值。历史净值包含下跌，不保证收益。
+## 公开接口
 
-## 状态
+| 方法及相对路径 | 行为／主要请求 |
+|---|---|
+| GET products | 8产品，规则/披露版本、产品风险、净值及日期；无评估仍可读 |
+| GET compare?product_ids=MF001,MW001 | 2—3个不同产品客观对比 |
+| GET questionnaire | 9题、选项、问卷版本、画像版本 |
+| POST assessments | questionnaire_version/profile_version、adult/full_capacity严格bool、answers九个0—3整数；单日2次、滚动365天8次 |
+| GET assessments/current | 最新本人结果，确认状态、承受能力、到期日，不返回原始答案 |
+| POST assessments/{id}/confirm | 确认本人最新结果；不可确认他人或旧结果 |
+| GET assets | 现金/占款/可用、批次/锁定/占用/成本/盈亏、订单、应收、估值完整性、业务时间 |
+| POST previews | 下文完整命令；银行预检，不占款，返回估算、规则、披露、匹配结果、digest、authorization_id、expires_at |
+| GET previews | 本人未消费的原预览，供刷新恢复；过期并不变成有效 |
+| POST previews/{id}/confirm | digest/disclosure_version/accepted:true，初始不勾选；再次预检产品与当前资格 |
+| POST previews/{id}/verify | proof:六位字符串，仅可信验证器入口；复用现有TOTP防重放 |
+| POST previews/{id}/execute | 原号查询后受理，未授权拒绝；同号同参恢复 |
+| GET orders/{operation_id} | 本人银行事实，越权或尚未查到404；404不证明永未受理 |
+| POST orders/{operation_id}/cancel | digest/disclosure_version/accepted:true；银行核验撤单窗口 |
+| GET executions | 本人SUBMITTING/UNKNOWN等应用提交观察，独立于银行事实 |
+| GET/POST plans | 列表／kind、account_id、budget_fen、reserve_fen、horizon_days、excluded_products；默认version1 |
+| PUT plans/{id} | 当前version及完整表单，新版本新操作号，旧确认失效；在途/未知未核对不能覆盖 |
+| POST plans/{id}/adopt | version、items:[operation_id,amount_fen或units]；只可删除或减少当前未提交子单 |
+| POST plans/{id}/execute | version；每笔当前强授权后受理，纯购买原子占款；禁止通过单笔执行入口拆开购买组合 |
+| GET plans/{id}/progress | 查询每笔原银行号；保留成功，失败暂停后续，未知继续核对 |
+| GET/PUT profile | version、monthly_income_fen/monthly_expenses_fen/liabilities_fen、external_assets；改变须重评；外部资产CNY且不能交易 |
+| POST goals | 可选goal_id、version、title、amount_fen、due_date、liquidity、priority、allocations；同资产跨目标不能超额，修改产生新版本 |
+| POST messages / GET messages/history | 有限离线意图／本人最近会话，session_id/version；只查询或生成卡片，不授权或执行 |
 
-申购：RECEIVED → ACCEPTED（现金占用）→ PENDING_PRICING → SETTLED（扣除占款、入份额）。赎回：RECEIVED → ACCEPTED（份额占用）→ PENDING_PRICING → PENDING_CASH（出份额/形成应收）→ SETTLED（到账）。撤单仅在规则窗口内且尚未计价；事务锁保证撤单与结算只有一方发生。
+请求模型拒绝未定义字段。现金均为**整数分**；份额及净值为十进制**字符串**，不是浮点数。日期ISO，时间必须带时区。
 
-应用SUBMITTING/UNKNOWN独立于银行事实。超时或5xx按原操作号核对，不更换编号；404不能证明永未受理。相同编号相同完整摘要返回原结果，异参409。计划DRAFT/AWAITING_CONFIRMATION/EXECUTING/WAITING_SETTLEMENT/PAUSED/PARTIALLY_COMPLETED/COMPLETED/CANCELLED，每子单记录依赖与确认。
+```json
+{"operation_id":"WO-example-0001","direction":"purchase","product_id":"MF001","product_version":1,"disclosure_version":1,"account_id":"A001","amount_fen":100000,"units":"0.0000","currency":"CNY","plan_id":null,"plan_version":1}
+```
 
-## 接口清单与授权
+赎回 direction=redeem、amount_fen=0、units为正且最多4位；正式命令不能用目标到账金额代替份额。账户须本人、active、非credit。强授权10分钟按真实UTC计时，绑定主体、原操作号、方向、产品、金额/份额、账户、币种、产品/披露/计划版本和规范化SHA256摘要；任意非空授权ID无效。受理前重新检查适当性、支付能力、暂停规则、可用现金/份额及真实授权。已受理结算不扩大原范围，不是新授权动作。
 
-拟公开前缀 `/api/v1/wealth`，必须Bearer，主体从认证上下文获取，越权404。
+## 内部银行接口
 
-| 能力 | 输入与返回要点 | 安全等级 |
-|---|---|---|
-| 产品/详情/对比 | 产品ID、规则/披露版本、净值日期、费用/期限/暂停状态 | GREEN |
-| 问卷/提交/结果确认 | 问卷/评分版本、本人9题答案、结果版本、确认时间 | 本人可信表单 |
-| 资产/持仓/订单 | 整数分、份额字符串、批次可赎回/占用、应收、估值日期 | GREEN |
-| 财务画像/外部模拟资产/目标 | 版本、币种、归属、期限、优先级、避免重复分配 | 本人可信表单 |
-| 预览 | 方向、产品、金额或份额、账户、计划/产品规则版本 | 不扣款 |
-| 确认/验证/受理 | 预览摘要、逐笔披露确认、TOTP、授权ID；10分钟有效 | RED |
-| 查询/撤单 | 原操作号、当前版本；撤单显式确认 | GREEN/确认 |
-| 计划创建/编辑/采用/执行/进度 | 快照与版本、现金保留、最多5子单、依赖、逐笔授权 | 写入RED |
-| 消息 | 受控意图/解释；不接收验证代码，不直接交易 | GREEN/预览 |
+GET products；POST assets/precheck/verify/orders/orders/batch；POST orders/{operation_id}/query或cancel。主体传subject_user_id，仅受信内部服务可用；batch含submissions，1—5笔纯申购且同主体，整个事务一起占款。银行不接受模型直接访问这些写入口。
 
-内部银行HTTP前缀 `/api/v1/internal/bank/wealth`，内部凭据必需；管理员结算/业务时钟另设隔离权限，不进入模型工具白名单。银行再次核验可信授权的主体、方向、产品、金额/份额、账户、计划版本、披露版本、摘要、过期及强验证事实；任意非空授权ID不构成授权。
+管理员 POST admin/clock {business_at} 和 admin/settle/{operation_id}：同时要求内部凭据、`WEALTH_MOCK_ADMIN_ENABLED=true`、显式隔离库名称标记，普通运行库403；不在模型白名单。默认后台每30秒仅结算已受理订单，无需开启管理员。模拟时钟不改变JWT、问卷或TOTP有效期。
 
-## 错误语义
+## 计算及估值
 
-错误沿用 `{detail:{code,message,issues?}}`，不回显敏感输入。400/409明确业务原因包括 RISK_ASSESSMENT_REQUIRED、RISK_ASSESSMENT_EXPIRED、SUITABILITY_MISMATCH、PRODUCT_UNAVAILABLE、RULE_VERSION_CHANGED、INSUFFICIENT_AVAILABLE_FUNDS、INSUFFICIENT_REDEEMABLE_UNITS、HOLDING_PERIOD_NOT_MET、NAV_UNAVAILABLE、STALE_PLAN、AUTHORIZATION_EXPIRED、IDEMPOTENCY_CONFLICT、CANCELLATION_NOT_ALLOWED。网络未知用RESULT_UNKNOWN，不伪造失败事实。
+净值8位、份额4位，内部份额BIGINT万分之一，现金BIGINT分。申购净额=floor分(总支出/(1+费率))，费用=总支出−净额；份额向下取4位，未换份额的整分退还，低于分的尾差明确存入actual.tail。赎回按可赎回FIFO批次，用各批次规则版本及持有日数费率；份额×指定日净值按分四舍五入，费用按分四舍五入，净额=毛额−费用。成本比例向下分配，整批清空释放全部剩余成本。
+
+按Asia/Shanghai 15:00截止排期，周末及固定模拟休市日2026-10-01至07顺延。计价用**固定计价日**NAV，缺少则等待，禁止未来价。种子2026—2027固定锯齿净值含下跌，不是预测。cash_date/confirm_date是营业日规则。预览不保证成交份额或到账；按金额取出只是估算转换具体份额，不自动追加赎回补差。
+
+资产合计=非信用现金账面+持仓估值+待到账应收；占款是现金子集，不重复加总。账面−有效现金占款=可用额。投资申购/赎回是资金流，不能归入日常消费。外部资产只进全景诊断，缺估值显示不完整而非猜价。
+
+## 状态与恢复
+
+- 授权 AWAITING_CONFIRMATION → AWAITING_MFA → VALID → CONSUMED；过期服务端拒绝。
+- 银行申购 ACCEPTED → PENDING_PRICING → SETTLED；赎回再经PENDING_CASH后SETTLED。窗口内CANCELLED释放占用，不伪撤销已成交。
+- 5号 SUBMITTING/UNKNOWN/REJECTED 是提交观察；网络或5xx不能声称银行失败。保留原号同参查询/恢复，不更换号。银行相同号同摘要返回原结果，异参409。
+- 方案 AWAITING_CONFIRMATION/EXECUTING/WAITING_SETTLEMENT/PAUSED/PARTIALLY_COMPLETED/COMPLETED。失败暂停未提交，已受理/未知仍查询；保留每笔成功及历史版本。卖出全部到账后回到待确认，新的购买版本必须新确认和验证。全方案包括历史成功步骤最多5笔。
+
+## 错误及兼容
+
+共享格式 `{detail:{code,message}}`，不回显凭据。401登录错误/TOTP_INVALID（前端验证码错误不清登录）；403权限/强验证缺失；404归属或对象不可见；409状态/版本/资金冲突；422精度、答案或范围错误。领域码包括 RISK_ASSESSMENT_REQUIRED/EXPIRED、SUITABILITY_MISMATCH、PAYMENT_CAPACITY_MISMATCH、ASSESSMENT_LIMIT_REACHED、PRODUCT_UNAVAILABLE、RULE_VERSION_CHANGED、INSUFFICIENT_AVAILABLE_FUNDS、INSUFFICIENT_REDEEMABLE_UNITS、STALE_PLAN、AUTHORIZATION_REQUIRED/EXPIRED、IDEMPOTENCY_CONFLICT、CANCELLATION_NOT_ALLOWED、BANK_RESPONSE_UNKNOWN。NAV_UNAVAILABLE是等待原因，不伪造终态失败。
+
+原账户balance等元字段保留，新增可选available_fen/held_fen；共享扣款统一可用现金。原手机号/备注/定时/AA/订阅/账单契约不改变。新流水type最大32字符，投资类别明确列入资金流口径。

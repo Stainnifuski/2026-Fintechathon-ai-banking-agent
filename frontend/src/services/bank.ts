@@ -2,7 +2,7 @@ import { apiClient } from './api';
 
 export interface User { user_id: string; name: string; phone: string; }
 export interface AuthResponse { access_token: string; token_type: string; user: User; }
-export interface Account { account_id: string; account_type: string; card_number: string; balance: number; daily_transfer_used: number; daily_transfer_limit: number; }
+export interface Account { account_id: string; account_type: string; card_number: string; balance: number; available_fen?: number; held_fen?: number; daily_transfer_used: number; daily_transfer_limit: number; }
 export interface Recipient { user_id: string; name: string; phone: string; account_id: string; bank: string; }
 export interface Transaction { tx_id: string; type: string; amount: number; counterparty: string; note?: string; timestamp: string; status: string; }
 export interface PaymentRequest {

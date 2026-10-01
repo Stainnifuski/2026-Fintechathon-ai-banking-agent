@@ -10,7 +10,7 @@
 
 - 仅 completed 流水计入统计和分析明细；pending/failed/cancelled 不计入。
 - 金额字段为整数分，CNY，不使用浮点金额求和；展示时转换为元。
-- 流入：salary/transfer_in/refund；流出：purchase/subscription/transfer_out。
+- 流入：salary/transfer_in/refund/investment_redemption；流出：purchase/subscription/transfer_out/investment_purchase。投资申购和赎回只计资金流，不计消费原额或消费分类。
 - 消费原额：purchase + subscription；净消费：消费原额减本期退款，允许为负。退款无原交易关联，不抵扣分类或历史消费；分类占比分母为消费原额。
 - 订阅交易归入订阅类别，未知消费类别归入其他。未知交易类型只计笔数，不猜测收支方向，并提示限制。
 - 全账户汇总排除能由对手账户 ID 确认的本人互转；单账户保留。历史对手仅为姓名时不推断归属。

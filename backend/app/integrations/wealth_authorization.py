@@ -76,6 +76,12 @@ async def submit_assessment(db: AsyncSession, user_id: str, request: AssessmentS
         score_version=result["score_version"], answers=request.answers, result=result,
         created_at=now, expires_at=now+timedelta(days=365))
     db.add(row)
+    db.add(AuditLogORM(audit_id=f"WASSESS{uuid4().hex}", session_id=row.assessment_id, user_id=user_id,
+        intent="wealth_assessment", permission_level="yellow", action="investment_assessment_submit",
+        params={"assessment_id": row.assessment_id, "profile_version": profile.version,
+            "questionnaire_version": QUESTIONNAIRE_VERSION, "score_version": result["score_version"],
+            "capacity_level": result["capacity_level"]}, user_confirmed=True, result="success",
+        decision_chain=["authenticated_subject", "personal_answers", "deterministic_scoring", "rate_limit_checked"]))
     await db.commit()
     return assessment_view(row)
 
@@ -102,6 +108,10 @@ async def confirm_assessment(db: AsyncSession, user_id: str, assessment_id: str)
         raise WealthPolicyError("评估不存在或已更新", "STALE_PLAN", 404)
     if row.confirmed_at is None:
         row.confirmed_at = datetime.now(timezone.utc)
+        db.add(AuditLogORM(audit_id=f"WACONF{uuid4().hex}", session_id=row.assessment_id, user_id=user_id,
+            intent="wealth_assessment", permission_level="yellow", action="investment_assessment_confirm",
+            params={"assessment_id": row.assessment_id, "profile_version": row.profile_version},
+            user_confirmed=True, result="success", decision_chain=["authenticated_subject", "latest_assessment", "personal_confirmation"]))
     await db.commit()
     return assessment_view(row)
 

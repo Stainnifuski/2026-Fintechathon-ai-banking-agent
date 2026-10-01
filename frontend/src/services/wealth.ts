@@ -34,6 +34,7 @@ export interface Preview { authorization_id: string; authorization_status: strin
 export interface PlanRequest { kind: 'new_cash' | 'adjustment'; account_id: string; version: number; budget_fen: number;
   reserve_fen: number; horizon_days: number; excluded_products: string[] }
 export interface Plan { plan_id: string; version: number; status: string; stage: string; next_action?: string; request: PlanRequest;
+  history?: { version: number; stage: string; items: { command: Command; status: string; bank_result?: Order }[] }[];
   diagnostic?: { note: string; goal_shortfall_fen: number; allocation: { category: string; current_fen: number; target_percent: number; target_fen: number; difference_fen: number }[] };
   configuration: { investment_fen: number; retained_cash_fen: number; unallocated_fen: number };
   items: { command: Command; reason: string; status: string; bank_result?: Order }[] }
