@@ -1,3 +1,7 @@
+# 当前授权策略修订
+
+2026-10-01：理财默认点击模拟授权，普通演示库可用；本文旧TOTP/独立库描述仅作兼容历史。路由和状态名不变，现行语义与后续3号接口对接以[模拟授权说明](simulated_authorization.md)为准。
+
 # 理财计算、状态与API契约 v1
 
 状态：已实现，供1/2/3/4/5号联调。仅比赛模拟环境、虚构CNY产品和资金。基线main `bc10571`，任务正文v1.1。
@@ -71,11 +75,12 @@ GET products；POST assets/precheck/verify/orders/orders/batch；POST orders/{op
 
 ## 整份确认与演示验证增量API（2026-10-01）
 
-- GET /verification-mode：mode=TOTP或SIMULATED_CLICK、simulated、replacement_required；服务器按实际库和显式开关决定。
+- GET /verification-mode：mode=TOTP或SIMULATED_CLICK、simulated、replacement_required；服务器按显式开关决定，默认SIMULATED_CLICK，不限制库名；额外返回permission_level、authorization_method、provider_version和integration_target。
 - POST /plans/{id}/preview {version}：当前采用后新版本全部待确认项，返回items（逐笔Preview）。没有交易项时无需确认。
 - POST /plans/{id}/confirm {version,items:[{authorization_id,digest,disclosure_version,accepted:true}]}：必须精确包含整份方案的全部项，不允许遗漏、重复或异参。先银行预检，所有逐笔确认在同一事务提交；任一失败全部回滚。
 - POST /plans/{id}/verify/demo {version}：只从可信按钮调用，银行逐笔写模拟证据。随后原execute接口原子批量申购或按既有卖出暂停规则执行。
 - POST /previews/{id}/verify/demo {}：单笔演示；原verify {proof}继续为真实TOTP验证。
-- 内部GET /verification-mode、POST /verify/demo {subject_user_id,authorization_ids}：仍须内部凭据。模拟开关默认关闭且检查实际隔离数据库名；关闭后未受理模拟授权不能执行，返回SIMULATED_VERIFICATION_DENIED。模拟接口不进入AI工具白名单。
+- 内部GET /verification-mode、POST /verify/demo {subject_user_id,authorization_ids}：仍须内部凭据。模拟开关默认开启，不检查数据库名；显式关闭后未受理模拟授权不能执行，返回SIMULATED_VERIFICATION_DENIED。模拟接口不进入AI工具白名单。
 
-schema版本2新增wealth_verifications而不改旧账本。method/provider_version/simulated/replacement_required/verified_at记录验证提供者；orders.details.verification与audit标识来源。模拟不称为真实MFA成功。历史TOTP授权兼容保留，不能把模拟证据改为真实。真实接入替换步骤见handoff.md。
+schema版本2新增wealth_verifications而不改旧账本。method/provider_version/simulated/replacement_required/verified_at记录验证提供者；orders.details.verification与audit标识来源。模拟不称为真实MFA成功。历史TOTP授权兼容保留，不能把模拟证据改为真实。后续统一高风险模拟授权衔接见simulated_authorization.md，不要求新增真实认证输入。
+
