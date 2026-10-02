@@ -29,7 +29,7 @@ def resolve(ref: str,products: list[dict],candidate_ids: list[str]) -> str:
 
 def offline(text: str) -> Intent:
     from .wealth import parse_money
-    refs=re.findall(r'(?<![A-Z0-9])(?:S\d{3}|M[WF]\d{3}|R\d{6})(?![A-Z0-9])',text.upper())
+    refs=re.findall(r'(?<![A-Z0-9])(?:[SB]\d{3}|M[WF]\d{3}|R\d{6})(?![A-Z0-9])',text.upper())
     refs+=re.findall(r'第[一二三四五六七八九十0-9]+个',text)
     money=r'([0-9]+(?:\.\d{1,2})?[百千万]?|[一二两三四五六七八九十][百千万]?)'
     def match(prefix):
@@ -39,7 +39,8 @@ def offline(text: str) -> Intent:
     need='cash' if re.search('备用|应急|短期',text) else 'growth' if '增长' in text else 'balanced' if re.search('稳健|均衡|平衡',text) else None
     horizon=int(days[1]) if days else int(months[1])*30 if months else None
     intent='clarify'
-    if re.search('到账|订单|进度|成交|成功了吗',text): intent='status'
+    if re.search('搜索|查找|查询基金',text): intent='search'
+    elif re.search('到账|订单|进度|成交|成功了吗',text): intent='status'
     elif re.search('赎回|取出|卖出',text): intent='redeem'
     elif re.search('对比|比较',text): intent='compare'
     elif re.search('买|申购',text): intent='purchase'
@@ -50,7 +51,7 @@ def offline(text: str) -> Intent:
     elif '产品' in text and not re.search('什么|为什么|意思',text): intent='products'
     elif re.search('什么|为什么|风险|费用|赎回费|区别|年化|PMI|CPI|PPI|LPR|M1|M2|分红',text,re.I): intent='knowledge'
     elif text.strip() in {'继续','好的','确认','执行','同意'}: intent='clarify' if text.strip()=='继续' else 'refuse'
-    return Intent(intent=intent,product_refs=refs[:3],amount_fen=amount,budget_fen=budget,reserve_fen=reserve,horizon_days=horizon,need=need,
+    return Intent(intent=intent,search_query=re.sub(r'^(?:搜索|查找|查询基金)\s*','',text) if intent=='search' else None,product_refs=refs[:3],amount_fen=amount,budget_fen=budget,reserve_fen=reserve,horizon_days=horizon,need=need,
         fraction='half' if '一半' in text else 'all' if '全部' in text else None,exclude_refs=refs if re.search('排除|不要',text) else [])
 
 
@@ -69,6 +70,31 @@ async def claim(db,user_id,client_id,digest):
 
 async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     response={'mode':mode,'kind':'clarification','message':'请明确需求；需要预算、保留现金、预计使用期限和用途，交易只在可信卡片确认。'}
+    codes = re.findall(r'(?<![0-9])([0-9]{6})(?![0-9])', text)
+    if intent.intent == 'compare':
+        outside = list(dict.fromkeys(codes + [r[1:] for r in intent.product_refs if re.fullmatch(r'R\d{6}', r)]))
+        if not outside and data.get('research_candidates'):
+            for ref in intent.product_refs:
+                pid = resolve(ref, [{'product_id':'R'+c, 'name':c} for c in data['research_candidates']], ['R'+c for c in data['research_candidates']])
+                outside.append(pid[1:])
+        if len(outside) >= 2:
+            analysis = await bank.call('POST', '/funds/compare', {'subject_user_id':user_id, 'codes':outside[:3]})
+            response.update(kind='research', research_comparison=analysis,
+                message='真实基金缓存对比；共同观察点 '+str(analysis['analysis']['common_samples'])+'。'+
+                '\n'.join(p['name']+'：区间涨跌 '+str(p['metrics']['return'])+'，最大回撤 '+str(p['metrics']['max_drawdown']) for p in analysis['analysis']['products'])+
+                '\n'+analysis['notice'])
+            return response
+    if intent.intent == 'search' or (codes and intent.intent in {'products', 'knowledge'}):
+        query = intent.search_query or (codes[0] if codes else text)
+        found = await bank.call('POST', '/funds/search', {'subject_user_id': user_id, 'query': query, 'page_size': 8})
+        rows = found['items']; data['research_candidates'] = [r['code'] for r in rows]
+        data['research_candidate_names'] = [{'id':'R'+r['code'],'name':r['name']} for r in rows]
+        detail = await bank.call('POST', '/funds/detail', {'subject_user_id': user_id, 'code': rows[0]['code']}) if len(rows) == 1 else None
+        response.update(kind='research', directory=found, fund_detail=detail,
+            message='真实基金目录匹配 '+str(found['total'])+' 条。'+ '\n'.join(r['code']+' '+r['name']+' · '+r['fund_type']+' · 真实基金数据' for r in rows)+
+            ('\n详情缓存：'+', '.join(k+'='+v['status'] for k,v in detail['evidence'].items()) if detail else '')+
+            '\n仅研究；目录/净值不等于交易规则完整，不生成未审核订单。详情在后台获取，失败保留旧证据，不返回模拟替代值。')
+        return response
     candidate_ids=data.get('candidates',[])
     active=data.get('active_command')
     # A single active order plus an unqualified amount correction modifies that order.
@@ -188,7 +214,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
         data['context_id']=contexts['selected']
         evidence={}
         if mode=='model':
-            context={'pending':data.get('pending',{}),'candidates':[{'id':p['product_id'],'name':p['name']} for pid in data.get('candidates',[]) for p in products if p['product_id']==pid],
+            context={'research_candidates':data.get('research_candidate_names',[]),'pending':data.get('pending',{}),'candidates':[{'id':p['product_id'],'name':p['name']} for pid in data.get('candidates',[]) for p in products if p['product_id']==pid],
                 'products':[{'id':p['product_id'],'name':p['name']} for p in products], 'active':{'direction':data['active_command']['direction'],'product_id':data['active_command']['product_id'],'amount_fen':data['active_command']['amount_fen']} if data.get('active_command') else None,
                 'accounts':[f'账户{i}' for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
                 'history':[h['user'] for h in data.get('history',[])[-4:]]}

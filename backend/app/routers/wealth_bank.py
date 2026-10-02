@@ -3,7 +3,7 @@
 import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +66,65 @@ class ContextChange(Subject):
     version: int = Field(ge=1)
 
 
+class FundSearch(Subject):
+    query: str = Field(default='', max_length=200)
+    fund_type: str | None = Field(default=None, max_length=80)
+    page: int = Field(default=1, ge=1, le=10000)
+    page_size: int = Field(default=20, ge=1, le=60)
+
+
+class FundDetail(Subject):
+    code: str = Field(pattern=r'^\d{6}$')
+    fetch_missing: bool = True
+
+
+class FundCompare(Subject):
+    codes: list[str] = Field(min_length=2, max_length=3)
+    period: str = Field(default='1y', pattern='^(1m|3m|1y|since)$')
+
+
+@router.post('/funds/compare')
+async def fund_compare(request: FundCompare, background: BackgroundTasks, db: AsyncSession=Depends(get_db)) -> dict:
+    import re
+    from datetime import datetime, timezone
+    from ..domain.wealth_analytics import comparison
+    if len(set(request.codes)) != len(request.codes) or any(not re.fullmatch(r'\d{6}', c) for c in request.codes):
+        raise HTTPException(422, detail={'code':'INVALID_FUND_CODES'})
+    details = [await fund_detail(FundDetail(subject_user_id=request.subject_user_id, code=c), background, db) for c in request.codes]
+    products = []
+    for detail in details:
+        evidence = detail['evidence'].get('history', {}).get('data', {})
+        products.append({'product_id':detail['product_id'], 'name':detail['name'], 'source':'akshare',
+            'dataset_key':'on-demand-cache', 'history':evidence.get('observations', [])})
+    return {'identity':'真实基金数据', 'trade_eligible':False, 'details':details,
+        'analysis':comparison(products, datetime.now(timezone.utc).date().isoformat(), request.period),
+        'notice':'缓存未齐时不计算；货币收益单列，不与单位净值混算；家族未知不证明独立风险。'}
+
+
+@router.post('/funds/search')
+async def fund_search(request: FundSearch, db: AsyncSession=Depends(get_db)) -> dict:
+    from ..services.bank.wealth_fund_data import search
+    return await search(db, request.query, request.fund_type, request.page, request.page_size)
+
+
+@router.post('/funds/detail')
+async def fund_detail(request: FundDetail, background: BackgroundTasks, db: AsyncSession=Depends(get_db)) -> dict:
+    from ..services.bank import wealth_fund_data as funds
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    try:
+        identity = await db.get(funds.Directory, request.code)
+        if identity is None: raise ValueError('FUND_NOT_IN_DIRECTORY')
+        if request.fetch_missing and os.getenv('WEALTH_FUND_ON_DEMAND_ENABLED') == 'true':
+            for kind in ['money_yield' if '货币' in identity.fund_type else 'history', 'status', 'fees']:
+                if await funds.claim(db, request.code, kind):
+                    background.add_task(funds.refresh, async_sessionmaker(db.bind, expire_on_commit=False), request.code, kind)
+        result = await funds.detail(db, request.code)
+        result['on_demand_enabled'] = os.getenv('WEALTH_FUND_ON_DEMAND_ENABLED') == 'true'
+        return result
+    except ValueError as error:
+        raise HTTPException(404, detail={'code': str(error), 'message': '基金不在已核验目录中'}) from error
+
+
 @router.post('/knowledge')
 async def knowledge(request: ResearchQuery,db: AsyncSession=Depends(get_db)) -> dict:
     from ..services.bank.wealth_knowledge import retrieve
@@ -93,7 +152,10 @@ async def research_query(request: ResearchQuery,db: AsyncSession=Depends(get_db)
     from ..models.wealth_research import WealthDatasetORM,WealthMacroORM
     from sqlalchemy import select
     datasets=(await db.scalars(select(WealthDatasetORM).order_by(WealthDatasetORM.ingested_at.desc()))).all()
-    rows=await research.catalog(db,request.dataset_key)
+    context=await research.selected(db,request.subject_user_id)
+    chosen_key=request.dataset_key or await research.default_dataset_key(db)
+    visible_at=await bank.business_now(db,context.account_id) if context and context.dataset_key==chosen_key else None
+    rows=await research.catalog(db,request.dataset_key,visible_at)
     rows=[p for p in rows if (not request.category or p.get('category')==request.category) and (not request.query or request.query.casefold() in (p['name']+' '+p['product_id']).casefold())]
     from ..domain.wealth_allocation import liquidity_days
     rows=[p for p in rows if (request.max_risk is None or (p.get('risk_level') is not None and p['risk_level']<=request.max_risk)) and (request.horizon_days is None or (p.get('rules') and liquidity_days(p)<=request.horizon_days))]
@@ -113,7 +175,7 @@ async def research_query(request: ResearchQuery,db: AsyncSession=Depends(get_db)
     macros=(await db.scalars(select(WealthMacroORM).where(WealthMacroORM.dataset_key==key))).all() if key else []
     return {'items':page,'total':total,'page':request.page,'page_size':request.page_size,'analysis':analysis,'as_of':as_of,
         'datasets':[{'dataset_key':d.dataset_key,'mode':d.mode,**d.manifest} for d in datasets],
-        'macros':[{'indicator':m.indicator,'observations':m.observations[-24:]} for m in macros]}
+        'macros':[{'indicator':m.indicator,'observations':[o for o in m.observations if o['period'][:10]<=as_of and (not visible_at or datetime.fromisoformat(o['available_at'])<=visible_at)][-24:]} for m in macros]}
 
 
 def require_mock_admin() -> None:

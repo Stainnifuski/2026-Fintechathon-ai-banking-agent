@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 安装 Python 依赖
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+ARG INSTALL_MARKET_DATA=false
+COPY requirements-market.txt .
+RUN if [ "$INSTALL_MARKET_DATA" = "true" ]; then pip install --no-cache-dir -r requirements-market.txt; fi
 
 # 复制应用代码
 COPY . .

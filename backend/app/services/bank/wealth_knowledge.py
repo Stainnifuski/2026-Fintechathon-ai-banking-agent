@@ -49,6 +49,39 @@ async def seed(db,products):
     await db.flush()
 
 
+async def seed_mixed(db, payload):
+    """Version-bound source summaries; never manufacture issuer risk or transaction rules."""
+    key = payload['dataset_id'] + ':' + payload['dataset_version']
+    families = {}
+    for product in payload['products']:
+        family = product.get('fund_family_id') or product['product_id']
+        families.setdefault(family, []).append(product)
+    for family, shares in families.items():
+        p = shares[0]
+        names = '、'.join(s['name'] for s in shares)
+        if p['source'] == 'akshare':
+            body = f"{names}：真实基金数据，仅研究。类别{p['group']}；来源{p['source_url']}。风险等级、完整交易规则尚未审核，不可申赎。"
+            body += '万份收益与七日年化不等于单位净值。' if p.get('money_yield') else '单位净值涨跌不是已验证分红再投资总回报。'
+            body += '关联份额不作为独立风险来源。' if p.get('fund_family_id') else '家族关联尚未核实，不声称独立分散。'
+            source = p['source_url']
+        else:
+            body = f"{names}：模拟银行理财／官方规则参考，资金、净值及成交均虚构。"
+            body += '官方原始规则：' + str(p['source_rules']) + '；模拟调整：' + str(p['rules_adaptations'])
+            body += '；原说明书不证明当前真实在售，交易仅按项目模拟规则。'
+            source = p['official_reference']['url']
+        did = 'KM-' + fingerprint([key, family])[:40]
+        if await db.get(WealthKnowledgeORM, did) is None:
+            db.add(WealthKnowledgeORM(document_id=did, content=body, metadata_json={
+                'document_id':did, 'title':names, 'source_type':'real_fund_summary' if p['source']=='akshare' else 'official_rules_simulation',
+                'source_url':source, 'dataset_key':key, 'product_ids':[s['product_id'] for s in shares],
+                'location':p.get('official_reference', {}).get('pages') or '公开基金档案／来源缓存字段',
+                'published_at':None, 'valid_from':payload['as_of'], 'valid_until':None,
+                'version':payload['dataset_version'], 'content_hash':fingerprint(body),
+                'license':'project-original-summary; linked source rights reserved'}))
+    await db.flush()
+    return len(families)
+
+
 def tokens(text: str) -> set[str]:
     text=text.casefold()
     result=set(re.findall(r'[a-z0-9]+',text))

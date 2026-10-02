@@ -12,6 +12,31 @@ pytestmark=pytest.mark.skipif(os.getenv('WEALTH_LIVE_TEST')!='true',reason='未�
 
 
 @pytest.mark.asyncio
+async def test_real_deepseek_full_directory_search_and_outside_comparison(store,http_store,monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from backend.app.services.bank import wealth_fund_data as funds
+    fixture_path=os.getenv('WEALTH_LIVE_FUND_FIXTURE')
+    if not fixture_path: pytest.skip('未提供本次真实缓存摘要样本')
+    fixture=json.loads(Path(fixture_path).read_text(encoding='utf-8'))
+    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('WEALTH_FUND_ON_DEMAND_ENABLED','false')
+    async with store() as db:
+        await funds.import_directory(db,fixture['directory'])
+        for row in fixture['cache']:
+            db.add(funds.Cache(cache_key=row['code']+':history',code=row['code'],data_type='history',data=row['data'],status='READY',
+                fetched_at=datetime.now(timezone.utc),expires_at=datetime.now(timezone.utc)+timedelta(days=1),lease_until=datetime.now(timezone.utc)))
+        await db.commit()
+    client,_,_=http_store
+    result=await client.post('/api/v1/wealth/messages',json={'message':'查询基金000003的真实资料','client_message_id':uuid4().hex})
+    assert result.status_code==200,result.text
+    reply=result.json(); assert reply['mode']=='model' and reply['kind']=='research' and reply['directory']['items'][0]['code']=='000003',reply
+    result=await client.post('/api/v1/wealth/messages',json={'message':'对比真实基金000003和000004','client_message_id':uuid4().hex,'session_id':reply['session_id'],'version':reply['version']})
+    assert result.status_code==200,result.text
+    reply=result.json(); assert reply['kind']=='research' and reply['research_comparison']['analysis']['common_samples']>30,reply
+    assert not reply['research_comparison']['trade_eligible'] and 'command' not in reply
+
+
+@pytest.mark.asyncio
 async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,monkeypatch):
     monkeypatch.setenv('WEALTH_NLU_MODE','model')
     client,_,_=http_store; evidence=[]; session=None

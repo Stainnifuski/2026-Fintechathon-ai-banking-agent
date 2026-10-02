@@ -225,6 +225,7 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
             "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,
             "nav": price.price if price else None, "nav_date": price.nav_date.isoformat() if price else None,
             "fund_family_id": row.rules.get("fund_family_id", product.product_id),
+            "identity": row.disclosure.get('identity', '虚构产品与模拟行情'),
             "dataset_key": dataset_key if context else "legacy-v1",
             "purchase_open": (now.astimezone(TZ).date()-date(2026,9,30)).days % row.rules.get('open_interval_days',1) == 0,
             "data_stale": bool(context and price and now.astimezone(TZ).date()>advance_business(price.nav_date,3,row.rules['calendar_version'])),
@@ -309,6 +310,10 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
             estimate = {"cash_fen": sum(item["cash_fen"] for item in estimates),
                         "fee_fen": sum(item["fee_fen"] for item in estimates), "lots": estimates}
     priced = pricing_date(now, row.rules["cutoff"], row.rules["calendar_version"])
+    if command.direction == 'purchase' and row.rules.get('purchase_end_date') and priced > date.fromisoformat(row.rules['purchase_end_date']):
+        raise BankError('模拟募集期已结束', 'PRODUCT_UNAVAILABLE', 409)
+    if command.direction == 'redeem' and row.rules.get('closed_maturity_date') and priced < date.fromisoformat(row.rules['closed_maturity_date']):
+        raise BankError('封闭模拟理财尚未到期', 'HOLDING_LOCKED', 409)
     interval = row.rules.get("open_interval_days", 1)
     if interval > 1 and (priced - datetime(2026, 9, 30).date()).days % interval != 0:
         raise BankError("当前不是模拟定期开放日", "NON_OPEN_DAY", 409)
@@ -459,7 +464,7 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
             db.add(WealthLotORM(lot_id=stable_id("LOT", row.operation_id), operation_id=row.operation_id,
                 user_id=row.user_id, account_id=row.account_id, version_id=row.version_id,
                 units_scaled=scaled(value.units), cost_fen=value.gross_fen-value.refund_fen,
-                acquired_date=row.confirm_date, unlock_date=row.confirm_date+timedelta(days=version.rules["holding_days"])))
+                acquired_date=row.confirm_date, unlock_date=date.fromisoformat(version.rules['closed_maturity_date']) if version.rules.get('closed_maturity_date') else row.confirm_date+timedelta(days=version.rules["holding_days"])))
             row.units_scaled = scaled(value.units)
             row.details = {**row.details, "actual": asdict(value), "actual_nav": price.price, "waiting_reason": None}
             row.status = "SETTLED"

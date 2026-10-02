@@ -45,7 +45,17 @@ def validate(payload: dict) -> list[dict]:
                 if not nav.is_finite() or nav<=0: raise ValueError("NAV_NONPOSITIVE")
                 available=datetime.fromisoformat(point["available_at"])
                 if available.tzinfo is None: raise ValueError("AVAILABILITY_TIME_REQUIRED")
-            if not p["history"]: raise ValueError("EMPTY_HISTORY")
+            if not p["history"] and not (p.get('source')=='akshare' and p.get('money_yield') and not p.get('rules_complete')): raise ValueError("EMPTY_HISTORY")
+            last_money = None
+            for point in p.get('money_yield', []):
+                day = date.fromisoformat(point['date'])
+                available = datetime.fromisoformat(point['available_at'])
+                if available.tzinfo is None or day > available.date(): raise ValueError('INVALID_MONEY_AVAILABILITY')
+                if last_money is not None and day <= last_money: raise ValueError('MONEY_DATES_UNSORTED_OR_DUPLICATE')
+                last_money = day
+                for field in ('income_per_10000', 'seven_day_annualized_percent'):
+                    value = point.get(field)
+                    if value is not None and not Decimal(str(value)).is_finite(): raise ValueError('INVALID_MONEY_VALUE')
         except (KeyError,TypeError,ValueError,ArithmeticError) as exc:
             errors.append({"row":n,"code":str(exc)[:80]})
     if not payload.get("products"): errors.append({"row":0,"code":"EMPTY_PRODUCTS"})
@@ -88,6 +98,9 @@ async def import_dataset(db: AsyncSession, payload: dict, dry_run: bool=False) -
             "pricing":"只用指定计价日可见净值；缺失等待","settlement":"按模拟规则确认和到账，不是发行人承诺",
             "cancellation":"计价截止前且未计价可撤销","limitations":"不连接真实交易；货币类为净值等价模型，不实现真实份额结转",
             "dataset_id":payload["dataset_id"],"dataset_version":payload["dataset_version"],"data_source":p["source"],"rules_source":p["rules"]["rules_source"]}
+        if p.get('official_reference'):
+            disclosure.update(identity=p['identity'], official_reference=p['official_reference'],
+                source_rules=p['source_rules'], rules_adaptations=p['rules_adaptations'])
         db.add(WealthProductVersionORM(version_id=vid,product_id=pid,version=version,name=p["name"],kind=p["kind"],category=p["category"],risk_level=p["risk_level"],rules=p["rules"],disclosure=disclosure,created_at=now))
         await db.flush()
         db.add_all([WealthNavORM(nav_id=f'{vid}:{point["date"]}',version_id=vid,nav_date=date.fromisoformat(point["date"]),price=point["nav"]) for point in history])
@@ -177,7 +190,7 @@ async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balanc
 
 
 async def catalog(db: AsyncSession,dataset_key: str | None=None,as_of: datetime | None=None) -> list[dict]:
-    key=dataset_key or f"{DATASET_ID}:{DATASET_VERSION}"
+    key=dataset_key or await default_dataset_key(db)
     dataset=await db.get(WealthDatasetORM,key)
     if dataset is None: return []
     at=as_of or (datetime.fromisoformat(dataset.manifest["as_of"]+"T23:59:59+08:00") if dataset.mode=="synthetic" else datetime.now(timezone.utc))
@@ -186,8 +199,16 @@ async def catalog(db: AsyncSession,dataset_key: str | None=None,as_of: datetime 
     for row in rows:
         visible=[p for p in row.history if datetime.fromisoformat(p["available_at"])<=at and p["date"]<=at.date().isoformat()]
         latest=visible[-1] if visible else None
-        result.append({**row.data,"dataset_key":key,"nav":latest["nav"] if latest else None,"nav_date":latest["date"] if latest else None,
+        money_visible=[point for point in row.data.get('money_yield',[]) if datetime.fromisoformat(point['available_at'])<=at and point['date']<=at.date().isoformat()]
+        result.append({**row.data,"money_yield":money_visible,"dataset_key":key,"nav":latest["nav"] if latest else None,"nav_date":latest["date"] if latest else money_visible[-1]['date'] if money_visible else None,
                        "available_at":latest["available_at"] if latest else None,"published_at":latest.get("published_at") if latest else None,
                        "history_count":len(visible),"history":visible,"quality_flags":row.data.get("quality_flags",[]),
-                       "trade_eligible":bool(row.data.get("rules_complete")),"unavailable_reason":None if visible else "NO_VISIBLE_HISTORY"})
+                       "trade_eligible":bool(row.data.get("rules_complete")),"unavailable_reason":None if visible or money_visible else "NO_VISIBLE_HISTORY"})
     return result
+
+
+async def default_dataset_key(db: AsyncSession) -> str:
+    latest = (await db.scalars(select(WealthDatasetORM).where(
+        WealthDatasetORM.dataset_id == 'mixed-preload-v12').order_by(
+        WealthDatasetORM.ingested_at.desc(), WealthDatasetORM.dataset_key.desc()))).first()
+    return latest.dataset_key if latest else f"{DATASET_ID}:{DATASET_VERSION}"

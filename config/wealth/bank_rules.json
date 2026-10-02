@@ -1,0 +1,447 @@
+{
+  "schema_version": 1,
+  "version": "official-reference-simulation-v1",
+  "templates": {
+    "cash": {
+      "source": {
+        "url": "https://e.boc.cn/cmsimage/ezcms/public/89968496/20251011/cc35fb969edc4241a5ff82d092bb3944.pdf",
+        "title": "工银理财添利宝现金管理78号E类说明书",
+        "original_product_code": "25GS0051",
+        "registration_code": "Z7000825000869",
+        "document_version": "sha256:c36ae49dec4caf25b8eaf45c2e8c67714516b784901adb9bc723ee03d89c98fb",
+        "edition_date": null,
+        "retrieved_at": "2026-10-02",
+        "pages": [
+          2,
+          4,
+          5,
+          6,
+          7,
+          18,
+          19
+        ],
+        "sha256": "c36ae49dec4caf25b8eaf45c2e8c67714516b784901adb9bc723ee03d89c98fb",
+        "original_expiry": null,
+        "original_current_sale_verified": false,
+        "short_excerpt": "一般情况下赎回费为0%"
+      },
+      "category": "cash",
+      "simulated_risk": 1,
+      "source_rules": {
+        "issuer_risk": "PR1",
+        "seller_risk": "R1",
+        "min_amount_yuan": "0.01",
+        "holding_days": 0,
+        "open": "工作日09:00-15:30",
+        "confirm": "T+1工作日",
+        "cash": "T+1工作日",
+        "annual_management_rate": "0.0015",
+        "annual_custody_rate": "0.0002",
+        "annual_service_rate": "0.003",
+        "purchase_fee": "0",
+        "normal_redeem_fee": "0",
+        "conditional_redeem_fee": "1%强制赎回费仅特定流动性条件"
+      },
+      "simulation_rules": {
+        "min_amount_fen": 1,
+        "max_amount_fen": 200000000,
+        "purchase_fee_rate": "0",
+        "redeem_fee_bands": [
+          {
+            "days_lt": 1000000,
+            "rate": "0"
+          }
+        ],
+        "holding_days": 0,
+        "confirm_business_days": 1,
+        "cash_business_days": 1,
+        "cutoff": "15:30",
+        "calendar_version": "synthetic-weekdays-v1",
+        "open_interval_days": 1,
+        "cancel_before_pricing": true,
+        "purchase_paused": false,
+        "redeem_paused": false,
+        "annual_management_rate": "0.0015",
+        "annual_custody_rate": "0.0002",
+        "annual_service_rate": "0.003",
+        "annual_fees_in_nav": true,
+        "limit_scope": "per_order_simulated"
+      },
+      "adaptations": [
+        "仅借鉴单一来源的规则模板；虚构发行人、产品身份和因子行情",
+        "营业日改为版本化周一至周五模拟日历；份额四位与整数分记账",
+        "发行人/销售机构评级原值独立保存；交易风险为项目模拟分级",
+        "上限统一为每笔模拟200万元，并非来源累计持有上限",
+        "普通赎回，巨额赎回/特殊流动性费率以固定故障场景演示；不接真实快速赎回",
+        "模拟年度费用反映在生成净值中，不再按现金重复扣除；不采纳比较基准作为收益"
+      ]
+    },
+    "daily": {
+      "source": {
+        "url": "https://image.mybank.icbc.com.cn/picture/Perfinancingproduct/XLT1801.pdf",
+        "title": "工银理财添利宝净值型理财产品销售文件",
+        "original_product_code": "XLT1801",
+        "registration_code": "Z7000819000134",
+        "document_version": "sha256:095f0369dcdfb217e7639c91ae9fe5ee55b43776cdd67781616c23804e4bacaa",
+        "edition_date": null,
+        "retrieved_at": "2026-10-02",
+        "pages": [
+          5,
+          6,
+          7,
+          8
+        ],
+        "sha256": "095f0369dcdfb217e7639c91ae9fe5ee55b43776cdd67781616c23804e4bacaa",
+        "original_expiry": null,
+        "original_current_sale_verified": false,
+        "short_excerpt": "每个工作日为申购、赎回开放日"
+      },
+      "category": "cash",
+      "simulated_risk": 1,
+      "source_rules": {
+        "issuer_risk": "PR1",
+        "seller_risk": "PR1",
+        "min_purchase_yuan": "1",
+        "initial_closed_period": "2018-01-22至2018-02-05",
+        "open": "工作日08:30-15:30",
+        "confirm": "T+1工作日",
+        "cash": "T+1工作日",
+        "annual_management_rate": "0.002",
+        "annual_custody_rate": "0.0003",
+        "annual_service_rate": "0.003"
+      },
+      "simulation_rules": {
+        "min_amount_fen": 100,
+        "max_amount_fen": 200000000,
+        "purchase_fee_rate": "0",
+        "redeem_fee_bands": [
+          {
+            "days_lt": 1000000,
+            "rate": "0"
+          }
+        ],
+        "holding_days": 0,
+        "confirm_business_days": 1,
+        "cash_business_days": 1,
+        "cutoff": "15:30",
+        "calendar_version": "synthetic-weekdays-v1",
+        "open_interval_days": 1,
+        "cancel_before_pricing": true,
+        "purchase_paused": false,
+        "redeem_paused": false,
+        "annual_management_rate": "0.002",
+        "annual_custody_rate": "0.0003",
+        "annual_service_rate": "0.003",
+        "annual_fees_in_nav": true,
+        "limit_scope": "per_order_simulated"
+      },
+      "adaptations": [
+        "仅借鉴单一来源的规则模板；虚构发行人、产品身份和因子行情",
+        "营业日改为版本化周一至周五模拟日历；份额四位与整数分记账",
+        "发行人/销售机构评级原值独立保存；交易风险为项目模拟分级",
+        "上限统一为每笔模拟200万元，并非来源累计持有上限",
+        "普通赎回，巨额赎回/特殊流动性费率以固定故障场景演示；不接真实快速赎回",
+        "模拟年度费用反映在生成净值中，不再按现金重复扣除；不采纳比较基准作为收益"
+      ]
+    },
+    "minimum": {
+      "source": {
+        "url": "https://www.icbc-ltd.com/icbc/公司业务/理财产品/债市通产品信息/中国工商银行法人客户专属180天增利人民币理财产品说明书.htm",
+        "title": "中国工商银行法人客户专属180天增利人民币理财产品说明书",
+        "original_product_code": "ZL180ZQX",
+        "registration_code": null,
+        "document_version": "sha256:1739493c75403cb9b5df48c877fd1a7540a5b4cc23bbaaf9af8b469f5c02815d",
+        "edition_date": null,
+        "retrieved_at": "2026-10-02",
+        "sections": [
+          "一 产品结构",
+          "四 开放日购买赎回",
+          "五 巨额赎回"
+        ],
+        "pages": null,
+        "sha256": "1739493c75403cb9b5df48c877fd1a7540a5b4cc23bbaaf9af8b469f5c02815d",
+        "original_expiry": null,
+        "original_current_sale_verified": false,
+        "short_excerpt": "持有份额封闭180天后可赎回"
+      },
+      "category": "mixed",
+      "simulated_risk": 3,
+      "source_rules": {
+        "issuer_risk": "PR3",
+        "seller_risk": null,
+        "min_amount_yuan": "100000",
+        "holding_days": 180,
+        "open": "工作日09:00-17:00",
+        "confirm": "T+1工作日",
+        "cash": "T+1工作日",
+        "annual_management_rate": null,
+        "floating_management": "超过按购买日公布预期最高年化测算部分归管理人",
+        "annual_custody_rate": "0.0003",
+        "annual_service_rate": "0.004",
+        "redeem_fee": null
+      },
+      "simulation_rules": {
+        "min_amount_fen": 10000000,
+        "max_amount_fen": 200000000,
+        "purchase_fee_rate": "0",
+        "redeem_fee_bands": [
+          {
+            "days_lt": 1000000,
+            "rate": "0"
+          }
+        ],
+        "holding_days": 180,
+        "confirm_business_days": 1,
+        "cash_business_days": 1,
+        "cutoff": "17:00",
+        "calendar_version": "synthetic-weekdays-v1",
+        "open_interval_days": 1,
+        "cancel_before_pricing": true,
+        "purchase_paused": false,
+        "redeem_paused": false,
+        "annual_management_rate": "0",
+        "annual_custody_rate": "0.0003",
+        "annual_service_rate": "0.004",
+        "annual_fees_in_nav": true,
+        "limit_scope": "per_order_simulated"
+      },
+      "adaptations": [
+        "仅借鉴单一来源的规则模板；虚构发行人、产品身份和因子行情",
+        "营业日改为版本化周一至周五模拟日历；份额四位与整数分记账",
+        "发行人/销售机构评级原值独立保存；交易风险为项目模拟分级",
+        "上限统一为每笔模拟200万元，并非来源累计持有上限",
+        "普通赎回，巨额赎回/特殊流动性费率以固定故障场景演示；不接真实快速赎回",
+        "模拟年度费用反映在生成净值中，不再按现金重复扣除；不采纳比较基准作为收益",
+        "来源浮动管理费公式不能映射固定费率；模拟固定管理费设为0且不模拟超额业绩报酬，原字段仍为未知/公式",
+        "来源没有独立申赎费字段；模拟申赎费0是项目假设，非官方零费率"
+      ]
+    },
+    "periodic": {
+      "source": {
+        "url": "https://www.ybccb.com/ybccb/attachDir/2026/08/2026082617311021132.pdf",
+        "title": "宜宾市商业银行金竹28天周期型定期开放式净值型人民币理财产品说明书",
+        "original_product_code": "JZ2023028",
+        "registration_code": "C1079223000001",
+        "document_version": "sha256:f5eb0e13acfec0a183947d4a6e40666ceb359b727d03d93d0def2bc76d9412df",
+        "edition_date": null,
+        "retrieved_at": "2026-10-02",
+        "pages": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "sha256": "f5eb0e13acfec0a183947d4a6e40666ceb359b727d03d93d0def2bc76d9412df",
+        "original_expiry": null,
+        "original_current_sale_verified": false,
+        "short_excerpt": "满28天"
+      },
+      "category": "bond",
+      "simulated_risk": 2,
+      "source_rules": {
+        "issuer_risk": "R2",
+        "seller_risk": "R2",
+        "min_amount_yuan": "10000",
+        "holding_days": 28,
+        "purchase_open": "每周五09:00至次周三17:00，周四确认",
+        "redemption": "满28天自动赎回，3工作日内到账",
+        "annual_management_rate": "0.004",
+        "annual_custody_rate": "0.0001",
+        "annual_valuation_rate": "0.0001",
+        "purchase_fee": "0",
+        "redeem_fee": "0",
+        "performance_fee": "超过比较基准上限部分95%提取"
+      },
+      "simulation_rules": {
+        "min_amount_fen": 1000000,
+        "max_amount_fen": 200000000,
+        "purchase_fee_rate": "0",
+        "redeem_fee_bands": [
+          {
+            "days_lt": 1000000,
+            "rate": "0"
+          }
+        ],
+        "holding_days": 28,
+        "confirm_business_days": 1,
+        "cash_business_days": 3,
+        "cutoff": "17:00",
+        "calendar_version": "synthetic-weekdays-v1",
+        "open_interval_days": 28,
+        "cancel_before_pricing": true,
+        "purchase_paused": false,
+        "redeem_paused": false,
+        "annual_management_rate": "0.004",
+        "annual_custody_rate": "0.0001",
+        "annual_service_rate": "0.0001",
+        "annual_fees_in_nav": true,
+        "limit_scope": "per_order_simulated"
+      },
+      "adaptations": [
+        "仅借鉴单一来源的规则模板；虚构发行人、产品身份和因子行情",
+        "营业日改为版本化周一至周五模拟日历；份额四位与整数分记账",
+        "发行人/销售机构评级原值独立保存；交易风险为项目模拟分级",
+        "上限统一为每笔模拟200万元，并非来源累计持有上限",
+        "普通赎回，巨额赎回/特殊流动性费率以固定故障场景演示；不接真实快速赎回",
+        "模拟年度费用反映在生成净值中，不再按现金重复扣除；不采纳比较基准作为收益",
+        "模拟开放窗口改为自2026-09-30起每28天开放；满28天后手动赎回，不实现来源自动赎回",
+        "不实现来源95%超额业绩报酬或管理费回拨；生成净值是模拟已扣费结果"
+      ]
+    },
+    "closed": {
+      "source": {
+        "url": "https://v.icbc.com.cn/userfiles/Resources/ICBC/gsyw/download/2022/22GS5211_20220118.pdf",
+        "title": "工银理财核心优选固定收益类封闭式法人理财22GS5211销售文件",
+        "original_product_code": "22GS5211",
+        "registration_code": "Z7000822000237",
+        "document_version": "sha256:cbc55e6714e9818ab227045049120f1365e28ca9c22b80d0b35d7d0710b05afa",
+        "edition_date": null,
+        "retrieved_at": "2026-10-02",
+        "pages": [
+          1,
+          3,
+          4
+        ],
+        "sha256": "cbc55e6714e9818ab227045049120f1365e28ca9c22b80d0b35d7d0710b05afa",
+        "original_expiry": "2022-09-20",
+        "original_current_sale_verified": false
+      },
+      "category": "bond",
+      "simulated_risk": 2,
+      "source_rules": {
+        "issuer_risk": "PR2",
+        "seller_risk": "PR2",
+        "min_amount_yuan": "100000",
+        "term_days": 244,
+        "inception": "2022-01-20",
+        "maturity": "2022-09-20",
+        "cash": "到期后3工作日内",
+        "annual_management_rate": "0.0001",
+        "annual_custody_rate": "0.0002",
+        "annual_service_rate": "0.0002",
+        "redeem_fee": null
+      },
+      "simulation_rules": {
+        "min_amount_fen": 10000000,
+        "max_amount_fen": 200000000,
+        "purchase_fee_rate": "0",
+        "redeem_fee_bands": [
+          {
+            "days_lt": 1000000,
+            "rate": "0"
+          }
+        ],
+        "holding_days": 244,
+        "confirm_business_days": 1,
+        "cash_business_days": 3,
+        "cutoff": "15:00",
+        "calendar_version": "synthetic-weekdays-v1",
+        "open_interval_days": 1,
+        "cancel_before_pricing": true,
+        "purchase_paused": false,
+        "redeem_paused": false,
+        "annual_management_rate": "0.0001",
+        "annual_custody_rate": "0.0002",
+        "annual_service_rate": "0.0002",
+        "annual_fees_in_nav": true,
+        "limit_scope": "per_order_simulated",
+        "closed_maturity_date": "2027-06-09",
+        "purchase_end_date": "2026-10-07"
+      },
+      "adaptations": [
+        "仅借鉴单一来源的规则模板；虚构发行人、产品身份和因子行情",
+        "营业日改为版本化周一至周五模拟日历；份额四位与整数分记账",
+        "发行人/销售机构评级原值独立保存；交易风险为项目模拟分级",
+        "上限统一为每笔模拟200万元，并非来源累计持有上限",
+        "普通赎回，巨额赎回/特殊流动性费率以固定故障场景演示；不接真实快速赎回",
+        "模拟年度费用反映在生成净值中，不再按现金重复扣除；不采纳比较基准作为收益",
+        "原产品2022年已到期，仅历史规则参考；虚构募集至2026-10-07、模拟到期2027-06-09",
+        "模拟到期后本人手动赎回；不伪造来源仍在售；模拟申赎费0为项目假设",
+        "封闭期从2026-10-08起244天；募集确认仍按模拟T+1，份额解锁采用固定到期日，而非逐笔滚动244天"
+      ]
+    }
+  },
+  "products": [
+    {
+      "product_id": "B001",
+      "name": "模拟远山·现金参考01",
+      "template_id": "cash"
+    },
+    {
+      "product_id": "B002",
+      "name": "模拟远山·现金参考02",
+      "template_id": "cash"
+    },
+    {
+      "product_id": "B003",
+      "name": "模拟远山·现金参考03",
+      "template_id": "cash"
+    },
+    {
+      "product_id": "B004",
+      "name": "模拟远山·现金参考04",
+      "template_id": "cash"
+    },
+    {
+      "product_id": "B005",
+      "name": "模拟远山·日开参考01",
+      "template_id": "daily"
+    },
+    {
+      "product_id": "B006",
+      "name": "模拟远山·日开参考02",
+      "template_id": "daily"
+    },
+    {
+      "product_id": "B007",
+      "name": "模拟远山·日开参考03",
+      "template_id": "daily"
+    },
+    {
+      "product_id": "B008",
+      "name": "模拟远山·日开参考04",
+      "template_id": "daily"
+    },
+    {
+      "product_id": "B009",
+      "name": "模拟远山·180天持有参考01",
+      "template_id": "minimum"
+    },
+    {
+      "product_id": "B010",
+      "name": "模拟远山·180天持有参考02",
+      "template_id": "minimum"
+    },
+    {
+      "product_id": "B011",
+      "name": "模拟远山·180天持有参考03",
+      "template_id": "minimum"
+    },
+    {
+      "product_id": "B012",
+      "name": "模拟远山·180天持有参考04",
+      "template_id": "minimum"
+    },
+    {
+      "product_id": "B013",
+      "name": "模拟远山·28天定开参考01",
+      "template_id": "periodic"
+    },
+    {
+      "product_id": "B014",
+      "name": "模拟远山·28天定开参考02",
+      "template_id": "periodic"
+    },
+    {
+      "product_id": "B015",
+      "name": "模拟远山·244天封闭参考01",
+      "template_id": "closed"
+    },
+    {
+      "product_id": "B016",
+      "name": "模拟远山·244天封闭参考02",
+      "template_id": "closed"
+    }
+  ]
+}

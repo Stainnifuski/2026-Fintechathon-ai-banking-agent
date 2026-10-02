@@ -13,7 +13,8 @@ from ..middleware.auth import get_current_user
 from ..models.wealth import WealthAuthorizationORM, WealthProfileORM
 from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan, PlanConfirmation
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
-from ..schemas.wealth import WealthResearchQuery,WealthContextChange
+from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
+from pydantic import Field
 
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 
@@ -45,6 +46,41 @@ async def select_context(request: WealthContextChange,user: dict=Depends(get_cur
 @router.post('/research')
 async def research(request: WealthResearchQuery,user: dict=Depends(get_current_user),bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
     try: return await bank.call('POST','/research',{**request.model_dump(),'subject_user_id':user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+class FundSearchRequest(StrictRequest):
+    query: str = Field(default='', max_length=200)
+    fund_type: str | None = Field(default=None, max_length=80)
+    page: int = Field(default=1, ge=1, le=10000)
+    page_size: int = Field(default=20, ge=1, le=60)
+
+
+class FundDetailRequest(StrictRequest):
+    code: str = Field(pattern=r'^\d{6}$')
+    fetch_missing: bool = True
+
+
+class FundCompareRequest(StrictRequest):
+    codes: list[str] = Field(min_length=2, max_length=3)
+    period: str = Field(default='1y', pattern='^(1m|3m|1y|since)$')
+
+
+@router.post('/funds/compare')
+async def fund_compare(request: FundCompareRequest, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST', '/funds/compare', {**request.model_dump(), 'subject_user_id':user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.post('/funds/search')
+async def fund_search(request: FundSearchRequest, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST', '/funds/search', {**request.model_dump(), 'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.post('/funds/detail')
+async def fund_detail(request: FundDetailRequest, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST', '/funds/detail', {**request.model_dump(), 'subject_user_id': user['user_id']})
     except BankApiError as error: fail(error)
 
 

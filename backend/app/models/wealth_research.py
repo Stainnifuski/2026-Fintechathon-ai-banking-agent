@@ -75,3 +75,25 @@ class WealthChatRequestORM(Base):
     status: Mapped[str] = mapped_column(String(16),nullable=False)
     response: Mapped[dict] = mapped_column(JSON,nullable=False,default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class WealthFundDirectoryORM(Base):
+    __tablename__ = 'wealth_fund_directory'
+    code: Mapped[str] = mapped_column(String(6), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    fund_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class WealthFundCacheORM(Base):
+    """Cache each evidence type separately; failed refresh retains last success."""
+    __tablename__ = 'wealth_fund_cache'
+    cache_key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    code: Mapped[str] = mapped_column(String(6), nullable=False, index=True)
+    data_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lease_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)

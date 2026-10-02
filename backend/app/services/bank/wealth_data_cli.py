@@ -36,7 +36,7 @@ async def claim_job(url: str,job_id: str) -> bool:
     engine=create_async_engine(url)
     sessions=async_sessionmaker(engine,expire_on_commit=False)
     async with sessions() as db:
-        now=datetime.now(timezone.utc); lease=now+timedelta(minutes=40)
+        now=datetime.now(timezone.utc); lease=now+timedelta(minutes=120)
         insert=sqlite_insert if db.get_bind().dialect.name=="sqlite" else pg_insert
         r=await db.execute(insert(WealthSyncJobORM).values(job_id=job_id,status="RUNNING",started_at=now,lease_until=lease,result={})
             .on_conflict_do_nothing(index_elements=["job_id"]))
@@ -76,10 +76,10 @@ async def run(args):
             job_id="funds-macro-"+datetime.now(timezone.utc).date().isoformat()
             if args.action=="probe" or await claim_job(url,job_id):
                 report=await asyncio.to_thread(probe,AKShareProvider(timeout=args.timeout,retries=1 if args.action=="probe" else 3))
+                if args.action!='probe': report['dataset']['mode']='live_sync'
                 output=Path(args.output).resolve()
                 if output.is_symlink(): raise ValueError("OUTPUT_SYMLINK_DENIED")
                 output.parent.mkdir(parents=True,exist_ok=True); output.write_text(json.dumps(report,ensure_ascii=False),encoding="utf-8")
-                if args.action!='probe': report['dataset']['mode']='live_sync'
                 result=await sync(url,report) if args.action!="probe" else {"ok":not any(not r.get('ok') for r in report['report']),"probe_only":True}
                 if args.action!="probe": await finish_job(url,job_id,result)
                 print(json.dumps({"result":result,"source_results":[{k:v for k,v in r.items() if k!="records"} for r in report["report"]]},ensure_ascii=False))
@@ -91,6 +91,8 @@ async def run(args):
     async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
     sessions=async_sessionmaker(engine,expire_on_commit=False)
     async with sessions() as db:
+        if db.get_bind().dialect.name=='sqlite':
+            await db.execute(__import__('sqlalchemy').text('BEGIN IMMEDIATE'))
         if args.action=='scenarios':
             from .wealth_fixtures import initialize_all
             result=await initialize_all(db)
@@ -114,15 +116,17 @@ async def run(args):
                 record_bank_event(db,event_key=f'{row.context_id}:clock:{at.isoformat()}',subject_user_id=row.user_id,action='investment_sandbox_clock',result='success',facts={'context_id':row.context_id,'before':before,'business_at':at.isoformat()},decision_chain=['explicit_disposable_context','monotonic_business_clock','security_clock_unchanged'])
                 result={"context_id":row.context_id,"business_at":at.isoformat()}
             elif args.action=="reset":
+                from ...models.account import AccountORM
+                account=await db.get(AccountORM,row.account_id,with_for_update=True)
                 from ...models.wealth import WealthOrderORM,WealthLotORM
                 pending=await db.scalar(select(WealthOrderORM.operation_id).where(WealthOrderORM.account_id==row.account_id,WealthOrderORM.status.not_in(["CANCELLED","SETTLED","REJECTED"])))
                 holdings=await db.scalar(select(WealthLotORM.lot_id).where(WealthLotORM.account_id==row.account_id,WealthLotORM.units_scaled>0))
-                if pending or holdings: raise ValueError("RESET_REFUSED_OPEN_ORDERS_OR_HOLDINGS")
+                from .available_funds import held_cash
+                if pending or holdings or await held_cash(db,row.account_id): raise ValueError("RESET_REFUSED_OPEN_ORDERS_OR_HOLDINGS")
                 if args.dry_run:
                     print(json.dumps({'context_id':row.context_id,'account_id':row.account_id,'would_issue_cash_fen':2000000,'history_retained':True,'dry_run':True})); await engine.dispose(); return
                 if not args.confirm_reset: raise ValueError("RESET_EXPLICIT_CONFIRMATION_REQUIRED")
-                from ...models.account import AccountORM
-                account=await db.get(AccountORM,row.account_id); before=account.balance_fen; account.balance_fen=2000000; row.version+=1
+                before=account.balance_fen; account.balance_fen=2000000; row.version+=1
                 from .audit_service import record_bank_event
                 record_bank_event(db,event_key=f'{row.context_id}:reset:{row.version}',subject_user_id=row.user_id,action='investment_sandbox_reset',result='success',facts={'context_id':row.context_id,'previous_cash_fen':before,'issued_cash_fen':2000000,'history_retained':True},decision_chain=['explicit_disposable_context','no_open_orders_or_holdings','audit_retained'])
                 result={"context_id":row.context_id,"account_id":row.account_id,"reset":True,"audit_retained":True}
