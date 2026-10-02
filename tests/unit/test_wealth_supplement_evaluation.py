@@ -28,4 +28,3 @@ def test_template_identity_and_single_source(case, pool):
         assert all('income_per_10000' not in point for point in product['history'])
     if case['template'] == 'closed':
         assert source['source']['original_expiry'] < '2026-10-02'
-
