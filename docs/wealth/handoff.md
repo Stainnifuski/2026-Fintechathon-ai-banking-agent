@@ -1,3 +1,14 @@
+## v1.2数据与迁移交接
+
+schema3新增8类研究/上下文/同步/知识/消息请求表；旧8产品、净值、持仓和计价不改写。备份、停写、运行wealth_migration、核对余额/流水/订单/占款/批次/历史NAV、恢复服务；迁移重复幂等。失败保留新旧事实，非空业务不自动删表回退。大量历史只由管理员CLI显式init，不在每次API启动生成。见data_sources.md。
+
+4号维护版本、日历、价格、预检、受理/占款/FIFO/结算、审计和管理员数据；5号通过HttpWealthBankApi和原操作号恢复；2号仅理解/受控查询和预览；1号展示来源/缺数、本人确认与模拟按钮；3号后续整体替换simulated/replacement_required提供者，保留参数、主体、期限和版本绑定。沙箱账户禁止普通转账/AA收款，汇总按资金上下文隔离。
+
+模型本地配置WEALTH_NLU_MODE=model和WEALTH_MODEL_*，未设置继承TRANSFER_MODEL_*再LLM_*。密钥只.env。新模型不调用确认/验证/受理/管理员工具。知识与宏观均只读落库，不在交易中联网。
+
+真实规则不足的10份额只可研究；真实身份+已审核模拟覆盖层的入口预留在统一导入器，本轮未提供真实发行人完整规则，不能直接交易。低并发独立worker与停止/重启见data_sources.md。比赛边界、渠道差距见competition/wealth_v1_2.md。
+
+
 # 第4号理财增量数据库与联调交接
 
 以任务书正文v1.1为准。完整接口和状态见 [理财契约](contract.md)，实施决策见 [设计](decisions.md)。这是虚构理财扩展，旧现金账本、转账API、风险等级API保留。
@@ -59,3 +70,7 @@ python -m backend.app.services.bank.wealth_migration --rollback
 理财默认点击模拟授权，取消独立库名称限制；既有.env的WEALTH_DEMO_VERIFICATION_ENABLED=false需改为true。迁移表结构不变，提供者版本为demo-click-v2。管理员时钟仍保留隔离库要求。旧记录不可改写。
 
 replacement_required表示后续替换为3号统一高风险授权适配器，不代表将来必须开发真实验证。接口、模拟标志、停用兼容路径及协作方案见[模拟授权说明](simulated_authorization.md)。
+
+## 最新全量基金补充
+
+默认混合研究池、全量目录、池外详情／比较、可调整清单、官方原始规则和模拟变更、TTL及日更见[补充入口](preload_and_directory.md)。真实基金缺审核规则仅研究，银行B产品交易使用独立模拟资金上下文；不复制旧余额或改变旧订单引用。数量不是固定上限。

@@ -1,3 +1,16 @@
+## v1.2兼容扩展（优先于下文v1固定8条/有限理解描述）
+
+GET products返回当前资金上下文，legacy仍8条、新上下文60条。POST research接受dataset_key/query/category/max_risk/horizon_days/page/page_size(≤60)/product_ids(1–3)/period(1m/3m/1y/since)；未知字段拒绝，未知风险不能冒充已评级。返回items/metrics/history/analysis/as_of/datasets/macros，真实产品仅研究规则缺项明示。
+
+GET contexts仅列本人上下文；POST contexts/select需要context_id/version。切换清候选/草稿和旧授权，不复制资金；已受理订单保留原账户。GET assets新增concentration/historical_hypothesis，缺完整现金流时不提供实际回报率。
+
+POST messages新增client_message_id（≤64字符串）以及session_id/version，返回受控产品/对比/方案/command/knowledge卡。原消息重试返回相同响应、原操作号；同ID异内容409，多标签过旧版本STALE_PLAN。PROCESSING并发请求拒绝，超时可恢复；model失败显示MODEL_UNAVAILABLE，不假称成交。
+
+新增错误：DATASET_MISMATCH、DATA_STALE、RULE_VERSION_CHANGED、RULES_INCOMPLETE、IDEMPOTENCY_CONFLICT、STALE_PLAN、ACCOUNT_CONTEXT_UNSUPPORTED。内部research/catalog/contexts接口仍要求X-Internal-Token和可信subject；公开层主体只由JWT确定。
+
+渠道接入：APP/IM可发送同一messages请求，保存session/version/client_message_id；展示cards，确认/模拟授权回跳带JWT的网页，不把聊天“好的”映射execute。原订单号查询结果直接来自银行。当前未完成独立APP/IM端到端验收，不能将网页当作渠道证明。
+
+
 # 当前授权策略修订
 
 2026-10-01：理财默认点击模拟授权，普通演示库可用；本文旧TOTP/独立库描述仅作兼容历史。路由和状态名不变，现行语义与后续3号接口对接以[模拟授权说明](simulated_authorization.md)为准。
@@ -84,3 +97,7 @@ GET products；POST assets/precheck/verify/orders/orders/batch；POST orders/{op
 
 schema版本2新增wealth_verifications而不改旧账本。method/provider_version/simulated/replacement_required/verified_at记录验证提供者；orders.details.verification与audit标识来源。模拟不称为真实MFA成功。历史TOTP授权兼容保留，不能把模拟证据改为真实。后续统一高风险模拟授权衔接见simulated_authorization.md，不要求新增真实认证输入。
 
+
+## 最新全量基金补充
+
+默认混合研究池、全量目录、池外详情／比较、可调整清单、官方原始规则和模拟变更、TTL及日更见[补充入口](preload_and_directory.md)。真实基金缺审核规则仅研究，银行B产品交易使用独立模拟资金上下文；不复制旧余额或改变旧订单引用。数量不是固定上限。

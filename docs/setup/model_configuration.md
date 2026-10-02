@@ -1,3 +1,10 @@
+## 理财 v1.2
+
+WEALTH_NLU_MODE=offline默认有限规则；model使用严格结构化意图与受限知识解释。优先WEALTH_MODEL_API_KEY/BASE_URL/NAME，再TRANSFER_MODEL_*，再LLM_*；团队DeepSeek已联调deepseek-flash，base_url=https://api.deepseek.com，关闭thinking。密钥写忽略.env，不发到前端/日志/仓库。35秒总读超时、连接10秒、共享低并发连接池、不会自动重试扣款。
+
+Docker compose的env_file会加载配置；改文件后`docker compose up -d --force-recreate backend`才更新进程环境，仅restart不重新加载env_file。外部同步独立worker默认关闭；详见wealth/data_sources.md。真实模型验收需显式WEALTH_LIVE_TEST=true，在隔离库运行tests/integration/test_wealth_live_model.py；失败不以offline/mock结果代替。
+
+
 # 模型配置
 
 ## DeepSeek 配置

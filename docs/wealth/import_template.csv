@@ -1,0 +1,3 @@
+dataset_id,dataset_version,mode,product_id,name,source_product_code,date,nav,published_at,available_at
+fictional-import,example-v1,snapshot,X001,虚构导入示例,000001,2026-09-29,1.00100000,,2026-10-02T08:00:00+00:00
+fictional-import,example-v1,snapshot,X001,虚构导入示例,000001,2026-09-30,1.00200000,,2026-10-02T08:00:00+00:00
