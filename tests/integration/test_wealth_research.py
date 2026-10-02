@@ -117,6 +117,28 @@ async def test_multiturn_preview_replay_knowledge_and_context_invalidation(store
     knowledge,_=await send('为什么A/C同家族不算分散投资','research-message-6')
     assert knowledge['kind']=='knowledge' and knowledge['citations']
     assert all('content_hash' in c and c['excerpt'] for c in knowledge['citations'])
+    # After a single-product action, an old full budget must not hijack other intents.
+    from backend.app.models.account import AccountORM
+    async with store() as db:
+        from backend.app.models.wealth_research import WealthContextORM
+        current=await db.get(WealthContextORM,created['context_id'])
+        account=await db.get(AccountORM,current.account_id)
+        account.balance_fen=950029; await db.commit()
+    greeting,_=await send('你好','research-message-greeting')
+    assert greeting['kind']=='clarification' and greeting.get('code')!='INSUFFICIENT_AVAILABLE_FUNDS'
+    missing,_=await send('帮我做配置','research-message-new-budget')
+    assert '9500.29' in missing['message'] and '本次预算' not in missing['message']
+    assert missing['budget_source']=='bank_available_cash' and missing.get('code')!='INSUFFICIENT_AVAILABLE_FUNDS'
+    auto,_=await send('180天后用，留五千备用','research-message-bank-budget')
+    assert auto['kind']=='plan' and auto['plan']['request']['budget_fen']==950029
+    assert auto['plan']['request']['budget_source']=='bank_available_cash'
+    excessive,_=await send('我有两万元，180天后用，稳健配置，留五千','research-message-excessive')
+    assert excessive['code']=='INSUFFICIENT_AVAILABLE_FUNDS'
+    assert '20000.00' in excessive['message'] and '9500.29' in excessive['message']
+    again,_=await send('你好','research-message-greeting-again')
+    assert again.get('code')!='INSUFFICIENT_AVAILABLE_FUNDS'
+    resumed,_=await send('预算九千','research-message-lower-budget')
+    assert resumed['kind']=='plan' and resumed['plan']['request']['budget_fen']==900000
     listing=(await client.get('/api/v1/wealth/contexts')).json()
     await client.post('/api/v1/wealth/contexts/select',json={'context_id':'legacy-v1','version':listing['version']})
     stale=await client.post('/api/v1/wealth/messages',json={'message':'继续','client_message_id':'research-message-stale',**context})

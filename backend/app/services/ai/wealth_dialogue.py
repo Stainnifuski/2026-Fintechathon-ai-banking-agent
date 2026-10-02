@@ -69,7 +69,7 @@ async def claim(db,user_id,client_id,digest):
 
 
 async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
-    response={'mode':mode,'kind':'clarification','message':'请明确需求；需要预算、保留现金、预计使用期限和用途，交易只在可信卡片确认。'}
+    response={'mode':mode,'kind':'clarification','message':'请说明要查询资产、了解产品还是规划现有资金；我会读取银行资金事实。规划请说明保留现金、使用期限和用途，交易仍需在可信卡片确认。'}
     codes = re.findall(r'(?<![0-9])([0-9]{6})(?![0-9])', text)
     if intent.intent == 'compare':
         outside = list(dict.fromkeys(codes + [r[1:] for r in intent.product_refs if re.fullmatch(r'R\d{6}', r)]))
@@ -104,6 +104,9 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         intent=intent.model_copy(update={'amount_fen':intent.budget_fen,'budget_fen':None})
     refs=[active['product_id'] if r in {'它','这个','刚才那个','刚才那笔'} and active else resolve(r,products,candidate_ids) for r in intent.product_refs]
     slots=dict(data.get('pending') or {})
+    # A new planning request is not a revision of a completed/abandoned budget.
+    if intent.intent == 'allocate' and not data.get('active_plan') and not data.get('awaiting_plan_details'):
+        slots = {}
     for name in ('budget_fen','reserve_fen','horizon_days','need'):
         if getattr(intent,name) is not None: slots[name]=getattr(intent,name)
     excluded=list(slots.get('excluded_products',[]))
@@ -169,18 +172,32 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             await db.execute(update(WealthAuthorizationORM).where(WealthAuthorizationORM.user_id==user_id,WealthAuthorizationORM.operation_id==active['operation_id'],WealthAuthorizationORM.status.in_(['AWAITING_CONFIRMATION','AWAITING_MFA','VALID'])).values(status='EXPIRED'))
             await db.commit()
         data['active_command']=command.model_dump(); data['active_plan']=None
+        data['pending']={}; data['awaiting_plan_details']=False
         response.update(kind='command',command=command.model_dump(),message='已生成新版本待确认模拟订单；金额修改使用新操作号，旧授权不会用于新参数。请在可信卡片本人确认与模拟验证。')
-    elif intent.intent in {'allocate','modify','clarify','recommend'} and slots:
+    elif intent.intent=='allocate' or (intent.intent=='modify' and
+            (intent.exclude_refs or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))) or (intent.intent=='clarify' and data.get('awaiting_plan_details') and
+            (text.strip()=='继续' or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))):
+        data['awaiting_plan_details']=True
+        if account and 'budget_fen' not in slots:
+            slots['budget_fen']=account['available_fen']
+            slots['budget_source']='bank_available_cash'
+        elif intent.budget_fen is not None:
+            slots['budget_source']='user_specified'
+        data['pending']=slots
+        budget_note=(f"已查询银行事实：可用现金¥{account['available_fen']/100:.2f}；未指定投入额度，建议预算以此为上限。" if account and slots.get('budget_source')=='bank_available_cash' else '')
+        response['budget_source']=slots.get('budget_source','user_specified')
         missing=[key for key in ('budget_fen','reserve_fen','horizon_days','need') if key not in slots]
-        if missing: response['message']='请补充：'+ '、'.join({'budget_fen':'本次预算','reserve_fen':'预算内保留现金（可明确为0）','horizon_days':'预计使用期限','need':'资金用途'}[key] for key in missing)
+        if missing: response['message']=budget_note+'请补充：'+ '、'.join({'budget_fen':'本次预算','reserve_fen':'预算内保留现金（可明确为0）','horizon_days':'预计使用期限','need':'资金用途'}[key] for key in missing)
         elif account:
             request=PlanInput(account_id=account['account_id'],budget_fen=slots['budget_fen'],reserve_fen=slots['reserve_fen'],horizon_days=slots['horizon_days'],excluded_products=excluded,need=slots['need']).model_dump()
+            request['budget_source']=slots.get('budget_source','user_specified')
             previous=data.get('active_plan')
             if previous: request['version']=previous['version']
             plan=await wealth_plan.create(db,user_id,bank,request,previous['plan_id'] if previous else None)
             data['active_plan']={'plan_id':plan['plan_id'],'version':plan['version']}; data['active_command']=None
+            data['awaiting_plan_details']=False
             data['candidates']=[i['command']['product_id'] for i in plan['items']]
-            response.update(kind='plan',plan=plan,message='已保存新版本配置方案，最多5笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。')
+            response.update(kind='plan',plan=plan,message=budget_note+'已保存新版本配置方案，最多5笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。')
     return response
 
 
@@ -210,13 +227,25 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
         products,facts=await bank.products(user_id),await bank.assets(user_id)
         contexts=await bank.call('POST','/contexts',{'subject_user_id':user_id})
         if data.get('context_id') and data['context_id']!=contexts['selected']:
-            data.update(pending={},candidates=[],active_command=None,active_plan=None)
+            data.update(pending={},candidates=[],active_command=None,active_plan=None,awaiting_plan_details=False)
         data['context_id']=contexts['selected']
+        if data.get('active_plan'):
+            from ...models.wealth import WealthPlanORM
+            previous=await db.get(WealthPlanORM,data['active_plan']['plan_id'])
+            if previous is None or previous.user_id!=user_id or previous.status in {'EXECUTING','WAITING_SETTLEMENT','COMPLETED','EXPIRED','CANCELLED'}:
+                data.update(pending={},active_plan=None,awaiting_plan_details=False)
+            await db.rollback()
+        elif not data.get('awaiting_plan_details'):
+            # Also repairs pre-fix persisted sessions without deleting their history/orders.
+            pending=data.get('pending') or {}
+            if all(k in pending for k in ('budget_fen','reserve_fen','horizon_days','need')):
+                data['pending']={}
         evidence={}
         if mode=='model':
             context={'research_candidates':data.get('research_candidate_names',[]),'pending':data.get('pending',{}),'candidates':[{'id':p['product_id'],'name':p['name']} for pid in data.get('candidates',[]) for p in products if p['product_id']==pid],
                 'products':[{'id':p['product_id'],'name':p['name']} for p in products], 'active':{'direction':data['active_command']['direction'],'product_id':data['active_command']['product_id'],'amount_fen':data['active_command']['amount_fen']} if data.get('active_command') else None,
                 'accounts':[f'账户{i}' for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
+                'available_cash_fen':[{'account_ref':f'账户{i}','available_fen':a['available_fen']} for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
                 'history':[h['user'] for h in data.get('history',[])[-4:]]}
             intent,evidence=await understand(text,context)
         else: intent=offline(text)
@@ -224,6 +253,9 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
         response.update(model_evidence=evidence,intent=intent.model_dump(),client_message_id=client_message_id)
     except WealthPolicyError as error:
         await db.rollback(); response={'mode':mode,'kind':'assessment_required' if 'ASSESSMENT' in error.code else 'clarification','code':error.code,'message':error.message}
+        if error.code == 'INSUFFICIENT_AVAILABLE_FUNDS':
+            data['pending']={k:v for k,v in (data.get('pending') or {}).items() if k!='budget_fen'}
+            data['awaiting_plan_details']=True
     except Exception as error:
         from ...integrations.bank_api import BankApiError
         await db.rollback()
@@ -238,6 +270,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
     if session is None: session=WealthConversationORM(session_id=sid,user_id=user_id,version=1,data={}); db.add(session)
     else: session.version+=1
     response.update(session_id=sid,version=session.version,model_evidence=evidence)
+    if 'intent' not in response and 'intent' in locals(): response['intent']=intent.model_dump()
     data['history']=[*data.get('history',[]),{'user':text,'reply':response}][-20:]; session.data=data
     row=await db.get(WealthChatRequestORM,key); row.status='DONE'; row.response=response
     await db.commit()

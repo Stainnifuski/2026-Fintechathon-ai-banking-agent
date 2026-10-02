@@ -105,7 +105,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     if account is None:
         raise WealthPolicyError("账户不存在或不支持", "ACCOUNT_NOT_FOUND", 404)
     if budget > account["available_fen"]:
-        raise WealthPolicyError("方案预算超过银行可用现金", "INSUFFICIENT_AVAILABLE_FUNDS")
+        raise WealthPolicyError(f"本次方案预算¥{budget/100:.2f}超过银行可用现金¥{account['available_fen']/100:.2f}。持仓和在途不属于可用现金，请明确修改本次预算。", "INSUFFICIENT_AVAILABLE_FUNDS")
     goals = (await db.scalars(select(WealthGoalORM).where(WealthGoalORM.user_id == user_id))).all()
     business_date = date.fromisoformat(facts["business_at"][:10])
     goal_reserve = sum(goal.data["amount_fen"] for goal in goals if

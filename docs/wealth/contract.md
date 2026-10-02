@@ -101,3 +101,6 @@ schema版本2新增wealth_verifications而不改旧账本。method/provider_vers
 ## 最新全量基金补充
 
 默认混合研究池、全量目录、池外详情／比较、可调整清单、官方原始规则和模拟变更、TTL及日更见[补充入口](preload_and_directory.md)。真实基金缺审核规则仅研究，银行B产品交易使用独立模拟资金上下文；不复制旧余额或改变旧订单引用。数量不是固定上限。
+
+### 对话预算来源（2026-10-02修复）
+Agent每轮读取银行资产事实。用户未指定本次投入额度时，以所选账户available_fen作为建议预算上限；持仓估值、占款及在途不并入现金。方案request可返回可选budget_source=bank_available_cash或user_specified，仅为来源说明，不放宽现金/适当性/确认/授权约束。本人仍可修改投入额度和保留现金，订单不会因查询资产或建议预算而自动成交。
