@@ -13,6 +13,9 @@
 .wealth button { margin:4px; }
 .wealth details { margin-block:16px; padding:10px; border:1px solid #dce4f4; border-radius:8px; }
 .wealth summary { cursor:pointer; }
+.wealth details:not([open]) > :not(summary) { display:none; }
+.wealth-research { min-width:0; max-width:100%; overflow:hidden; }
+.wealth input,.wealth select { max-width:100%; }
 .wealth-table { overflow-x:auto; }
 .wealth table { border-collapse:collapse; font-size:13px; }
 .wealth th,.wealth td { padding:8px; text-align:left; border-bottom:1px solid #dce4f4; }

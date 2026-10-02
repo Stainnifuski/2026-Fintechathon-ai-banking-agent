@@ -20,6 +20,8 @@ export interface Order {
     actual_nav?: string; actual?: { units?: string; fee_fen: number; cash_fen?: number; realized_pnl_fen?: number } };
 }
 export interface Assets {
+  concentration?: { families_fen: Record<string,number>; categories_fen: Record<string,number>; overconcentrated_families: string[]; notice: string };
+  historical_hypothesis?: { metrics: { return: string | null; max_drawdown: string | null; volatility: string | null } | null; notice: string; unavailable_reason?: string } | null;
   cash: { account_id: string; account_type: string; balance_fen: number; held_fen: number; available_fen: number }[];
   lots: { lot_id: string; product_id: string; product_name: string; account_id: string;
     units: string; redeemable_units: string; locked_units: string; held_units: string;
@@ -47,7 +49,8 @@ export interface Goal { goal_id: string; version: number; title: string; amount_
 export interface Profile { version: number; data: { monthly_income_fen?: number; monthly_expenses_fen?: number;
   liabilities_fen?: number; external_assets?: ExternalAsset[]; updated_at?: string }; goals: Goal[] }
 export interface ChatReply { mode: string; kind: string; message: string; session_id?: string; version?: number;
-  plan?: Plan; command?: Command; products?: Product[] }
+  plan?: Plan; command?: Command; products?: Product[];
+  citations?: { document_id: string; title: string; excerpt: string; source_type: string; source_url?: string; published_at?: string; version: string; content_hash: string }[] }
 export const money = (fen: number | null | undefined) => fen == null ? '未知' : `¥${(fen / 100).toFixed(2)}`;
 export const get = <T,>(path: string) => apiClient.get<T>(`/wealth${path}`).then(r => r.data);
 export const post = <T,>(path: string, body: unknown) => apiClient.post<T>(`/wealth${path}`, body).then(r => r.data);
