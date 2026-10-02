@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database.connection import AsyncSessionLocal
 from ...models.account import AccountORM
+from ...models.wealth_research import WealthContextORM
 from ...models.transaction import TransactionORM
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
@@ -74,7 +75,7 @@ async def list_accounts(user_id: str) -> list[dict]:
         accounts = (
             await session.execute(
                 select(AccountORM)
-                .where(AccountORM.user_id == user_id)
+                .where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
                 .order_by(AccountORM.account_type.desc(), AccountORM.account_id)
             )
         ).scalars().all()
@@ -94,7 +95,7 @@ async def list_accounts(user_id: str) -> list[dict]:
 async def list_balances(
     user_id: str, account_type: str | None = None
 ) -> list[dict]:
-    statement = select(AccountORM).where(AccountORM.user_id == user_id)
+    statement = select(AccountORM).where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
     if account_type:
         statement = statement.where(AccountORM.account_type == account_type)
     async with AsyncSessionLocal() as session:
@@ -122,6 +123,7 @@ async def list_recipients(subject_user_id: str) -> list[dict]:
                     UserORM.user_id != subject_user_id,
                     UserORM.status == "active",
                     AccountORM.status == "active",
+                    AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
                 )
                 .order_by(
                     UserORM.name, AccountORM.account_type.desc(), AccountORM.account_id

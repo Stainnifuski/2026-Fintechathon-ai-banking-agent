@@ -1,0 +1,3013 @@
+[
+  {
+    "id": "V12-001",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF001的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF001",
+      "terms": [
+        "SF001",
+        "同家族",
+        "年度服务费",
+        "不保证"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF001"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-002",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF002的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF002",
+      "terms": [
+        "SF002",
+        "同家族",
+        "年度服务费",
+        "不保证"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF002"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-003",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF003的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF003",
+      "terms": [
+        "SF003",
+        "同家族",
+        "年度服务费",
+        "不保证"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF003"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-004",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF004的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF004",
+      "terms": [
+        "SF004",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF004"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-005",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF005的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF005",
+      "terms": [
+        "SF005",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF005"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-006",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF006的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF006",
+      "terms": [
+        "SF006",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF006"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-007",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF007的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF007",
+      "terms": [
+        "SF007",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF007"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-008",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF008的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF008",
+      "terms": [
+        "SF008",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF008"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-009",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF009的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF009",
+      "terms": [
+        "SF009",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF009"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-010",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF010的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF010",
+      "terms": [
+        "SF010",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF010"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-011",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF011的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF011",
+      "terms": [
+        "SF011",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF011"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-012",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF012的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF012",
+      "terms": [
+        "SF012",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF012"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-013",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF013的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF013",
+      "terms": [
+        "SF013",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF013"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-014",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF014的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF014",
+      "terms": [
+        "SF014",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF014"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-015",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族SF015的A/C份额为什么不算两份分散投资？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-SF015",
+      "terms": [
+        "SF015",
+        "同家族",
+        "年度服务费",
+        "不是发行人披露"
+      ]
+    },
+    "allowed_citations": [
+      "K-SF015"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-016",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "风险评估需要谁作答？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-P0",
+      "terms": [
+        "本人",
+        "模型不能代答"
+      ]
+    },
+    "allowed_citations": [
+      "K-P0"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-017",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "模拟点击授权未来怎么替换？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-P1",
+      "terms": [
+        "replacement_required",
+        "整体替换"
+      ]
+    },
+    "allowed_citations": [
+      "K-P1"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-018",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "申购赎回如何计价到账？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-P2",
+      "terms": [
+        "FIFO",
+        "锁定份额"
+      ]
+    },
+    "allowed_citations": [
+      "K-P2"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-019",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "未核实分红能叫总回报吗？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-P3",
+      "terms": [
+        "不足一年不年化",
+        "不再次扣除"
+      ]
+    },
+    "allowed_citations": [
+      "K-P3"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-020",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "数据集切换会复制余额吗？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-P4",
+      "terms": [
+        "不复制余额",
+        "旧预览失效"
+      ]
+    },
+    "allowed_citations": [
+      "K-P4"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-021",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "PPI是什么价格？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-O0",
+      "terms": [
+        "首次出售",
+        "生产环节"
+      ]
+    },
+    "allowed_citations": [
+      "K-O0"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-022",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "CPI居民消费价格是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-O1",
+      "terms": [
+        "日常消费",
+        "个人消费结构"
+      ]
+    },
+    "allowed_citations": [
+      "K-O1"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-023",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "M1与M2口径为什么不同？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-O2",
+      "terms": [
+        "2025",
+        "口径调整"
+      ]
+    },
+    "allowed_citations": [
+      "K-O2"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-024",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "PMI采购经理指数的50是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-O3",
+      "terms": [
+        "50",
+        "制造业"
+      ]
+    },
+    "allowed_citations": [
+      "K-O3"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-025",
+    "category": "knowledge",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "LPR是理财收益率吗？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "document",
+      "document_id": "K-O4",
+      "terms": [
+        "1年期",
+        "5年期",
+        "并非"
+      ]
+    },
+    "allowed_citations": [
+      "K-O4"
+    ],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-026",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本1：价格[100, 110]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        110
+      ],
+      "result": {
+        "return": "0.100000",
+        "max_drawdown": "0.000000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-027",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本2：价格[100, 80, 90]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        80,
+        90
+      ],
+      "result": {
+        "return": "-0.100000",
+        "max_drawdown": "0.200000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-028",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本3：价格[100, 120, 90]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        120,
+        90
+      ],
+      "result": {
+        "max_drawdown": "0.250000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-029",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本4：价格[100, 100]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        100
+      ],
+      "result": {
+        "return": "0.000000",
+        "max_drawdown": "0.000000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-030",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本5：价格[100, 50, 25]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        50,
+        25
+      ],
+      "result": {
+        "return": "-0.750000",
+        "max_drawdown": "0.750000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-031",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本6：价格[100]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100
+      ],
+      "result": {
+        "return": null,
+        "unavailable_reason": "INSUFFICIENT_HISTORY"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-032",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本7：价格[]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [],
+      "result": {
+        "return": null,
+        "unavailable_reason": "INSUFFICIENT_HISTORY"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-033",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本8：价格[100, 105]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        105
+      ],
+      "result": {
+        "annualized": null,
+        "annualized_unavailable_reason": "LESS_THAN_ONE_YEAR"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-034",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本9：价格[100, 105]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        105
+      ],
+      "result": {
+        "volatility": null,
+        "volatility_unavailable_reason": "LESS_THAN_20_RETURNS"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-035",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本10：价格[1, 2, 4]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        1,
+        2,
+        4
+      ],
+      "result": {
+        "return": "3.000000",
+        "max_drawdown": "0.000000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-036",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金样本11：价格[100, 90]的指标是什么？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        90
+      ],
+      "result": {
+        "return": "-0.100000",
+        "basis": "unit_nav_change_not_total_return"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-037",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "100跌至90且分红10，核实分红后总回报是多少？",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        90
+      ],
+      "dividends": [
+        0,
+        10
+      ],
+      "verified": true,
+      "result": {
+        "return": "0.000000",
+        "max_drawdown": "0.000000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-038",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "查询9月2日不能读9月3日未来净值。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "metrics",
+      "prices": [
+        100,
+        110,
+        200
+      ],
+      "as_of": "2026-09-02",
+      "result": {
+        "return": "0.100000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-039",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "总支出100000分，费率0.003，净值1的申购费用与份额。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "purchase",
+      "amount": 100000,
+      "nav": "1.00000000",
+      "rate": "0.003",
+      "fee_fen": 300,
+      "units": "997.0000"
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-040",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "总支出100000分，费率0，净值1的申购费用与份额。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "purchase",
+      "amount": 100000,
+      "nav": "1.00000000",
+      "rate": "0",
+      "fee_fen": 0,
+      "units": "1000.0000"
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-041",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "10份净值1.2，成本1000分，1.5%赎回费用。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "redeem",
+      "units": "10.0000",
+      "nav": "1.20000000",
+      "rate": "0.015",
+      "lot_units": "10.0000",
+      "cost": 1000,
+      "result": {
+        "cash_fen": 1182,
+        "fee_fen": 18,
+        "realized_pnl_fen": 182
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-042",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "10份成本1000分赎回5份，零费用时分摊成本。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "redeem",
+      "units": "5.0000",
+      "nav": "1.00000000",
+      "rate": "0",
+      "lot_units": "10.0000",
+      "cost": 1000,
+      "result": {
+        "cash_fen": 500,
+        "cost_fen": 500,
+        "realized_pnl_fen": 0
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-043",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "两条相同31个观察点的序列相关性。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "correlation",
+      "a": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "b": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "field": "correlation",
+      "value": "1.000000"
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-044",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "只有两点时相关系数不能补0。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "correlation",
+      "a": [
+        1,
+        2
+      ],
+      "b": [
+        1,
+        2
+      ],
+      "field": "unavailable_reason",
+      "value": "INSUFFICIENT_COMMON_OBSERVATIONS"
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-045",
+    "category": "analytics",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "A/C各40%，同家族应合计80%。",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "concentration",
+      "holdings": [
+        {
+          "product_id": "A",
+          "fund_family_id": "F",
+          "category": "bond",
+          "amount_fen": 40
+        },
+        {
+          "product_id": "C",
+          "fund_family_id": "F",
+          "category": "bond",
+          "amount_fen": 40
+        },
+        {
+          "product_id": "B",
+          "category": "cash",
+          "amount_fen": 20
+        }
+      ],
+      "families": [
+        "F"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-046",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "风险R1只留现金候选",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "capacity": 1
+      },
+      "products": [
+        "C"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-047",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "风险R2排除混合权益",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "capacity": 2
+      },
+      "products": [
+        "C",
+        "B"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-048",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "风险R3可选三类",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "products": [
+        "C",
+        "B",
+        "M"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-049",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "全部暂停申购应保留现金",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "changes": [
+        {
+          "id": "C",
+          "rules": {
+            "purchase_paused": true
+          }
+        },
+        {
+          "id": "B",
+          "rules": {
+            "purchase_paused": true
+          }
+        },
+        {
+          "id": "M",
+          "rules": {
+            "purchase_paused": true
+          }
+        },
+        {
+          "id": "E",
+          "rules": {
+            "purchase_paused": true
+          }
+        }
+      ],
+      "products": []
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-050",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "期限7天不能选持有30天",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "horizon_days": 7
+      },
+      "changes": [
+        {
+          "id": "B",
+          "rules": {
+            "holding_days": 30
+          }
+        },
+        {
+          "id": "M",
+          "rules": {
+            "holding_days": 30
+          }
+        }
+      ],
+      "products": [
+        "C"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-051",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "明确排除债券",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "excluded": [
+          "B"
+        ]
+      },
+      "products": [
+        "C",
+        "M"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-052",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "低于所有最低金额不强制投入",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "budget_fen": 5000,
+        "reserve_fen": 0
+      },
+      "products": []
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-053",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不接受损失不买净值产品",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "purchase_allowed": false
+      },
+      "products": []
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-054",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "保留金额超过预算拒绝",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "error",
+      "args": {
+        "reserve_fen": 1000001
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-055",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "全部保留现金",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "reserve_fen": 1000000
+      },
+      "products": []
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-056",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "债券无净值不可推荐",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "changes": [
+        {
+          "id": "B",
+          "fields": {
+            "nav": null
+          }
+        }
+      ],
+      "products": [
+        "C",
+        "M"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-057",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "混合产品停售不可推荐",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "changes": [
+        {
+          "id": "M",
+          "fields": {
+            "status": "closed"
+          }
+        }
+      ],
+      "products": [
+        "C",
+        "B"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-058",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "缺少混合类别不放大其他权重",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "args": {
+        "budget_fen": 100000,
+        "reserve_fen": 0
+      },
+      "changes": [
+        {
+          "id": "M",
+          "rules": {
+            "purchase_paused": true
+          }
+        }
+      ],
+      "result": {
+        "investment_fen": 60000,
+        "retained_cash_fen": 40000
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-059",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "家族相同不虚假分散",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "changes": [
+        {
+          "id": "B",
+          "fields": {
+            "fund_family_id": "FC"
+          }
+        }
+      ],
+      "products": [
+        "C",
+        "M"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-060",
+    "category": "recommendation",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "权益R5在R3中硬过滤",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "allocation",
+      "changes": [
+        {
+          "id": "E",
+          "rules": {
+            "purchase_fee_rate": "0"
+          }
+        }
+      ],
+      "products": [
+        "C",
+        "B",
+        "M"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-061",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "我有两万元，180天后用，稳健配置",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "budget_fen": 2000000,
+        "horizon_days": 180,
+        "need": "balanced"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-062",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "留五千",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "reserve_fen": 500000
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-063",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "第二个买五千",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "purchase",
+        "amount_fen": 500000,
+        "product_refs": [
+          "第二个"
+        ]
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-064",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "改成三千",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "modify",
+        "amount_fen": 300000
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-065",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "第一个和第二个对比",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "compare",
+        "product_refs": [
+          "第一个",
+          "第二个"
+        ]
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-066",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "赎回S007一半",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "redeem",
+        "fraction": "half",
+        "product_refs": [
+          "S007"
+        ]
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-067",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "S007全部赎回",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "redeem",
+        "fraction": "all"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-068",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "刚才那笔成功了吗",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "status"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-069",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "查询我的持仓资产",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "assets"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-070",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "确认",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "refuse"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-071",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "执行",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "refuse"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-072",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "推荐产品",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "recommend"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-073",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "查看产品列表",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "products"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-074",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "PMI是什么意思",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "knowledge"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-075",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "保留0元",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "reserve_fen": 0
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-076",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不要S007",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent",
+      "result": {
+        "intent": "modify",
+        "exclude_refs": [
+          "S007"
+        ]
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-077",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "第二个",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "resolve",
+      "product_id": "S008",
+      "products": [
+        {
+          "product_id": "S007",
+          "name": "模拟青石01A"
+        },
+        {
+          "product_id": "S008",
+          "name": "模拟青石01C"
+        }
+      ],
+      "candidates": [
+        "S007",
+        "S008"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-078",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "模拟青石01A",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "resolve",
+      "product_id": "S007",
+      "products": [
+        {
+          "product_id": "S007",
+          "name": "模拟青石01A"
+        },
+        {
+          "product_id": "S008",
+          "name": "模拟青石01C"
+        }
+      ],
+      "candidates": [
+        "S007",
+        "S008"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-079",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "青石01",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "ambiguity",
+      "products": [
+        {
+          "product_id": "S007",
+          "name": "模拟青石01A"
+        },
+        {
+          "product_id": "S008",
+          "name": "模拟青石01C"
+        }
+      ],
+      "candidates": [
+        "S007",
+        "S008"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-080",
+    "category": "dialogue",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "第三个",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "ambiguity",
+      "products": [
+        {
+          "product_id": "S007",
+          "name": "模拟青石01A"
+        },
+        {
+          "product_id": "S008",
+          "name": "模拟青石01C"
+        }
+      ],
+      "candidates": [
+        "S007",
+        "S008"
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-081",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "模型不能调用授权",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "verify"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-082",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "模型不能调用成交",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "execute"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-083",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "模型不能提升风险",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "set_risk"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-084",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "模型不能指定用户",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "assets",
+        "user_id": "U2"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-085",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "禁止未知工具",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "unknown_tool"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-086",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金额不能为负",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "purchase",
+        "amount_fen": -1
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-087",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "金额不能是字符串",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "purchase",
+        "amount_fen": "300000"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-088",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "模型不能携带JWT",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "assets",
+        "jwt": "fictional"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-089",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不接收密码字段",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "purchase",
+        "password": "fictional"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-090",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "禁止超5产品参数",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "intent_schema",
+      "payload": {
+        "intent": "compare",
+        "product_refs": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-091",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不能在研究接口设置故障",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "research_schema",
+      "payload": {
+        "fault": "timeout"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-092",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不能覆盖研究主体",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "research_schema",
+      "payload": {
+        "subject_user_id": "U2"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-093",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不能传入模型URL",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "research_schema",
+      "payload": {
+        "url": "http://example.invalid"
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-094",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "分页不能无界",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "research_schema",
+      "payload": {
+        "page_size": 99999
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-095",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "净值不得为负",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "history",
+      "records": [
+        {
+          "净值日期": "2026-09-01",
+          "单位净值": -1
+        }
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-096",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "未来观察不进入快照",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "history",
+      "records": [
+        {
+          "净值日期": "2026-10-01",
+          "单位净值": 1
+        }
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-097",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "重复日期拒绝",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "history",
+      "records": [
+        {
+          "净值日期": "2026-09-01",
+          "单位净值": 1
+        },
+        {
+          "净值日期": "2026-09-01",
+          "单位净值": 1
+        }
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-098",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "上游字段漂移拒绝",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "history",
+      "records": [
+        {
+          "date": "2026-09-01",
+          "value": 1
+        }
+      ]
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-099",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不支持远程URL导入格式",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "import",
+      "raw": "{}",
+      "format": "url"
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  },
+  {
+    "id": "V12-100",
+    "category": "safety",
+    "dataset_version": "synthetic-v12:20260930-factor-v1",
+    "input": "不接受没有模式版本的导入",
+    "preconditions": {
+      "mode": "offline_rules",
+      "bank_mutation_allowed": false,
+      "fixture": "explicit in expected specification"
+    },
+    "expected": {
+      "op": "dataset",
+      "payload": {
+        "products": []
+      }
+    },
+    "allowed_citations": [],
+    "forbidden": [
+      "unauthorized_acceptance",
+      "other_user_data",
+      "fabricated_success",
+      "verification_tool"
+    ],
+    "judge": "tests/unit/test_wealth_v12_evaluation.py; compare exact facts and independent golden values"
+  }
+]

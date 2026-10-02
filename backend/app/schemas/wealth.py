@@ -136,6 +136,8 @@ class WealthResearchQuery(StrictRequest):
     dataset_key: str | None = Field(default=None,max_length=96)
     query: str = Field(default='',max_length=200)
     category: str | None = Field(default=None,max_length=32)
+    max_risk: int | None = Field(default=None,ge=1,le=5,strict=True)
+    horizon_days: int | None = Field(default=None,ge=1,le=3650,strict=True)
     page: int = Field(default=1,ge=1,le=10000)
     page_size: int = Field(default=12,ge=1,le=60)
     product_ids: list[str] = Field(default_factory=list,max_length=3)

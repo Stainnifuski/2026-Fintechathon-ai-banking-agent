@@ -49,6 +49,9 @@ async def test_immutable_import_cash_context_and_future_visibility(store):
         await research.select_context(db,'U1','legacy-v1',2)
         assert len(await bank.products(db,'U1'))==8
         assert (await db.get(AccountORM,created['account_id'])).balance_fen==2000000
+        from backend.app.services.bank.transfer_service import validate_transfer_parties
+        with pytest.raises(BankError,match='沙箱'):
+            await validate_transfer_parties(db,subject_user_id='U1',from_account=created['account_id'],to_account='A2')
 
 
 @pytest.mark.asyncio

@@ -83,3 +83,21 @@ def concentration(holdings: list[dict]) -> dict:
             "overconcentrated_families":[k for k,v in families.items() if total and v*100>total*60],
             "underlying_exposure":None,"unavailable_reason":"NO_VERIFIED_UNDERLYING_HOLDINGS",
             "notice":"A/C同家族合并；当前权重历史假设不等于实际持仓收益，现金流不能当作投资回报"}
+
+
+def hypothetical_portfolio(products: list[dict], weights_fen: dict[str,int], as_of: str, period: str='1y') -> dict:
+    """Fixed initial allocations and units, no invented rebalancing or actual cash-flow return."""
+    total=sum(weights_fen.values())
+    if total<=0 or any(type(v) is not int or v<0 for v in weights_fen.values()): raise ValueError('INVALID_PORTFOLIO_WEIGHTS')
+    by_id={p['product_id']:p for p in products}
+    missing=[pid for pid,v in weights_fen.items() if v and (pid not in by_id or not by_id[pid]['history'])]
+    if missing: return {'metrics':None,'missing_products':missing,'unavailable_reason':'MISSING_COMPONENT_HISTORY'}
+    components=[by_id[pid] for pid,v in weights_fen.items() if v]
+    histories=[window(p['history'],as_of,period) for p in components]
+    common=sorted(set.intersection(*[set(r['date'] for r in h) for h in histories])) if histories else []
+    if len(common)<2: return {'metrics':None,'unavailable_reason':'INSUFFICIENT_COMMON_OBSERVATIONS'}
+    normalized={p['product_id']:{r['date']:Decimal(r['nav']) for r in h} for p,h in zip(components,histories)}
+    series=[{'date':day,'nav':str(sum(Decimal(weights_fen[pid])/total*prices[day]/prices[common[0]] for pid,prices in normalized.items()))} for day in common]
+    return {'metrics':metrics(series,as_of=as_of,period=period),'history':series,'weights_fen':weights_fen,
+        'basis':'fixed_initial_units_unit_nav_hypothesis_not_actual_portfolio_return','as_of':as_of,'datasets':sorted({p['dataset_key'] for p in components}),
+        'notice':'假设起点固定投入与份额；不计申赎费用和后续现金流，不是实际持仓收益；分红未复权'}

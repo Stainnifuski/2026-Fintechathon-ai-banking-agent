@@ -183,6 +183,8 @@ async def owned_authorization(db: AsyncSession, user_id: str, authorization_id: 
     if row.status != "CONSUMED" and aware(row.expires_at) <= datetime.now(timezone.utc):
         raise WealthPolicyError("确认已过期，请创建新的订单预览", "AUTHORIZATION_EXPIRED")
     await require_current_plan(db, user_id, InvestmentCommand.model_validate(row.command))
+    if row.status=='EXPIRED':
+        raise WealthPolicyError('旧预览已失效，请核对最新参数重新预览','AUTHORIZATION_EXPIRED',409)
     return row
 
 

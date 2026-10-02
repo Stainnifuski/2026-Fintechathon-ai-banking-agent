@@ -63,5 +63,22 @@ async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,
     finally:
         target=os.getenv('WEALTH_LIVE_EVIDENCE')
         if target:
-            p=Path(target+'-'+str(store.kw.get('bind','db')) if False else target); p.parent.mkdir(parents=True,exist_ok=True)
+            p=Path(target); p.parent.mkdir(parents=True,exist_ok=True)
             p.write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
+
+
+@pytest.mark.asyncio
+async def test_actual_model_http_failure_does_not_create_order(store,http_store,monkeypatch):
+    from sqlalchemy import select,func
+    from backend.app.models.wealth import WealthOrderORM,WealthAuthorizationORM
+    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('WEALTH_MODEL_NAME','nonexistent-wealth-validation-model')
+    client,_,_=http_store
+    async with store() as db:
+        created=await research.initialize(db,'U1'); await db.commit(); await research.select_context(db,'U1',created['context_id'],1)
+    result=await client.post('/api/v1/wealth/messages',json={'message':'我想看看产品','client_message_id':uuid4().hex})
+    assert result.status_code==200 and result.json()['kind']=='model_unavailable',result.text
+    assert 'command' not in result.json()
+    async with store() as db:
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+        assert await db.scalar(select(func.count()).select_from(WealthAuthorizationORM))==0

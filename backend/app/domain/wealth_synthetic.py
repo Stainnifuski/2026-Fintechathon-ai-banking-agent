@@ -46,7 +46,7 @@ def generate(seed: int = SEED, end: str = "2027-12-31") -> dict:
                 share="A" if j%2==0 else "C"
                 start=date(2026,4,1) if serial in {9,10,35,36,59,60} else days[0]
                 family_rng=random.Random(f"{seed}:{family}")
-                price=Decimal("1"); history=[]
+                price=Decimal("1"); history=[]; recent_income=[]
                 bank_category=("cash" if j<4 else "mixed" if j>=12 else "bond") if group=="bank_wealth" else category
                 product_risk=1 if bank_category=="cash" else (3 if bank_category=="mixed" else risk)
                 load={"cash":("0","0.04","0","0.04"),"bond":("0.04","0.78","0.2","0.08"),
@@ -62,7 +62,9 @@ def generate(seed: int = SEED, end: str = "2027-12-31") -> dict:
                     item={"date":day.isoformat(),"nav":format(price,".8f"),"published_at":day.isoformat()+"T18:00:00+08:00",
                           "available_at":day.isoformat()+"T18:00:00+08:00","dividend_per_unit":"0"}
                     if bank_category=="cash":
-                        item.update(income_per_10000=format(daily*10000,".4f"),seven_day_annualized=format(daily*365*100,".4f"))
+                        recent_income.append(daily)
+                        item.update(income_per_10000=format(daily*10000,".4f"),seven_day_annualized=format(sum(recent_income[-7:])/7*365*100,".4f") if len(recent_income)>=7 else None,
+                            income_basis='last_7_simulated_business_observations_simple_annualization')
                     history.append(item)
                 lock=(0,30,90,180)[j%4] if group=="bank_wealth" else 0
                 subtype=("short_bond","pure_bond","convertible_bond")[j%3] if group=="bond" else group

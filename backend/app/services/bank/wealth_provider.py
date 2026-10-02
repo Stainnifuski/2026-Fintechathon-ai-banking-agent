@@ -91,6 +91,26 @@ def parse_import(raw: bytes,format: str) -> dict:
     return {"schema_version":1,"dataset_id":did,"dataset_version":version,"mode":mode,"as_of":max(r["date"] for r in rows),"products":list(groups.values())}
 
 
+def normalize_macro(records: list[dict], date_field: str, field: str, indicator: str, downloaded: str) -> list[dict]:
+    import re
+    rows={}
+    for row_number, r in enumerate(records,1):
+        if r[field] is None: continue
+        parts=re.findall(r'\d+',str(r[date_field]))
+        if len(parts)<2: raise ValueError(f'MACRO_DATE_ROW_{row_number}')
+        period=f'{int(parts[0]):04}-{int(parts[1]):02}'
+        datetime.fromisoformat(period+'-01')
+        if period>downloaded[:7]: raise ValueError(f'FUTURE_MACRO_ROW_{row_number}')
+        number=Decimal(str(r[field]))
+        if not number.is_finite(): raise ValueError(f'MACRO_VALUE_ROW_{row_number}')
+        # LPR can have several announcements within a month: retain exact day.
+        if len(parts)>=3: period += f'-{int(parts[2]):02}'
+        rows[period]={'period':period,'value':str(number),'unit':'index' if 'pmi' in indicator else 'percent',
+            'published_at':None,'available_at':downloaded,'revision':downloaded,'source':'akshare',
+            'source_url':'https://data.eastmoney.com/cjsj/','definition_break':'M1-definition-2025' if indicator=='m1_yoy' else None}
+    return [rows[k] for k in sorted(rows)]
+
+
 def probe(provider: AKShareProvider,codes=FUNDS) -> dict:
     """有限10份额探测；任何接口失败保留真实失败，不合成补齐。"""
     name=provider.fetch("fund_name_em"); status=provider.fetch("fund_purchase_em")
@@ -126,8 +146,9 @@ def probe(provider: AKShareProvider,codes=FUNDS) -> dict:
             date_field=next((f for f in ("TRADE_DATE","日期","月份","统计时间","时间") if f in raw["columns"]),None)
             if not field or not date_field:
                 report.append({"method":method,"indicator":indicator,"ok":False,"error_type":"MACRO_SCHEMA_DRIFT"}); continue
-            observations=[{"period":str(r[date_field]),"value":str(r[field]),"unit":"percent" if "pmi" not in indicator else "index",
-                "published_at":None,"available_at":raw["finished_at"],"revision":raw["finished_at"],"source":"akshare","definition_break":"M1-definition-2025" if indicator=="m1_yoy" else None} for r in raw["records"] if r[field] is not None]
+            try: observations=normalize_macro(raw['records'],date_field,field,indicator,raw['finished_at'])
+            except ValueError as exc:
+                report.append({'method':method,'indicator':indicator,'ok':False,'error_type':str(exc)}); continue
             macros.append({"indicator":indicator,"observations":observations})
     now=datetime.now(timezone.utc).isoformat()
     dataset={"schema_version":1,"dataset_id":"real-funds","dataset_version":now.replace(":","").replace(".",""),"mode":"snapshot",

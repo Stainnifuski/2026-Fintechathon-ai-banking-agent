@@ -14,7 +14,6 @@ from . import wealth_research as research
 
 async def sync(url: str, report: dict) -> dict:
     engine=create_async_engine(url)
-    async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
     sessions=async_sessionmaker(engine,expire_on_commit=False)
     async with sessions() as db:
         result=await research.import_dataset(db,report["dataset"])
@@ -23,6 +22,8 @@ async def sync(url: str, report: dict) -> dict:
                 rid=result["dataset_key"]+":"+row["indicator"]
                 if await db.get(WealthMacroORM,rid) is None: db.add(WealthMacroORM(record_id=rid,dataset_key=result["dataset_key"],indicator=row["indicator"],observations=row["observations"]))
         await db.commit()
+        failures=[{k:v for k,v in r.items() if k in {'method','code','indicator','error_type'}} for r in report['report'] if not r.get('ok')]
+        result.update(import_ok=result['ok'],ok=result['ok'] and not failures,source_failures=failures,partial=bool(failures))
     await engine.dispose()
     return result
 
@@ -33,7 +34,6 @@ async def claim_job(url: str,job_id: str) -> bool:
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     engine=create_async_engine(url)
-    async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
     sessions=async_sessionmaker(engine,expire_on_commit=False)
     async with sessions() as db:
         now=datetime.now(timezone.utc); lease=now+timedelta(minutes=40)
@@ -64,6 +64,14 @@ async def run(args):
         from .wealth_provider import AKShareProvider,probe
         if not args.live: raise ValueError("EXPLICIT_LIVE_REQUIRED")
         if args.action=="worker" and os.getenv("WEALTH_MARKET_SYNC_ENABLED")!="true": raise ValueError("SYNC_DISABLED")
+        if args.action!='probe':
+            from sqlalchemy import text
+            setup=create_async_engine(url)
+            async with setup.begin() as conn:
+                if conn.dialect.name=='postgresql': await conn.execute(text('SELECT pg_advisory_xact_lock(120260930)'))
+                else: await conn.exec_driver_sql('BEGIN IMMEDIATE')
+                await conn.run_sync(Base.metadata.create_all)
+            await setup.dispose()
         while True:
             job_id="funds-macro-"+datetime.now(timezone.utc).date().isoformat()
             if args.action=="probe" or await claim_job(url,job_id):
@@ -71,7 +79,8 @@ async def run(args):
                 output=Path(args.output).resolve()
                 if output.is_symlink(): raise ValueError("OUTPUT_SYMLINK_DENIED")
                 output.parent.mkdir(parents=True,exist_ok=True); output.write_text(json.dumps(report,ensure_ascii=False),encoding="utf-8")
-                result=await sync(url,report) if args.action!="probe" else {"ok":True,"probe_only":True}
+                if args.action!='probe': report['dataset']['mode']='live_sync'
+                result=await sync(url,report) if args.action!="probe" else {"ok":not any(not r.get('ok') for r in report['report']),"probe_only":True}
                 if args.action!="probe": await finish_job(url,job_id,result)
                 print(json.dumps({"result":result,"source_results":[{k:v for k,v in r.items() if k!="records"} for r in report["report"]]},ensure_ascii=False))
             else: print(json.dumps({"job_id":job_id,"status":"ALREADY_CLAIMED_OR_SUCCEEDED"}))
@@ -86,7 +95,7 @@ async def run(args):
             from .wealth_fixtures import initialize_all
             result=await initialize_all(db)
         elif args.action=="init":
-            result=await research.initialize(db,args.user_id,args.scenario,0 if args.scenario=="insufficient_cash" else 2000000)
+            result=await research.initialize(db,args.user_id,args.scenario,0 if args.scenario=="insufficient_cash" else 2000000,args.dataset_key)
         elif args.action=="import":
             from .wealth_provider import parse_import
             root=Path(args.import_root).resolve(); path=(root/args.file).resolve()
@@ -100,12 +109,17 @@ async def run(args):
             if args.action=="clock":
                 at=datetime.fromisoformat(args.business_at)
                 if at.tzinfo is None or at<datetime.fromisoformat(row.data["business_at"]): raise ValueError("CLOCK_MUST_ADVANCE")
-                row.data={**row.data,"business_at":at.isoformat()}; result={"context_id":row.context_id,"business_at":at.isoformat()}
+                before=row.data['business_at']; row.data={**row.data,"business_at":at.isoformat()}
+                from .audit_service import record_bank_event
+                record_bank_event(db,event_key=f'{row.context_id}:clock:{at.isoformat()}',subject_user_id=row.user_id,action='investment_sandbox_clock',result='success',facts={'context_id':row.context_id,'before':before,'business_at':at.isoformat()},decision_chain=['explicit_disposable_context','monotonic_business_clock','security_clock_unchanged'])
+                result={"context_id":row.context_id,"business_at":at.isoformat()}
             elif args.action=="reset":
                 from ...models.wealth import WealthOrderORM,WealthLotORM
                 pending=await db.scalar(select(WealthOrderORM.operation_id).where(WealthOrderORM.account_id==row.account_id,WealthOrderORM.status.not_in(["CANCELLED","SETTLED","REJECTED"])))
                 holdings=await db.scalar(select(WealthLotORM.lot_id).where(WealthLotORM.account_id==row.account_id,WealthLotORM.units_scaled>0))
                 if pending or holdings: raise ValueError("RESET_REFUSED_OPEN_ORDERS_OR_HOLDINGS")
+                if args.dry_run:
+                    print(json.dumps({'context_id':row.context_id,'account_id':row.account_id,'would_issue_cash_fen':2000000,'history_retained':True,'dry_run':True})); await engine.dispose(); return
                 if not args.confirm_reset: raise ValueError("RESET_EXPLICIT_CONFIRMATION_REQUIRED")
                 from ...models.account import AccountORM
                 account=await db.get(AccountORM,row.account_id); before=account.balance_fen; account.balance_fen=2000000; row.version+=1
@@ -123,6 +137,7 @@ def main():
     p=argparse.ArgumentParser(); p.add_argument("action",choices=["init","scenarios","import","probe","sync","worker","clock","reset"])
     p.add_argument("--user-id",default="U001"); p.add_argument("--scenario",default="normal"); p.add_argument("--context-id"); p.add_argument("--business-at")
     p.add_argument("--confirm-reset",action="store_true"); p.add_argument("--import-root",default=".deps/wealth-import"); p.add_argument("--file")
+    p.add_argument('--dataset-key',default=None)
     p.add_argument("--dry-run",action="store_true"); p.add_argument("--live",action="store_true"); p.add_argument("--timeout",type=int,default=35)
     p.add_argument("--interval",type=int,default=3600); p.add_argument("--output",default=".deps/wealth-market/latest-probe.json")
     args=p.parse_args(); asyncio.run(run(args))

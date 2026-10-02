@@ -28,6 +28,15 @@ def validate(payload: dict) -> list[dict]:
             if not isinstance(pid,str) or not 1<=len(pid)<=32 or pid in seen: raise ValueError("IDENTITY_DUPLICATE")
             seen.add(pid)
             if not p.get("name") or p.get("source") not in {"synthetic","akshare","admin_import"}: raise ValueError("SOURCE_MISSING")
+            if p.get('rules_complete'):
+                rules=p['rules']
+                for field in ('currency','min_amount_fen','max_amount_fen','purchase_fee_rate','redeem_fee_bands','holding_days','confirm_business_days','cash_business_days','calendar_version','rules_source','cutoff','cancel_before_pricing','purchase_paused','redeem_paused'): rules[field]
+                if rules['currency']!='CNY' or type(p['risk_level']) is not int or not 1<=p['risk_level']<=5: raise ValueError('INVALID_SUITABILITY_RULES')
+                if p['category'] not in {'cash','bond','mixed','equity','index'}: raise ValueError('INVALID_CATEGORY')
+                if any(type(rules[k]) is not int or rules[k]<0 for k in ('min_amount_fen','max_amount_fen','holding_days','confirm_business_days','cash_business_days')) or rules['min_amount_fen']>rules['max_amount_fen']: raise ValueError('INVALID_AMOUNT_RULES')
+                if not 0<=Decimal(rules['purchase_fee_rate'])<1: raise ValueError('INVALID_FEE_RULES')
+                if not rules['redeem_fee_bands'] or any(not 0<=Decimal(b['rate'])<1 or b['days_lt']<=0 for b in rules['redeem_fee_bands']): raise ValueError('INVALID_FEE_RULES')
+                for field in ('kind','product_version','disclosure_version'): p[field]
             last=None
             for point in p["history"]:
                 d=date.fromisoformat(point["date"])
@@ -108,7 +117,9 @@ async def select_context(db: AsyncSession,user_id: str,context_id: str,version: 
     await db.execute(update(WealthAuthorizationORM).where(WealthAuthorizationORM.user_id==user_id,WealthAuthorizationORM.status.in_(["AWAITING_CONFIRMATION","AWAITING_MFA","VALID"])).values(status="EXPIRED"))
     conversations=(await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id==user_id))).all()
     for conv in conversations:
-        conv.version+=1; conv.data={**conv.data,"pending":None,"candidates":[],"active_command":None,"active_plan":None,"context_id":context_id}
+        conv.version+=1; conv.data={**conv.data,'history_archive':[*conv.data.get('history_archive',[]),*conv.data.get('history',[])][-40:],'history':[],"pending":None,"candidates":[],"active_command":None,"active_plan":None,"context_id":context_id,'account_id':None}
+    from ...models.wealth import WealthPlanORM
+    await db.execute(update(WealthPlanORM).where(WealthPlanORM.user_id==user_id,WealthPlanORM.status.in_(['DRAFT','AWAITING_CONFIRMATION'])).values(status='EXPIRED'))
     await db.commit()
     return {"context_id":context_id,"version":row.version}
 
@@ -121,11 +132,23 @@ async def context_list(db: AsyncSession,user_id: str) -> dict:
             {"context_id":r.context_id,"account_id":r.account_id,"dataset_key":r.dataset_key,**r.data} for r in rows]}
 
 
-async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balance_fen: int=2000000) -> dict:
+async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balance_fen: int=2000000,dataset_key: str | None=None) -> dict:
     """管理员显式初始化一次；切换不创建或复制余额。"""
     from ...domain.wealth_scenarios import SCENARIOS
     if scenario not in SCENARIOS: raise ValueError('SCENARIO_UNKNOWN')
     fixture=SCENARIOS[scenario]
+    if dataset_key and dataset_key!=f'{DATASET_ID}:{DATASET_VERSION}':
+        dataset=await db.get(WealthDatasetORM,dataset_key)
+        if dataset is None or dataset.mode not in {'snapshot','live_sync'} or scenario!='normal': raise ValueError('RESEARCH_DATASET_REQUIRED')
+        cid='CTX'+fingerprint([user_id,dataset_key,'research'])[:28]
+        if await db.get(WealthContextORM,cid): return {'context_id':cid,'created':False}
+        aid='SA'+fingerprint([cid,'account'])[:28]
+        db.add(AccountORM(account_id=aid,user_id=user_id,account_type='savings',card_number='模拟研究****'+aid[-4:],balance_fen=balance_fen,daily_transfer_used_fen=0,daily_transfer_limit_fen=5000000,status='active'))
+        await db.flush()
+        db.add(WealthContextORM(context_id=cid,user_id=user_id,account_id=aid,dataset_key=dataset_key,version=1,data={'label':'真实基金数据｜研究演示｜模拟资金','mode':dataset.mode,'scenario':'research','fixture':{},'disposable':True,'business_at':datetime.now(timezone.utc).isoformat()}))
+        from .audit_service import record_bank_event
+        record_bank_event(db,event_key=cid,subject_user_id=user_id,action='investment_research_sandbox_initialize',result='success',facts={'context_id':cid,'issued_simulated_cash_fen':balance_fen,'dataset_key':dataset_key},decision_chain=['explicit_admin_initialization','new_account_no_balance_copy','research_only_rules_missing'])
+        await db.flush(); return {'context_id':cid,'account_id':aid,'created':True}
     key=f"{DATASET_ID}:{DATASET_VERSION}"
     if await db.get(WealthDatasetORM,key) is None:
         result=await import_dataset(db,generate())

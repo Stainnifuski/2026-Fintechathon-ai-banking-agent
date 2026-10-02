@@ -1,7 +1,7 @@
 """4号理财事实服务；受理、占款、计价、到账与审计事务一致。"""
 
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 from uuid import uuid4
@@ -226,6 +226,8 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
             "nav": price.price if price else None, "nav_date": price.nav_date.isoformat() if price else None,
             "fund_family_id": row.rules.get("fund_family_id", product.product_id),
             "dataset_key": dataset_key if context else "legacy-v1",
+            "purchase_open": (now.astimezone(TZ).date()-date(2026,9,30)).days % row.rules.get('open_interval_days',1) == 0,
+            "data_stale": bool(context and price and now.astimezone(TZ).date()>advance_business(price.nav_date,3,row.rules['calendar_version'])),
             "notice": "比赛模拟环境／模拟资金；历史净值不代表未来收益"})
     return result
 
@@ -548,10 +550,16 @@ async def assets(db: AsyncSession, user_id: str) -> dict:
     orders = [row for row in orders if row.account_id in allowed_accounts]
     receivable = sum(row.details["actual"]["cash_fen"] for row in orders if row.status == "PENDING_CASH")
     realized = sum(row.details.get("actual", {}).get("realized_pnl_fen", 0) for row in orders if row.direction == "redeem")
-    from ...domain.wealth_analytics import concentration
+    from ...domain.wealth_analytics import concentration, hypothetical_portfolio
     concentration_view=concentration([{**lot,'amount_fen':lot['market_value_fen'] or 0} for lot in lots])
+    hypothesis=None
+    if context and lots and all(lot['market_value_fen'] is not None for lot in lots):
+        from .wealth_research import catalog
+        weights={}
+        for lot in lots: weights[lot['product_id']]=weights.get(lot['product_id'],0)+lot['market_value_fen']
+        hypothesis=hypothetical_portfolio(await catalog(db,context.dataset_key),weights,now.astimezone(TZ).date().isoformat())
     return {"cash": cash, "lots": lots, "orders": [order_view(row) for row in orders],
-        'concentration':concentration_view,'actual_return_unavailable_reason':'NO_VERIFIED_COMPLETE_CASHFLOW_RETURN_SERIES',
+        'concentration':concentration_view,'historical_hypothesis':hypothesis,'actual_return_unavailable_reason':'NO_VERIFIED_COMPLETE_CASHFLOW_RETURN_SERIES',
         "receivable_fen": receivable, "realized_pnl_fen": realized,
         "bank_assets_fen": sum(a["balance_fen"] for a in cash if a["account_type"] != "credit") + receivable
             + sum(lot["market_value_fen"] or 0 for lot in lots),

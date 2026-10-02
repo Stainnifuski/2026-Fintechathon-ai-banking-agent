@@ -121,6 +121,8 @@ async def create_payment_request(
             raise BankError("申请人或付款人不存在", "CUSTOMER_NOT_FOUND", 404)
         if requester.status != "active" or payer.status != "active":
             raise BankError("申请人或付款人当前不可用", "CUSTOMER_INACTIVE", 403)
+        from .transfer_service import require_ordinary_accounts
+        await require_ordinary_accounts(session,[receive_account_id])
         receive_account = await session.get(AccountORM, receive_account_id)
         if receive_account is None:
             raise BankError("收款账户不存在", "ACCOUNT_NOT_FOUND", 404)

@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from ...domain import BankOperationStatus, fen_to_yuan
 from ...models.account import AccountORM
+from ...models.wealth_research import WealthContextORM
 from ...models.bank_operation import BankOperationORM
 from ...models.payment_request import PaymentRequestORM
 from ...models.payment_request_payment import PaymentRequestPaymentORM
@@ -150,6 +151,13 @@ def _result(operation: BankOperationORM) -> BankOperationResult:
     )
 
 
+async def require_ordinary_accounts(db: AsyncSession,account_ids: list[str]) -> None:
+    """Investment sandboxes cannot export issued fixture cash into ordinary transfers."""
+    from ...models.wealth_research import WealthContextORM
+    if await db.scalar(select(WealthContextORM.context_id).where(WealthContextORM.account_id.in_(account_ids))) is not None:
+        raise BankError('理财沙箱资金不可用于普通转账或AA','ACCOUNT_CONTEXT_UNSUPPORTED',409)
+
+
 async def validate_transfer_parties(
     db: AsyncSession,
     *,
@@ -159,6 +167,7 @@ async def validate_transfer_parties(
     recipient_phone: str | None = None,
 ) -> TransferValidationResult:
     """校验付款/收款账户并返回编排所需的最小银行事实。"""
+    await require_ordinary_accounts(db,[from_account,to_account])
     rows = (
         await db.execute(
             select(AccountORM, UserORM)
@@ -212,6 +221,7 @@ async def resolve_transfer_parties(
             .where(
                 AccountORM.user_id == subject_user_id,
                 AccountORM.status == "active",
+                AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
             )
             .order_by(AccountORM.account_id)
         )
@@ -228,6 +238,7 @@ async def resolve_transfer_parties(
                 UserORM.user_id != subject_user_id,
                 UserORM.status == "active",
                 AccountORM.status == "active",
+                AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
             )
             .order_by(AccountORM.account_id)
         )
@@ -325,6 +336,7 @@ async def submit_transfer(
             raise BankError("付款或收款账户不存在", "ACCOUNT_NOT_FOUND", 404)
         sender, sender_user = sender_row
         receiver, receiver_user = receiver_row
+        await require_ordinary_accounts(db,[command.from_account,command.to_account])
         if sender.user_id != context.subject_user_id:
             raise BankError("无权使用付款账户", "PAYER_FORBIDDEN", 403)
         if sender_user.status != "active" or receiver_user.status != "active":
@@ -478,7 +490,7 @@ async def transfer_directory(
     if subject is None or subject.status != "active":
         raise BankError("付款用户不可用", "PAYER_INACTIVE", 403)
     payers = (await db.execute(select(AccountORM).where(
-        AccountORM.user_id == subject_user_id, AccountORM.status == "active"
+        AccountORM.user_id == subject_user_id, AccountORM.status == "active",AccountORM.account_id.not_in(select(WealthContextORM.account_id))
     ).order_by(AccountORM.account_id))).scalars().all()
 
     users = (await db.execute(select(UserORM).where(
@@ -502,7 +514,7 @@ async def transfer_directory(
     users = [user for user in users if user.status == "active"]
     user_ids = [user.user_id for user in users]
     accounts = (await db.execute(select(AccountORM).where(
-        AccountORM.user_id.in_(user_ids), AccountORM.status == "active"
+        AccountORM.user_id.in_(user_ids), AccountORM.status == "active",AccountORM.account_id.not_in(select(WealthContextORM.account_id))
     ).order_by(AccountORM.user_id, AccountORM.account_id))).scalars().all() if user_ids else []
     by_id = {user.user_id: user for user in users}
     return {

@@ -29,7 +29,7 @@ def resolve(ref: str,products: list[dict],candidate_ids: list[str]) -> str:
 
 def offline(text: str) -> Intent:
     from .wealth import parse_money
-    refs=re.findall(r'\b(?:S\d{3}|M[WF]\d{3}|R\d{6})\b',text.upper())
+    refs=re.findall(r'(?<![A-Z0-9])(?:S\d{3}|M[WF]\d{3}|R\d{6})(?![A-Z0-9])',text.upper())
     refs+=re.findall(r'第[一二三四五六七八九十0-9]+个',text)
     money=r'([0-9]+(?:\.\d{1,2})?[百千万]?|[一二两三四五六七八九十][百千万]?)'
     def match(prefix):
@@ -71,6 +71,11 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     response={'mode':mode,'kind':'clarification','message':'请明确需求；需要预算、保留现金、预计使用期限和用途，交易只在可信卡片确认。'}
     candidate_ids=data.get('candidates',[])
     active=data.get('active_command')
+    # A single active order plus an unqualified amount correction modifies that order.
+    # Models occasionally label it as budget; bind it to the explicit active action,
+    # never reinterpret an explicitly stated plan budget or reserve.
+    if active and intent.intent=='modify' and intent.amount_fen is None and intent.budget_fen is not None and re.search('改成|改为',text) and not re.search('预算|配置|保留|留现金',text):
+        intent=intent.model_copy(update={'amount_fen':intent.budget_fen,'budget_fen':None})
     refs=[active['product_id'] if r in {'它','这个','刚才那个','刚才那笔'} and active else resolve(r,products,candidate_ids) for r in intent.product_refs]
     slots=dict(data.get('pending') or {})
     for name in ('budget_fen','reserve_fen','horizon_days','need'):
@@ -174,6 +179,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
     data=dict(session.data) if session else {'history':[],'pending':{},'candidates':[]}
     await db.rollback()
     row=await claim(db,user_id,client_message_id,digest)
+    evidence={}
     try:
         products,facts=await bank.products(user_id),await bank.assets(user_id)
         contexts=await bank.call('POST','/contexts',{'subject_user_id':user_id})
@@ -189,7 +195,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
             intent,evidence=await understand(text,context)
         else: intent=offline(text)
         response=await action(db,user_id,bank,text,intent,data,products,facts,contexts,mode)
-        response.update(model_evidence=evidence,client_message_id=client_message_id)
+        response.update(model_evidence=evidence,intent=intent.model_dump(),client_message_id=client_message_id)
     except WealthPolicyError as error:
         await db.rollback(); response={'mode':mode,'kind':'assessment_required' if 'ASSESSMENT' in error.code else 'clarification','code':error.code,'message':error.message}
     except Exception as error:
@@ -205,7 +211,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
         raise WealthPolicyError('处理期间会话发生变化，请刷新','STALE_PLAN',409)
     if session is None: session=WealthConversationORM(session_id=sid,user_id=user_id,version=1,data={}); db.add(session)
     else: session.version+=1
-    response.update(session_id=sid,version=session.version)
+    response.update(session_id=sid,version=session.version,model_evidence=evidence)
     data['history']=[*data.get('history',[]),{'user':text,'reply':response}][-20:]; session.data=data
     row=await db.get(WealthChatRequestORM,key); row.status='DONE'; row.response=response
     await db.commit()

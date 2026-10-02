@@ -29,7 +29,7 @@ def candidates(products: list[dict], capacity: int, horizon_days: int,
     rows = [p for p in products if p["product_risk_level"] <= capacity and p["status"] == "on_sale"
         and p["product_id"] not in excluded and not p["rules"]["purchase_paused"]
         and liquidity_days(p) <= horizon_days
-        and p["nav"] is not None]
+        and p["nav"] is not None and p.get('purchase_open', True) and not p.get('data_stale', False)]
     return sorted(rows, key=lambda p: (p["product_risk_level"], Decimal(p["rules"]["purchase_fee_rate"]),
         p["rules"]["holding_days"], p["rules"]["cash_business_days"], p["product_id"]))
 

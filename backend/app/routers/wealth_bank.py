@@ -53,6 +53,8 @@ class ResearchQuery(Subject):
     dataset_key: str | None = Field(default=None,max_length=96)
     query: str = Field(default="",max_length=200)
     category: str | None = Field(default=None,max_length=32)
+    max_risk: int | None = Field(default=None,ge=1,le=5,strict=True)
+    horizon_days: int | None = Field(default=None,ge=1,le=3650,strict=True)
     page: int = Field(default=1,ge=1,le=10000)
     page_size: int = Field(default=12,ge=1,le=60)
     product_ids: list[str] = Field(default_factory=list,max_length=3)
@@ -93,6 +95,8 @@ async def research_query(request: ResearchQuery,db: AsyncSession=Depends(get_db)
     datasets=(await db.scalars(select(WealthDatasetORM).order_by(WealthDatasetORM.ingested_at.desc()))).all()
     rows=await research.catalog(db,request.dataset_key)
     rows=[p for p in rows if (not request.category or p.get('category')==request.category) and (not request.query or request.query.casefold() in (p['name']+' '+p['product_id']).casefold())]
+    from ..domain.wealth_allocation import liquidity_days
+    rows=[p for p in rows if (request.max_risk is None or (p.get('risk_level') is not None and p['risk_level']<=request.max_risk)) and (request.horizon_days is None or (p.get('rules') and liquidity_days(p)<=request.horizon_days))]
     total=len(rows)
     as_of=max((p['nav_date'] for p in rows if p['nav_date']),default='2026-09-30')
     if request.product_ids:
@@ -105,7 +109,8 @@ async def research_query(request: ResearchQuery,db: AsyncSession=Depends(get_db)
     for p in page:
         p['metrics']=metrics(p['history'],as_of=as_of,period=request.period,dividends_verified=p['source']=='synthetic')
         p['history']=p['history'][-1500:]
-    macros=(await db.scalars(select(WealthMacroORM).where(WealthMacroORM.dataset_key==request.dataset_key))).all() if request.dataset_key else []
+    key=request.dataset_key or (rows[0]['dataset_key'] if rows else None)
+    macros=(await db.scalars(select(WealthMacroORM).where(WealthMacroORM.dataset_key==key))).all() if key else []
     return {'items':page,'total':total,'page':request.page,'page_size':request.page_size,'analysis':analysis,'as_of':as_of,
         'datasets':[{'dataset_key':d.dataset_key,'mode':d.mode,**d.manifest} for d in datasets],
         'macros':[{'indicator':m.indicator,'observations':m.observations[-24:]} for m in macros]}
@@ -173,7 +178,13 @@ async def demo_verify(request: DemoVerify, db: AsyncSession = Depends(get_db)) -
 async def submit(request: InternalInvestmentSubmission, db: AsyncSession = Depends(get_db)) -> dict:
     """银行独立核验强授权证据后受理。"""
     try:
-        return (await bank.accept_many(db, request.subject_user_id, [(request.command, request.authorization_id)]))[0]
+        result=(await bank.accept_many(db, request.subject_user_id, [(request.command, request.authorization_id)]))[0]
+        from ..models.wealth_research import WealthContextORM
+        from sqlalchemy import select
+        ctx=await db.scalar(select(WealthContextORM).where(WealthContextORM.account_id==request.command.account_id))
+        if ctx and ctx.data.get('fixture',{}).get('lose_submit_response'):
+            raise HTTPException(502,detail={'code':'BANK_RESULT_UNKNOWN','message':'固定演示场景：受理后响应丢失，请按原操作号查询'})
+        return result
     except (BankError, WealthPolicyError) as error:
         await db.rollback()
         fail(error)
