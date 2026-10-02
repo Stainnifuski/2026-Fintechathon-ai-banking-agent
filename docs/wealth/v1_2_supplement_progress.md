@@ -17,9 +17,9 @@
 
 [本轮验收](../validation/wealth_v1_2_supplement_20261002.md)，[原阶段记录](../validation/wealth_v1_2_20261002.md)，[数据运行指南](preload_and_directory.md)。旧记录只证明当时版本，不能代替本轮。
 
-## 剩余发布步骤
+## 完成交付
 
-功能f178598/d448bfc和文档fb0ede1已提交；清理220文件/两个停止容器，配置/账务/有效来源和未知备份保留。清理后新容器336 passed/6 live skipped、干净前端构建通过。当前仅剩：获取最新main，检查文本和语义冲突，复验受影响部分；按已有授权正常推送，最后核对SHA并停留main。发布结果以Git记录为准。
+功能f178598/d448bfc和文档fb0ede1已提交；清理220文件/两个停止容器，配置/账务/有效来源和未知备份保留。清理后新容器336 passed/6 live skipped、干净前端构建通过。最新main没有增量或语义冲突；成果已快进main并正常推送752aa0efb4095a5bcee35a7028b21ec40009c8a5。随后仅收口文档导航和状态，最终提交号以Git记录及交付消息为准。工作目录停留main。
 
 ## 阻塞与限制
 
@@ -32,3 +32,4 @@
 ## 最终发布前核对
 2026-10-02再次fetch origin/main，仍为077ccd29100a317a3ed170840c43bdd8b8e54b26，是成果分支祖先；main没有本地独有提交。GitHub main protected=false、required status checks=off。没有新增队友改动或文本/语义合并冲突，沿用清理后336 passed/6 live skipped、干净前端构建和本轮实际模型/浏览器证据。运行配置/数据库跟踪数0，长API密钥扫描命中0。功能、文档及清理已独立提交，按既有授权快进本地main并正常推送；最终远端SHA以交付消息/Git记录为准。
 
+本地兼容banking_agent.db停止跟踪后，在main快进时恢复最后已跟踪检查点077ccd2的副本并通过SQLite integrity_check；现用Docker/PG账务及原始演示卷未替换。配置、密钥、有效研究缓存和未知历史备份继续保留。

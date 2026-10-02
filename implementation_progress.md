@@ -59,4 +59,4 @@
 用户授权完整实现并验收后发布main；当前codex/feature。当前状态、基线、真实探测及待办见[续接记录](docs/wealth/v1_2_progress.md)。尚未完成，不将v1.1结果作为本轮验收。
 
 ## v1.2真实数据补充收尾
-核心提交f178598；全量目录、44真实研究份额＋16官方模板模拟理财、池外缓存、模型和新浏览器申赎已验收。完成/待办/限制以[最新进度](docs/wealth/v1_2_supplement_progress.md)和[本轮验证](docs/validation/wealth_v1_2_supplement_20261002.md)为准；正在执行独立历史清理、干净环境回归及最终main同步发布。
+核心提交f178598；全量目录、44真实研究份额＋16官方模板模拟理财、池外缓存、模型和新浏览器申赎已验收。完成/待办/限制以[最新进度](docs/wealth/v1_2_supplement_progress.md)和[本轮验证](docs/validation/wealth_v1_2_supplement_20261002.md)为准；已完成独立历史清理、新容器336 passed/6 live skipped及干净前端构建；最新main无新增冲突，正常推送752aa0e，当前停留main，最终文档收尾提交见Git log。

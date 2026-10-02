@@ -52,7 +52,7 @@ docker compose up --build
 | 4号模拟银行 | [手机号/备注边界](docs/bank/手机号转账与风险边界.md)、[银行接口交接](docs/bank/接口与数据库交接_v0.5.md) |
 | 账单分析 | [接口与口径](docs/contracts/账单分析_API_v1.md) |
 | 理财数据与研究 | [数据与日更](docs/wealth/data_sources.md)、[分析口径](docs/wealth/analytics.md)、[知识库](docs/wealth/knowledge.md) |
-| v1.2验收与比赛 | [实际验证记录](docs/validation/wealth_v1_2_20261002.md)、[比赛材料与差距](docs/competition/wealth_v1_2.md) |
+| v1.2验收与比赛 | [当前混合池验收](docs/validation/wealth_v1_2_supplement_20261002.md)、[清理与干净复现](docs/validation/development_cleanup_20261002.md)、[比赛材料与差距](docs/competition/wealth_v1_2.md) |
 | 理财开发与联调 | [接口契约](docs/wealth/contract.md)、[设计决策](docs/wealth/decisions.md)、[数据库交接](docs/wealth/handoff.md) |
 | 安全与模拟限制 | [理财安全自评](docs/wealth/security.md)、[模拟授权及统一接口](docs/wealth/simulated_authorization.md) |
 | 验证证据 | [理财原始验收](docs/validation/wealth_20261001.md)、[本次授权调整](docs/validation/wealth_authorization_demo_20261001.md)、[账单验收](docs/validation/bills_20260930.md) |
