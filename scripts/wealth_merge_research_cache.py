@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 
 
-def transfer(source, destination):
+def transfer(source, destination, macros_only=False):
     source = Path(source).resolve(); destination = Path(destination).resolve()
     if source == destination or 'wealth-demo' not in destination.name:
         raise ValueError('ISOLATED_WEALTH_DEMO_DESTINATION_REQUIRED')
@@ -17,7 +17,7 @@ def transfer(source, destination):
     counts = {}
     with sqlite3.connect(source.as_uri()+'?mode=ro', uri=True) as src, sqlite3.connect(destination) as dst:
         src.execute('BEGIN')
-        for table in ('wealth_fund_directory', 'wealth_fund_cache'):
+        for table in (('wealth_macro',) if macros_only else ('wealth_fund_directory', 'wealth_fund_cache')):
             columns = [r[1] for r in dst.execute(f'PRAGMA table_info({table})')]
             if not columns or any(not c.replace('_','').isalnum() for c in columns):
                 raise ValueError('RESEARCH_SCHEMA_REQUIRED')
@@ -31,5 +31,6 @@ def transfer(source, destination):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', required=True); parser.add_argument('--destination', required=True)
+    parser.add_argument('--macros-only', action='store_true')
     args = parser.parse_args()
-    print(transfer(args.source,args.destination))
+    print(transfer(args.source,args.destination,args.macros_only))

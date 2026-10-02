@@ -1,0 +1,7 @@
+[
+  {"id":"MIX-01","template":"cash","question":"现金管理是否保证收益？","expected_identity":"模拟银行理财／官方规则参考"},
+  {"id":"MIX-02","template":"daily","question":"每日开放来源与模拟日期是否区分？","expected_identity":"模拟银行理财／官方规则参考"},
+  {"id":"MIX-03","template":"minimum","question":"最低持有期是否可以提前赎回？","expected_identity":"模拟银行理财／官方规则参考"},
+  {"id":"MIX-04","template":"periodic","question":"定期开放模拟规则是否保留来源变更？","expected_identity":"模拟银行理财／官方规则参考"},
+  {"id":"MIX-05","template":"closed","question":"历史封闭产品是否冒充当前在售？","expected_identity":"模拟银行理财／官方规则参考"}
+]

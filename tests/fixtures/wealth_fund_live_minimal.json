@@ -1,0 +1,69 @@
+{
+  "stage": "v1.2 mixed preload",
+  "provider_version": "1.19.1",
+  "directory": {
+    "ok": true,
+    "columns": [
+      "基金代码",
+      "拼音缩写",
+      "基金简称",
+      "基金类型",
+      "拼音全称"
+    ],
+    "records": [
+      {
+        "基金代码": "000003",
+        "拼音缩写": "ZHKZZZQA",
+        "基金简称": "中海可转债债券A",
+        "基金类型": "债券型-混合二级",
+        "拼音全称": "ZHONGHAIKEZHUANZHAIZHAIQUANA"
+      },
+      {
+        "基金代码": "000004",
+        "拼音缩写": "ZHKZZZQC",
+        "基金简称": "中海可转债债券C",
+        "基金类型": "债券型-混合二级",
+        "拼音全称": "ZHONGHAIKEZHUANZHAIZHAIQUANC"
+      }
+    ],
+    "method": "fund_name_em",
+    "provider_version": "1.19.1",
+    "source_url": "https://fund.eastmoney.com/",
+    "started_at": "2026-10-02T10:27:41.142367-04:00",
+    "finished_at": "2026-10-02T10:27:54.249025-04:00",
+    "attempts": 1
+  },
+  "cache": [
+    {
+      "code": "000003",
+      "data": {
+        "source_product_code": "000003",
+        "source": "akshare",
+        "provider_version": "1.19.1",
+        "source_url": "https://fundf10.eastmoney.com/jjjz_000003.html",
+        "available_at": "2026-10-02T10:41:06.158749-04:00",
+        "published_at": null,
+        "rules_complete": false,
+        "data_type": "history",
+        "observations": [
+          {
+            "date": "2026-05-12",
+            "nav": "1.08500000",
+            "published_at": null,
+            "available_at": "2026-10-02T10:41:06.158749-04:00",
+            "dividend_per_unit": null
+          },
+          {
+            "date": "2026-05-13",
+            "nav": "1.08700000",
+            "published_at": null,
+            "available_at": "2026-10-02T10:41:06.158749-04:00",
+            "dividend_per_unit": null
+          }
+        ]
+      }
+    }
+  ],
+  "purpose": "字段映射最小实际响应样本，非完整行情或交易规则",
+  "captured_at": "2026-10-02"
+}

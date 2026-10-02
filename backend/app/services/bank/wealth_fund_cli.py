@@ -100,7 +100,11 @@ async def run(args):
                         'latest_date': v['data'].get('observations', [{}])[-1].get('date') if v['data'].get('observations') else None}
                         for k, v in evidence['evidence'].items()}})
                 print(json.dumps(results[-1], ensure_ascii=False), flush=True)
-        result = {'products': results, 'ok': all(all(v['status'] == 'READY' for v in r.get('evidence', {}).values()) and r.get('evidence') for r in results)}
+        failures = [{'code':r['code'],'data_type':k,'status':v['status'],'error_code':v['error_code']}
+            for r in results for k,v in r.get('evidence',{}).items() if v['status'] != 'READY']
+        valid_history = all(any(k in {'history','money_yield'} and v['status']=='READY' for k,v in r.get('evidence',{}).items()) for r in results)
+        result = {'products':results,'ok':valid_history,'partial':bool(failures),'source_failures':failures,
+            'acceptance_basis':'successful_history; transaction rules still unreviewed'}
     if args.output:
         output = Path(args.output).resolve(); output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
