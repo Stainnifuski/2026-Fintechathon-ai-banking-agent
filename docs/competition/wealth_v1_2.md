@@ -37,7 +37,7 @@ flowchart TD
 |---|---|---|---|
 | 推荐、评估、申赎及资金调整 | 受控意图＋原有批量方案/银行闭环 | wealth_live_model、wealth_bank/research测试 | 真实银行接入不在范围 |
 | 风险分级、本人确认、强验证 | R1–R5适当性＋可信卡片＋SIMULATED_CLICK | auth/并发/过期/改参回归 | 真实强验证未实现 |
-| 数据、知识、宏观 | 目标44真实基金＋16官方规则模拟理财、全量目录、50篇当前语料、8指标 | fixed manifest、真实AKShare同步、100题评测 | PE/PB及语义embedding条件增强未启用 |
+| 数据、知识、宏观 | 目标44真实基金＋16官方规则模拟理财、全量目录、50篇当前语料、8指标 | fixed manifest、真实AKShare同步、新混合池测试；100题仅为离线契约回归 | PE/PB及语义embedding条件增强未启用 |
 | APP/IM发起/追问/查询/结果 | 可复用messages及卡片契约、授权回跳网页 | contract.md渠道示例 | 独立APP/IM联调和渠道验收未完成 |
 | 来源与原创 | 原创生成器/界面/规则、官方定义摘要 | data_sources、knowledge、THIRD_PARTY_NOTICES | 团队最终版权及官方提交口径审核 |
 
@@ -49,7 +49,7 @@ flowchart TD
 
 1分钟目标与三场景范围；3分钟理财连贯演示；2分钟算法/数据版本；2分钟安全与幂等；1分钟测试；1分钟限制与成员交接。留团队问答节奏，不擅自宣称视频豁免；以最终官方要求核对视频必交/可选差异。
 
-来源：仓库赛题说明、团队工作记忆及用户v1.2任务书；技术来源和开源许可见THIRD_PARTY_NOTICES。实际运行证据见docs/validation/wealth_v1_2_20261002.md。本文为可纳入最终材料的草稿，非团队签字或评委评分。
+来源：仓库赛题说明、团队工作记忆及用户v1.2任务书；技术来源和开源许可见THIRD_PARTY_NOTICES。当前实际运行证据见docs/validation/wealth_v1_2_supplement_20261002.md；前阶段证据见wealth_v1_2_20261002.md。本文为可纳入最终材料的草稿，非团队签字或评委评分。
 
 ## 最新数据方案与评审边界
 

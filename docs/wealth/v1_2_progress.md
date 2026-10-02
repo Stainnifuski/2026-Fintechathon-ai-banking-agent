@@ -1,3 +1,5 @@
+> 本文保留原v1.2合成池开发阶段记录；当前混合池完成/待办以[v1.2补充进度](v1_2_supplement_progress.md)和[最新验收](../validation/wealth_v1_2_supplement_20261002.md)为准。
+
 # 理财 v1.2 实施与续接记录
 
 任务书522行已阅读；用户授权全量开发、有限真实联调和验收后正常推main，不强推、不覆盖队友。工作分支codex/feature，远端最新main仍077ccd29100a317a3ed170840c43bdd8b8e54b26（2026-10-02再次fetch及GitHub核对）。
