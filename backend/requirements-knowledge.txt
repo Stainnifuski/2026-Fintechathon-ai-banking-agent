@@ -1,0 +1,2 @@
+# Optional document nodes; lexical retrieval remains offline without embeddings.
+llama-index-core==0.14.25

@@ -117,7 +117,8 @@ class PlanInput(StrictRequest):
     budget_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
     reserve_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
     horizon_days: int = Field(ge=1, le=3650, strict=True)
-    excluded_products: list[str] = Field(default_factory=list, max_length=8)
+    excluded_products: list[str] = Field(default_factory=list, max_length=60)
+    need: Literal['cash','balanced','growth'] | None = None
 
 
 class PlanVersion(StrictRequest):
@@ -128,6 +129,22 @@ class WealthMessage(StrictRequest):
     message: str = Field(min_length=1, max_length=500)
     session_id: str | None = Field(default=None, max_length=64)
     version: int | None = Field(default=None, ge=1, strict=True)
+    client_message_id: str | None = Field(default=None,min_length=8,max_length=64,pattern=r'^[A-Za-z0-9_-]+$')
+
+
+class WealthResearchQuery(StrictRequest):
+    dataset_key: str | None = Field(default=None,max_length=96)
+    query: str = Field(default='',max_length=200)
+    category: str | None = Field(default=None,max_length=32)
+    page: int = Field(default=1,ge=1,le=10000)
+    page_size: int = Field(default=12,ge=1,le=60)
+    product_ids: list[str] = Field(default_factory=list,max_length=3)
+    period: Literal['1m','3m','1y','since']='1y'
+
+
+class WealthContextChange(StrictRequest):
+    context_id: str = Field(max_length=64)
+    version: int = Field(ge=1)
 
 
 class AdoptItem(StrictRequest):

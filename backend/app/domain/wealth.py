@@ -103,31 +103,33 @@ def redeem(quantity: str, price: str, fee_rate: str, *, lot_units: str,
                                      cost, cash - cost)
 
 
-def business_day(day: date) -> bool:
+def business_day(day: date, calendar_version: str = CALENDAR_VERSION) -> bool:
     """判断固定版本模拟营业日。"""
-    return day.weekday() < 5 and day not in HOLIDAYS
+    if calendar_version not in {CALENDAR_VERSION, "synthetic-weekdays-v1"}:
+        raise ValueError("未知营业日历")
+    return day.weekday() < 5 and (calendar_version == "synthetic-weekdays-v1" or day not in HOLIDAYS)
 
 
-def advance_business(day: date, days: int) -> date:
+def advance_business(day: date, days: int, calendar_version: str = CALENDAR_VERSION) -> date:
     """从当前日期向后推进指定营业日；0也会顺延休市日。"""
     if type(days) is not int or not 0 <= days <= 366:
         raise ValueError("营业日偏移无效")
-    while not business_day(day):
+    while not business_day(day, calendar_version):
         day += timedelta(days=1)
     while days:
         day += timedelta(days=1)
-        if business_day(day):
+        if business_day(day, calendar_version):
             days -= 1
     return day
 
 
-def pricing_date(accepted_at: datetime, cutoff: str = "15:00") -> date:
+def pricing_date(accepted_at: datetime, cutoff: str = "15:00", calendar_version: str = CALENDAR_VERSION) -> date:
     """营业日截止前当日计价，否则下一营业日；输入必须带时区。"""
     if accepted_at.tzinfo is None:
         raise ValueError("受理时间必须带时区")
     local = accepted_at.astimezone(TZ)
     cutoff_time = time.fromisoformat(cutoff)
     day = local.date()
-    if business_day(day) and local.time() >= cutoff_time:
+    if business_day(day, calendar_version) and local.time() >= cutoff_time:
         day += timedelta(days=1)
-    return advance_business(day, 0)
+    return advance_business(day, 0, calendar_version)

@@ -1,0 +1,21 @@
+"""Named deterministic admin-only fixtures, not random user-visible failures."""
+SCENARIOS={
+ 'normal':{'label':'正常申赎','target':'S007','seed_holding':True},
+ 'risk_mismatch':{'label':'风险不匹配','target':'S029','capacity':2},
+ 'assessment_expired':{'label':'评估过期','target':'S007','expired_assessment':True},
+ 'short_horizon':{'label':'期限短于锁定期','target':'S048','horizon_days':7},
+ 'no_match':{'label':'无合适产品','target':'S007','no_match':True},
+ 'purchase_paused':{'label':'暂停申购','target':'S007','purchase_paused':True},
+ 'purchase_limit':{'label':'申购限额','target':'S007','amount_fen':5000001},
+ 'non_open_day':{'label':'非开放日','target':'S048'},
+ 'holding_locked':{'label':'持有期不足','target':'S048','seed_holding':True,'locked':True},
+ 'insufficient_cash':{'label':'余额不足','target':'S007','balance_fen':0},
+ 'units_held':{'label':'份额占用','target':'S007','seed_holding':True,'seed_redemption':True},
+ 'duplicate_submit':{'label':'重复提交','target':'S007','accepted':True},
+ 'submit_timeout':{'label':'提交后超时原号恢复','target':'S007','accepted':True,'lose_submit_response':True},
+ 'missing_pricing_nav':{'label':'计价日缺净值','target':'S007','accepted':True,'missing_pricing_nav':True},
+ 'cash_delayed':{'label':'赎回到账延迟','target':'S007','seed_holding':True,'seed_redemption':True},
+ 'short_history':{'label':'历史不足一年','target':'S009'},
+ 'source_unavailable':{'label':'数据源不可用/过期','target':'S007','source_unavailable':True},
+ 'family_concentration':{'label':'同家族A/C集中','target':'S007','seed_holding':True,'second_share':True},
+}

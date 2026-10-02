@@ -14,9 +14,9 @@ class HttpWealthBankApi(HttpBankApiClient):
             raise self._error(response)
         return response.json()
 
-    async def products(self) -> list[dict]:
+    async def products(self, user_id: str | None = None) -> list[dict]:
         """只读客观产品信息。"""
-        return await self.call("GET", "/products")
+        return await self.call("POST", "/catalog", {"subject_user_id": user_id}) if user_id else await self.call("GET", "/products")
 
     async def assets(self, user_id: str) -> dict:
         """查询本人事实，外部资产不混入银行现金。"""

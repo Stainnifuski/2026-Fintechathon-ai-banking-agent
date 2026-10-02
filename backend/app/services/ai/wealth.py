@@ -51,8 +51,12 @@ def checked_explanation(proposal: dict, facts: list[dict]) -> str:
 
 
 async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
-                  text: str, session_id: str | None, version: int | None) -> dict:
+                  text: str, session_id: str | None, version: int | None,client_message_id: str | None=None) -> dict:
     """解释和方案预览入口，任何自然语言确认都不会执行交易。"""
+    import os
+    if client_message_id or os.getenv('WEALTH_NLU_MODE')=='model':
+        from .wealth_dialogue import message as respond
+        return await respond(db,user_id,bank,text,session_id,version,client_message_id or uuid4().hex)
     if re.search(r"验证码|TOTP|口令|密码|忽略.*(风控|授权|规则)|绕过.*验证|代答|替我.*(问卷|评估)|提高.*等级", text, re.I) or re.fullmatch(r"\d{6}", text.strip()):
         return {"mode": "offline", "kind": "clarification", "message": "请通过可信验证组件操作；理财对话不接收凭据或绕过安全规则。"}
     session = await db.get(WealthConversationORM, session_id) if session_id else None
@@ -69,7 +73,7 @@ async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
     elif "对比" in text:
         ids = list(dict.fromkeys(re.findall(r"M[WF]\d{3}", text.upper())))
         if 2 <= len(ids) <= 3:
-            rows = [p for p in await bank.products() if p["product_id"] in ids]
+            rows = [p for p in await bank.products(user_id) if p["product_id"] in ids]
             response = {"mode": "offline", "kind": "comparison", "products": rows,
                         "message": "客观对比请看风险、费用、持有期和赎回到账；净值日期不同不能直接比较收益。"}
     elif "持仓" in text or "资产" in text:
@@ -79,7 +83,7 @@ async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
         try:
             suitability = await require_suitability(db, user_id, 1)
             await db.rollback()
-            rows = candidates(await bank.products(), suitability["capacity_level"], 365, [])[:3]
+            rows = candidates(await bank.products(user_id), suitability["capacity_level"], 365, [])[:3]
             response = {"mode": "offline", "kind": "products", "products": rows,
                 "message": "按已确认承受能力、费用和流动性筛选最多3个虚构候选；默认365天比较窗口，近期用途请先说明期限。"}
         except WealthPolicyError as error:
@@ -89,7 +93,7 @@ async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
         ids = re.findall(r"M[WF]\d{3}", text.upper())
         amount_match = re.search(r"(?:买|申购|金额)\s*([\d]+(?:\.\d{1,2})?[百千万]?|[一二两三四五六七八九十][百千万]?)", text)
         if len(ids) == 1 and amount_match:
-            facts, products = await bank.assets(user_id), await bank.products()
+            facts, products = await bank.assets(user_id), await bank.products(user_id)
             account = next((a for a in facts["cash"] if a["account_type"] != "credit"), None)
             product = next((p for p in products if p["product_id"] == ids[0]), None)
             if account and product:
@@ -98,7 +102,7 @@ async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
                         "product_version": product["version"], "disclosure_version": product["disclosure"]["version"],
                         "account_id": account["account_id"], "amount_fen": parse_money(amount_match[1]), "units": "0.0000"}}
     elif "产品" in text and not any(word in text for word in ("买", "申购", "配置")):
-        response = {"mode": "offline", "kind": "products", "products": await bank.products(),
+        response = {"mode": "offline", "kind": "products", "products": await bank.products(user_id),
                     "message": "以下均为虚构产品，净值历史含下跌，不保证本金或收益。"}
     elif "赎回" in text or "取出" in text:
         ids = re.findall(r"M[WF]\d{3}", text.upper())
@@ -112,7 +116,7 @@ async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
             if target and lots and lots[0]["nav"]:
                 quantity = (Decimal(parse_money(target[1]))/100/Decimal(lots[0]["nav"])).quantize(Decimal("0.0001"), ROUND_UP)
             if len(accounts) == 1 and quantity > 0:
-                product = next(p for p in await bank.products() if p["product_id"] == ids[0])
+                product = next(p for p in await bank.products(user_id) if p["product_id"] == ids[0])
                 response = {"mode": "offline", "kind": "command", "message": "按当前净值估算具体份额，费用与未来净值使实际到账不同，不保证目标金额或自动补差；全部/一半按持有总额计算，锁定或份额不足由预检拒绝。",
                     "command": {"operation_id": f"WO{uuid4().hex}", "direction": "redeem", "product_id": ids[0],
                         "product_version": product["version"], "disclosure_version": product["disclosure"]["version"],

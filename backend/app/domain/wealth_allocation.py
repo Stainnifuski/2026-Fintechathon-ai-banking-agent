@@ -1,6 +1,8 @@
 """版本化模拟资金配置规则，全部金额来自确定性计算。"""
 
 from decimal import Decimal, ROUND_DOWN
+from datetime import date,timedelta
+from .wealth import advance_business
 
 RULE_VERSION = "mock-allocation-v1"
 WEIGHTS = {
@@ -26,10 +28,19 @@ def candidates(products: list[dict], capacity: int, horizon_days: int,
     """先资格、风险、锁定和到账约束，再按费用/流动性/ID稳定排序。"""
     rows = [p for p in products if p["product_risk_level"] <= capacity and p["status"] == "on_sale"
         and p["product_id"] not in excluded and not p["rules"]["purchase_paused"]
-        and p["rules"]["holding_days"] + p["rules"]["cash_business_days"]*2 <= horizon_days
+        and liquidity_days(p) <= horizon_days
         and p["nav"] is not None]
     return sorted(rows, key=lambda p: (p["product_risk_level"], Decimal(p["rules"]["purchase_fee_rate"]),
         p["rules"]["holding_days"], p["rules"]["cash_business_days"], p["product_id"]))
+
+
+def liquidity_days(product: dict) -> int:
+    """Use each version's calendar rather than multiplying business days by two."""
+    rules=product['rules']; start=date.fromisoformat(product.get('nav_date') or '2026-09-30')
+    confirmed=advance_business(start,rules.get('confirm_business_days',0),rules['calendar_version'])
+    unlocked=confirmed+timedelta(days=rules['holding_days'])
+    cash=advance_business(unlocked,rules['cash_business_days'],rules['calendar_version'])
+    return (cash-start).days
 
 
 def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
@@ -49,21 +60,26 @@ def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
                   for category in active}
         active = {category: deficit for category, deficit in active.items() if deficit > 0}
     rows = []
-    weight_sum = sum(active.values())
+    is_v12=any(p.get('dataset_key') and p['dataset_key']!='legacy-v1' for p in products)
+    weight_sum = sum(active.values()) if exposure_fen is not None or not is_v12 else 100
     cap = investable * MAX_CONCENTRATION_PERCENT // 100
+    used_families=set()
     for category, weight in active.items():
         target = investable * weight // weight_sum
         left = target
         for product in categories[category]:
             if len(rows) >= max_items:
                 break
+            family=product.get('fund_family_id') or product['product_id']
+            if family in used_families: continue
             amount = min(left, cap, product["rules"]["max_amount_fen"])
             if amount >= product["rules"]["min_amount_fen"]:
                 rows.append({"product_id": product["product_id"], "product_name": product["name"],
                     "product_version": product["version"], "disclosure_version": product["disclosure"]["version"],
-                    "category": category, "amount_fen": amount,
+                    "category": category, "amount_fen": amount, 'fund_family_id':family,
                     "reason": f"风险不超过R{capacity}；匹配{horizon_days}天期限，费用和流动性优先；单产品不超过可投资预算60%"})
                 left -= amount
+                used_families.add(family)
             if left <= 0:
                 break
     spent = sum(row["amount_fen"] for row in rows)

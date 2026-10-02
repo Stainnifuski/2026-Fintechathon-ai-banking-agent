@@ -13,8 +13,10 @@ from ..middleware.auth import get_current_user
 from ..models.wealth import WealthAuthorizationORM, WealthProfileORM
 from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan, PlanConfirmation
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
+from ..schemas.wealth import WealthResearchQuery,WealthContextChange
 
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
+
 
 
 def fail(error: BankApiError | policy.WealthPolicyError) -> None:
@@ -26,6 +28,25 @@ def fail(error: BankApiError | policy.WealthPolicyError) -> None:
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+@router.get('/contexts')
+async def contexts(user: dict=Depends(get_current_user),bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST','/contexts',{'subject_user_id':user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.post('/contexts/select')
+async def select_context(request: WealthContextChange,user: dict=Depends(get_current_user),bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST','/contexts/select',{**request.model_dump(),'subject_user_id':user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.post('/research')
+async def research(request: WealthResearchQuery,user: dict=Depends(get_current_user),bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST','/research',{**request.model_dump(),'subject_user_id':user['user_id']})
+    except BankApiError as error: fail(error)
+
 
 
 @router.get("/verification-mode")
@@ -75,7 +96,7 @@ async def demo_verify_plan(plan_id: str, request: PlanVersion, user: dict = Depe
 async def products(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
     """鉴权客观产品探索。"""
     try:
-        return await bank.products()
+        return await bank.products(user["user_id"])
     except BankApiError as error:
         fail(error)
 
@@ -88,7 +109,7 @@ async def compare(product_ids: str, user: dict = Depends(get_current_user),
     if not 2 <= len(keys) <= 3 or len(set(keys)) != len(keys):
         raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至3个不同产品"})
     try:
-        rows = [row for row in await bank.products() if row["product_id"] in keys]
+        rows = [row for row in await bank.products(user["user_id"]) if row["product_id"] in keys]
         if len(rows) != len(keys):
             raise HTTPException(404, detail={"code": "PRODUCT_UNAVAILABLE", "message": "部分产品不存在"})
         return rows
@@ -345,7 +366,7 @@ async def message(request: WealthMessage, user: dict = Depends(get_current_user)
     """离线有限理解和待确认卡片，可信事实解释；不接受验证码。"""
     from ..services.ai.wealth import message as respond
     try:
-        return await respond(db, user["user_id"], bank, request.message, request.session_id, request.version)
+        return await respond(db, user["user_id"], bank, request.message, request.session_id, request.version,request.client_message_id)
     except (BankApiError, policy.WealthPolicyError, ValueError) as error:
         await db.rollback()
         if isinstance(error, ValueError):

@@ -49,6 +49,68 @@ class Advance(StrictRequest):
     business_at: datetime
 
 
+class ResearchQuery(Subject):
+    dataset_key: str | None = Field(default=None,max_length=96)
+    query: str = Field(default="",max_length=200)
+    category: str | None = Field(default=None,max_length=32)
+    page: int = Field(default=1,ge=1,le=10000)
+    page_size: int = Field(default=12,ge=1,le=60)
+    product_ids: list[str] = Field(default_factory=list,max_length=3)
+    period: str = Field(default="1y",pattern="^(1m|3m|1y|since)$")
+
+
+class ContextChange(Subject):
+    context_id: str = Field(max_length=64)
+    version: int = Field(ge=1)
+
+
+@router.post('/knowledge')
+async def knowledge(request: ResearchQuery,db: AsyncSession=Depends(get_db)) -> dict:
+    from ..services.bank.wealth_knowledge import retrieve
+    return {'citations':await retrieve(db,request.query,request.dataset_key),'retrieval_version':'chinese-bigram-v1'}
+
+
+@router.post("/contexts")
+async def contexts(request: Subject,db: AsyncSession=Depends(get_db)) -> dict:
+    from ..services.bank.wealth_research import context_list
+    return await context_list(db,request.subject_user_id)
+
+
+@router.post("/contexts/select")
+async def context_select(request: ContextChange,db: AsyncSession=Depends(get_db)) -> dict:
+    from ..services.bank.wealth_research import select_context
+    try: return await select_context(db,request.subject_user_id,request.context_id,request.version)
+    except (BankError,WealthPolicyError) as error:
+        await db.rollback(); fail(error)
+
+
+@router.post("/research")
+async def research_query(request: ResearchQuery,db: AsyncSession=Depends(get_db)) -> dict:
+    from ..services.bank import wealth_research as research
+    from ..domain.wealth_analytics import metrics,comparison
+    from ..models.wealth_research import WealthDatasetORM,WealthMacroORM
+    from sqlalchemy import select
+    datasets=(await db.scalars(select(WealthDatasetORM).order_by(WealthDatasetORM.ingested_at.desc()))).all()
+    rows=await research.catalog(db,request.dataset_key)
+    rows=[p for p in rows if (not request.category or p.get('category')==request.category) and (not request.query or request.query.casefold() in (p['name']+' '+p['product_id']).casefold())]
+    total=len(rows)
+    as_of=max((p['nav_date'] for p in rows if p['nav_date']),default='2026-09-30')
+    if request.product_ids:
+        if len(request.product_ids)!=len(set(request.product_ids)): raise HTTPException(422,detail={'code':'INVALID_COMPARISON','message':'产品不能重复'})
+        chosen=[next((p for p in rows if p['product_id']==pid),None) for pid in request.product_ids]
+        if any(p is None for p in chosen): raise HTTPException(404,detail={'code':'PRODUCT_UNAVAILABLE','message':'产品不在指定数据集中'})
+        analysis=comparison(chosen,as_of,request.period)
+    else: analysis=None
+    page=rows[(request.page-1)*request.page_size:request.page*request.page_size]
+    for p in page:
+        p['metrics']=metrics(p['history'],as_of=as_of,period=request.period,dividends_verified=p['source']=='synthetic')
+        p['history']=p['history'][-1500:]
+    macros=(await db.scalars(select(WealthMacroORM).where(WealthMacroORM.dataset_key==request.dataset_key))).all() if request.dataset_key else []
+    return {'items':page,'total':total,'page':request.page,'page_size':request.page_size,'analysis':analysis,'as_of':as_of,
+        'datasets':[{'dataset_key':d.dataset_key,'mode':d.mode,**d.manifest} for d in datasets],
+        'macros':[{'indicator':m.indicator,'observations':m.observations[-24:]} for m in macros]}
+
+
 def require_mock_admin() -> None:
     """业务时间和结算只可在显式启用的隔离模拟库使用。"""
     if (os.getenv("WEALTH_MOCK_ADMIN_ENABLED") != "true"
@@ -66,6 +128,11 @@ async def products(db: AsyncSession = Depends(get_db)) -> list[dict]:
 async def assets(request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
     """内部本人银行资产事实。"""
     return await bank.assets(db, request.subject_user_id)
+
+
+@router.post("/catalog")
+async def contextual_catalog(request: Subject, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await bank.products(db, request.subject_user_id)
 
 
 @router.post("/precheck")

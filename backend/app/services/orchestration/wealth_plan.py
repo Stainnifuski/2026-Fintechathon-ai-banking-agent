@@ -94,9 +94,11 @@ def plan_view(row: WealthPlanORM) -> dict:
 async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, request: dict,
                  plan_id: str | None = None) -> dict:
     """新资金/持仓调整先读取事实，随后短事务保存版本化计划。"""
-    facts, products = await bank.assets(user_id), await bank.products()
+    facts, products = await bank.assets(user_id), await bank.products(user_id)
     suitability = await require_suitability(db, user_id, 1, allow_cash_only=True)
     profile = await db.get(WealthProfileORM, user_id)
+    if request.get('need')=='cash': suitability={**suitability,'capacity_level':1}
+    elif request.get('need')=='balanced': suitability={**suitability,'capacity_level':min(suitability['capacity_level'],3)}
     external = list(profile.data.get("external_assets", [])) if profile else []
     budget, reserve = request["budget_fen"], request["reserve_fen"]
     account = next((a for a in facts["cash"] if a["account_id"] == request["account_id"] and a["account_type"] != "credit"), None)

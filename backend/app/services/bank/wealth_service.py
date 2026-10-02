@@ -41,8 +41,13 @@ def stable_id(prefix: str, value: str) -> str:
     return prefix+hashlib.sha256(value.encode()).hexdigest()[:32-len(prefix)]
 
 
-async def business_now(db: AsyncSession) -> datetime:
+async def business_now(db: AsyncSession, account_id: str | None = None) -> datetime:
     """业务时钟不替代任何安全时钟。"""
+    if account_id:
+        from ...models.wealth_research import WealthContextORM
+        context = (await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id == account_id))).one_or_none()
+        if context:
+            return datetime.fromisoformat(context.data["business_at"])
     row = await db.get(WealthClockORM, "mock")
     return aware(row.business_at) if row else datetime.now(timezone.utc)
 
@@ -177,7 +182,7 @@ async def product_version(db: AsyncSession, command: InvestmentCommand) -> Wealt
     if not required <= row.rules.keys() or not {"nature", "manager", "seller", "risk", "fees", "liquidity",
         "holding_period_days", "pricing", "settlement", "cancellation", "limitations"} <= row.disclosure.keys():
         raise BankError("产品规则或披露不完整", "PRODUCT_UNAVAILABLE", 409)
-    if row.rules["calendar_version"] != CALENDAR_VERSION:
+    if row.rules["calendar_version"] not in {CALENDAR_VERSION, "synthetic-weekdays-v1"}:
         raise BankError("不支持此交易日历版本", "PRODUCT_UNAVAILABLE", 409)
     if command.direction == "purchase" and (product.status != "on_sale" or row.rules["purchase_paused"]):
         raise BankError("产品当前不可申购", "PRODUCT_UNAVAILABLE", 409)
@@ -188,23 +193,39 @@ async def product_version(db: AsyncSession, command: InvestmentCommand) -> Wealt
 
 async def latest_nav(db: AsyncSession, version_id: str, at: datetime) -> WealthNavORM | None:
     """仅读取业务时点以前净值，禁止未来数据。"""
+    day=at.astimezone(TZ).date()
+    version=await db.get(WealthProductVersionORM,version_id)
+    if version and version.rules.get('dataset_id') and at.astimezone(TZ).hour<18:
+        day-=timedelta(days=1)
     return (await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id == version_id,
-        WealthNavORM.nav_date <= at.astimezone(TZ).date()).order_by(WealthNavORM.nav_date.desc()))).first()
+        WealthNavORM.nav_date <= day).order_by(WealthNavORM.nav_date.desc()))).first()
 
 
-async def products(db: AsyncSession) -> list[dict]:
+async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
     """客观产品查询；未评估也可查询，不伪造缺失数据。"""
-    now = await business_now(db)
+    from .wealth_research import selected
+    context = await selected(db, user_id) if user_id else None
+    now = await business_now(db, context.account_id if context else None)
     result = []
     for product in (await db.scalars(select(WealthProductORM).order_by(WealthProductORM.product_id))).all():
         row = await db.get(WealthProductVersionORM, f"{product.product_id}:{product.current_version}")
         if row is None:
             continue
+        dataset_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
+        if context and dataset_key != context.dataset_key:
+            continue
+        if not context and row.rules.get("dataset_id"):
+            continue
         price = await latest_nav(db, row.version_id, now)
+        fixture=context.data.get('fixture',{}) if context else {}
+        if fixture.get('no_match'): continue
+        if fixture.get('source_unavailable'): price=None
         result.append({"product_id": product.product_id, "version": row.version, "name": row.name,
             "kind": row.kind, "category": row.category, "product_risk_level": row.risk_level,
-            "status": product.status, "rules": row.rules, "disclosure": row.disclosure,
+            "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,
             "nav": price.price if price else None, "nav_date": price.nav_date.isoformat() if price else None,
+            "fund_family_id": row.rules.get("fund_family_id", product.product_id),
+            "dataset_key": dataset_key if context else "legacy-v1",
             "notice": "比赛模拟环境／模拟资金；历史净值不代表未来收益"})
     return result
 
@@ -238,10 +259,25 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     """预览和受理共用服务端校验，预览不占款。"""
     account = await owned_account(db, user_id, command.account_id)
     row = await product_version(db, command)
-    now = await business_now(db)
+    from .wealth_research import selected
+    from ...models.wealth_research import WealthContextORM
+    context = (await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id == account.account_id))).one_or_none()
+    active = await selected(db, user_id)
+    product_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
+    if ((context and (active is None or active.context_id != context.context_id or product_key != context.dataset_key))
+            or (not context and (active is not None or row.rules.get("dataset_id")))):
+        raise BankError("产品与当前资金上下文不一致，请重新预览", "DATASET_MISMATCH", 409)
+    now = await business_now(db, command.account_id)
+    fixture=context.data.get('fixture',{}) if context else {}
+    if fixture.get('no_match') or fixture.get('purchase_paused') and fixture.get('target')==command.product_id and command.direction=='purchase':
+        raise BankError('模拟场景产品当前不可申购','PRODUCT_UNAVAILABLE',409)
+    if fixture.get('source_unavailable'):
+        raise BankError('来源不可用且无有效估值，保留旧快照但不生成交易预览','DATA_STALE',409)
     estimate = None
     suitability = None
     price = await latest_nav(db, row.version_id, now)
+    if row.rules.get('dataset_id') and (price is None or advance_business(price.nav_date,3,row.rules['calendar_version'])<now.astimezone(TZ).date()):
+        raise BankError('净值缺失或过期，请等待可见有效数据','DATA_STALE',409)
     if command.direction == "purchase":
         suitability = await require_suitability(db, user_id, row.risk_level)
         if not row.rules["min_amount_fen"] <= command.amount_fen <= row.rules["max_amount_fen"]:
@@ -270,14 +306,17 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
                     remaining -= take
             estimate = {"cash_fen": sum(item["cash_fen"] for item in estimates),
                         "fee_fen": sum(item["fee_fen"] for item in estimates), "lots": estimates}
-    priced = pricing_date(now, row.rules["cutoff"])
+    priced = pricing_date(now, row.rules["cutoff"], row.rules["calendar_version"])
+    interval = row.rules.get("open_interval_days", 1)
+    if interval > 1 and (priced - datetime(2026, 9, 30).date()).days % interval != 0:
+        raise BankError("当前不是模拟定期开放日", "NON_OPEN_DAY", 409)
     return {"command": command.model_dump(), "digest": command_digest(command),
         "product_name": row.name, "product_risk_level": row.risk_level, "operation_security_level": "RED",
         "suitability": {**suitability, "matched": True} if suitability else None,
         "disclosure": row.disclosure, "rules": row.rules, "estimate": estimate,
         "estimated_nav": price.price if price else None, "estimated_nav_date": price.nav_date.isoformat() if price else None,
-        "pricing_date": priced.isoformat(), "confirm_date": advance_business(priced, row.rules["confirm_business_days"]).isoformat(),
-        "cash_date": advance_business(priced, row.rules["cash_business_days"]).isoformat(),
+        "pricing_date": priced.isoformat(), "confirm_date": advance_business(priced, row.rules["confirm_business_days"], row.rules["calendar_version"]).isoformat(),
+        "cash_date": advance_business(priced, row.rules["cash_business_days"], row.rules["calendar_version"]).isoformat(),
         "notice": "比赛模拟环境／模拟资金；预览为估算，受理不等于结算成功"}
 
 
@@ -316,18 +355,19 @@ async def accept_many(db: AsyncSession, user_id: str,
             continue
         preview = await precheck(db, user_id, command)
         authorization = await validate_bank_authorization(db, user_id, auth_id, command)
-        now = await business_now(db)
+        now = await business_now(db, command.account_id)
         version = await product_version(db, command)
-        priced = pricing_date(now, version.rules["cutoff"])
+        priced = pricing_date(now, version.rules["cutoff"], version.rules["calendar_version"])
         row = WealthOrderORM(operation_id=command.operation_id, user_id=user_id,
             account_id=command.account_id, version_id=version.version_id, direction=command.direction,
             amount_fen=command.amount_fen, units_scaled=scaled(command.units),
             param_digest=command_digest(command), authorization_id=auth_id, plan_id=command.plan_id,
             plan_version=command.plan_version, status="ACCEPTED", accepted_at=now, pricing_date=priced,
-            confirm_date=advance_business(priced, version.rules["confirm_business_days"]),
-            cash_date=advance_business(priced, version.rules["cash_business_days"]),
+            confirm_date=advance_business(priced, version.rules["confirm_business_days"], version.rules["calendar_version"]),
+            cash_date=advance_business(priced, version.rules["cash_business_days"], version.rules["calendar_version"]),
             details={"preview": preview["estimate"], "estimated_nav": preview["estimated_nav"],
-                     "calculation_version": "mock-units-v1", "calendar_version": CALENDAR_VERSION})
+                     "calculation_version": "mock-units-v1", "calendar_version": version.rules['calendar_version'],
+                     'dataset_id':version.rules.get('dataset_id','legacy-v1'),'dataset_version':version.rules.get('dataset_version','v1')})
         evidence = await db.get(WealthVerificationORM, auth_id)
         row.details = {**row.details, "verification": {
             "method": evidence.method if evidence else "LEGACY_TOTP",
@@ -369,7 +409,7 @@ async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
     if row.status == "CANCELLED":
         return order_view(row)
     rules = (await db.get(WealthProductVersionORM, row.version_id)).rules
-    now = await business_now(db)
+    now = await business_now(db, row.account_id)
     deadline = datetime.combine(row.pricing_date, datetime.strptime(rules["cutoff"], "%H:%M").time(), TZ)
     if row.status not in {"ACCEPTED", "PENDING_PRICING"} or not rules["cancel_before_pricing"] or now >= deadline:
         raise BankError("已超过撤单窗口或订单已计价", "CANCELLATION_NOT_ALLOWED", 409)
@@ -393,13 +433,16 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
     row = await db.get(WealthOrderORM, operation_id, populate_existing=True)
     if row.status in {"SETTLED", "CANCELLED", "REJECTED"}:
         return order_view(row)
-    now = await business_now(db)
+    now = await business_now(db, row.account_id)
     day = now.astimezone(TZ).date()
     version = await db.get(WealthProductVersionORM, row.version_id)
     account = await db.get(AccountORM, row.account_id, populate_existing=True)
     if row.status != "PENDING_CASH":
         row.status = "PENDING_PRICING"
         price = await db.get(WealthNavORM, f"{row.version_id}:{row.pricing_date.isoformat()}")
+        from ...models.wealth_research import WealthContextORM
+        context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==row.account_id))).first()
+        if context and context.data.get('fixture',{}).get('missing_pricing_nav'): price=None
         if day < row.confirm_date or price is None or price.nav_date > day:
             row.details = {**row.details, "waiting_reason": "NAV_UNAVAILABLE" if price is None else "CONFIRMATION_DATE_NOT_REACHED"}
             await db.commit()
@@ -469,14 +512,22 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
 
 async def assets(db: AsyncSession, user_id: str) -> dict:
     """现金、在途应收、持仓分开估值，占款仅为现金子集不重复相加。"""
-    now = await business_now(db)
-    accounts = (await db.scalars(select(AccountORM).where(AccountORM.user_id == user_id))).all()
+    from .wealth_research import selected
+    from ...models.wealth_research import WealthContextORM
+    context = await selected(db, user_id)
+    now = await business_now(db, context.account_id if context else None)
+    sandbox_accounts = set((await db.scalars(select(WealthContextORM.account_id).where(WealthContextORM.user_id == user_id))).all())
+    accounts = [a for a in (await db.scalars(select(AccountORM).where(AccountORM.user_id == user_id))).all()
+                if (a.account_id == context.account_id if context else a.account_id not in sandbox_accounts)]
+    allowed_accounts = {a.account_id for a in accounts}
     cash = [{"account_id": a.account_id, "account_type": a.account_type,
              "balance_fen": a.balance_fen, "held_fen": await held_cash(db, a.account_id),
              "available_fen": await available_cash(db, a.account_id, a.balance_fen)} for a in accounts]
     lots = []
     for lot in (await db.scalars(select(WealthLotORM).where(WealthLotORM.user_id == user_id,
             WealthLotORM.units_scaled > 0).order_by(WealthLotORM.acquired_date, WealthLotORM.lot_id))).all():
+        if lot.account_id not in allowed_accounts:
+            continue
         price = await latest_nav(db, lot.version_id, now)
         version = await db.get(WealthProductVersionORM, lot.version_id)
         held = int(await db.scalar(select(func.coalesce(func.sum(WealthUnitHoldORM.units_scaled), 0)).where(
@@ -484,6 +535,7 @@ async def assets(db: AsyncSession, user_id: str) -> dict:
         value = int((Decimal(quantity(lot.units_scaled)) * Decimal(price.price) * 100).quantize(Decimal("1"))) if price else None
         lots.append({"lot_id": lot.lot_id, "product_id": version.product_id, "product_name": version.name,
             "account_id": lot.account_id, "version_id": lot.version_id, "category": version.category,
+            'fund_family_id':version.rules.get('fund_family_id',version.product_id),
             "units": quantity(lot.units_scaled), "held_units": quantity(held),
             "redeemable_units": quantity(lot.units_scaled-held) if lot.unlock_date <= now.astimezone(TZ).date() else "0.0000",
             "locked_units": quantity(lot.units_scaled) if lot.unlock_date > now.astimezone(TZ).date() else "0.0000",
@@ -493,9 +545,13 @@ async def assets(db: AsyncSession, user_id: str) -> dict:
             "acquired_date": lot.acquired_date.isoformat(), "unlock_date": lot.unlock_date.isoformat()})
     orders = (await db.scalars(select(WealthOrderORM).where(WealthOrderORM.user_id == user_id)
                                .order_by(WealthOrderORM.accepted_at.desc()))).all()
+    orders = [row for row in orders if row.account_id in allowed_accounts]
     receivable = sum(row.details["actual"]["cash_fen"] for row in orders if row.status == "PENDING_CASH")
     realized = sum(row.details.get("actual", {}).get("realized_pnl_fen", 0) for row in orders if row.direction == "redeem")
+    from ...domain.wealth_analytics import concentration
+    concentration_view=concentration([{**lot,'amount_fen':lot['market_value_fen'] or 0} for lot in lots])
     return {"cash": cash, "lots": lots, "orders": [order_view(row) for row in orders],
+        'concentration':concentration_view,'actual_return_unavailable_reason':'NO_VERIFIED_COMPLETE_CASHFLOW_RETURN_SERIES',
         "receivable_fen": receivable, "realized_pnl_fen": realized,
         "bank_assets_fen": sum(a["balance_fen"] for a in cash if a["account_type"] != "credit") + receivable
             + sum(lot["market_value_fen"] or 0 for lot in lots),
