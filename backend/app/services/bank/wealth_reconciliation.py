@@ -5,14 +5,14 @@ import json
 import os
 from datetime import timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ...domain.time import BEIJING, as_utc, utc_iso, utc_now
 from ...models.account import AccountORM
 from ...models.audit_log import AuditLogORM
 from ...models.transaction import TransactionORM
-from ...models.wealth import WealthLedgerReviewORM, WealthOrderORM, WealthSettlementORM
+from ...models.wealth import WealthLedgerReviewORM, WealthOrderORM, WealthSettlementORM, WealthCashHoldORM, WealthLotORM
 from ...models.wealth_research import WealthContextORM
 from .transfer_service import BankError
 
@@ -66,6 +66,15 @@ async def reconcile(db: AsyncSession, *, apply: bool = False) -> dict:
                     if proven: order.accepted_at = audit_at
                     db.add(WealthLedgerReviewORM(review_id=acceptance_key, account_id=order.account_id,
                         status=status, evidence=evidence, created_at=utc_now()))
+        elif as_utc(order.accepted_at, legacy_utc=True) > utc_now():
+            evidence = {'operation_id': order.operation_id, 'account_id': order.account_id, 'scope': scope,
+                'old_accepted_at': order.accepted_at.isoformat(), 'audit_id': None,
+                'recorded_event_utc': None, 'evidence_verified': False, 'changed_money_or_units': False,
+                'reason': 'future_acceptance_without_bank_audit; preserve_and_restrict'}
+            acceptance_times.append({**evidence, 'status': 'RECONCILIATION_REQUIRED', 'already_recorded': False})
+            if apply:
+                db.add(WealthLedgerReviewORM(review_id=acceptance_key, account_id=order.account_id,
+                    status='RECONCILIATION_REQUIRED', evidence=evidence, created_at=utc_now()))
         for kind, prefix, action in [("pricing", "WPT", "investment_pricing"), ("cash", "WRT", "investment_cash")]:
             if kind == "pricing" and order.direction != "purchase":
                 continue
@@ -116,7 +125,18 @@ async def reconcile(db: AsyncSession, *, apply: bool = False) -> dict:
                 db.add(WealthLedgerReviewORM(review_id=key, account_id=tx.account_id, status=status,
                     evidence=evidence, created_at=utc_now()))
         account = await db.get(AccountORM, order.account_id)
+        held = await db.scalar(select(func.coalesce(func.sum(WealthCashHoldORM.amount_fen), 0)).where(
+            WealthCashHoldORM.account_id == order.account_id, WealthCashHoldORM.status == 'HELD'))
+        lots = (await db.scalars(select(WealthLotORM).where(WealthLotORM.account_id == order.account_id))).all()
+        account_orders = [item for item in orders if item.account_id == order.account_id]
         summaries[order.account_id] = {"scope": scope, "balance_fen": account.balance_fen,
+            'held_fen': held, 'available_fen': account.balance_fen-held,
+            'remaining_units_scaled': sum(item.units_scaled for item in lots),
+            'remaining_cost_fen': sum(item.cost_fen for item in lots),
+            'receivable_fen': sum(item.details.get('actual', {}).get('cash_fen', 0)
+                for item in account_orders if item.status == 'PENDING_CASH'),
+            'outstanding_orders': [{'operation_id':item.operation_id, 'status':item.status}
+                for item in account_orders if item.status not in ('SETTLED','CANCELLED','REJECTED','FAILED')],
             "financial_fields_changed": False}
     if apply:
         await db.commit()

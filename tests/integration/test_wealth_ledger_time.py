@@ -75,7 +75,8 @@ async def test_proven_legacy_transaction_backlink_is_metadata_only_and_idempoten
 
 
 @pytest.mark.asyncio
-async def test_legacy_acceptance_time_requires_bound_audit_and_preserves_business_dates(store):
+@pytest.mark.parametrize('evidence',[True,False])
+async def test_legacy_acceptance_time_requires_bound_audit_and_preserves_business_dates(store,evidence):
     from backend.app.models.wealth import WealthOrderORM
     async with store() as db:
         await assess(db)
@@ -84,12 +85,19 @@ async def test_legacy_acceptance_time_requires_bound_audit_and_preserves_busines
         row=await db.get(WealthOrderORM,cmd.operation_id)
         dates=(row.pricing_date,row.confirm_date,row.cash_date)
         row.accepted_at=utc_now()+timedelta(days=100)
+        if not evidence:
+            from sqlalchemy import delete
+            from backend.app.models.audit_log import AuditLogORM
+            await db.execute(delete(AuditLogORM).where(AuditLogORM.action=='investment_accept'))
         await db.commit()
         preview=await reconcile(db)
-        assert preview['acceptance_times'][0]['evidence_verified']
+        assert preview['acceptance_times'][0]['evidence_verified']==evidence
         assert as_utc(row.accepted_at,legacy_utc=True)>utc_now()+timedelta(days=99)
         await reconcile(db,apply=True)
-        assert abs((as_utc(row.accepted_at,legacy_utc=True)-utc_now()).total_seconds())<10
+        if evidence:
+            assert abs((as_utc(row.accepted_at,legacy_utc=True)-utc_now()).total_seconds())<10
+        else:
+            assert as_utc(row.accepted_at,legacy_utc=True)>utc_now()+timedelta(days=99)
         assert (row.pricing_date,row.confirm_date,row.cash_date)==dates
         assert (await db.get(AccountORM,'A1')).balance_fen==2000000
         assert (await reconcile(db,apply=True))['acceptance_times'][0]['already_recorded']
