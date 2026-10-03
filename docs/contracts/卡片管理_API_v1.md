@@ -4,7 +4,7 @@
 
 ## 权限分级
 
-级别只取共享权限表 `security/common.py` 的 `PERMISSION_MAP`，客户端不能指定。
+级别由服务端 `CARD_PERMISSION_LEVELS`（`backend/app/integrations/card_authorization.py`）判定，客户端不能指定；测试保证其与共享权限表 `security/common.py` 的 `PERMISSION_MAP` 一致（后端镜像只打包 `backend/`，运行时不能导入根目录 `security` 包）。
 
 | 动作 `action` | 说明 | 级别 | 执行条件 |
 |---|---|---|---|
