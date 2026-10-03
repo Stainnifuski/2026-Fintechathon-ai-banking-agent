@@ -11,7 +11,7 @@ from ...models import Base
 from ...models.wealth import WealthSchemaVersionORM
 from .wealth_catalog import seed_catalog
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 async def upgrade(session: AsyncSession) -> None:
@@ -23,10 +23,15 @@ async def upgrade(session: AsyncSession) -> None:
         .on_conflict_do_nothing(index_elements=["schema_id"]))
     row = (await session.scalars(select(WealthSchemaVersionORM).where(
         WealthSchemaVersionORM.schema_id == "wealth").with_for_update())).one()
-    if row.version not in {1, 2, 3, SCHEMA_VERSION}:
+    if row.version not in {1, 2, 3, 4, SCHEMA_VERSION}:
         raise ValueError("理财结构版本不兼容，不能静默降级")
     await session.execute(update(WealthSchemaVersionORM).where(WealthSchemaVersionORM.schema_id == "wealth")
         .values(version=SCHEMA_VERSION))
+    connection = await session.connection()
+    nav_columns = await connection.run_sync(lambda conn: inspect(conn).get_columns('wealth_navs'))
+    if not any(column['name']=='available_at' for column in nav_columns):
+        kind = 'TIMESTAMP WITH TIME ZONE' if session.get_bind().dialect.name=='postgresql' else 'DATETIME'
+        await session.execute(text('ALTER TABLE wealth_navs ADD COLUMN available_at '+kind))
     if session.get_bind().dialect.name == "postgresql":
         connection = await session.connection()
         columns = await connection.run_sync(lambda conn: inspect(conn).get_columns("transactions"))

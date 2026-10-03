@@ -35,6 +35,7 @@ class WealthProductVersionORM(Base):
 class WealthNavORM(Base):
     """模拟营业日净值，唯一且不会因结算重试改变。"""
     __tablename__ = "wealth_navs"
+    available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     __table_args__ = (UniqueConstraint("version_id", "nav_date"),)
     nav_id: Mapped[str] = mapped_column(String(96), primary_key=True)
     version_id: Mapped[str] = mapped_column(ForeignKey("wealth_product_versions.version_id"), nullable=False)

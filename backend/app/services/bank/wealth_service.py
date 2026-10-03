@@ -21,7 +21,7 @@ from ...models.wealth import (WealthCashHoldORM, WealthClockORM, WealthLotORM,
     WealthNavORM, WealthOrderORM, WealthProductORM, WealthProductVersionORM,
     WealthSettlementORM, WealthUnitHoldORM, WealthVerificationORM)
 from ...schemas.wealth import InvestmentCommand
-from ...domain.time import utc_now
+from ...domain.time import utc_now, as_utc
 from .available_funds import available_cash, held_cash
 from .audit_service import record_bank_event
 from .transfer_service import BankError
@@ -48,7 +48,10 @@ async def business_now(db: AsyncSession, account_id: str | None = None) -> datet
         from ...models.wealth_research import WealthContextORM
         context = (await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id == account_id))).one_or_none()
         if context and context.data.get("disposable") is True:
-            return datetime.fromisoformat(context.data["business_at"])
+            value=datetime.fromisoformat(context.data['business_at'])
+            if value.tzinfo is None:
+                raise BankError('测试业务时间缺少时区，需按来源核对', 'INVALID_BUSINESS_TIME', 409)
+            return value
     return utc_now()
 
 
@@ -201,11 +204,15 @@ async def product_version(db: AsyncSession, command: InvestmentCommand) -> Wealt
 async def latest_nav(db: AsyncSession, version_id: str, at: datetime) -> WealthNavORM | None:
     """仅读取业务时点以前净值，禁止未来数据。"""
     day=at.astimezone(TZ).date()
-    version=await db.get(WealthProductVersionORM,version_id)
-    if version and version.rules.get('dataset_id') and at.astimezone(TZ).hour<18:
-        day-=timedelta(days=1)
-    return (await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id == version_id,
-        WealthNavORM.nav_date <= day).order_by(WealthNavORM.nav_date.desc()))).first()
+    rows = (await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id == version_id,
+        WealthNavORM.nav_date <= day).order_by(WealthNavORM.nav_date.desc()))).all()
+    return next((price for price in rows if nav_available_at(price)<=at),None)
+
+
+def nav_available_at(price: WealthNavORM) -> datetime:
+    """导入证据的可用瞬时；旧模拟种子缺字段按明确18点发布假设保守处理。"""
+    return as_utc(price.available_at,legacy_utc=True) if price.available_at else datetime.combine(
+        price.nav_date,datetime.strptime('18:00','%H:%M').time(),TZ)
 
 
 async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
@@ -274,7 +281,10 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     context = (await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id == account.account_id))).one_or_none()
     active = await selected(db, user_id)
     product_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
-    if ((context and (active is None or active.context_id != context.context_id or product_key != context.dataset_key))
+    same_run = bool(context and active and context.user_id==active.user_id and
+        context.data.get('disposable') is True and active.data.get('disposable') is True and
+        context.data.get('run_id',context.context_id)==active.data.get('run_id',active.context_id))
+    if ((context and (active is None or not same_run or product_key != context.dataset_key))
             or (not context and (active is not None or row.rules.get("dataset_id")))):
         raise BankError("产品与当前资金上下文不一致，请重新预览", "DATASET_MISMATCH", 409)
     now = await business_now(db, command.account_id)
@@ -513,7 +523,7 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
         from ...models.wealth_research import WealthContextORM
         context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==row.account_id))).first()
         if context and context.data.get('fixture',{}).get('missing_pricing_nav'): price=None
-        if day < row.confirm_date or price is None or price.nav_date > day:
+        if day < row.confirm_date or price is None or price.nav_date > day or nav_available_at(price)>now:
             row.details = {**row.details, "waiting_reason": "NAV_UNAVAILABLE" if price is None else "CONFIRMATION_DATE_NOT_REACHED"}
             await db.commit()
             return order_view(row)
@@ -580,15 +590,27 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
     return order_view(row)
 
 
-async def assets(db: AsyncSession, user_id: str) -> dict:
+async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) -> dict:
     """现金、在途应收、持仓分开估值，占款仅为现金子集不重复相加。"""
     from .wealth_research import selected
     from ...models.wealth_research import WealthContextORM
-    context = await selected(db, user_id)
+    if account_id:
+        account = await db.get(AccountORM, account_id)
+        if not account or account.user_id != user_id:
+            raise BankError('账户不存在', 'ACCOUNT_NOT_FOUND', 404)
+        context = await db.scalar(select(WealthContextORM).where(WealthContextORM.account_id==account_id))
+    else:
+        context = await selected(db, user_id)
     now = await business_now(db, context.account_id if context else None)
     sandbox_accounts = set((await db.scalars(select(WealthContextORM.account_id).where(WealthContextORM.user_id == user_id))).all())
+    group_accounts = {context.account_id} if context else set()
+    if context:
+        peers=(await db.scalars(select(WealthContextORM).where(WealthContextORM.user_id==user_id))).all()
+        run_scope=context.data.get('run_id',context.context_id)
+        group_accounts={peer.account_id for peer in peers if peer.data.get('disposable') is True and
+            peer.data.get('run_id',peer.context_id)==run_scope}
     accounts = [a for a in (await db.scalars(select(AccountORM).where(AccountORM.user_id == user_id))).all()
-                if (a.account_id == context.account_id if context else a.account_id not in sandbox_accounts)]
+                  if (a.account_id == account_id if account_id else a.account_id in group_accounts if context else a.account_id not in sandbox_accounts)]
     allowed_accounts = {a.account_id for a in accounts}
     cash = [{"account_id": a.account_id, "account_type": a.account_type,
              "balance_fen": a.balance_fen, "held_fen": await held_cash(db, a.account_id),

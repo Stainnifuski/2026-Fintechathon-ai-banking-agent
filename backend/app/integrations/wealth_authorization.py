@@ -208,7 +208,6 @@ async def validate_bank_authorization(db: AsyncSession, user_id: str, authorizat
                                      command: InvestmentCommand) -> WealthAuthorizationORM:
     """银行调用的策略接口；必须本人确认+验证、完整摘要、当前计划。"""
     from ..services.orchestration.wealth_task import require_write_control
-    await require_write_control(db, user_id, command)
     row = await owned_authorization(db, user_id, authorization_id)
     from ..models.wealth import WealthVerificationORM
     from .wealth_verification import demo_verification_enabled
@@ -218,4 +217,5 @@ async def validate_bank_authorization(db: AsyncSession, user_id: str, authorizat
     if (row.status != "VALID" or not row.confirmed_at or not row.verified_at
             or row.operation_id != command.operation_id or row.param_digest != command_digest(command)):
         raise WealthPolicyError("缺少绑定订单的本人确认和强验证", "AUTHORIZATION_REQUIRED", 403)
+    await require_write_control(db, user_id, command, row)
     return row

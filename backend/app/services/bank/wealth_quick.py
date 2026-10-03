@@ -22,7 +22,9 @@ def window_open(contract: dict, now: datetime, calendar: str) -> bool:
 
 def quote_key(price) -> str:
     """固定净值版本和价格，原行同ID变价也导致重新确认。"""
-    return hashlib.sha256((price.nav_id+":"+price.price).encode()).hexdigest()
+    from .wealth_service import nav_available_at
+    from ...domain.time import utc_iso
+    return hashlib.sha256((price.nav_id+':'+price.price+':'+utc_iso(nav_available_at(price))).encode()).hexdigest()
 
 
 def quota_key(user_id: str, product_id: str, scope: str, now: datetime) -> str:
@@ -39,13 +41,14 @@ async def preview(db: AsyncSession, user_id: str, command, version, context, now
         raise BankError("当前快赎窗口关闭，可重新选择普通赎回", "QUICK_WINDOW_CLOSED", 409)
     if price is None:
         raise BankError("缺少当前已发布模拟净值", "NAV_UNAVAILABLE", 409)
-    published = datetime.combine(price.nav_date,
-        time.fromisoformat(version.rules.get('nav_publication_time', '18:00')), tzinfo=BEIJING)
+    from .wealth_service import nav_available_at
+    published = nav_available_at(price)
     if published > now:
         raise BankError('净值尚未发布，不可用于快赎', 'NAV_UNAVAILABLE', 409)
-    scope = context.context_id if context else "ordinary"
+    scope = context.data.get('run_id',context.context_id) if context else 'ordinary'
+    context_id = context.context_id if context else 'ordinary'
     epoch = context.version if context else 1
-    if command.context_id is not None and (command.context_id != scope or command.context_epoch != epoch):
+    if command.context_id is not None and (command.context_id != context_id or command.context_epoch != epoch):
         raise BankError("资金轮次已改变，请重新预览", "STALE_CONTEXT", 409)
     gross = int((Decimal(command.units) * Decimal(price.price) * 100).quantize(Decimal("1"), ROUND_DOWN))
     if gross < 1:
@@ -57,7 +60,7 @@ async def preview(db: AsyncSession, user_id: str, command, version, context, now
     used = quota.paid_fen if quota else 0
     if used + gross > contract["daily_limit_fen"]:
         raise BankError("快赎自然日累计额度不足，可重新选择普通赎回", "QUICK_DAILY_LIMIT", 409)
-    bound = command.model_copy(update={"nav_quote_id":key,"quoted_cash_fen":gross,"context_id":scope,"context_epoch":epoch})
+    bound = command.model_copy(update={"nav_quote_id":key,"quoted_cash_fen":gross,"context_id":context_id,"context_epoch":epoch})
     remaining = scaled(command.units)
     allocations = []
     for lot, free in lots:
@@ -70,8 +73,11 @@ async def preview(db: AsyncSession, user_id: str, command, version, context, now
         raise BankError("可赎回份额不足", "INSUFFICIENT_REDEEMABLE_UNITS", 409)
     # 单次总到账向下取整；分批尾差归入最后批，不能丢现金或超过报价。
     if allocations:
-        allocations[-1]["cash_fen"] += gross - sum(a["cash_fen"] for a in allocations)
+        delta = gross - sum(a['cash_fen'] for a in allocations)
+        for field in ('cash_fen','gross_fen','realized_pnl_fen'):
+            allocations[-1][field] += delta
     return bound, {"cash_fen":gross,"fee_fen":0,"lots":allocations,
+        'quota_scope':scope,
         "daily_used_fen":used,"daily_remaining_fen":contract["daily_limit_fen"]-used,
         "redemption_mode":"quick","nav_quote_id":key,"nav":price.price,"nav_date":price.nav_date.isoformat(),
         "nav_available_at":published.isoformat(),
@@ -81,7 +87,7 @@ async def preview(db: AsyncSession, user_id: str, command, version, context, now
 async def complete(db: AsyncSession, row, account, command, version, now, estimate: dict) -> None:
     """调用方已锁用户及账户，授权/报价预检完毕；由批次统一commit。"""
     from .wealth_service import stable_id, quantity
-    scope = command.context_id or "ordinary"
+    scope = estimate['quota_scope']
     key = quota_key(row.user_id, version.product_id, scope, now)
     quota = await db.get(WealthQuickQuotaORM, key)
     if quota is None:
@@ -100,7 +106,7 @@ async def complete(db: AsyncSession, row, account, command, version, now, estima
     account.balance_fen += cash; quota.paid_fen += cash
     row.status = "SETTLED"
     row.details = {**row.details, "redemption_mode":"quick","waiting_reason":None,
-        "actual_nav":estimate["nav"],"actual":{"cash_fen":cash,"fee_fen":0,"lots":actual_lots,
+        "actual_nav":estimate["nav"],"actual":{"cash_fen":cash,'gross_fen':cash,"fee_fen":0,"lots":actual_lots,
         "cost_fen":sum(a["cost_fen"] for a in actual_lots),"realized_pnl_fen":cash-sum(a["cost_fen"] for a in actual_lots)},
         "quick_contract":estimate["contract"],"business_at":now.isoformat(),"occurred_at":utc_now().isoformat()}
     db.add(WealthSettlementORM(event_id=row.operation_id+":quick",operation_id=row.operation_id,

@@ -63,10 +63,13 @@ async def receipt(db: AsyncSession, user_id: str, action: str, body: dict) -> tu
     if not isinstance(request_id, str) or not 8 <= len(request_id) <= 64:
         raise BankError("缺少合法幂等请求号", "INVALID_REQUEST", 422)
     key = user_id + ":" + request_id
+    if len(key)>96:key=hashlib.sha256(key.encode()).hexdigest()
     digest = hashlib.sha256(json.dumps({"action":action, "body":body},sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
     row = await db.get(WealthDemoReceiptORM,key)
     if row and (row.digest != digest or row.action != action):
         raise BankError("请求号参数冲突", "IDEMPOTENCY_CONFLICT", 409)
+    if row and row.result.get('gone') is True:
+        raise BankError('原测试轮次已物理删除', 'GONE', 410)
     return key, digest, row.result if row else None
 
 
@@ -99,7 +102,11 @@ async def write(db: AsyncSession, user_id: str, action: str, body: dict) -> dict
         selection = await db.get(WealthContextSelectionORM,user_id)
         if selection is None or selection.context_id != ctx.context_id:
             raise BankError("只能处理当前测试轮次", "STALE_CONTEXT", 409)
-        await lock_accounts(db,[ctx.account_id]); await db.refresh(ctx)
+        run_scope=ctx.data.get('run_id',ctx.context_id)
+        peers=(await db.scalars(select(WealthContextORM).where(WealthContextORM.user_id==user_id))).all()
+        peers=[peer for peer in peers if peer.data.get('disposable') is True and
+            peer.data.get('run_id',peer.context_id)==run_scope]
+        await lock_accounts(db,[peer.account_id for peer in peers] if action=='reset' else [ctx.account_id]); await db.refresh(ctx)
         if ctx.version != body["expected_version"]:
             raise BankError("测试轮次已变化，请刷新", "STALE_CONTEXT", 409)
         account = await db.get(AccountORM,ctx.account_id,populate_existing=True)
@@ -123,9 +130,12 @@ async def write(db: AsyncSession, user_id: str, action: str, body: dict) -> dict
             result={"run_id":ctx.context_id,"epoch":ctx.version,"balance_fen":account.balance_fen,"amount_fen":amount,"action":direction}
         else:
             rid="RUN"+uuid4().hex[:28]; aid="SA"+uuid4().hex[:28]
-            ctx.version += 1; ctx.data={**ctx.data,"run_state":"ARCHIVED","archived_at":utc_iso(utc_now())}
+            for peer in peers:
+                await db.refresh(peer)
+                await invalidate(db,user_id,peer.account_id)
+                peer.version+=1; peer.data={**peer.data,'run_state':'ARCHIVED','archived_at':utc_iso(utc_now())}
             tasks=(await db.scalars(select(WealthTaskORM).where(WealthTaskORM.user_id==user_id,
-                WealthTaskORM.account_id==ctx.account_id, WealthTaskORM.status.not_in(['COMPLETED','CANCELLED','FAILED'])))).all()
+                WealthTaskORM.account_id.in_([peer.account_id for peer in peers]), WealthTaskORM.status.not_in(['COMPLETED','CANCELLED','FAILED'])))).all()
             for task in tasks:
                 task.status='PAUSED'; task.waiting_reason='ARCHIVED_RUN'; task.version+=1
             base=ctx.data.get("fixture_baseline",{})
@@ -137,7 +147,7 @@ async def write(db: AsyncSession, user_id: str, action: str, body: dict) -> dict
                     "fixture":ctx.data.get("fixture",{}),"disposable":True,"run_state":"ACTIVE","business_at":business_at,
                     "fixture_version":ctx.data.get("fixture_version",ctx.dataset_key),"fixture_baseline":{"cash_fen":2000000,"business_at":business_at},"run_id":rid}))
             selection.context_id=rid; selection.version+=1
-            result={"archived_run_id":ctx.context_id,"run_id":rid,"account_id":aid,"epoch":1,"balance_fen":2000000,"selection_version":selection.version}
+            result={"archived_run_id":ctx.context_id,'archived_run_ids':[peer.context_id for peer in peers],"run_id":rid,"account_id":aid,"epoch":1,"balance_fen":2000000,"selection_version":selection.version}
     else:
         result=await delete_archives(db,user_id,body)
     db.add(WealthDemoReceiptORM(receipt_id=key,user_id=user_id,digest=digest,action=action,result=result,created_at=utc_now()))
@@ -194,6 +204,11 @@ async def delete_archives(db: AsyncSession, user_id: str, body: dict) -> dict:
     if not items or len(items)>100 or len({r['run_id'] for r in items})!=len(items):
         raise BankError('请选择不同的归档轮次','INVALID_REQUEST',422)
     contexts=[await context_owned(db,user_id,item['run_id'],archived=True) for item in items]
+    peers=(await db.scalars(select(WealthContextORM).where(WealthContextORM.user_id==user_id))).all()
+    selected_ids={ctx.context_id for ctx in contexts}
+    scopes={ctx.data.get('run_id',ctx.context_id) for ctx in contexts}
+    if any(peer.context_id not in selected_ids and peer.data.get('run_id',peer.context_id) in scopes for peer in peers):
+        raise BankError('同轮次还有关联账户，请一起选择归档删除', 'DELETION_BLOCKED',409)
     from .wealth_service import lock_accounts
     await lock_accounts(db,[c.account_id for c in contexts])
     preview = await deletion_preview(db, user_id, items)
@@ -215,9 +230,13 @@ async def delete_archives(db: AsyncSession, user_id: str, body: dict) -> dict:
             WealthTaskNodeORM.operation_id.in_(data['operations']),WealthTaskNodeORM.task_id.not_in(data['tasks'])))
         if cross_task:
             raise BankError('订单存在跨轮次任务引用', 'DELETION_BLOCKED', 409)
-        # 混合历史不能删掉其他轮次数据；未完成引用拆分前保守阻止。
-        if data['conversations']:
-            raise BankError('存在对话引用，需完成任务归档核对后清理', 'DELETION_BLOCKED', 409)
+        # 旧版本切范围复制出的混合历史不能删除其他轮次；新会话严格绑定单一范围。
+        for sid in data['conversations']:
+            conv=await db.get(WealthConversationORM,sid)
+            cross=await db.scalar(select(WealthTaskORM.task_id).where(WealthTaskORM.session_id==sid,
+                WealthTaskORM.account_id!=ctx.account_id))
+            if conv.data.get('history_archive') or cross:
+                raise BankError('存在混合历史或跨范围对话引用，禁止清理', 'DELETION_BLOCKED', 409)
         observations=(await db.scalars(select(WealthExecutionORM).where(WealthExecutionORM.authorization_id.in_(data['auths'])))).all()
         if any(o.status in {'UNKNOWN','SUBMITTING'} for o in observations):
             raise BankError('存在未核对写入，先按原号核对','DELETION_BLOCKED',409)
@@ -227,6 +246,24 @@ async def delete_archives(db: AsyncSession, user_id: str, body: dict) -> dict:
         dependencies.append(data)
     # 先删除从属再删除账户；全程保留外键约束。
     for ctx,data in zip(contexts,dependencies):
+        old_receipts=(await db.scalars(select(WealthDemoReceiptORM).where(
+            WealthDemoReceiptORM.user_id==user_id,WealthDemoReceiptORM.action=='adjust'))).all()
+        for old in old_receipts:
+            if old.result.get('run_id')==ctx.context_id:
+                old.result={'run_id':ctx.context_id,'gone':True}
+        chats=(await db.scalars(select(WealthChatRequestORM).where(WealthChatRequestORM.user_id==user_id))).all()
+        for chat in chats:
+            if chat.response.get('session_id') in data['conversations']:
+                await db.delete(chat)
+        audits=(await db.scalars(select(AuditLogORM).where(AuditLogORM.user_id==user_id,
+            AuditLogORM.action.like('investment_%')))).all()
+        for audit in audits:
+            if audit.params and (audit.params.get('operation_id') in data['operations'] or audit.params.get('authorization_id') in data['auths']):
+                await db.delete(audit)
+        adjustments=(await db.scalars(select(AuditLogORM).where(AuditLogORM.user_id==user_id,
+            AuditLogORM.action=='wealth_demo_adjust'))).all()
+        for audit in adjustments:
+            if audit.params and audit.params.get('run_id')==ctx.context_id: await db.delete(audit)
         for cls,predicate in [
             (WealthTaskControlORM,WealthTaskControlORM.task_id.in_(data['tasks'])),
             (WealthTaskNodeORM,WealthTaskNodeORM.task_id.in_(data['tasks'])),
@@ -241,7 +278,7 @@ async def delete_archives(db: AsyncSession, user_id: str, body: dict) -> dict:
             (WealthOrderORM,WealthOrderORM.account_id==ctx.account_id),
             (WealthPlanORM,WealthPlanORM.plan_id.in_(data['plans'])),
             (WealthConversationORM,WealthConversationORM.session_id.in_(data['conversations'])),
-            (WealthQuickQuotaORM,WealthQuickQuotaORM.scope_id==ctx.context_id),
+            (WealthQuickQuotaORM,WealthQuickQuotaORM.scope_id==ctx.data.get('run_id',ctx.context_id)),
             (WealthLedgerReviewORM,WealthLedgerReviewORM.account_id==ctx.account_id),
             (TransactionORM,TransactionORM.account_id==ctx.account_id)]:
             await db.execute(delete(cls).where(predicate))
@@ -250,4 +287,5 @@ async def delete_archives(db: AsyncSession, user_id: str, body: dict) -> dict:
     return {'deleted_run_ids':[c.context_id for c in contexts],
         'deleted_account_ids':[c.account_id for c in contexts], 'deleted_count':len(contexts),
         'deleted_operation_ids':[operation for data in dependencies for operation in data['operations']],
+        'deleted_task_ids':[task for data in dependencies for task in data['tasks']],
         'physical_delete':True,'occurred_at':utc_iso(utc_now())}

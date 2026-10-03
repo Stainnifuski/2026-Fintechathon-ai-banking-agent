@@ -410,11 +410,15 @@ async def adopt_plan(plan_id: str, request: AdoptPlan, user: dict = Depends(get_
 
 
 @router.get("/messages/history")
-async def message_history(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict | None:
+async def message_history(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict | None:
     """本人最近会话刷新恢复，只返回受控模拟消息。"""
     from ..models.wealth import WealthConversationORM
-    row = (await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id == user["user_id"])
-        .order_by(WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).first()
+    try: context=(await bank.call('POST','/contexts',{'subject_user_id':user['user_id']}))['selected']
+    except BankApiError as error: fail(error)
+    rows = (await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id == user["user_id"])
+        .order_by(WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).all()
+    row=next((item for item in rows if item.data.get('context_id','legacy-v1')==context),None)
     return {"session_id": row.session_id, "version": row.version, **row.data} if row else None
 
 

@@ -5,6 +5,7 @@ from sqlalchemy import select, func
 from tests.integration.test_wealth_bank import store,http_store,assess
 from backend.app.models import AccountORM
 from backend.app.models.wealth_research import WealthDatasetORM
+from backend.app.models.wealth import WealthPlanORM,WealthOrderORM
 from backend.app.domain.wealth_synthetic import generate
 from backend.app.domain.wealth_analytics import metrics, correlation, concentration
 from backend.app.services.bank import wealth_research as research, wealth_service as bank
@@ -51,6 +52,33 @@ def test_reproducible_correlated_dataset_and_short_history():
     assert short['annualized'] is None
     assert short['annualized_unavailable_reason']=='LESS_THAN_ONE_YEAR'
     assert concentration([dict(product_id='A',fund_family_id='F',category='bond',amount_fen=40),dict(product_id='C',fund_family_id='F',category='bond',amount_fen=40),dict(product_id='B',category='cash',amount_fen=20)])['overconcentrated_families']==['F']
+
+
+@pytest.mark.asyncio
+async def test_budget_range_and_transparent_suggestion_require_user_choice(store,http_store,monkeypatch):
+    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
+    client,_,_=http_store
+    async with store() as db:
+        created=await research.initialize(db,'U1');await db.commit()
+        await research.select_context(db,'U1',created['context_id'],1);await assess(db)
+    context={}
+    async def send(text,key):
+        nonlocal context
+        reply=(await client.post('/api/v1/wealth/messages',json={'message':text,'client_message_id':key,**context})).json()
+        context={'session_id':reply['session_id'],'version':reply['version']}
+        return reply
+    proposed=await send('投入3000到6000，留五千备用，180天后用','range-budget-001')
+    assert proposed['kind']=='clarification' and proposed['budget_proposal']['amount_fen']==300000
+    async with store() as db:
+        assert await db.scalar(select(func.count()).select_from(WealthPlanORM))==0
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+    plan=await send('采用建议金额','range-budget-002')
+    assert plan['kind']=='plan' and plan['plan']['request']['budget_fen']==300000
+    assert plan['plan']['request']['budget_source']=='user_accepted_suggestion'
+    await send('取消任务','range-budget-003')
+    suggestion=await send('建议投入多少金额，留五千备用，180天后用','range-budget-004')
+    assert suggestion['budget_proposal']['amount_fen']==750000
+    assert '一半' in suggestion['message'] and 'command' not in suggestion
 
 
 @pytest.mark.asyncio
@@ -107,6 +135,10 @@ async def test_multiturn_preview_replay_knowledge_and_context_invalidation(store
     rows=plan['plan']['items']; assert len({i['command']['product_id'] for i in rows})>=2
     compared,_=await send('第一个和第二个对比','research-message-3')
     assert compared['kind']=='comparison' and compared['analysis']['common_samples']>30
+    blocked,_=await send('第二个买五千','research-message-other-write')
+    assert blocked['code']=='ACTIVE_TASK_SELECTION_REQUIRED'
+    cancelled,_=await send('取消任务','research-message-cancel-plan')
+    assert cancelled['task']['status']=='CANCELLED'
     bought,body=await send('第二个买五千','research-message-4')
     assert bought['kind']=='command' and bought['command']['amount_fen']==500000,bought
     replay=await client.post('/api/v1/wealth/messages',json=body)
@@ -114,9 +146,12 @@ async def test_multiturn_preview_replay_knowledge_and_context_invalidation(store
     changed,_=await send('改成三千','research-message-5')
     assert changed['command']['amount_fen']==300000
     assert changed['command']['operation_id']!=bought['command']['operation_id']
+    paused,_=await send('改成二千，先别买','research-message-compound-pause')
+    assert paused['command']['amount_fen']==200000 and paused['task']['status']=='PAUSED'
     knowledge,_=await send('为什么A/C同家族不算分散投资','research-message-6')
     assert knowledge['kind']=='knowledge' and knowledge['citations']
     assert all('content_hash' in c and c['excerpt'] for c in knowledge['citations'])
+    await send('取消任务','research-message-cancel-single')
     # After a single-product action, an old full budget must not hijack other intents.
     from backend.app.models.account import AccountORM
     async with store() as db:
@@ -128,10 +163,12 @@ async def test_multiturn_preview_replay_knowledge_and_context_invalidation(store
     assert greeting['kind']=='clarification' and greeting.get('code')!='INSUFFICIENT_AVAILABLE_FUNDS'
     missing,_=await send('帮我做配置','research-message-new-budget')
     assert '9500.29' in missing['message'] and '本次预算' not in missing['message']
-    assert missing['budget_source']=='bank_available_cash' and missing.get('code')!='INSUFFICIENT_AVAILABLE_FUNDS'
+    assert '愿意投入' in missing['message'] and missing.get('code')!='INSUFFICIENT_AVAILABLE_FUNDS'
     auto,_=await send('180天后用，留五千备用','research-message-bank-budget')
-    assert auto['kind']=='plan' and auto['plan']['request']['budget_fen']==950029
-    assert auto['plan']['request']['budget_source']=='bank_available_cash'
+    assert auto['kind']=='clarification' and '愿意投入' in auto['message']
+    specified,_=await send('预算九千','research-message-explicit-budget')
+    assert specified['kind']=='plan' and specified['plan']['request']['budget_fen']==900000
+    assert specified['plan']['request']['budget_source']=='user_specified'
     excessive,_=await send('我有两万元，180天后用，稳健配置，留五千','research-message-excessive')
     assert excessive['code']=='INSUFFICIENT_AVAILABLE_FUNDS'
     assert '20000.00' in excessive['message'] and '9500.29' in excessive['message']

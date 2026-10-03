@@ -95,6 +95,10 @@ class Precheck(Subject):
     command: InvestmentCommand
 
 
+class AssetSubject(Subject):
+    account_id: str | None = Field(default=None, max_length=32)
+
+
 class Verify(Subject):
     authorization_id: str = Field(max_length=64)
     proof: str = Field(pattern=r"^\d{6}$")
@@ -257,9 +261,9 @@ async def products(db: AsyncSession = Depends(get_db)) -> list[dict]:
 
 
 @router.post("/assets")
-async def assets(request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
+async def assets(request: AssetSubject, db: AsyncSession = Depends(get_db)) -> dict:
     """内部本人银行资产事实。"""
-    return await bank.assets(db, request.subject_user_id)
+    return await bank.assets(db, request.subject_user_id, request.account_id)
 
 
 @router.post("/catalog")

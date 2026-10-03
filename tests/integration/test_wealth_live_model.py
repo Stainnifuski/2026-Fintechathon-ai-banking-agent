@@ -4,11 +4,21 @@ import json
 from pathlib import Path
 from uuid import uuid4
 import pytest
+import pytest_asyncio
 from tests.integration.test_wealth_bank import store,http_store,assess
 from backend.app.services.bank import wealth_research as research,wealth_service as bank
 from backend.app.models.wealth_research import WealthContextORM
 
 pytestmark=pytest.mark.skipif(os.getenv('WEALTH_LIVE_TEST')!='true',reason='未启用真实DeepSeek付费联调')
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def close_live_client_between_test_event_loops():
+    yield
+    from backend.app.services.ai import wealth_model
+    if wealth_model._client is not None:
+        await wealth_model._client.aclose()
+        wealth_model._client=None
 
 
 @pytest.mark.asyncio
@@ -59,6 +69,8 @@ async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,
         assert plan['kind']=='plan' and len(plan['plan']['items'])>=2,plan
         compared=await send('第二个和第一个有什么区别？')
         assert compared['kind']=='comparison' and compared['analysis']['common_samples']>30,compared
+        cancelled=await send('取消任务')
+        assert cancelled['task']['status']=='CANCELLED',cancelled
         bought=await send('那第二个买五千。')
         assert bought['kind']=='command' and bought['command']['amount_fen']==500000,bought
         old=(await client.post('/api/v1/wealth/previews',json=bought['command'])).json()
@@ -78,6 +90,11 @@ async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,
         async with store() as db:
             context=await db.get(WealthContextORM,ctx['context_id']); context.data={**context.data,'business_at':'2026-10-05T19:00:00+08:00'}; await db.commit()
             settled=await bank.settle(db,changed['command']['operation_id']); assert settled['status']=='SETTLED'
+            from tests.integration.test_wealth_task_controls import DirectBank
+            from backend.app.services.orchestration.wealth_task_worker import tick
+            for _ in range(3):await tick(db,changed['task']['task_id'],DirectBank(db))
+        holding=await send('查一下我的持仓资产')
+        assert holding['kind']=='assets',holding
         redeem=await send('把它赎回一半。')
         assert redeem['kind']=='command' and redeem['command']['direction']=='redeem',redeem
         knowledge=await send('为什么同一家基金的A和C不能算两份分散投资？')

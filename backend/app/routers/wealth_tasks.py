@@ -10,6 +10,8 @@ from ..schemas.wealth import StrictRequest
 from ..models.wealth import WealthTaskORM
 from ..services.orchestration import wealth_task as tasks
 from ..integrations.wealth_authorization import WealthPolicyError
+from ..integrations.wealth_bank_api import HttpWealthBankApi
+from .wealth import get_wealth_bank
 
 router = APIRouter(prefix='/api/v1/wealth', tags=['wealth-tasks'])
 
@@ -25,10 +27,14 @@ def fail(error):
 
 
 @router.get('/tasks')
-async def list_tasks(user:dict=Depends(get_current_user), db:AsyncSession=Depends(get_db)):
+async def list_tasks(user:dict=Depends(get_current_user), db:AsyncSession=Depends(get_db),
+    bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..integrations.bank_api import BankApiError
+    try: context=(await bank.call('POST','/contexts',{'subject_user_id':user['user_id']}))['selected']
+    except BankApiError as error: fail(error)
     rows = (await db.scalars(select(WealthTaskORM).where(WealthTaskORM.user_id==user['user_id'])
         .order_by(WealthTaskORM.updated_at.desc()))).all()
-    return {'items':[await tasks.view(db, row) for row in rows]}
+    return {'items':[await tasks.view(db, row) for row in rows if row.context_id==context]}
 
 
 @router.get('/tasks/{task_id}')
@@ -55,6 +61,19 @@ async def operator(user:dict=Depends(get_current_user)):
 async def operator_tasks(user:dict=Depends(operator), db:AsyncSession=Depends(get_db)):
     rows = (await db.scalars(select(WealthTaskORM).where(WealthTaskORM.control_mode.in_(['HANDOFF_PENDING','HUMAN'])))).all()
     return {'items':[await tasks.view(db, row) for row in rows]}
+
+
+@router.get('/operator/tasks/{task_id}/facts')
+async def operator_facts(task_id:str, user:dict=Depends(operator), db:AsyncSession=Depends(get_db),
+    bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..integrations.bank_api import BankApiError
+    row=await db.get(WealthTaskORM,task_id)
+    if not row or row.control_mode!='HUMAN' or row.owner_id!=user['user_id']:
+        raise HTTPException(403,detail={'code':'HANDOFF_CONFLICT','message':'只有领取操作员可查看处理事实'})
+    subject, account_id = row.user_id, row.account_id
+    await db.rollback()
+    try: return await bank.call('POST','/assets',{'subject_user_id':subject,'account_id':account_id})
+    except BankApiError as error: fail(error)
 
 
 @router.post('/operator/tasks/{task_id}/{action}')

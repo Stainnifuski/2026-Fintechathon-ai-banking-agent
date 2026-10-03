@@ -59,3 +59,24 @@ def test_beijing_instant_and_unknown_naive():
     assert utc_iso(event.astimezone(BEIJING)) == "2026-10-02T16:00:00Z"
     with pytest.raises(ValueError):
         as_utc(event.replace(tzinfo=None))
+
+
+@pytest.mark.asyncio
+async def test_nav_publication_instant_and_beijing_date_prevent_future_leak(store):
+    from backend.app.models.wealth import WealthNavORM
+    from backend.app.services.bank.wealth_quick import quote_key
+    from datetime import date
+    async with store() as db:
+        row=await db.scalar(select(WealthNavORM).where(WealthNavORM.version_id=='MF002:1',WealthNavORM.nav_date==date(2026,10,12)))
+        row.available_at=datetime(2026,10,11,16,tzinfo=timezone.utc)
+        await db.commit()
+        instant=datetime(2026,10,11,16,0,1,tzinfo=timezone.utc)
+        visible=await bank.latest_nav(db,row.version_id,instant)
+        assert visible.nav_date==date(2026,10,12)
+        same=await bank.latest_nav(db,row.version_id,instant.astimezone(BEIJING))
+        assert same.nav_id==visible.nav_id
+        quote=quote_key(visible)
+        row.available_at=instant+timedelta(hours=1);await db.commit()
+        assert quote_key(row)!=quote
+        older=await bank.latest_nav(db,row.version_id,instant)
+        assert older.nav_date<date(2026,10,12)

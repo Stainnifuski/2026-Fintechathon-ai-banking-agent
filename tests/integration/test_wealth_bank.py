@@ -235,13 +235,14 @@ async def http_store(store, monkeypatch):
     from backend.app.database.connection import get_db
     from backend.app.middleware.auth import get_current_user
     from backend.app.middleware.errors import install_error_handlers
-    from backend.app.routers import wealth_bank, wealth, bank_operations
+    from backend.app.routers import wealth_bank, wealth, bank_operations, wealth_tasks
     from backend.app.integrations.wealth_bank_api import HttpWealthBankApi
     from backend.app.integrations.bank_api import BankResponseUnknown
     app = FastAPI()
     install_error_handlers(app)
     app.include_router(wealth.router)
     app.include_router(wealth_bank.router)
+    app.include_router(wealth_tasks.router)
     token = __import__("uuid").uuid4().hex
     monkeypatch.setattr(bank_operations, "INTERNAL_BANK_TOKEN", token)
     async def database():

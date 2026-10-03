@@ -4,11 +4,14 @@ export interface Command {
   operation_id: string; direction: 'purchase' | 'redeem'; product_id: string;
   product_version: number; disclosure_version: number; account_id: string;
   amount_fen: number; units: string; plan_id?: string | null; plan_version?: number;
+  command_version?: 1 | 2; redemption_mode?: 'standard' | 'quick'; nav_quote_id?: string | null;
+  quoted_cash_fen?: number | null; context_id?: string | null; context_epoch?: number | null;
 }
 export interface Product {
   product_id: string; version: number; name: string; kind: string; category: string;
   product_risk_level: number; status: string; nav: string | null; nav_date: string | null;
-  rules: { min_amount_fen: number; holding_days: number; cash_business_days: number; purchase_fee_rate: string };
+  rules: { min_amount_fen: number; holding_days: number; cash_business_days: number; purchase_fee_rate: string;
+    quick_redemption?: {start: string; end: string; daily_limit_fen: number} };
   disclosure: { version: number; nature: string; manager: string; seller: string; risk: string;
     fees: string; liquidity: string; pricing: string; settlement: string; cancellation: string; limitations: string };
 }
@@ -49,8 +52,17 @@ export interface Goal { goal_id: string; version: number; title: string; amount_
 export interface Profile { version: number; data: { monthly_income_fen?: number; monthly_expenses_fen?: number;
   liabilities_fen?: number; external_assets?: ExternalAsset[]; updated_at?: string }; goals: Goal[] }
 export interface ChatReply { mode: string; kind: string; message: string; session_id?: string; version?: number;
+  client_message_id?: string;
   plan?: Plan; command?: Command; products?: Product[];
+  task?: WealthTask; assets?: Assets; order?: Order;
   citations?: { document_id: string; title: string; excerpt: string; source_type: string; source_url?: string; published_at?: string; version: string; content_hash: string }[] }
+export interface WealthTask {
+  task_id: string; session_id: string; account_id: string; context_id: string; version: number;
+  status: string; control_mode: 'AGENT' | 'HANDOFF_PENDING' | 'HUMAN'; owner_id: string | null;
+  waiting_reason: string | null; goal: string;
+  notes: {action: string; reason: string; occurred_at: string}[];
+  nodes: {node_id: string; kind: string; status: string; depends_on: string[]; operation_id?: string | null}[];
+}
 export const money = (fen: number | null | undefined) => fen == null ? '未知' : `¥${(fen / 100).toFixed(2)}`;
 export const get = <T,>(path: string) => apiClient.get<T>(`/wealth${path}`).then(r => r.data);
 export const post = <T,>(path: string, body: unknown) => apiClient.post<T>(`/wealth${path}`, body).then(r => r.data);
