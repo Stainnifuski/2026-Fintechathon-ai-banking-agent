@@ -3,6 +3,7 @@ import * as bank from './services/bank';
 
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 const Wealth = lazy(() => import('./components/Wealth'));
+const CardManagement = lazy(() => import('./components/CardManagement'));
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const localDateTimeInput = (value: Date) => {
@@ -435,6 +436,7 @@ function App() {
         <button disabled={!fromAccount || (recipientMode === 'name' ? !toUserId : !selectedPhoneAccount) || isActing}>生成确认信息</button>
       </form></div>
     </section>
+    <Suspense fallback={<section className="card"><p>正在加载卡片管理…</p></section>}><CardManagement key={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense>
     <section className="card subscription-card">
       <h2>订阅管理</h2>
       {subscriptions.length === 0 ? <p className="hint">暂未识别到订阅扣费</p> : <ul className="history">{subscriptions.map(subscription => {

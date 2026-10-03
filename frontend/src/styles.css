@@ -3,3 +3,13 @@
 .subscription-action { display: grid; justify-items: end; gap: 8px; }
 .subscription-confirm { margin-top: 14px; padding: 14px; border-radius: 10px; background: #fff7e8; border: 1px solid #f2d39b; }
 .subscription-confirm p { margin: 0 0 6px; }
+.card-management { margin-bottom: 18px; }
+.card-management-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.card-management-head h2 { margin: 0; }
+.card-management > .history { margin-top: 10px; }
+.card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.card-actions button { padding: 7px 10px; }
+.card-level { font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+.card-level-yellow { background: #fff1c2; color: #8a5a00; }
+.card-level-red { background: #fde4e1; color: #b42318; }
+@media (max-width: 720px) { .card-management .history li { flex-direction: column; gap: 8px; } .card-management .subscription-action { justify-items: start; } .card-actions { justify-content: flex-start; } }

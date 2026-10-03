@@ -10,6 +10,7 @@ from ...models.account import AccountORM
 from ...models.contact import ContactORM
 from ...models.transaction import TransactionORM
 from ...models.subscription import SubscriptionORM
+from ...models.card import CardORM
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
 from ...security.passwords import hash_password
@@ -181,5 +182,23 @@ async def seed_bank_data() -> None:
                     source_transaction_id="TX20260918001",
                 )
             )
+        card_specs = [
+            # 卡号沿用对应账户的脱敏卡号；信用卡锁定用于演示解锁后再调额。
+            ("CARD001", "U001", "A001", "DEBIT", "6222****8842", "ACTIVE", None, None, None,
+             1_000_000, 5_000_000, 5_000_000, 10_000_000),
+            ("CARD002", "U001", "A002", "CREDIT", "6225****3301", "LOCKED", "连续输错密码已被风控锁定",
+             2_000_000, 5_000_000, 500_000, 2_000_000, 2_000_000, 5_000_000),
+        ]
+        for (card_id, user_id, account_id, card_type, card_number, card_status, lock_reason,
+             credit_limit_fen, credit_cap_fen, single_fen, daily_fen, single_cap_fen, daily_cap_fen) in card_specs:
+            if await session.get(CardORM, card_id) is None:
+                session.add(CardORM(
+                    card_id=card_id, user_id=user_id, account_id=account_id, card_type=card_type,
+                    is_virtual=False, card_number=card_number, status=card_status,
+                    lock_reason=lock_reason, credit_limit_fen=credit_limit_fen,
+                    credit_limit_cap_fen=credit_cap_fen, single_txn_limit_fen=single_fen,
+                    daily_txn_limit_fen=daily_fen, single_txn_cap_fen=single_cap_fen,
+                    daily_txn_cap_fen=daily_cap_fen, state_version=1,
+                ))
         await session.commit()
         logger.info("模拟银行种子数据同步完成")

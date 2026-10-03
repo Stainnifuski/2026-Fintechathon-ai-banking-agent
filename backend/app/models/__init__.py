@@ -17,6 +17,7 @@ from .payment_request import PaymentRequestORM
 from .payment_request_batch import PaymentRequestBatchORM
 from .payment_request_payment import PaymentRequestPaymentORM
 from .subscription import SubscriptionORM
+from .card import CardORM, CardOperationORM
 from .workflow import (
     AuthorizationORM,
     HumanTicketORM,
@@ -73,6 +74,8 @@ __all__ = [
     "PaymentRequestBatchORM",
     "PaymentRequestPaymentORM",
     "SubscriptionORM",
+    "CardORM",
+    "CardOperationORM",
 ]
 
 from .conversation import ConversationORM, ChatReceiptORM
