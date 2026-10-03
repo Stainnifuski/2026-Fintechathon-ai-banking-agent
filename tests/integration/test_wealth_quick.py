@@ -5,7 +5,7 @@ import hashlib, json
 
 import pytest
 from sqlalchemy import select, func
-from tests.integration.test_wealth_bank import store, assess, authorize
+from tests.integration.test_wealth_bank import store, http_store, assess, authorize
 from backend.app.schemas.wealth import InvestmentCommand
 from backend.app.models import AccountORM, TransactionORM
 from backend.app.models.wealth import WealthSettlementORM, WealthLotORM, WealthQuickQuotaORM
@@ -16,6 +16,65 @@ from backend.app.services.bank.wealth_quick import window_open
 from backend.app.services.bank.transfer_service import BankError
 from backend.app.domain.wealth_command import command_digest
 import asyncio
+
+
+@pytest.mark.asyncio
+async def test_quick_http_lost_response_requires_new_buy_confirmation(store, http_store, monkeypatch):
+    """真实银行HTTP路由成交后丢响应：原号恢复且到账后买入不能沿用赎回授权。"""
+    monkeypatch.delenv('WEALTH_DEMO_VERIFICATION_ENABLED', raising=False)
+    client, local, _ = http_store
+    async with store() as db:
+        payload={'schema_version':1,'dataset_id':'mixed-preload-v12','dataset_version':'quick-http',
+                 'mode':'snapshot','products':bank_products()}
+        for product in payload['products']:product['rules']['dataset_version']='quick-http'
+        assert (await research.import_dataset(db,payload))['ok']
+        context=await research.initialize(db,'U1',dataset_key='mixed-preload-v12:quick-http')
+        ctx=await db.get(WealthContextORM,context['context_id'])
+        ctx.data={**ctx.data,'business_at':'2026-09-30T19:00:00+08:00'}
+        await db.commit();await research.select_context(db,'U1',ctx.context_id,1);await assess(db)
+        buy=InvestmentCommand(operation_id='http-quick-opening-buy',direction='purchase',account_id=context['account_id'],
+            product_id='B017',product_version=1,disclosure_version=1,amount_fen=2000000)
+        await bank.accept_many(db,'U1',[(buy,await authorize(db,buy))])
+        ctx=await db.get(WealthContextORM,context['context_id'])
+        ctx.data={**ctx.data,'business_at':'2026-10-02T10:00:00+08:00'};await db.commit()
+        assert (await bank.settle(db,buy.operation_id))['status']=='SETTLED'
+        initial=(await db.get(AccountORM,buy.account_id)).balance_fen
+    async def preview_confirm(command):
+        response=await client.post('/api/v1/wealth/previews',json=command.model_dump())
+        assert response.status_code==200,response.text
+        view=response.json();base='/api/v1/wealth/previews/'+view['authorization_id']
+        assert (await client.post(base+'/execute',json={})).status_code==403
+        assert (await client.post(base+'/confirm',json={'digest':view['digest'],
+            'disclosure_version':1,'accepted':True})).status_code==200
+        assert (await client.post(base+'/verify/demo',json={})).status_code==200
+        return view,base
+    sell=InvestmentCommand(operation_id='http-quick-lost-sell',direction='redeem',account_id=buy.account_id,
+        product_id='B017',product_version=1,disclosure_version=1,units='1000.0000',command_version=2,redemption_mode='quick')
+    view,base=await preview_confirm(sell)
+    local.lose_response=True
+    unknown=await client.post(base+'/execute',json={})
+    assert unknown.status_code==502 and unknown.json()['detail']['code']=='RESULT_UNKNOWN'
+    async with store() as db:
+        cash=(await db.get(AccountORM,buy.account_id)).balance_fen
+        assert cash==initial+view['command']['quoted_cash_fen']
+        assert await db.scalar(select(func.count()).select_from(WealthSettlementORM).where(WealthSettlementORM.kind=='quick_cash'))==1
+    for _ in range(2):
+        restored=await client.post(base+'/execute',json={})
+        assert restored.status_code==200 and restored.json()['status']=='SETTLED'
+    async with store() as db:
+        assert (await db.get(AccountORM,buy.account_id)).balance_fen==cash
+        assert await db.scalar(select(func.count()).select_from(TransactionORM).where(TransactionORM.operation_id==sell.operation_id))==1
+    oversized=sell.model_copy(update={'operation_id':'http-quick-insufficient','units':'999999.0000'})
+    assert (await client.post('/api/v1/wealth/previews',json=oversized.model_dump())).status_code==409
+    new_buy=buy.model_copy(update={'operation_id':'http-after-quick-new-buy','amount_fen':50000})
+    new_view,new_base=await preview_confirm(new_buy)
+    assert new_view['authorization_id']!=view['authorization_id']
+    assert (await client.post(new_base+'/execute',json={})).json()['status']=='ACCEPTED'
+    async with store() as db:
+        from backend.app.services.bank.available_funds import held_cash
+        assert (await db.get(AccountORM,buy.account_id)).balance_fen==cash
+        assert await held_cash(db,buy.account_id)==50000
+        assert await db.scalar(select(func.count()).select_from(WealthSettlementORM).where(WealthSettlementORM.kind=='quick_cash'))==1
 
 
 def test_legacy_digest_and_fixed_quick_windows():
