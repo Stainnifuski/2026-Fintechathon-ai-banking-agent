@@ -59,6 +59,71 @@ async def test_real_model_compound_plan_pause_query_resume_and_handoff(store,htt
 
 
 @pytest.mark.asyncio
+async def test_real_model_research_before_assessment_and_bank_cash_intent(store, http_store, monkeypatch, request):
+    """未评估可研究；规划读银行现金但不代选预算，可信低风险评估后续接。"""
+    from sqlalchemy import select, func
+    from backend.app.models.wealth import WealthOrderORM, WealthAssessmentORM
+    from backend.app.services.bank import wealth_fund_data as funds
+    from datetime import datetime, timezone, timedelta
+    fixture_path=os.getenv('WEALTH_LIVE_FUND_FIXTURE')
+    if not fixture_path:pytest.skip('未提供可核验的真实基金缓存样本')
+    fixture=json.loads(Path(fixture_path).read_text(encoding='utf-8'))
+    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('WEALTH_FUND_ON_DEMAND_ENABLED','false')
+    client,_,_=http_store
+    session={};evidence=[]
+    async with store() as db:
+        await funds.import_directory(db,fixture['directory'])
+        for row in fixture['cache']:
+            db.add(funds.Cache(cache_key=row['code']+':history',code=row['code'],data_type='history',
+                data=row['data'],status='READY',fetched_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc)+timedelta(days=1),lease_until=datetime.now(timezone.utc)))
+        created=await research.initialize(db,'U1');await db.commit()
+        await research.select_context(db,'U1',created['context_id'],1)
+    async def send(text):
+        nonlocal session
+        result=await client.post('/api/v1/wealth/messages',json={'message':text,'client_message_id':uuid4().hex,**session})
+        assert result.status_code==200,result.text
+        reply=result.json();session={'session_id':reply['session_id'],'version':reply['version']}
+        evidence.append({'input':text,'reply':reply});return reply
+    try:
+        products=await send('找几只债券基金，先了解产品，不做配置也不买。')
+        assert products['kind']=='research' and len(products['directory']['items'])==2,products
+        assert all(not item['trade_eligible'] for item in products['directory']['items'])
+        comparison=await send('比较前两个。')
+        assert comparison['kind']=='research' and len(comparison['research_comparison']['analysis']['products'])==2,comparison
+        need=await send('帮我安排闲钱，三个月后可能用。')
+        assert need['kind']=='clarification' and '投入' in need['message'],need
+        assert '20000' in need['message'] and '愿意' in need['message'],need
+        assessment=await send('愿意投入一万元，保留五千元应急，三个月后可能用，稳健配置。')
+        assert assessment['kind']=='assessment_required',assessment
+        q=(await client.get('/api/v1/wealth/questionnaire')).json()
+        assert len(q['questions'])==9
+        submission=await client.post('/api/v1/wealth/assessments',json={'questionnaire_version':q['version'],
+            'profile_version':q['profile_version'],'adult':True,'full_capacity':True,
+            'answers':{question['id']:0 for question in q['questions']}})
+        assert submission.status_code==200,submission.text
+        result=submission.json()
+        confirmation=await client.post('/api/v1/wealth/assessments/'+result['assessment_id']+'/confirm',json={})
+        assert confirmation.status_code==200
+        resumed=await send('继续刚才的需求。')
+        assert resumed['kind']=='plan' and resumed['plan']['request']['budget_fen']==1000000,resumed
+        async with store() as db:
+            risk=await db.get(WealthAssessmentORM,result['assessment_id'])
+            assert risk.confirmed_at is not None
+            catalog={p['product_id']:p for p in await bank.products(db,'U1')}
+            assert all(catalog[item['command']['product_id']]['product_risk_level']<=risk.result['capacity_level']
+                       for item in resumed['plan']['items'])
+            assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+    finally:
+        target=os.getenv('WEALTH_LIVE_EVIDENCE')
+        if target:
+            base=Path(target);path=base.with_name(base.stem+'-demand-research-'+request.node.callspec.params['store']+base.suffix)
+            path.parent.mkdir(parents=True,exist_ok=True)
+            path.write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
+
+
+@pytest.mark.asyncio
 async def test_real_deepseek_full_directory_search_and_outside_comparison(store,http_store,monkeypatch):
     from datetime import datetime, timezone, timedelta
     from backend.app.services.bank import wealth_fund_data as funds

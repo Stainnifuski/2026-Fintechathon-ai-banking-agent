@@ -19,6 +19,10 @@ async def test_directory_full_pagination_unknown_idempotency_and_injection(store
         assert (await funds.search(db, page=2, page_size=20))['items'][0]['code'] == '000021'
         assert (await funds.search(db, '000003'))['items'][0]['fund_type'] == '未知'
         assert (await funds.search(db, '%'))['total'] == 0
+        assert (await funds.search(db, '债券基金'))['total'] == 24
+        assert (await funds.search(db, '找几只货币型基金'))['items'][0]['code'] == '000009'
+        assert (await funds.search(db, '契约样本26'))['total'] == 1
+        assert (await funds.search(db, '不存在债券基金'))['total'] == 0
         before = await db.scalar(select(func.count()).select_from(funds.Directory))
         malformed = directory(); malformed['records'].append(malformed['records'][0])
         with pytest.raises(ValueError): await funds.import_directory(db, malformed)
