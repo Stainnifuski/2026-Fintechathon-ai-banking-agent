@@ -19,6 +19,49 @@ import asyncio
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('pid',['B017','B018'])
+async def test_new_cash_products_keep_standard_redemption_settlement(store,pid):
+    """新产品普通赎回仍占份额、T+1到账，不偷换成立即快赎。"""
+    from datetime import date, timezone
+    from backend.app.models.wealth import WealthNavORM, WealthUnitHoldORM
+    async with store() as db:
+        payload={'schema_version':1,'dataset_id':'mixed-preload-v12','dataset_version':'standard-compat',
+                 'mode':'snapshot','products':bank_products()}
+        for product in payload['products']:product['rules']['dataset_version']='standard-compat'
+        assert (await research.import_dataset(db,payload))['ok']
+        assert (await research.import_dataset(db,payload))['duplicate']
+        context=await research.initialize(db,'U1',dataset_key='mixed-preload-v12:standard-compat')
+        ctx=await db.get(WealthContextORM,context['context_id'])
+        ctx.data={**ctx.data,'business_at':'2026-09-30T19:00:00+08:00'}
+        await db.commit();await research.select_context(db,'U1',ctx.context_id,1);await assess(db)
+        buy=InvestmentCommand(operation_id='standard-opening-'+pid,direction='purchase',account_id=ctx.account_id,
+            product_id=pid,product_version=1,disclosure_version=1,amount_fen=100000)
+        await bank.accept_many(db,'U1',[(buy,await authorize(db,buy))])
+        ctx.data={**ctx.data,'business_at':'2026-10-02T10:00:00+08:00'};await db.commit()
+        assert (await bank.settle(db,buy.operation_id))['status']=='SETTLED'
+        initial=(await db.get(AccountORM,buy.account_id)).balance_fen
+        sell=InvestmentCommand(operation_id='standard-sell-'+pid,direction='redeem',account_id=buy.account_id,
+            product_id=pid,product_version=1,disclosure_version=1,units='100.0000')
+        preview=await bank.precheck(db,'U1',sell)
+        assert preview['cash_date']>preview['pricing_date']
+        assert (await bank.accept_many(db,'U1',[(sell,await authorize(db,sell))]))[0]['status']=='ACCEPTED'
+        assert (await db.get(AccountORM,buy.account_id)).balance_fen==initial
+        assert await db.scalar(select(func.count()).select_from(WealthUnitHoldORM).where(WealthUnitHoldORM.status=='HELD'))==1
+        # 隔离测试中的确定性模拟净值；18点发布前不能被当作已知价格。
+        price=await db.get(WealthNavORM,pid+':1:2026-10-02')
+        if price is None:
+            price=WealthNavORM(nav_id=pid+':1:2026-10-02',version_id=pid+':1',nav_date=date(2026,10,2),price='1.00000000')
+            db.add(price)
+        price.price='1.00000000';price.available_at=datetime(2026,10,2,10,tzinfo=timezone.utc)
+        ctx.data={**ctx.data,'business_at':'2026-10-05T10:00:00+08:00'};await db.commit()
+        settled=await bank.settle(db,sell.operation_id)
+        assert settled['status']=='SETTLED' and settled['details']['actual']['cash_fen']==10000
+        assert (await db.get(AccountORM,buy.account_id)).balance_fen==initial+10000
+        assert await db.scalar(select(func.count()).select_from(WealthQuickQuotaORM))==0
+        assert await db.scalar(select(func.count()).select_from(TransactionORM).where(TransactionORM.operation_id==sell.operation_id))==1
+
+
+@pytest.mark.asyncio
 async def test_quick_http_lost_response_requires_new_buy_confirmation(store, http_store, monkeypatch):
     """真实银行HTTP路由成交后丢响应：原号恢复且到账后买入不能沿用赎回授权。"""
     monkeypatch.delenv('WEALTH_DEMO_VERIFICATION_ENABLED', raising=False)
