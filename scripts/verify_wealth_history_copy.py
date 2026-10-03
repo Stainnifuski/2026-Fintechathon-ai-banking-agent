@@ -17,7 +17,7 @@ from backend.app.services.bank.wealth_reconciliation import reconcile
 from backend.app.services.bank.wealth_history_migration import split
 
 
-async def snapshot(db, *, financial: bool) -> str:
+async def snapshot_values(db, *, financial: bool) -> dict:
     """日期、占用、现金与份额均保护，仅审计证据支持的事件元数据可修正。"""
     protected = {
         AccountORM: ['account_id', 'user_id', 'balance_fen'],
@@ -33,9 +33,17 @@ async def snapshot(db, *, financial: bool) -> str:
     for model, fields in protected.items():
         if not financial:
             fields = list(model.__table__.columns.keys())
-        rows = await db.scalars(select(model).execution_options(populate_existing=True))
+        # 直接读持久化列，避免把身份映射中刚赋值的aware datetime与SQLite
+        # 重载后的naive datetime视为数据库变化；不放宽任何持久化字段比较。
+        columns = [model.__table__.c[field] for field in fields]
+        rows = (await db.execute(select(*columns))).all()
         values[model.__tablename__] = sorted(
-            [[str(getattr(row, field)) for field in fields] for row in rows])
+            [[str(value) for value in row] for row in rows])
+    return values
+
+
+async def snapshot(db, *, financial: bool) -> str:
+    values = await snapshot_values(db, financial=financial)
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
 
@@ -56,11 +64,15 @@ async def main(report: Path) -> None:
             applied = await reconcile(db, apply=True)
             history = await split(db, apply=True)
             after = await snapshot(db, financial=True)
-            complete = await snapshot(db, financial=False)
+            complete_values = await snapshot_values(db, financial=False)
             repeated = await reconcile(db, apply=True)
             history_repeat = await split(db, apply=True)
             assert before == after == await snapshot(db, financial=True)
-            assert complete == await snapshot(db, financial=False)
+            repeat_values = await snapshot_values(db, financial=False)
+            if complete_values != repeat_values:
+                report.write_text(json.dumps({'repeat_unchanged': False, 'before_repeat': complete_values,
+                    'after_repeat': repeat_values}, ensure_ascii=False, indent=2), encoding='utf-8')
+                raise AssertionError('持久化元数据重复执行发生变化，详见副本报告')
             assert not history_repeat['rows']
             report.write_text(json.dumps({'financial_sha256_before': before, 'financial_sha256_after': after,
                 'financial_unchanged': True, 'repeat_unchanged': True, 'dry_run': dry, 'apply': applied,

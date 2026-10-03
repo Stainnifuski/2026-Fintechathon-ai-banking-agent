@@ -9,6 +9,58 @@ from backend.app.models.wealth_research import WealthContextORM
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('action', ['adjust', 'reset'])
+async def test_demo_change_invalidates_old_confirmation_and_worker(store, monkeypatch, action):
+    from tests.integration.test_wealth_bank import assess, authorize, command
+    from backend.app.models.wealth import WealthAuthorizationORM, WealthCashHoldORM, WealthOrderORM
+    from backend.app.services.bank import wealth_service as bank
+    from backend.app.integrations.wealth_authorization import WealthPolicyError
+    monkeypatch.setenv('WEALTH_DEMO_TOOLS_ENABLED', 'true')
+    async with store() as db:
+        from backend.app.services.bank.wealth_preload import bank_products
+        payload = {'schema_version': 1, 'dataset_id': 'mixed-preload-v12', 'dataset_version': 'demo-boundary',
+                   'mode': 'snapshot', 'products': bank_products()}
+        for product in payload['products']: product['rules']['dataset_version'] = 'demo-boundary'
+        assert (await research.import_dataset(db, payload))['ok']
+        context = await research.initialize(db, 'U1', dataset_key='mixed-preload-v12:demo-boundary')
+        ctx = await db.get(WealthContextORM, context['context_id'])
+        ctx.data = {**ctx.data, 'business_at': '2026-09-30T19:00:00+08:00'}
+        await db.commit()
+        await research.select_context(db, 'U1', context['context_id'], 1)
+        await assess(db)
+        held = command('demo-held-order', product='B017').model_copy(update={'account_id': context['account_id']})
+        await bank.accept_many(db, 'U1', [(held, await authorize(db, held))])
+        pending = command('demo-old-confirmation', product='B017').model_copy(update={'account_id': context['account_id']})
+        authorization = await authorize(db, pending)
+        current = await demo.current(db, 'U1')
+        assert current['held_fen'] == held.amount_fen
+        if action == 'adjust':
+            with pytest.raises(BankError) as rejected:
+                await demo.write(db, 'U1', 'adjust', {'run_id': current['run_id'], 'expected_version': current['epoch'],
+                    'request_id': 'demo-held-debit-reject', 'action': 'debit', 'amount': '20000.00'})
+            assert rejected.value.code == 'INSUFFICIENT_AVAILABLE_FUNDS'
+            await db.rollback()
+            assert (await db.get(WealthAuthorizationORM, authorization)).status == 'VALID'
+        body = {'run_id': current['run_id'], 'expected_version': current['epoch'], 'request_id': 'demo-change-'+action}
+        if action == 'adjust': body.update(action='credit', amount='12.34')
+        await demo.write(db, 'U1', action, body)
+        assert (await db.get(WealthAuthorizationORM, authorization, populate_existing=True)).status == 'EXPIRED'
+        with pytest.raises((BankError, WealthPolicyError)):
+            await bank.accept_many(db, 'U1', [(pending, authorization)])
+        await db.rollback()
+        assert await db.get(WealthOrderORM, pending.operation_id) is None
+        assert (await db.get(AccountORM, 'A1')).balance_fen == 2000000
+        assert await db.scalar(select(func.sum(WealthCashHoldORM.amount_fen)).where(
+            WealthCashHoldORM.account_id == context['account_id'], WealthCashHoldORM.status == 'HELD')) == held.amount_fen
+        if action == 'reset':
+            with pytest.raises(BankError) as archived:
+                await bank.settle(db, held.operation_id)
+            assert archived.value.code == 'ARCHIVED_RUN'
+            await db.rollback()
+            assert (await db.get(WealthOrderORM, held.operation_id)).status == 'ACCEPTED'
+
+
+@pytest.mark.asyncio
 async def test_selected_multiple_and_all_archives_require_confirmation(store, monkeypatch):
     """取消删除无副作用；选中集合原子删除，当前轮次与普通账本保留。"""
     monkeypatch.setenv('WEALTH_DEMO_TOOLS_ENABLED', 'true')

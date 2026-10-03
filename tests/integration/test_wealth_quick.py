@@ -245,6 +245,31 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid,monkey
         assert await db.scalar(select(func.count()).select_from(WealthQuickQuotaORM))==0
         preview=await bank.precheck(db,'U1',unbound)
         bound=InvestmentCommand.model_validate(preview['command'])
+        # 普通赎回授权不能用于同一操作号的快赎，即使份额相同。
+        from backend.app.integrations.wealth_authorization import WealthPolicyError
+        ordinary = unbound.model_copy(update={'operation_id': 'standard-not-quick-'+pid, 'command_version': 1,
+            'redemption_mode': 'standard'})
+        ordinary_auth = await authorize(db, ordinary)
+        different_mode = bound.model_copy(update={'operation_id': ordinary.operation_id})
+        with pytest.raises(WealthPolicyError) as wrong_mode:
+            await bank.accept_many(db, 'U1', [(different_mode, ordinary_auth)])
+        assert wrong_mode.value.code == 'AUTHORIZATION_REQUIRED'
+        await db.rollback()
+        # 未提交任务可取消；旧授权失效，取消不会改变账务或占用额度。
+        from backend.app.services.orchestration import wealth_task as tasks
+        draft = bound.model_copy(update={'operation_id': 'quick-cancel-draft-'+pid})
+        draft_auth = await authorize(db, draft)
+        task = await tasks.create_command(db, 'U1', 'quick-cancel-session-'+pid, context['context_id'], draft)
+        cancelled = await tasks.control(db, 'U1', task['task_id'], 'cancel',
+            {'request_id': 'quick-cancel-control-'+pid, 'expected_version': task['version']})
+        assert cancelled['status'] == 'CANCELLED'
+        with pytest.raises(WealthPolicyError) as expired_draft:
+            await bank.accept_many(db, 'U1', [(draft, draft_auth)])
+        assert expired_draft.value.code == 'AUTHORIZATION_EXPIRED'
+        await db.rollback()
+        assert await db.get(WealthOrderORM, draft.operation_id) is None
+        assert (await db.get(AccountORM, buy.account_id)).balance_fen == initial
+        assert await db.scalar(select(func.count()).select_from(WealthQuickQuotaORM)) == 0
         assert preview['cash_date']==preview['pricing_date']
         assert bound.quoted_cash_fen and bound.context_id and bound.nav_quote_id
         tampered=bound.model_copy(update={'quoted_cash_fen':bound.quoted_cash_fen+1})

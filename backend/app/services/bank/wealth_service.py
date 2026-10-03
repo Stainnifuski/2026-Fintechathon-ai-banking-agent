@@ -156,7 +156,7 @@ async def lock_accounts(db: AsyncSession, account_ids: list[str]) -> None:
     for key in sorted(set(account_ids)):
         if db.get_bind().dialect.name == "sqlite":
             await db.execute(update(AccountORM).where(AccountORM.account_id == key)
-                .values(balance_fen=AccountORM.balance_fen))
+                .values(balance_fen=AccountORM.balance_fen, updated_at=AccountORM.updated_at))
         else:
             await db.execute(select(AccountORM.account_id).where(AccountORM.account_id == key).with_for_update())
 

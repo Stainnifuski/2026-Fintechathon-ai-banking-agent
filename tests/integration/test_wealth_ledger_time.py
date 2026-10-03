@@ -104,6 +104,20 @@ async def test_legacy_acceptance_time_requires_bound_audit_and_preserves_busines
         with pytest.raises(BankError):await require_reconciled(db,'A1')
 
 
+@pytest.mark.asyncio
+async def test_account_lock_does_not_mutate_persisted_metadata(store):
+    from scripts.verify_wealth_history_copy import snapshot
+    async with store() as db:
+        account = await db.get(AccountORM, 'A1')
+        account.updated_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        await db.commit()
+        before = await snapshot(db, financial=False)
+        for _ in range(2):
+            await bank.lock_accounts(db, ['A1', 'A1'])
+            await db.commit()
+            assert await snapshot(db, financial=False) == before
+
+
 def test_beijing_instant_and_unknown_naive():
     event = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)
     assert event.astimezone(BEIJING).isoformat() == "2026-10-03T00:00:00+08:00"
