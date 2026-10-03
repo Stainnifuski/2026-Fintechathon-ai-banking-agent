@@ -33,18 +33,14 @@ export default function BeijingClock() {
       finally { syncing = false; }
     };
     const visible = () => { if (document.visibilityState === 'visible') void sync(); };
-    const offline = () => { setStale(true); };
     void sync();
     const seconds = window.setInterval(tick, 1000);
     const calibration = window.setInterval(() => { void sync(); }, 60000);
     window.addEventListener('focus', visible);
-    window.addEventListener('online', visible);
-    window.addEventListener('offline', offline);
     document.addEventListener('visibilitychange', visible);
     return () => {
       alive = false; window.clearInterval(seconds); window.clearInterval(calibration);
-      window.removeEventListener('focus', visible); window.removeEventListener('online', visible);
-      window.removeEventListener('offline', offline);
+      window.removeEventListener('focus', visible);
       document.removeEventListener('visibilitychange', visible);
     };
   }, []);

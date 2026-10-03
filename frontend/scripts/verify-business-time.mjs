@@ -18,7 +18,7 @@ try {
     const anchor=clock.calibrateTime('2026-10-03T15:59:58.500Z',20,1020);
     assert.equal(time.beijingTime(clock.serverInstant(anchor,1020)),'2026-10-03 23:59:59');
     assert.equal(time.beijingTime(clock.serverInstant(anchor,2020)),'2026-10-04 00:00:00');
-    assert.equal(time.beijingTime(clock.serverInstant(anchor,6020)),'2026-10-04 00:00:04'); // no network: continue monotonic
+    assert.equal(time.beijingTime(clock.serverInstant(anchor,6020)),'2026-10-04 00:00:04'); // subsequent monotonic ticks
     const resync=clock.calibrateTime('2026-10-04T01:00:00Z',6020,6020);
     assert.equal(time.beijingTime(clock.serverInstant(resync,7020)),'2026-10-04 09:00:01');
     assert.equal(time.beijingTime('2026-11-01T06:00:00Z'),'2026-11-01 14:00:00'); // Toronto DST boundary
