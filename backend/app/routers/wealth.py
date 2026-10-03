@@ -102,7 +102,7 @@ class FundDetailRequest(StrictRequest):
 
 
 class FundCompareRequest(StrictRequest):
-    codes: list[str] = Field(min_length=2, max_length=3)
+    codes: list[str] = Field(min_length=2, max_length=4)
     period: str = Field(default='1y', pattern='^(1m|3m|1y|since)$')
 
 

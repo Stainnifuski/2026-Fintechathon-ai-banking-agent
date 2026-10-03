@@ -12,7 +12,7 @@ class Intent(BaseModel):
     control_after: Literal['pause'] | None = None
     redemption_mode: Literal['standard','quick'] | None = None
     search_query: str | None = Field(default=None, max_length=120)
-    product_refs: list[str]=Field(default_factory=list,max_length=3)
+    product_refs: list[str]=Field(default_factory=list,max_length=12)
     amount_fen: int|None=Field(default=None,ge=1,le=2000000000)
     budget_fen: int|None=Field(default=None,ge=0,le=2000000000)
     budget_min_fen: int|None=Field(default=None,ge=0,le=2000000000)
@@ -59,6 +59,7 @@ async def understand(text: str,context: dict) -> tuple[Intent,dict]:
     instruction += '投入范围用budget_min_fen和budget_max_fen，budget_fen留null；要求建议投入金额时suggest_budget=true，不擅自填预算。采用建议金额只表达规划预算选择，不表示交易确认或授权。'
     instruction += '先卖再买用redeem并标sell_then_buy=true；不凭一部分猜份额，未知留null。赎回到账后才能根据新现金建立买入方案，买入仍需新确认授权。'
     instruction += '查询持仓、资产、余额用assets，不能因为历史讨论过订单就改成status。status仅当前明确查询某笔订单或交易进度时使用。'
+    instruction += 'active_plan给出当前方案的有序子项。修改“第几个”的单项申购金额用modify、product_refs包含该序号、amount_fen，不用budget_fen；修改总预算才用budget_fen。金额修改加“先别买”必须同时control_after=pause，不只返回pause或clarify。'
     result,evidence=await request([{'role':'system','content':instruction},{'role':'user','content':json.dumps({'message':text,'context':context},ensure_ascii=False)}],Intent.model_json_schema())
     return Intent.model_validate(result),evidence
 

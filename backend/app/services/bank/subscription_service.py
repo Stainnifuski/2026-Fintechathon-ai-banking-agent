@@ -13,6 +13,7 @@ from ...models.subscription import SubscriptionORM
 from ...models.transaction import TransactionORM
 from .transfer_service import BankError
 from ...domain.money import ledger_fen
+from ...domain.time import as_utc
 from .audit_service import record_bank_event
 
 
@@ -37,11 +38,11 @@ def _view(subscription: SubscriptionORM, account: AccountORM) -> dict:
         "amount_fen": subscription.amount_fen,
         "currency": subscription.currency,
         "billing_cycle": subscription.billing_cycle,
-        "next_charge_at": subscription.next_charge_at,
+        "next_charge_at": as_utc(subscription.next_charge_at, legacy_utc=True),
         "status": subscription.status,
         "state_version": subscription.state_version,
         "source_transaction_id": subscription.source_transaction_id,
-        "cancelled_at": subscription.cancelled_at,
+        "cancelled_at": as_utc(subscription.cancelled_at, legacy_utc=True) if subscription.cancelled_at else None,
     }
 
 

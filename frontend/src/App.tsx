@@ -5,6 +5,7 @@ import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
 
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 const Wealth = lazy(() => import('./components/Wealth'));
+const DemoTools = lazy(() => import('./components/Wealth/DemoTools'));
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const localDateTimeInput = beijingInput;
@@ -22,6 +23,7 @@ function App() {
   const [recipients, setRecipients] = useState<bank.Recipient[]>([]);
   const [transactions, setTransactions] = useState<bank.Transaction[]>([]);
   const [bankRevision, setBankRevision] = useState(0);
+  const [wealthWorkspaceEpoch,setWealthWorkspaceEpoch]=useState(0);
   const [paymentRequests, setPaymentRequests] = useState<bank.PaymentRequest[]>([]);
   const [subscriptions, setSubscriptions] = useState<bank.Subscription[]>([]);
   const [pendingSubscription, setPendingSubscription] = useState<bank.Subscription | null>(null);
@@ -404,7 +406,7 @@ function App() {
     ? requestAmountNumber
     : requestAmountNumber * requestPayerIds.length;
 
-  if (!user) return <main className="auth"><section className="card"><h1>AI 模拟银行</h1><p>任务状态机转账演示</p><form onSubmit={authenticate}>
+  if (!user) return <main className="auth"><BeijingClock /><section className="card"><h1>AI 模拟银行</h1><p>任务状态机转账演示</p><form onSubmit={authenticate}>
     {loginMode === 'register' && <label>姓名<input required value={name} onChange={e => setName(e.target.value)} /></label>}
     <label>手机号<input required value={phone} onChange={e => setPhone(e.target.value)} /></label>
     <label>密码<input required minLength={8} type="password" value={password} onChange={e => setPassword(e.target.value)} /></label>
@@ -414,8 +416,9 @@ function App() {
 
   return <main className="app">
     <BeijingClock /><header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><div className="confirm"><button className="secondary" disabled={isActing} onClick={openEnroll}>{totpEnabled ? '🔐 已绑定验证器' : '🔐 绑定验证器'}</button><button className="secondary" onClick={logout}>退出登录</button></div></header>
+    <Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense>
     {status && <p className="notice">{status}</p>}
-    <Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={user.user_id} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense>
+    <Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense>
     <Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} /></Suspense>
     <section className="grid">
       <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong>{a.available_fen != null && <small>可用 ¥{(a.available_fen / 100).toFixed(2)} · 占款 ¥{((a.held_fen || 0) / 100).toFixed(2)}</small>}<small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>

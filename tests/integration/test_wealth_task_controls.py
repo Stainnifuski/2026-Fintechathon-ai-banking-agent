@@ -41,6 +41,36 @@ class DirectBank:
 
 
 @pytest.mark.asyncio
+async def test_paused_unknown_submission_remains_queryable_after_not_found(store):
+    """未知受理的404不能终止原号核对；暂停后绝不补发提交。"""
+    async with store() as db:
+        task = await tasks.create_command(db, 'U1', 'unknown-paused', 'legacy-v1',
+            command('unknown-original-operation'))
+        row = await tasks.owned(db, 'U1', task['task_id'])
+        row.status = 'PAUSED'
+        node = await db.scalar(select(WealthTaskNodeORM).where(
+            WealthTaskNodeORM.task_id == row.task_id, WealthTaskNodeORM.kind == 'SUBMIT'))
+        node.status = 'UNKNOWN'
+        await db.commit()
+        class MissingThenKnown:
+            def __init__(self): self.queries = 0
+            async def query(self, user, operation):
+                assert operation == 'unknown-original-operation'
+                self.queries += 1
+                if self.queries < 2: raise BankApiError('暂未查到', 'NOT_FOUND', 404)
+                return {'operation_id': operation, 'status': 'ACCEPTED'}
+            async def submit(self, *args):
+                pytest.fail('暂停的未知提交禁止补发')
+        api = MissingThenKnown()
+        await tick(db, row.task_id, api)
+        await db.refresh(node)
+        assert node.status == 'UNKNOWN' and row.status == 'PAUSED'
+        await tick(db, row.task_id, api)
+        await db.refresh(node)
+        assert node.status == 'COMPLETED' and api.queries == 2
+
+
+@pytest.mark.asyncio
 async def test_cancel_submitted_task_keeps_settlement_observation(store):
     async with store() as db:
         await assess(db)

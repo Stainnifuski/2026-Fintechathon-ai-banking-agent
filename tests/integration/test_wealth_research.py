@@ -206,3 +206,22 @@ async def test_admin_scenarios_have_actual_orders_lots_holds_and_bank_failures(s
         before=await db.scalar(select(func.count()).select_from(WealthOrderORM))
         assert all(r['ready'] for r in await initialize_all(db))
         assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==before
+
+@pytest.mark.asyncio
+async def test_four_product_comparison_and_five_requires_choice(store, http_store, monkeypatch):
+    monkeypatch.setenv('WEALTH_NLU_MODE', 'offline')
+    client, _, _ = http_store
+    async with store() as db:
+        ctx = await research.initialize(db, 'U1')
+        await db.commit()
+        await research.select_context(db, 'U1', ctx['context_id'], 1)
+    compared = await client.post('/api/v1/wealth/messages', json={
+        'message': '比较S007 S008 S009 S010', 'client_message_id': 'compare-four-products'})
+    assert compared.status_code == 200, compared.text
+    assert compared.json()['kind'] == 'comparison', compared.text
+    assert len(compared.json()['products']) == 4
+    excessive = await client.post('/api/v1/wealth/messages', json={
+        'message': '比较S007 S008 S009 S010 S011', 'client_message_id': 'compare-five-products'})
+    assert excessive.status_code == 200, excessive.text
+    assert excessive.json()['kind'] == 'clarification'
+    assert '最多比较4项' in excessive.json()['message']

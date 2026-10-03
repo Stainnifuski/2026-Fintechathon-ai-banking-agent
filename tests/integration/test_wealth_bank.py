@@ -590,8 +590,10 @@ async def test_batch_lot_fees_nav_loss_and_worker_idempotency(store):
         assert fact.status == "SETTLED" and fact.details["actual_nav"] != preview["estimated_nav"]
         lot = (await db.scalars(select(WealthLotORM))).one()
         # 后续固定净值下跌，银行估值体现真实负盈亏。
-        day = (await bank.business_now(db)).date()
-        nav = await db.get(WealthNavORM, f"MF001:1:{day.isoformat()}")
+        valuation_at = await bank.business_now(db)
+        nav = await bank.latest_nav(db, "MF001:1", valuation_at)
+        assert nav is not None and bank.nav_available_at(nav) <= valuation_at
+        day = nav.nav_date
         nav.price = "0.80000000"
         old = await db.get(WealthProductVersionORM, "MF001:1")
         new_rules = deepcopy(old.rules)

@@ -110,6 +110,9 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         response['message']='当前有真实基金搜索与模拟产品两个候选列表，序号有歧义。请明确产品代码或ID再继续。'
         return response
     codes = re.findall(r'(?<![0-9])([0-9]{6})(?![0-9])', text)
+    if intent.intent == 'compare' and max(len(set(codes)), len(intent.product_refs)) > 4:
+        response['message'] = '一次最多比较4项，请选择产品或分组比较。'
+        return response
     if intent.intent == 'compare':
         outside = list(dict.fromkeys(codes + [r[1:] for r in intent.product_refs if re.fullmatch(r'R\d{6}', r)]))
         if not outside and data.get('research_candidates'):
@@ -117,7 +120,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
                 pid = resolve(ref, [{'product_id':'R'+c, 'name':c} for c in data['research_candidates']], ['R'+c for c in data['research_candidates']])
                 outside.append(pid[1:])
         if len(outside) >= 2:
-            analysis = await bank.call('POST', '/funds/compare', {'subject_user_id':user_id, 'codes':outside[:3]})
+            analysis = await bank.call('POST', '/funds/compare', {'subject_user_id':user_id, 'codes':outside})
             response.update(kind='research', research_comparison=analysis,
                 message='真实基金缓存对比；共同观察点 '+str(analysis['analysis']['common_samples'])+'。'+
                 '\n'.join(p['name']+'：区间涨跌 '+str(p['metrics']['return'])+'，最大回撤 '+str(p['metrics']['max_drawdown']) for p in analysis['analysis']['products'])+
@@ -194,11 +197,11 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         response.update(kind='assets',assets=facts,message='以下为银行事实；占款、锁定份额、在途和赎回应收分开，不构成即时可用资金。')
     elif intent.intent=='status':
         operation=intent.operation_id or (active or {}).get('operation_id')
-        if not operation and facts['orders']: operation=facts['orders'][0]['operation_id']
+        if not operation and len(facts['orders']) == 1: operation=facts['orders'][0]['operation_id']
         if operation:
             result=await bank.query(user_id,operation)
             response.update(kind='order',order=result,message='原操作号 '+operation+' 的银行状态：'+result['status']+'；受理不等于已结算或到账。')
-        else: response['message']='当前没有可查询的原操作号，请指定订单。'
+        else: response.update(kind='assets', assets=facts, message='请从本人订单卡选择要查询的原操作号，多笔订单不能猜测“刚才那笔”。')
     elif intent.intent in {'products','recommend'}:
         if intent.intent=='recommend':
             if not slots.get('horizon_days') or not slots.get('need'): response['message']='个性化推荐前请明确预计使用期限及资金用途。'; return response
@@ -208,7 +211,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         data['candidates']=[p['product_id'] for p in rows]; data['candidate_dataset']=dataset
         response.update(kind='products',products=rows,message='以下候选顺序已保存，支持“第几个”；产品风险、费用和净值来自银行。均为模拟交易，不保证回报。')
     elif intent.intent=='compare':
-        if len(refs)<2: response['message']='请选择2至3个明确产品，不能用模糊家族名称。'
+        if not 2 <= len(refs) <= 4: response['message']='请选择2至4个明确产品，不能用模糊家族名称。'
         else:
             research=await bank.call('POST','/research',{'subject_user_id':user_id,'dataset_key':dataset,'product_ids':refs}) if dataset else None
             response.update(kind='comparison',products=[p for pid in refs for p in products if p['product_id']==pid],analysis=research.get('analysis') if research else None,message='共同观察窗口对比，A/C归同一家族；未核实分红不标为总回报，缺失指标不补零。')
@@ -375,11 +378,21 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
                 data['pending']={}
         evidence={}
         if mode=='model':
+            plan_context=None
+            if data.get('active_plan'):
+                from ...models.wealth import WealthPlanORM
+                current_plan=await db.get(WealthPlanORM,data['active_plan']['plan_id'])
+                if current_plan and current_plan.user_id==user_id:
+                    plan_context={'plan_id':current_plan.plan_id,'version':current_plan.version,
+                        'items':[{'ordinal':i,'product_id':item['command']['product_id'],
+                            'direction':item['command']['direction'],'amount_fen':item['command']['amount_fen'],
+                            'units':item['command']['units']} for i,item in enumerate(current_plan.data['items'],1)]}
+                await db.rollback()
             context={'awaiting_plan_details':data.get('awaiting_plan_details',False),'holding_cards':data.get('holding_cards',[]),'research_candidates':data.get('research_candidate_names',[]),'pending':data.get('pending',{}),'candidates':[{'id':p['product_id'],'name':p['name']} for pid in data.get('candidates',[]) for p in products if p['product_id']==pid],
                 'products':[{'id':p['product_id'],'name':p['name']} for p in products], 'active':{'direction':data['active_command']['direction'],'product_id':data['active_command']['product_id'],'amount_fen':data['active_command']['amount_fen']} if data.get('active_command') else None,
                 'accounts':[f'账户{i}' for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
                 'available_cash_fen':[{'account_ref':f'账户{i}','available_fen':a['available_fen']} for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
-                'history':[h['user'] for h in data.get('history',[])[-4:]]}
+                'active_plan':plan_context,'history':[h['user'] for h in data.get('history',[])[-4:]]}
             intent,evidence=await understand(text,context)
         else: intent=offline(text)
         response=await action(db,user_id,bank,text,intent,data,products,facts,contexts,mode)

@@ -62,6 +62,30 @@ def test_beijing_instant_and_unknown_naive():
 
 
 @pytest.mark.asyncio
+async def test_bank_dto_keeps_utc_and_bill_scope_excludes_sandbox(store):
+    """SQLite丢失tzinfo也不能让浏览器把同一事件理解成本地时间。"""
+    from backend.app.services.bank.data_service import _transaction_dict
+    from backend.app.services.bank.bill_service import scope
+    from backend.app.schemas.bills import BillQuery
+    async with store() as db:
+        ctx = await research.initialize(db, 'U1')
+        db.add(TransactionORM(tx_id='timezone-fact', account_id='A1', type='salary',
+            amount_fen=100, counterparty='虚构', category='other', note=None,
+            timestamp=datetime(2026, 10, 2, 16, tzinfo=timezone.utc), status='completed', channel='app'))
+        await db.commit()
+        db.expire_all()
+        row = await db.get(TransactionORM, 'timezone-fact')
+        event = _transaction_dict(row)['timestamp']
+        assert event.isoformat() == '2026-10-02T16:00:00+00:00'
+        assert event.astimezone(BEIJING).isoformat() == '2026-10-03T00:00:00+08:00'
+        predicates = await scope(db, 'U1', BillQuery())
+        accounts = list(await db.scalars(select(TransactionORM.account_id).where(*predicates)))
+        assert accounts == ['A1']
+        with pytest.raises(BankError):
+            await scope(db, 'U1', BillQuery(account_id=ctx['account_id']))
+
+
+@pytest.mark.asyncio
 async def test_nav_publication_instant_and_beijing_date_prevent_future_leak(store):
     from backend.app.models.wealth import WealthNavORM
     from backend.app.services.bank.wealth_quick import quote_key

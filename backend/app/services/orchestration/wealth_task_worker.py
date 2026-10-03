@@ -96,7 +96,8 @@ async def tick(db, task_id, bank):
             status='COMPLETED' if node.kind=='SUBMIT' or outcome.get('status')=='SETTLED' else 'WAITING'
             if outcome.get('status') in {'REJECTED','CANCELLED'}: status='FAILED'
     except BankApiError as error:
-        status='UNKNOWN' if isinstance(error,BankResponseUnknown) or node.kind=='SETTLEMENT' else 'WAITING'
+        # 暂停/接管时原号暂未查到，不能把未知提交降为WAITING并停止核对。
+        status='UNKNOWN' if query_only or isinstance(error,BankResponseUnknown) or node.kind=='SETTLEMENT' else 'WAITING'
         outcome={'code':error.code, 'operation_id':command.operation_id if command else None}
     await lock_profile(db, user_id)
     task = await db.get(Task, task_id, populate_existing=True)

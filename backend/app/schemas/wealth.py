@@ -150,7 +150,7 @@ class WealthResearchQuery(StrictRequest):
     horizon_days: int | None = Field(default=None,ge=1,le=3650,strict=True)
     page: int = Field(default=1,ge=1,le=10000)
     page_size: int = Field(default=12,ge=1,le=60)
-    product_ids: list[str] = Field(default_factory=list,max_length=3)
+    product_ids: list[str] = Field(default_factory=list,max_length=4)
     period: Literal['1m','3m','1y','since']='1y'
 
 

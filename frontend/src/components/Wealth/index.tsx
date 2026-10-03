@@ -5,7 +5,6 @@ import type { Account } from '../../services/bank';
 import './styles.css';
 import Research from './Research';
 import OperatorPanel from './OperatorPanel';
-import DemoTools from './DemoTools';
 
 interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string }
 type Tab = 'workbench' | 'assets' | 'products' | 'plans' | 'orders';
@@ -137,12 +136,11 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
 
   return <section className="card wealth" aria-label="理财模拟">
       <OperatorPanel />
-      <DemoTools userId={userId} revision={revision+(assets?.cash.length||0)} changed={async()=>{setSession(null);setChat(null);setPreview(null);setPlan(null);setGroupPreview(null);await load();onActivity();}} />
     <div className="wealth-title"><div><h2>理财模拟</h2><p>比赛模拟环境／模拟资金 · 请仅输入虚构数据 · 本金可能亏损</p></div><button className="secondary" disabled={busy} onClick={() => act(async () => { onActivity(); })}>刷新银行事实</button></div>
     {verificationMode?.simulated && <p className="notice">演示授权：理财申购／赎回属于高风险操作。点击按钮模拟支付密码授权，不采集或验证真实密码、短信码、指纹或人脸。</p>}
       <details><summary>辅助查看与调试工具</summary><nav aria-label="理财功能">{([['workbench','对话工作台'], ['assets', '资产与目标'], ['products', '产品探索'], ['plans', '配置方案'], ['orders', '持仓与订单']] as [Tab, string][]).map(([key, title]) =>
         <button key={key} className={tab === key ? '' : 'secondary'} onClick={() => setTab(key)}>{title}</button>)}</nav>
-        <Research onChoose={pid => { setProduct(pid); setTab('products'); }} onSwitch={async () => { setSession(null); setChat(null); setHistory([]); setPreview(null); setPlan(null); setGroupPreview(null); localStorage.removeItem(`wealth-message-${userId}`); await load(); }} />
+        <Research onChoose={pid => { setProduct(pid); setTab('products'); }} onSwitch={async () => { setSession(null); setChat(null); setHistory([]); setPreview(null); setPlan(null); setGroupPreview(null); localStorage.removeItem(`wealth-message-${userId}`); await load();onActivity(); }} />
       </details>
     {notice && <p role="alert" className="notice">{notice}</p>}
     <div className="wealth-layout"><div>

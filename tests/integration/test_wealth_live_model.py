@@ -22,6 +22,38 @@ async def close_live_client_between_test_event_loops():
 
 
 @pytest.mark.asyncio
+async def test_real_model_compound_plan_pause_query_resume_and_handoff(store,http_store,monkeypatch):
+    from sqlalchemy import select,func
+    from backend.app.models.wealth import WealthOrderORM,WealthTaskORM
+    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    client,_,_=http_store;session={}
+    async with store() as db:
+        created=await research.initialize(db,'U1');await db.commit()
+        await research.select_context(db,'U1',created['context_id'],1);await assess(db)
+    async def send(text):
+        nonlocal session
+        result=await client.post('/api/v1/wealth/messages',json={'message':text,'client_message_id':uuid4().hex,**session})
+        assert result.status_code==200,result.text
+        reply=result.json();session={'session_id':reply['session_id'],'version':reply['version']}
+        return reply
+    plan=await send('预算两万元，留五千，180天后用，稳健配置')
+    assert plan['kind']=='plan' and len(plan['plan']['items'])>=2,plan
+    paused=await send('第二个改成三千，先别买')
+    assert paused['kind']=='plan' and paused['task']['status']=='PAUSED',paused
+    assert paused['plan']['version']>plan['plan']['version']
+    assert paused['plan']['items'][1]['command']['amount_fen']==300000
+    await send('查询我的资产')
+    resumed=await send('恢复刚才的任务')
+    assert resumed['task']['task_id']==paused['task']['task_id'] and resumed['task']['status']=='WAITING',resumed
+    handoff=await send('申请人工接管这个任务')
+    assert handoff['task']['control_mode']=='HANDOFF_PENDING',handoff
+    async with store() as db:
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+        task=await db.get(WealthTaskORM,paused['task']['task_id'])
+        assert task.control_mode=='HANDOFF_PENDING' and task.owner_id is None
+
+
+@pytest.mark.asyncio
 async def test_real_deepseek_full_directory_search_and_outside_comparison(store,http_store,monkeypatch):
     from datetime import datetime, timezone, timedelta
     from backend.app.services.bank import wealth_fund_data as funds
