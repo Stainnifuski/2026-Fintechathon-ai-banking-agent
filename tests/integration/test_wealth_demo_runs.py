@@ -217,6 +217,17 @@ async def test_archive_delete_blocks_lease_then_removes_task_history_and_returns
         assert error.value.code=='DELETION_BLOCKED';await db.rollback()
         assert await db.get(AccountORM,ctx['account_id']) is not None
         node=await db.get(WealthTaskNodeORM,node_id);node.lease_until=None;await db.commit()
+        # 预览后出现混合历史引用：重新检查范围，不能清掉其他轮次来源。
+        conversation=await db.get(WealthConversationORM,'delete-old-session')
+        original_history=conversation.data
+        conversation.data={**original_history,'history_archive':[{'context_id':reset['run_id'],'turns':[{'user':'另一轮次只读来源'}]}]}
+        await db.commit()
+        with pytest.raises(BankError) as mixed:await demo.write(db,'U1','delete',deletion)
+        assert mixed.value.code=='DELETION_BLOCKED';await db.rollback()
+        assert await db.get(AccountORM,ctx['account_id']) is not None
+        assert await db.get(AccountORM,reset['account_id']) is not None
+        conversation=await db.get(WealthConversationORM,'delete-old-session')
+        conversation.data=original_history;await db.commit()
         deleted=await demo.write(db,'U1','delete',deletion)
         assert task['task_id'] in deleted['deleted_task_ids']
         assert await db.get(WealthConversationORM,'delete-old-session') is None
