@@ -27,13 +27,19 @@ PERMISSION_MAP: dict[str, PermissionLevel] = {
     # 🟢 绿色 - 自动执行
     "query_balance": PermissionLevel.GREEN,          # 查询余额
     "query_transactions": PermissionLevel.GREEN,     # 查询交易记录
+    "query_cards": PermissionLevel.GREEN,            # 查询卡片
 
     # 🟡 黄色 - 用户确认
     "transfer_small": PermissionLevel.YELLOW,        # 小额转账（日累计 ≤ 1000元）
     "schedule_transfer": PermissionLevel.YELLOW,     # 定时转账
+    "card_apply_virtual": PermissionLevel.YELLOW,    # 申请虚拟卡
+    "card_set_transaction_limits": PermissionLevel.YELLOW,  # 设置交易限额
 
     # 🔴 红色 - 强验证 MFA
     "transfer_large": PermissionLevel.RED,           # 大额转账（日累计 > 1000元）
+    "card_adjust_credit_limit": PermissionLevel.RED, # 调整信用额度
+    "card_unlock": PermissionLevel.RED,              # 解锁卡片
+    "card_report_lost": PermissionLevel.RED,         # 卡片挂失
 }
 
 

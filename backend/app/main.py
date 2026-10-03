@@ -16,6 +16,7 @@ from .middleware.errors import install_error_handlers
 from .routers.accounts import router as accounts_router
 from .routers.auth import router as auth_router
 from .routers.bank_operations import router as bank_operations_router
+from .routers.cards import router as cards_router
 from .routers.operations import router as operations_router
 from .routers.payment_requests import router as payment_requests_router
 from .routers.transactions import router as transactions_router
@@ -104,6 +105,7 @@ app.include_router(users_router)
 app.include_router(bank_operations_router)
 app.include_router(payment_requests_router)
 app.include_router(subscriptions_router)
+app.include_router(cards_router)
 app.include_router(bills_router)
 app.include_router(wealth_bank_router)
 app.include_router(wealth_router)

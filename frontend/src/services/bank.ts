@@ -129,3 +129,34 @@ export const modifyTask = (task: TaskSnapshot, payload: {
 }) => apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/modify`, {
   request_id: crypto.randomUUID(), state_version: task.state_version, ...payload,
 }).then(r => r.data);
+
+export type CardAction = 'card_apply_virtual' | 'card_set_transaction_limits' | 'card_adjust_credit_limit' | 'card_unlock' | 'card_report_lost';
+export interface BankCard {
+  card_id: string; account_id: string; account_label: string; card_type: 'DEBIT' | 'CREDIT';
+  is_virtual: boolean; card_number: string; status: 'ACTIVE' | 'LOCKED' | 'LOST'; lock_reason?: string | null;
+  credit_limit_fen?: number | null; credit_limit_cap_fen?: number | null;
+  single_txn_limit_fen: number; daily_txn_limit_fen: number; single_txn_cap_fen: number; daily_txn_cap_fen: number;
+  state_version: number; lost_reported_at?: string | null;
+}
+export interface CardChange { field: string; label: string; before?: number | string | null; after?: number | string | null; unit?: 'fen' | null; }
+export interface CardOperation {
+  operation_id: string; action: CardAction; status: string; permission_level: 'green' | 'yellow' | 'red';
+  requires_confirmation: boolean; requires_mfa: boolean; digest: string; card_id?: string | null;
+  card?: BankCard | null; changes: CardChange[]; result?: BankCard | null; error_code?: string | null;
+  failed_verifications: number; expires_at: string; allowed_actions: string[]; message: string;
+}
+export interface CardOperationRequest {
+  operation_id: string; action: CardAction; card_id?: string; account_id?: string;
+  credit_limit?: string; single_txn_limit?: string; daily_txn_limit?: string;
+}
+export const listCards = () => apiClient.get<BankCard[]>('/cards').then(r => r.data);
+export const previewCardOperation = (payload: CardOperationRequest) =>
+  apiClient.post<CardOperation>('/cards/operations', payload).then(r => r.data);
+export const confirmCardOperation = (operation: CardOperation) =>
+  apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/confirm`, { digest: operation.digest }).then(r => r.data);
+export const verifyCardOperation = (operation: CardOperation, proof: string) =>
+  apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/verify`, { proof }).then(r => r.data);
+export const cancelCardOperation = (operation: CardOperation) =>
+  apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/cancel`).then(r => r.data);
+export const getCardOperation = (operationId: string) =>
+  apiClient.get<CardOperation>(`/cards/operations/${operationId}`).then(r => r.data);
