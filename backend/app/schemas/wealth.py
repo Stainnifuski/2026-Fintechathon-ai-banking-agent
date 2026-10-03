@@ -41,6 +41,12 @@ class InvestmentCommand(StrictRequest):
     currency: Literal["CNY"] = "CNY"
     plan_id: str | None = Field(default=None, max_length=64)
     plan_version: int = Field(default=1, ge=1, strict=True)
+    command_version: Literal[1, 2] = 1
+    redemption_mode: Literal["standard", "quick"] = "standard"
+    nav_quote_id: str | None = Field(default=None, max_length=96)
+    quoted_cash_fen: int | None = Field(default=None, ge=1, le=2_000_000_000, strict=True)
+    context_id: str | None = Field(default=None, max_length=64)
+    context_epoch: int | None = Field(default=None, ge=1, strict=True)
 
     @model_validator(mode="after")
     def direction_amount(self) -> "InvestmentCommand":
@@ -51,6 +57,10 @@ class InvestmentCommand(StrictRequest):
         if self.direction == "redeem" and (self.amount_fen != 0 or quantity <= 0):
             raise ValueError("赎回必须提供份额且金额为零")
         self.units = format(quantity, ".4f")
+        if self.redemption_mode == "quick" and (self.direction != "redeem" or self.command_version != 2):
+            raise ValueError("快赎仅支持v2赎回命令")
+        if self.command_version == 1 and (self.nav_quote_id or self.quoted_cash_fen or self.context_id or self.context_epoch):
+            raise ValueError("新增绑定字段必须使用v2命令")
         return self
 
 
@@ -140,7 +150,7 @@ class WealthResearchQuery(StrictRequest):
     horizon_days: int | None = Field(default=None,ge=1,le=3650,strict=True)
     page: int = Field(default=1,ge=1,le=10000)
     page_size: int = Field(default=12,ge=1,le=60)
-    product_ids: list[str] = Field(default_factory=list,max_length=3)
+    product_ids: list[str] = Field(default_factory=list,max_length=4)
     period: Literal['1m','3m','1y','since']='1y'
 
 

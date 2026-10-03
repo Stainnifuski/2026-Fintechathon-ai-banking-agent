@@ -65,7 +65,13 @@ async def search(db, query='', fund_type=None, page=1, page_size=20):
     if query:
         # Escape LIKE metacharacters; directory search never executes model code.
         pattern = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
-        conditions.append(or_(Directory.code.like(pattern, escape='\\'), Directory.name.ilike(pattern, escape='\\')))
+        category = re.fullmatch(r'(?:找|查找|搜索|查询)?\s*(?:几只|一些|全部|所有)?\s*(债券|货币|股票|混合|指数)(?:型)?(?:基金)?', query)
+        matches = [Directory.code.like(pattern, escape='\\'), Directory.name.ilike(pattern, escape='\\')]
+        # Generic categories are directory facets, not substrings of fund names.
+        # Named funds and codes keep literal matching, including LIKE escaping.
+        if category:
+            matches.append(Directory.fund_type.ilike('%' + category.group(1) + '%'))
+        conditions.append(or_(*matches))
     if fund_type: conditions.append(Directory.fund_type == fund_type)
     total = await db.scalar(select(func.count()).select_from(Directory).where(*conditions))
     rows = (await db.scalars(select(Directory).where(*conditions).order_by(Directory.code).offset((page-1)*page_size).limit(page_size))).all()

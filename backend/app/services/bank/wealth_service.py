@@ -21,6 +21,7 @@ from ...models.wealth import (WealthCashHoldORM, WealthClockORM, WealthLotORM,
     WealthNavORM, WealthOrderORM, WealthProductORM, WealthProductVersionORM,
     WealthSettlementORM, WealthUnitHoldORM, WealthVerificationORM)
 from ...schemas.wealth import InvestmentCommand
+from ...domain.time import utc_now, as_utc
 from .available_funds import available_cash, held_cash
 from .audit_service import record_bank_event
 from .transfer_service import BankError
@@ -46,10 +47,12 @@ async def business_now(db: AsyncSession, account_id: str | None = None) -> datet
     if account_id:
         from ...models.wealth_research import WealthContextORM
         context = (await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id == account_id))).one_or_none()
-        if context:
-            return datetime.fromisoformat(context.data["business_at"])
-    row = await db.get(WealthClockORM, "mock")
-    return aware(row.business_at) if row else datetime.now(timezone.utc)
+        if context and context.data.get("disposable") is True:
+            value=datetime.fromisoformat(context.data['business_at'])
+            if value.tzinfo is None:
+                raise BankError('测试业务时间缺少时区，需按来源核对', 'INVALID_BUSINESS_TIME', 409)
+            return value
+    return utc_now()
 
 
 async def verify_authorization(db: AsyncSession, user_id: str, authorization_id: str, proof: str) -> dict:
@@ -125,24 +128,27 @@ async def demo_verify_authorizations(db: AsyncSession, user_id: str, authorizati
     return {"status": "VALID", "authorization_ids": authorization_ids, **verification_mode(db)}
 
 
-async def advance_clock(db: AsyncSession, business_at: datetime) -> dict:
+async def advance_clock(db: AsyncSession, business_at: datetime, user_id: str | None = None, context_id: str | None = None) -> dict:
     """隔离管理员推进业务时间并留痕，不改变安全时钟。"""
     if business_at.tzinfo is None:
         raise BankError("业务时间必须带时区", "INVALID_TIME", 422)
-    row = await db.get(WealthClockORM, "mock", with_for_update=True)
-    if row and aware(row.business_at) == business_at:
-        return {"business_at": business_at.isoformat()}
-    if business_at < await business_now(db):
+    if not user_id or not context_id:
+        raise BankError('必须指定本人可处置轮次，禁止推进全局普通账户时间', 'EXPLICIT_CONTEXT_REQUIRED', 422)
+    from .wealth_demo import context_owned
+    from ...integrations.wealth_authorization import lock_profile
+    await lock_profile(db, user_id)
+    context = await context_owned(db, user_id, context_id)
+    now = await business_now(db, context.account_id)
+    if now == business_at:
+        return {'business_at':business_at.isoformat(), 'context_id':context_id}
+    if business_at < now:
         raise BankError("模拟业务时间不能倒退", "INVALID_TIME", 409)
-    if row is None:
-        db.add(WealthClockORM(clock_id="mock", business_at=business_at, calendar_version=CALENDAR_VERSION))
-    else:
-        row.business_at = business_at
-    record_bank_event(db, event_key=business_at.isoformat(), subject_user_id="mock-admin",
-        action="investment_clock", result="success", facts={"business_at": business_at.isoformat()},
+    context.data = {**context.data, 'business_at':business_at.isoformat()}
+    record_bank_event(db, event_key=context_id+business_at.isoformat(), subject_user_id=user_id,
+        action="investment_clock", result="success", facts={"business_at": business_at.isoformat(), 'context_id':context_id},
         decision_chain=["isolated_database_admin", "monotonic_business_clock", "security_clock_unchanged"])
     await db.commit()
-    return {"business_at": business_at.isoformat()}
+    return {"business_at": business_at.isoformat(), 'context_id':context_id}
 
 
 async def lock_accounts(db: AsyncSession, account_ids: list[str]) -> None:
@@ -150,7 +156,7 @@ async def lock_accounts(db: AsyncSession, account_ids: list[str]) -> None:
     for key in sorted(set(account_ids)):
         if db.get_bind().dialect.name == "sqlite":
             await db.execute(update(AccountORM).where(AccountORM.account_id == key)
-                .values(balance_fen=AccountORM.balance_fen))
+                .values(balance_fen=AccountORM.balance_fen, updated_at=AccountORM.updated_at))
         else:
             await db.execute(select(AccountORM.account_id).where(AccountORM.account_id == key).with_for_update())
 
@@ -165,6 +171,10 @@ async def owned_account(db: AsyncSession, user_id: str, account_id: str) -> Acco
         raise BankError("模拟客户或账户不可用", "ACCOUNT_INACTIVE", 403)
     if account.account_type == "credit":
         raise BankError("不支持使用信用账户投资", "ACCOUNT_TYPE_UNSUPPORTED", 409)
+    from .wealth_reconciliation import require_reconciled
+    await require_reconciled(db, account_id)
+    from .wealth_demo import require_active
+    await require_active(db, account_id)
     return account
 
 
@@ -194,11 +204,15 @@ async def product_version(db: AsyncSession, command: InvestmentCommand) -> Wealt
 async def latest_nav(db: AsyncSession, version_id: str, at: datetime) -> WealthNavORM | None:
     """仅读取业务时点以前净值，禁止未来数据。"""
     day=at.astimezone(TZ).date()
-    version=await db.get(WealthProductVersionORM,version_id)
-    if version and version.rules.get('dataset_id') and at.astimezone(TZ).hour<18:
-        day-=timedelta(days=1)
-    return (await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id == version_id,
-        WealthNavORM.nav_date <= day).order_by(WealthNavORM.nav_date.desc()))).first()
+    rows = (await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id == version_id,
+        WealthNavORM.nav_date <= day).order_by(WealthNavORM.nav_date.desc()))).all()
+    return next((price for price in rows if nav_available_at(price)<=at),None)
+
+
+def nav_available_at(price: WealthNavORM) -> datetime:
+    """导入证据的可用瞬时；旧模拟种子缺字段按明确18点发布假设保守处理。"""
+    return as_utc(price.available_at,legacy_utc=True) if price.available_at else datetime.combine(
+        price.nav_date,datetime.strptime('18:00','%H:%M').time(),TZ)
 
 
 async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
@@ -267,7 +281,10 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     context = (await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id == account.account_id))).one_or_none()
     active = await selected(db, user_id)
     product_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
-    if ((context and (active is None or active.context_id != context.context_id or product_key != context.dataset_key))
+    same_run = bool(context and active and context.user_id==active.user_id and
+        context.data.get('disposable') is True and active.data.get('disposable') is True and
+        context.data.get('run_id',context.context_id)==active.data.get('run_id',active.context_id))
+    if ((context and (active is None or not same_run or product_key != context.dataset_key))
             or (not context and (active is not None or row.rules.get("dataset_id")))):
         raise BankError("产品与当前资金上下文不一致，请重新预览", "DATASET_MISMATCH", 409)
     now = await business_now(db, command.account_id)
@@ -317,13 +334,17 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     interval = row.rules.get("open_interval_days", 1)
     if interval > 1 and (priced - datetime(2026, 9, 30).date()).days % interval != 0:
         raise BankError("当前不是模拟定期开放日", "NON_OPEN_DAY", 409)
+    if command.redemption_mode == "quick":
+        from .wealth_quick import preview as quick_preview
+        command, estimate = await quick_preview(db, user_id, command, row, context, now, price, lots)
+        priced = now.astimezone(TZ).date()
     return {"command": command.model_dump(), "digest": command_digest(command),
         "product_name": row.name, "product_risk_level": row.risk_level, "operation_security_level": "RED",
         "suitability": {**suitability, "matched": True} if suitability else None,
         "disclosure": row.disclosure, "rules": row.rules, "estimate": estimate,
         "estimated_nav": price.price if price else None, "estimated_nav_date": price.nav_date.isoformat() if price else None,
-        "pricing_date": priced.isoformat(), "confirm_date": advance_business(priced, row.rules["confirm_business_days"], row.rules["calendar_version"]).isoformat(),
-        "cash_date": advance_business(priced, row.rules["cash_business_days"], row.rules["calendar_version"]).isoformat(),
+        "pricing_date": priced.isoformat(), "confirm_date": (priced if command.redemption_mode == "quick" else advance_business(priced, row.rules["confirm_business_days"], row.rules["calendar_version"])).isoformat(),
+        "cash_date": (priced if command.redemption_mode == "quick" else advance_business(priced, row.rules["cash_business_days"], row.rules["calendar_version"])).isoformat(),
         "notice": "比赛模拟环境／模拟资金；预览为估算，受理不等于结算成功"}
 
 
@@ -341,6 +362,12 @@ def order_view(row: WealthOrderORM) -> dict:
 async def owned_order(db: AsyncSession, user_id: str, operation_id: str) -> WealthOrderORM:
     """按原编号查本人权威订单；不存在不能证明未受理。"""
     row = await db.get(WealthOrderORM, operation_id, populate_existing=True)
+    if row is None:
+        from ...models.wealth_research import WealthDemoReceiptORM
+        receipts = (await db.scalars(select(WealthDemoReceiptORM).where(
+            WealthDemoReceiptORM.user_id == user_id, WealthDemoReceiptORM.action == 'delete'))).all()
+        if any(operation_id in receipt.result.get('deleted_operation_ids', []) for receipt in receipts):
+            raise BankError('原测试轮次已物理删除', 'GONE', 410)
     if row is None or row.user_id != user_id:
         raise BankError("当前未查到本人订单，请保留原操作号核对", "NOT_FOUND", 404)
     return row
@@ -351,6 +378,8 @@ async def accept_many(db: AsyncSession, user_id: str,
     """单笔/纯申购组合共用原子受理，占款与消费授权同事务。"""
     if not 1 <= len(submissions) <= 5 or len({c.operation_id for c, _ in submissions}) != len(submissions):
         raise BankError("每批1至5笔且操作号不能重复", "INVALID_PLAN", 422)
+    from ...integrations.wealth_authorization import lock_profile
+    await lock_profile(db, user_id)
     await lock_accounts(db, [c.account_id for c, _ in submissions])
     results = []
     for command, auth_id in submissions:
@@ -369,12 +398,13 @@ async def accept_many(db: AsyncSession, user_id: str,
             account_id=command.account_id, version_id=version.version_id, direction=command.direction,
             amount_fen=command.amount_fen, units_scaled=scaled(command.units),
             param_digest=command_digest(command), authorization_id=auth_id, plan_id=command.plan_id,
-            plan_version=command.plan_version, status="ACCEPTED", accepted_at=now, pricing_date=priced,
+            plan_version=command.plan_version, status="ACCEPTED", accepted_at=utc_now(), pricing_date=priced,
             confirm_date=advance_business(priced, version.rules["confirm_business_days"], version.rules["calendar_version"]),
             cash_date=advance_business(priced, version.rules["cash_business_days"], version.rules["calendar_version"]),
             details={"preview": preview["estimate"], "estimated_nav": preview["estimated_nav"],
                      "calculation_version": "mock-units-v1", "calendar_version": version.rules['calendar_version'],
-                     'dataset_id':version.rules.get('dataset_id','legacy-v1'),'dataset_version':version.rules.get('dataset_version','v1')})
+                     'dataset_id':version.rules.get('dataset_id','legacy-v1'),'dataset_version':version.rules.get('dataset_version','v1'),
+                     'business_at':now.isoformat()})
         evidence = await db.get(WealthVerificationORM, auth_id)
         row.details = {**row.details, "verification": {
             "method": evidence.method if evidence else "LEGACY_TOTP",
@@ -386,13 +416,19 @@ async def accept_many(db: AsyncSession, user_id: str,
             db.add(WealthCashHoldORM(operation_id=row.operation_id, account_id=row.account_id,
                                      amount_fen=row.amount_fen, status="HELD"))
         else:
-            remaining = row.units_scaled
-            for lot, free in await eligible_lots(db, user_id, command, now):
-                take = min(remaining, free)
-                if take:
-                    db.add(WealthUnitHoldORM(hold_id=hashlib.sha256(f"{row.operation_id}:{lot.lot_id}".encode()).hexdigest(),
-                        operation_id=row.operation_id, lot_id=lot.lot_id, units_scaled=take, status="HELD"))
-                    remaining -= take
+            if command.redemption_mode == "quick":
+                from .wealth_quick import complete
+                account = await owned_account(db, user_id, command.account_id)
+                row.pricing_date = row.confirm_date = row.cash_date = now.astimezone(TZ).date()
+                await complete(db, row, account, command, version, now, preview["estimate"])
+            else:
+                remaining = row.units_scaled
+                for lot, free in await eligible_lots(db, user_id, command, now):
+                    take = min(remaining, free)
+                    if take:
+                        db.add(WealthUnitHoldORM(hold_id=hashlib.sha256(f"{row.operation_id}:{lot.lot_id}".encode()).hexdigest(),
+                            operation_id=row.operation_id, lot_id=lot.lot_id, units_scaled=take, status="HELD"))
+                        remaining -= take
         authorization.status = "CONSUMED"
         record_bank_event(db, event_key=row.operation_id, subject_user_id=user_id,
             action="investment_accept", result="success",
@@ -401,25 +437,59 @@ async def accept_many(db: AsyncSession, user_id: str,
                    "verification": row.details["verification"]},
             decision_chain=["subject_checked", "suitability_checked",
                 "bound_confirmation_and_simulated_verification_checked" if evidence and evidence.simulated else "bound_confirmation_and_mfa_checked",
-                "funds_or_units_reserved"])
+                "quick_cash_settled_atomically" if command.redemption_mode == "quick" else "funds_or_units_reserved"])
         await db.flush()
         results.append(order_view(row))
     await db.commit()
     return results
 
 
+async def cancellation_eligibility(db: AsyncSession, user_id: str, operation_id: str) -> dict:
+    """仅读资格，按绑定合同/方向/端点判断，不释放占款或份额。"""
+    row = await owned_order(db, user_id, operation_id)
+    version = await db.get(WealthProductVersionORM, row.version_id)
+    rules = version.rules
+    now = await business_now(db, row.account_id)
+    deadline = datetime.combine(row.pricing_date, datetime.strptime(rules["cutoff"], "%H:%M").time(), TZ) if rules.get("cutoff") else None
+    status, reason = "DENIED", "订单已计价、已完成或已撤销"
+    if row.details.get("redemption_mode") == "quick":
+        reason = "快赎成功受理并到账后不可撤"
+    elif row.status in {"ACCEPTED", "PENDING_PRICING"}:
+        if "cancel_before_pricing" not in rules or deadline is None:
+            status, reason = "UNKNOWN", "撤单合同资料不足，需核对"
+        elif not rules["cancel_before_pricing"]:
+            reason = "该合同交易类型明确不可撤"
+        elif now >= deadline:
+            reason = "已达或超过计价日撤单截止时刻"
+        else:
+            status, reason = "ALLOWED", "模拟合同允许截止前全额撤单"
+    return {"operation_id":row.operation_id,"eligibility":status,"reason":reason,
+        "direction":row.direction,"action":"cancel_purchase" if row.direction == "purchase" else "withdraw_standard_redemption",
+        "deadline":deadline.astimezone(timezone.utc).isoformat() if deadline else None,"end_inclusive":False,
+        "as_of":utc_now().isoformat(),"business_at":now.isoformat(),"order_digest":row.param_digest,
+        "version_id":row.version_id,"rule_source":rules.get("rules_source","versioned_mock_contract_v1"),
+        "calendar_version":rules.get("calendar_version"),"full_only":True,
+        "consequence":"释放占款，不增加余额、不生成退款流水" if row.direction == "purchase" else "释放未处置份额，不增加现金"}
+
+
 async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
     """仅计价前可撤单；账户锁排除并发结算，重复撤单返回事实。"""
+    from ...integrations.wealth_authorization import lock_profile
+    from ...models.wealth import WealthTaskORM
+    await lock_profile(db, user_id)
     initial = await owned_order(db, user_id, operation_id)
+    controlled = await db.scalar(select(WealthTaskORM.task_id).where(WealthTaskORM.user_id==user_id,
+        WealthTaskORM.account_id==initial.account_id,WealthTaskORM.control_mode!='AGENT',
+        WealthTaskORM.status.not_in({'COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'})))
+    if controlled:
+        raise BankError('人工接管期间禁止通过旧入口撤单', 'TASK_WRITE_BLOCKED', 409)
     await lock_accounts(db, [initial.account_id])
     row = await owned_order(db, user_id, operation_id)
     if row.status == "CANCELLED":
         return order_view(row)
-    rules = (await db.get(WealthProductVersionORM, row.version_id)).rules
-    now = await business_now(db, row.account_id)
-    deadline = datetime.combine(row.pricing_date, datetime.strptime(rules["cutoff"], "%H:%M").time(), TZ)
-    if row.status not in {"ACCEPTED", "PENDING_PRICING"} or not rules["cancel_before_pricing"] or now >= deadline:
-        raise BankError("已超过撤单窗口或订单已计价", "CANCELLATION_NOT_ALLOWED", 409)
+    eligibility = await cancellation_eligibility(db, user_id, operation_id)
+    if eligibility["eligibility"] != "ALLOWED":
+        raise BankError(eligibility["reason"], "CANCELLATION_RULES_UNKNOWN" if eligibility["eligibility"] == "UNKNOWN" else "CANCELLATION_NOT_ALLOWED", 409)
     await db.execute(update(WealthCashHoldORM).where(WealthCashHoldORM.operation_id == operation_id,
         WealthCashHoldORM.status == "HELD").values(status="RELEASED"))
     await db.execute(update(WealthUnitHoldORM).where(WealthUnitHoldORM.operation_id == operation_id,
@@ -440,6 +510,10 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
     row = await db.get(WealthOrderORM, operation_id, populate_existing=True)
     if row.status in {"SETTLED", "CANCELLED", "REJECTED"}:
         return order_view(row)
+    from .wealth_reconciliation import require_reconciled
+    await require_reconciled(db, row.account_id)
+    from .wealth_demo import require_active
+    await require_active(db, row.account_id)
     now = await business_now(db, row.account_id)
     day = now.astimezone(TZ).date()
     version = await db.get(WealthProductVersionORM, row.version_id)
@@ -450,7 +524,7 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
         from ...models.wealth_research import WealthContextORM
         context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==row.account_id))).first()
         if context and context.data.get('fixture',{}).get('missing_pricing_nav'): price=None
-        if day < row.confirm_date or price is None or price.nav_date > day:
+        if day < row.confirm_date or price is None or price.nav_date > day or nav_available_at(price)>now:
             row.details = {**row.details, "waiting_reason": "NAV_UNAVAILABLE" if price is None else "CONFIRMATION_DATE_NOT_REACHED"}
             await db.commit()
             return order_view(row)
@@ -468,10 +542,10 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
             row.units_scaled = scaled(value.units)
             row.details = {**row.details, "actual": asdict(value), "actual_nav": price.price, "waiting_reason": None}
             row.status = "SETTLED"
-            db.add(TransactionORM(tx_id=stable_id("WPT", row.operation_id), account_id=row.account_id,
+            db.add(TransactionORM(tx_id=stable_id("WPT", row.operation_id), operation_id=row.operation_id, account_id=row.account_id,
                 type="investment_purchase", amount_fen=value.gross_fen-value.refund_fen,
                 counterparty=version.name, category="investment", note=None,
-                timestamp=now, status="completed", channel="app"))
+                timestamp=utc_now(), status="completed", channel="app"))
         else:
             holds = (await db.scalars(select(WealthUnitHoldORM).where(
                 WealthUnitHoldORM.operation_id == row.operation_id, WealthUnitHoldORM.status == "HELD"))).all()
@@ -493,7 +567,7 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
                     for field in ("gross_fen", "fee_fen", "cash_fen", "cost_fen", "realized_pnl_fen")}}}
             row.status = "PENDING_CASH"
         event = WealthSettlementORM(event_id=f"{row.operation_id}:pricing", operation_id=row.operation_id,
-            kind="pricing", data=row.details["actual"], created_at=now)
+            kind="pricing", data={**row.details["actual"], "business_at": now.isoformat()}, created_at=utc_now())
         db.add(event)
         record_bank_event(db, event_key=event.event_id, subject_user_id=row.user_id,
             action="investment_pricing", result="success", facts={"operation_id": row.operation_id,
@@ -504,12 +578,12 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
         account.balance_fen += cash
         row.status = "SETTLED"
         event = WealthSettlementORM(event_id=f"{row.operation_id}:cash", operation_id=row.operation_id,
-            kind="cash", data={"cash_fen": cash}, created_at=now)
+            kind="cash", data={"cash_fen": cash, "business_at": now.isoformat()}, created_at=utc_now())
         db.add(event)
         if cash > 0:
-            db.add(TransactionORM(tx_id=stable_id("WRT", row.operation_id), account_id=row.account_id,
+            db.add(TransactionORM(tx_id=stable_id("WRT", row.operation_id), operation_id=row.operation_id, account_id=row.account_id,
                 type="investment_redemption", amount_fen=cash, counterparty=version.name,
-                category="investment", note=None, timestamp=now, status="completed", channel="app"))
+                category="investment", note=None, timestamp=utc_now(), status="completed", channel="app"))
         record_bank_event(db, event_key=event.event_id, subject_user_id=row.user_id,
             action="investment_cash", result="success", facts={"operation_id": row.operation_id, "cash_fen": cash},
             decision_chain=["receivable_checked", "cash_date_reached", "unique_credit"])
@@ -517,15 +591,27 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
     return order_view(row)
 
 
-async def assets(db: AsyncSession, user_id: str) -> dict:
+async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) -> dict:
     """现金、在途应收、持仓分开估值，占款仅为现金子集不重复相加。"""
     from .wealth_research import selected
     from ...models.wealth_research import WealthContextORM
-    context = await selected(db, user_id)
+    if account_id:
+        account = await db.get(AccountORM, account_id)
+        if not account or account.user_id != user_id:
+            raise BankError('账户不存在', 'ACCOUNT_NOT_FOUND', 404)
+        context = await db.scalar(select(WealthContextORM).where(WealthContextORM.account_id==account_id))
+    else:
+        context = await selected(db, user_id)
     now = await business_now(db, context.account_id if context else None)
     sandbox_accounts = set((await db.scalars(select(WealthContextORM.account_id).where(WealthContextORM.user_id == user_id))).all())
+    group_accounts = {context.account_id} if context else set()
+    if context:
+        peers=(await db.scalars(select(WealthContextORM).where(WealthContextORM.user_id==user_id))).all()
+        run_scope=context.data.get('run_id',context.context_id)
+        group_accounts={peer.account_id for peer in peers if peer.data.get('disposable') is True and
+            peer.data.get('run_id',peer.context_id)==run_scope}
     accounts = [a for a in (await db.scalars(select(AccountORM).where(AccountORM.user_id == user_id))).all()
-                if (a.account_id == context.account_id if context else a.account_id not in sandbox_accounts)]
+                  if (a.account_id == account_id if account_id else a.account_id in group_accounts if context else a.account_id not in sandbox_accounts)]
     allowed_accounts = {a.account_id for a in accounts}
     cash = [{"account_id": a.account_id, "account_type": a.account_type,
              "balance_fen": a.balance_fen, "held_fen": await held_cash(db, a.account_id),
@@ -569,5 +655,8 @@ async def assets(db: AsyncSession, user_id: str) -> dict:
         "bank_assets_fen": sum(a["balance_fen"] for a in cash if a["account_type"] != "credit") + receivable
             + sum(lot["market_value_fen"] or 0 for lot in lots),
         "valuation_complete": all(lot["market_value_fen"] is not None for lot in lots),
-        "business_at": now.isoformat(), "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
+        "business_at": now.isoformat(), "as_of": utc_now().isoformat(),
+        "context_id": context.context_id if context else "legacy-v1",
+        "scope": "disposable_simulation" if context else "ordinary",
+        "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
 

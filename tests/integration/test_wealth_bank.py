@@ -24,10 +24,11 @@ from backend.app.services.bank.transfer_service import BankError, submit_transfe
 from dataclasses import replace
 
 NOW = datetime(2026, 9, 30, 6, 0, tzinfo=timezone.utc)
+REAL_BUSINESS_NOW = bank.business_now
 
 
 @pytest_asyncio.fixture(params=["sqlite", "postgresql"])
-async def store(tmp_path, request):
+async def store(tmp_path, request, monkeypatch):
     """每例独立文件，写锁行为不依赖内存连接共享。"""
     admin = None
     schema = "bank_test_wealth_"+__import__("uuid").uuid4().hex
@@ -45,6 +46,14 @@ async def store(tmp_path, request):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async def isolated_test_clock(db, account_id=None):
+        """测试专用注入钟；生产普通账户不得读取全局mock钟。"""
+        from backend.app.models.wealth_research import WealthContextORM
+        if account_id and await db.scalar(select(WealthContextORM.context_id).where(WealthContextORM.account_id == account_id)):
+            return await REAL_BUSINESS_NOW(db, account_id)
+        row = await db.get(WealthClockORM, "mock")
+        return row.business_at.replace(tzinfo=timezone.utc) if row.business_at.tzinfo is None else row.business_at
+    monkeypatch.setattr(bank, "business_now", isolated_test_clock)
     async with sessions() as db:
         db.add_all([UserORM(user_id=uid, name=uid, phone=f"1380000000{i}", id_card="mock", status="active")
                     for i, uid in enumerate(("U1", "U2"), 1)])
@@ -226,13 +235,14 @@ async def http_store(store, monkeypatch):
     from backend.app.database.connection import get_db
     from backend.app.middleware.auth import get_current_user
     from backend.app.middleware.errors import install_error_handlers
-    from backend.app.routers import wealth_bank, wealth, bank_operations
+    from backend.app.routers import wealth_bank, wealth, bank_operations, wealth_tasks
     from backend.app.integrations.wealth_bank_api import HttpWealthBankApi
     from backend.app.integrations.bank_api import BankResponseUnknown
     app = FastAPI()
     install_error_handlers(app)
     app.include_router(wealth.router)
     app.include_router(wealth_bank.router)
+    app.include_router(wealth_tasks.router)
     token = __import__("uuid").uuid4().hex
     monkeypatch.setattr(bank_operations, "INTERNAL_BANK_TOKEN", token)
     async def database():
@@ -342,7 +352,8 @@ async def test_external_goal_double_allocation_and_financial_change_expiry(store
 
 
 @pytest.mark.asyncio
-async def test_chat_pending_resume_and_no_language_execution(store, http_store):
+async def test_chat_pending_resume_and_no_language_execution(store, http_store, monkeypatch):
+    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
     client, _, _ = http_store
     initial = await client.post("/api/v1/wealth/messages", json={"message": "我有两万元，三个月可能要用，留五千备用"})
     assert initial.status_code == 200
@@ -580,8 +591,10 @@ async def test_batch_lot_fees_nav_loss_and_worker_idempotency(store):
         assert fact.status == "SETTLED" and fact.details["actual_nav"] != preview["estimated_nav"]
         lot = (await db.scalars(select(WealthLotORM))).one()
         # 后续固定净值下跌，银行估值体现真实负盈亏。
-        day = (await bank.business_now(db)).date()
-        nav = await db.get(WealthNavORM, f"MF001:1:{day.isoformat()}")
+        valuation_at = await bank.business_now(db)
+        nav = await bank.latest_nav(db, "MF001:1", valuation_at)
+        assert nav is not None and bank.nav_available_at(nav) <= valuation_at
+        day = nav.nav_date
         nav.price = "0.80000000"
         old = await db.get(WealthProductVersionORM, "MF001:1")
         new_rules = deepcopy(old.rules)
@@ -680,7 +693,7 @@ async def test_real_jwt_ownership_and_injected_description_cannot_authorize(stor
     with pytest.raises(ValueError):
         checked_explanation({"product_ids": ["FAKE"], "reason_key": "risk"}, products)
     reply = (await client.post("/api/v1/wealth/messages", json={"message": "验证码123456"})).json()
-    assert reply["kind"] == "clarification"
+    assert reply["kind"] == "refusal"
     async with store() as db:
         assert await db.scalar(select(func.count()).select_from(WealthConversationORM)) == 0
 

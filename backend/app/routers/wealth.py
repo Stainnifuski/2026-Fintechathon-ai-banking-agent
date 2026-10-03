@@ -31,6 +31,46 @@ def get_wealth_bank() -> HttpWealthBankApi:
     return HttpWealthBankApi()
 
 
+from ..schemas.wealth_demo import DemoReset, DemoAdjust, DemoDeletePreview, DemoDelete
+
+
+@router.get('/demo/current')
+async def demo_current(user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST', '/demo/current', {'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.get('/demo/archives')
+async def demo_archives(user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST', '/demo/archives', {'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+async def demo_call(action: str, request: StrictRequest, user: dict, bank: HttpWealthBankApi) -> dict:
+    try: return await bank.call('POST', '/demo/'+action, {**request.model_dump(), 'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.post('/demo/reset')
+async def demo_reset(request: DemoReset, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('reset', request, user, bank)
+
+
+@router.post('/demo/adjust')
+async def demo_adjust(request: DemoAdjust, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('adjust', request, user, bank)
+
+
+@router.post('/demo/delete-preview')
+async def demo_delete_preview(request: DemoDeletePreview, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('delete-preview', request, user, bank)
+
+
+@router.post('/demo/delete')
+async def demo_delete(request: DemoDelete, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('delete', request, user, bank)
+
+
 @router.get('/contexts')
 async def contexts(user: dict=Depends(get_current_user),bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
     try: return await bank.call('POST','/contexts',{'subject_user_id':user['user_id']})
@@ -62,7 +102,7 @@ class FundDetailRequest(StrictRequest):
 
 
 class FundCompareRequest(StrictRequest):
-    codes: list[str] = Field(min_length=2, max_length=3)
+    codes: list[str] = Field(min_length=2, max_length=4)
     period: str = Field(default='1y', pattern='^(1m|3m|1y|since)$')
 
 
@@ -140,10 +180,10 @@ async def products(user: dict = Depends(get_current_user), bank: HttpWealthBankA
 @router.get("/compare")
 async def compare(product_ids: str, user: dict = Depends(get_current_user),
                   bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
-    """2至3个唯一产品客观对比，全部字段来自银行。"""
+    """2至4个唯一产品客观对比，全部字段来自银行。"""
     keys = product_ids.split(",")
-    if not 2 <= len(keys) <= 3 or len(set(keys)) != len(keys):
-        raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至3个不同产品"})
+    if not 2 <= len(keys) <= 4 or len(set(keys)) != len(keys):
+        raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至4个不同产品"})
     try:
         rows = [row for row in await bank.products(user["user_id"]) if row["product_id"] in keys]
         if len(rows) != len(keys):
@@ -206,7 +246,7 @@ async def preview(request: InvestmentCommand, user: dict = Depends(get_current_u
     """银行预检通过后固定逐笔授权，不扣款。"""
     try:
         view = await bank.precheck(user["user_id"], request)
-        row = await policy.new_preview_authorization(db, user["user_id"], request)
+        row = await policy.new_preview_authorization(db, user["user_id"], InvestmentCommand.model_validate(view["command"]))
         await db.commit()
         return {**view, "authorization_id": row.authorization_id, "authorization_status": row.status,
                 "expires_at": policy.aware(row.expires_at).isoformat()}
@@ -271,6 +311,15 @@ async def order(operation_id: str, user: dict = Depends(get_current_user),
         fail(error)
 
 
+@router.get("/orders/{operation_id}/cancellation-eligibility")
+async def cancellation_eligibility(operation_id: str, user: dict = Depends(get_current_user),
+                                  bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        return await bank.call("POST", f"/orders/{operation_id}/cancellation-eligibility", {"subject_user_id":user["user_id"]})
+    except BankApiError as error:
+        fail(error)
+
+
 @router.get("/executions")
 async def executions(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> list[dict]:
     """刷新找回SUBMITTING/UNKNOWN，保留原操作号。"""
@@ -291,12 +340,17 @@ async def cancel(operation_id: str, request: PersonalConfirmation, user: dict = 
 
 
 @router.get("/plans")
-async def plans(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> list[dict]:
+async def plans(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
     """刷新后找回原版本方案、在途和已完成效果。"""
     from ..models.wealth import WealthPlanORM
     rows = (await db.scalars(select(WealthPlanORM).where(WealthPlanORM.user_id == user["user_id"])
                               .order_by(WealthPlanORM.created_at.desc()))).all()
-    return [wealth_plan.plan_view(row) for row in rows]
+    try:
+        facts = await bank.assets(user['user_id'])
+    except BankApiError as error: fail(error)
+    account_ids = {account['account_id'] for account in facts['cash']}
+    return [wealth_plan.plan_view(row) for row in rows if row.data.get('request',{}).get('account_id') in account_ids]
 
 
 @router.post("/plans")
@@ -361,12 +415,28 @@ async def adopt_plan(plan_id: str, request: AdoptPlan, user: dict = Depends(get_
 
 
 @router.get("/messages/history")
-async def message_history(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict | None:
+async def message_history(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+    bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict | None:
     """本人最近会话刷新恢复，只返回受控模拟消息。"""
     from ..models.wealth import WealthConversationORM
-    row = (await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id == user["user_id"])
-        .order_by(WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).first()
+    try: context=(await bank.call('POST','/contexts',{'subject_user_id':user['user_id']}))['selected']
+    except BankApiError as error: fail(error)
+    rows = (await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id == user["user_id"])
+        .order_by(WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).all()
+    row=next((item for item in rows if item.data.get('context_id','legacy-v1')==context and not item.data.get('legacy_read_only')),None)
     return {"session_id": row.session_id, "version": row.version, **row.data} if row else None
+
+
+@router.get('/messages/archives')
+async def message_archives(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """本人旧历史只读展示；不恢复命令、方案或授权，不跨用户返回。"""
+    from ..models.wealth import WealthConversationORM
+    rows = (await db.scalars(select(WealthConversationORM).where(
+        WealthConversationORM.user_id == user['user_id']).order_by(
+        WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).all()
+    return {'items': [{'session_id': row.session_id, 'context_id': row.data.get('context_id', 'legacy-unassigned'),
+        'read_only': True, 'history': row.data.get('history', [])}
+        for row in rows if row.data.get('legacy_read_only') is True]}
 
 
 @router.get("/profile")

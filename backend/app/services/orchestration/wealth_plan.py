@@ -47,7 +47,7 @@ async def preview_all(db: AsyncSession, user_id: str, plan_id: str, version: int
     for command, view in zip(commands, views):
         auth = await policy.new_preview_authorization(db, user_id, command)
         items.append({**view, "command": command.model_dump(), "authorization_id": auth.authorization_id,
-            "authorization_status": auth.status, "digest": auth.param_digest, "expires_at": auth.expires_at.isoformat()})
+            "authorization_status": auth.status, "digest": auth.param_digest, "expires_at": policy.aware(auth.expires_at).isoformat()})
     await db.commit()
     return {"plan_id": plan_id, "version": version, "items": items}
 
@@ -111,7 +111,9 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     goal_reserve = sum(goal.data["amount_fen"] for goal in goals if
         date.fromisoformat(goal.data["due_date"]) <= business_date+timedelta(days=365)
         and goal.data["liquidity"] == "immediate")
-    effective_reserve = max(reserve, min(goal_reserve, budget))
+    # 现金保留属于整个账户；预算之外的可用现金已满足的部分不重复扣除。
+    outside_budget=max(0,account['available_fen']-budget)
+    effective_reserve=min(budget,max(0,max(reserve,goal_reserve)-outside_budget))
     config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"])
@@ -133,7 +135,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         for category, weight in WEIGHTS[suitability["capacity_level"]].items()]
     diagnostic["goal_shortfall_fen"] = max(0, goal_reserve-budget)
     diagnostic["expense_reserve_fen"] = profile.data.get("monthly_expenses_fen", 0) if profile else 0
-    effective_reserve = max(effective_reserve, min(budget, diagnostic["expense_reserve_fen"]))
+    effective_reserve=max(effective_reserve,min(budget,max(0,diagnostic['expense_reserve_fen']-outside_budget)))
     config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
@@ -141,6 +143,9 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     await db.rollback()
     await lock_profile(db, user_id)
     row = await owned_plan(db, user_id, plan_id) if plan_id else None
+    if row:
+        from .wealth_task import require_plan_edit
+        await require_plan_edit(db,user_id,plan_id)
     if row and (row.version != request.get("version") or row.status in {"EXECUTING", "WAITING_SETTLEMENT", "COMPLETED"}):
         raise WealthPolicyError("方案版本已改变或已受理，请先核对在途", "STALE_PLAN")
     if row and any(item["status"] in {"SUBMITTING", "UNKNOWN", "ACCEPTED", "PENDING_PRICING", "PENDING_CASH"} for item in row.data["items"]):
@@ -305,6 +310,8 @@ async def execute(db: AsyncSession, user_id: str, plan_id: str, version: int, ba
 async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan) -> dict:
     """部分采用或减少金额/份额产生新版本，拒绝变相增加授权范围。"""
     await lock_profile(db, user_id)
+    from .wealth_task import require_plan_edit, register_plan
+    task=await require_plan_edit(db,user_id,plan_id)
     row = await owned_plan(db, user_id, plan_id)
     if row.version != request.version or row.status != "AWAITING_CONFIRMATION" or any(
         child["status"] != "AWAITING_CONFIRMATION" for child in row.data["items"]):
@@ -337,4 +344,6 @@ async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan
     row.data, row.version = data, row.version+1
     row.status = "AWAITING_CONFIRMATION" if children else "COMPLETED"
     await db.commit()
+    if task:
+        await register_plan(db,user_id,task.session_id,task.context_id,plan_view(row))
     return plan_view(row)

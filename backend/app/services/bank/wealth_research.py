@@ -9,6 +9,7 @@ from ...models.account import AccountORM
 from ...models.wealth import WealthProductORM, WealthProductVersionORM, WealthNavORM, WealthOrderORM, WealthAuthorizationORM, WealthConversationORM
 from ...models.wealth_research import WealthDatasetORM, WealthResearchProductORM, WealthContextORM, WealthContextSelectionORM
 from .transfer_service import BankError
+from ...domain.time import BEIJING
 
 MAX_IMPORT_BYTES=25_000_000
 
@@ -101,9 +102,16 @@ async def import_dataset(db: AsyncSession, payload: dict, dry_run: bool=False) -
         if p.get('official_reference'):
             disclosure.update(identity=p['identity'], official_reference=p['official_reference'],
                 source_rules=p['source_rules'], rules_adaptations=p['rules_adaptations'])
+        if p['rules'].get('quick_redemption'):
+            disclosure.update(quick_redemption=p['rules']['quick_redemption'],
+                cancellation='普通申购/赎回仅计价日15:30前全撤；模拟快赎成功受理后不可撤',
+                settlement='普通按T+1模拟日历；快赎同事务减少份额并即时增加可用现金，无垫资/后续清算',
+                limitations='虚构现金管理理财和净值，不是真实快赎服务；每个产品本人跨账户自然日成功支付累计1万元')
         db.add(WealthProductVersionORM(version_id=vid,product_id=pid,version=version,name=p["name"],kind=p["kind"],category=p["category"],risk_level=p["risk_level"],rules=p["rules"],disclosure=disclosure,created_at=now))
         await db.flush()
-        db.add_all([WealthNavORM(nav_id=f'{vid}:{point["date"]}',version_id=vid,nav_date=date.fromisoformat(point["date"]),price=point["nav"]) for point in history])
+        from ...domain.time import as_utc
+        db.add_all([WealthNavORM(nav_id=f'{vid}:{point["date"]}',version_id=vid,nav_date=date.fromisoformat(point["date"]),price=point["nav"],
+            available_at=as_utc(datetime.fromisoformat(point['available_at']))) for point in history])
     await db.flush()
     return {"ok":True,"dataset_key":key,"written":len(payload["products"]),"fingerprint":digest}
 
@@ -113,6 +121,7 @@ async def selected(db: AsyncSession,user_id: str) -> WealthContextORM | None:
     if not selection or selection.context_id=="legacy-v1": return None
     context=await db.get(WealthContextORM,selection.context_id)
     if context is None or context.user_id!=user_id: raise BankError("上下文不可用","DATASET_MISMATCH",409)
+    if context.data.get('run_state','ACTIVE')!='ACTIVE': raise BankError('测试轮次已归档','ARCHIVED_RUN',409)
     return context
 
 
@@ -125,12 +134,16 @@ async def select_context(db: AsyncSession,user_id: str,context_id: str,version: 
     if context_id!="legacy-v1":
         context=await db.get(WealthContextORM,context_id)
         if context is None or context.user_id!=user_id: raise BankError("上下文不存在","NOT_FOUND",404)
+        if context.data.get('run_state','ACTIVE')!='ACTIVE': raise BankError('不能选择归档轮次继续写入','ARCHIVED_RUN',409)
     if row is None: row=WealthContextSelectionORM(user_id=user_id,context_id=context_id,version=2); db.add(row)
     else: row.context_id=context_id; row.version+=1
     await db.execute(update(WealthAuthorizationORM).where(WealthAuthorizationORM.user_id==user_id,WealthAuthorizationORM.status.in_(["AWAITING_CONFIRMATION","AWAITING_MFA","VALID"])).values(status="EXPIRED"))
     conversations=(await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id==user_id))).all()
     for conv in conversations:
-        conv.version+=1; conv.data={**conv.data,'history_archive':[*conv.data.get('history_archive',[]),*conv.data.get('history',[])][-40:],'history':[],"pending":None,"candidates":[],"active_command":None,"active_plan":None,"context_id":context_id,'account_id':None}
+        conv.version+=1
+        # 会话始终属于创建时的资金范围，不能把旧轮次历史改绑到新轮次。
+        conv.data={**conv.data,'scope_archived':conv.data.get('context_id','legacy-v1')!=context_id,
+            'scope_switch_at':datetime.now(timezone.utc).isoformat()}
     from ...models.wealth import WealthPlanORM
     await db.execute(update(WealthPlanORM).where(WealthPlanORM.user_id==user_id,WealthPlanORM.status.in_(['DRAFT','AWAITING_CONFIRMATION'])).values(status='EXPIRED'))
     await db.commit()
@@ -197,9 +210,9 @@ async def catalog(db: AsyncSession,dataset_key: str | None=None,as_of: datetime 
     rows=(await db.scalars(select(WealthResearchProductORM).where(WealthResearchProductORM.dataset_key==key).order_by(WealthResearchProductORM.product_id))).all()
     result=[]
     for row in rows:
-        visible=[p for p in row.history if datetime.fromisoformat(p["available_at"])<=at and p["date"]<=at.date().isoformat()]
+        visible=[p for p in row.history if datetime.fromisoformat(p["available_at"])<=at and p["date"]<=at.astimezone(BEIJING).date().isoformat()]
         latest=visible[-1] if visible else None
-        money_visible=[point for point in row.data.get('money_yield',[]) if datetime.fromisoformat(point['available_at'])<=at and point['date']<=at.date().isoformat()]
+        money_visible=[point for point in row.data.get('money_yield',[]) if datetime.fromisoformat(point['available_at'])<=at and point['date']<=at.astimezone(BEIJING).date().isoformat()]
         result.append({**row.data,"money_yield":money_visible,"dataset_key":key,"nav":latest["nav"] if latest else None,"nav_date":latest["date"] if latest else money_visible[-1]['date'] if money_visible else None,
                        "available_at":latest["available_at"] if latest else None,"published_at":latest.get("published_at") if latest else None,
                        "history_count":len(visible),"history":visible,"quality_flags":row.data.get("quality_flags",[]),

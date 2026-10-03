@@ -40,6 +40,16 @@ def bank_products(config_dir=CONFIG):
         for i, point in enumerate(p['history'],1):
             point['nav']=format((Decimal(point['nav'])*adjustment**i).quantize(Decimal('0.00000001')),'f')
             point.pop('income_per_10000',None); point.pop('seven_day_annualized',None)
+        if mapping.get('quick_contract'):
+            p['subtype'] = 'cash_management'
+            p['rules_version'] = mapping['quick_contract']['version']
+            p['rules'] = {**p['rules'], 'min_amount_fen': 100, 'quick_redemption': mapping['quick_contract'],
+                'nav_publication_time': '18:00', 'ordinary_cancellation': {'policy': 'full_before_pricing_cutoff',
+                'cutoff': '15:30', 'end_inclusive': False, 'timezone': 'Asia/Shanghai'},
+                'allow_nontrading_queue': True}
+            p['rules_adaptations'] = [*p['rules_adaptations'],
+                '新增模拟现金管理快赎：1元起购、模拟窗口和1万元自然日限额；同事务成交到账，无垫资/后续清算，成功不可撤',
+                '快赎净值仅用当时已发布版本；普通申赎仍按T+1模拟日历']
         result.append(p)
     return result
 

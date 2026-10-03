@@ -2,9 +2,11 @@
 .wealth-title { display:flex; justify-content:space-between; gap:16px; align-items:start; }
 .wealth-title p { color:#526280; font-size:14px; }
 .wealth nav { display:flex; flex-wrap:wrap; gap:8px; margin-block:16px 24px; }
-.wealth-layout { display:grid; grid-template-columns:minmax(0, 1.7fr) minmax(260px, 1fr); gap:24px; }
+.wealth-layout { display:flex; flex-direction:column; gap:24px; }
 .wealth-layout > * { min-width:0; }
-.wealth aside { padding:20px; background:#f3f6fd; border-radius:16px; align-self:start; position:sticky; top:16px; }
+.wealth aside { padding:20px; background:#f3f6fd; border-radius:16px; order:-1; width:100%; box-sizing:border-box; }
+.wealth-history { max-height:420px; overflow:auto; }
+.wealth-history article { padding:12px; border-bottom:1px solid #dce4f4; overflow-wrap:anywhere; white-space:pre-wrap; }
 .wealth label { display:block; margin-block:12px; }
 .wealth .wealth-check { display:flex; align-items:start; gap:10px; }
 .wealth-check input { width:auto; margin-top:4px; }

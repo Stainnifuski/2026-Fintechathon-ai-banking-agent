@@ -1,3 +1,4 @@
+import { beijingTime } from '../../utils/time';
 import { useCallback, useEffect, useState } from 'react';
 import * as flowerShop from '../../services/flowerShop';
 import * as cakeShop from '../../services/cakeShop';
@@ -170,7 +171,7 @@ function Storefront({ revision, onGoBank, shopType }: Pick<Props, 'revision' | '
             {orders.map(order => <li key={order.order_id}>
               <div>
                 <strong>{order.product_name} × {order.quantity}</strong>
-                <small>{order.order_id} · {new Date(order.created_at).toLocaleString()}</small>
+                <small>{order.order_id} · {beijingTime(order.created_at)}</small>
               </div>
               <div className="order-summary">
                 <strong>¥{order.total.toFixed(2)}</strong>

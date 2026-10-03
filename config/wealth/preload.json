@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "version": "20261002-selection-v1",
+  "version": "20261002-selection-v2-quick",
   "target": {
     "real_funds": 44,
-    "simulated_bank_wealth": 16
+    "simulated_bank_wealth": 18
   },
   "selection_policy": "可调整目标，失败/无历史不计有效数量；不以目录类型推断官方风险等级",
   "funds": [

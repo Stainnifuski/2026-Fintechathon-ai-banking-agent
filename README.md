@@ -2,7 +2,7 @@
 
 面向银行业务的 AI Agent 比赛演示项目：通过自然语言理解意图、规划任务，在风险分级和用户授权后调用模拟银行，展示可核对的执行结果。后端 FastAPI，前端 React/TypeScript，数据库支持 SQLite 与 PostgreSQL。
 
-> 账户和资金均为虚构；默认采用真实基金与官方规则参考的模拟银行理财混合研究池（目标44＋16，可扩展），另支持全量基金目录和池外缓存，不连接真实银行交易。理财高风险环节使用明确标注的点击模拟授权，不采集或验证指纹、人脸、短信码或支付密码，不宣称已实现真实多因素认证。
+> 账户和资金均为虚构；混合研究池已扩展至44只真实基金＋18个模拟银行理财（包括B017/B018现金管理快赎产品），另支持全量基金目录和池外缓存，不连接真实银行交易。理财高风险环节使用明确标注的点击模拟授权，不采集或验证指纹、人脸、短信码或支付密码，不宣称已实现真实多因素认证。本轮完整对话与账务增量已按修订范围完成验收；实际结果、失败复验及范围调整见E01–E40记录。
 
 ## 场景与当前能力
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | 智能转账 | 姓名/手机号转账、备注、多轮修改、定时转账、AA收款及原号恢复 | 聊天处理即时人民币转账；定时/AA走表单；可配置外部模型 |
 | 账单分析 | 月度/年度报告、分类趋势、异常提示、流水下钻及只读问答 | 默认离线，可配置模型理解 |
-| 理财操作 | 全量基金搜索／池外缓存、44真实基金＋16官方规则模拟理财目标池、产品及组合分析、版本化知识与8宏观指标、DeepSeek多轮、本人评估、申赎/配置/调整/异步结算 | 真实行情仅研究；可信页面确认和模拟授权；日更需显式启用 |
+| 理财操作 | 全量基金搜索／池外缓存、44真实基金＋18模拟银行理财池、产品及组合分析、版本化知识与8宏观指标、DeepSeek多轮、本人评估、申赎/配置/调整/异步结算；新增单一对话工作台、任务DAG与控制、人工接管、快赎及测试轮次工具 | 真实行情仅研究；可信页面确认和模拟授权；日更需显式启用；本轮完整验收结果以E01–E40记录为准 |
 | 订阅管理 | 已有订阅记录及相关操作 | 范围以现有接口与测试为准，不等同完成全部自动识别能力 |
 | 卡片管理 | 卡片查询、申请虚拟卡、设置交易限额（黄色确认）；调整信用额度、解锁、挂失（红色：确认＋TOTP） | 网页可信面板；聊天不处理卡片；Agent工具只能查询和生成预览 |
 | 日历 | 月视图、时间点／时间段事件、ICS 上传导入、全天与重复日程、用户隔离和事件删除 | 本地日历，不含提醒推送或外部日历同步 |
@@ -61,6 +61,7 @@ docker compose up --build
 | 理财数据与研究 | [数据与日更](docs/wealth/data_sources.md)、[分析口径](docs/wealth/analytics.md)、[知识库](docs/wealth/knowledge.md) |
 | v1.2验收与比赛 | [当前混合池验收](docs/validation/wealth_v1_2_supplement_20261002.md)、[清理与干净复现](docs/validation/development_cleanup_20261002.md)、[比赛材料与差距](docs/competition/wealth_v1_2.md) |
 | 理财开发与联调 | [接口契约](docs/wealth/contract.md)、[设计决策](docs/wealth/decisions.md)、[数据库交接](docs/wealth/handoff.md) |
+| 理财对话与账务增量（开发中） | [任务/时间/测试轮次契约](docs/wealth/dialogue_tasks_and_time.md)、[当前进度](docs/wealth/dialogue_ledger_progress.md)、[E01–E40验收](docs/validation/dialogue_ledger_20261002.md) |
 | 安全与模拟限制 | [理财安全自评](docs/wealth/security.md)、[模拟授权及统一接口](docs/wealth/simulated_authorization.md) |
 | 验证证据 | [理财原始验收](docs/validation/wealth_20261001.md)、[本次授权调整](docs/validation/wealth_authorization_demo_20261001.md)、[账单验收](docs/validation/bills_20260930.md) |
 | 开发历史 | [实施进度](implementation_progress.md)、[历史README](docs/archive/README_before_authorization_20261001.md) |

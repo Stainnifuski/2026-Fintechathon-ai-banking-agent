@@ -6,6 +6,7 @@
 
 from uuid import uuid4
 from datetime import datetime, timezone
+from ...domain.time import as_utc
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -50,7 +51,7 @@ def _user_dict(user: UserORM) -> dict:
         "phone": user.phone,
         "id_card": user.id_card,
         "risk_level": user.risk_level,
-        "created_at": user.created_at,
+        "created_at": as_utc(user.created_at, legacy_utc=True),
         "status": user.status,
     }
 
@@ -64,7 +65,7 @@ def _transaction_dict(transaction: TransactionORM) -> dict:
         "counterparty": transaction.counterparty,
         "category": transaction.category,
         "note": transaction.note,
-        "timestamp": transaction.timestamp,
+        "timestamp": as_utc(transaction.timestamp, legacy_utc=True),
         "status": transaction.status,
         "channel": transaction.channel,
     }
@@ -310,7 +311,8 @@ async def list_transactions(user_id: str, limit: int = 50) -> list[dict]:
             await session.execute(
                 select(TransactionORM)
                 .join(AccountORM)
-                .where(AccountORM.user_id == user_id)
+                .where(AccountORM.user_id == user_id,
+                    AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
                 .order_by(TransactionORM.timestamp.desc())
                 .limit(limit)
             )
