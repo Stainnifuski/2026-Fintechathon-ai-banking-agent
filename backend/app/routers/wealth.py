@@ -180,10 +180,10 @@ async def products(user: dict = Depends(get_current_user), bank: HttpWealthBankA
 @router.get("/compare")
 async def compare(product_ids: str, user: dict = Depends(get_current_user),
                   bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
-    """2至3个唯一产品客观对比，全部字段来自银行。"""
+    """2至4个唯一产品客观对比，全部字段来自银行。"""
     keys = product_ids.split(",")
-    if not 2 <= len(keys) <= 3 or len(set(keys)) != len(keys):
-        raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至3个不同产品"})
+    if not 2 <= len(keys) <= 4 or len(set(keys)) != len(keys):
+        raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至4个不同产品"})
     try:
         rows = [row for row in await bank.products(user["user_id"]) if row["product_id"] in keys]
         if len(rows) != len(keys):
@@ -340,12 +340,17 @@ async def cancel(operation_id: str, request: PersonalConfirmation, user: dict = 
 
 
 @router.get("/plans")
-async def plans(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> list[dict]:
+async def plans(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+                bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
     """刷新后找回原版本方案、在途和已完成效果。"""
     from ..models.wealth import WealthPlanORM
     rows = (await db.scalars(select(WealthPlanORM).where(WealthPlanORM.user_id == user["user_id"])
                               .order_by(WealthPlanORM.created_at.desc()))).all()
-    return [wealth_plan.plan_view(row) for row in rows]
+    try:
+        facts = await bank.assets(user['user_id'])
+    except BankApiError as error: fail(error)
+    account_ids = {account['account_id'] for account in facts['cash']}
+    return [wealth_plan.plan_view(row) for row in rows if row.data.get('request',{}).get('account_id') in account_ids]
 
 
 @router.post("/plans")
@@ -418,8 +423,20 @@ async def message_history(user: dict = Depends(get_current_user), db: AsyncSessi
     except BankApiError as error: fail(error)
     rows = (await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id == user["user_id"])
         .order_by(WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).all()
-    row=next((item for item in rows if item.data.get('context_id','legacy-v1')==context),None)
+    row=next((item for item in rows if item.data.get('context_id','legacy-v1')==context and not item.data.get('legacy_read_only')),None)
     return {"session_id": row.session_id, "version": row.version, **row.data} if row else None
+
+
+@router.get('/messages/archives')
+async def message_archives(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """本人旧历史只读展示；不恢复命令、方案或授权，不跨用户返回。"""
+    from ..models.wealth import WealthConversationORM
+    rows = (await db.scalars(select(WealthConversationORM).where(
+        WealthConversationORM.user_id == user['user_id']).order_by(
+        WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).all()
+    return {'items': [{'session_id': row.session_id, 'context_id': row.data.get('context_id', 'legacy-unassigned'),
+        'read_only': True, 'history': row.data.get('history', [])}
+        for row in rows if row.data.get('legacy_read_only') is True]}
 
 
 @router.get("/profile")

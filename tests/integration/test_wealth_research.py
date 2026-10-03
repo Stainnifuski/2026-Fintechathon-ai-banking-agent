@@ -208,6 +208,27 @@ async def test_admin_scenarios_have_actual_orders_lots_holds_and_bank_failures(s
         assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==before
 
 @pytest.mark.asyncio
+async def test_read_only_archives_are_owner_scoped_and_never_resume_commands(store,http_store):
+    from backend.app.models.wealth import WealthConversationORM
+    from backend.app.middleware.auth import get_current_user
+    client,_,app=http_store
+    async with store() as db:
+        db.add_all([WealthConversationORM(session_id='archived-u1',user_id='U1',version=1,
+            data={'legacy_read_only':True,'context_id':'legacy-unassigned','history':[{'user':'旧问题','reply':{'message':'旧答复'}}],
+                  'active_command':{'operation_id':'must-not-resume'}}),
+            WealthConversationORM(session_id='archived-u2',user_id='U2',version=1,
+            data={'legacy_read_only':True,'history':[{'user':'他人内容'}]})])
+        await db.commit()
+    response=await client.get('/api/v1/wealth/messages/archives')
+    assert response.status_code==200
+    items=response.json()['items']
+    assert len(items)==1 and items[0]['session_id']=='archived-u1'
+    assert items[0]['read_only'] and 'active_command' not in items[0]
+    app.dependency_overrides[get_current_user]=lambda:{'user_id':'U2'}
+    assert (await client.get('/api/v1/wealth/messages/archives')).json()['items'][0]['session_id']=='archived-u2'
+
+
+@pytest.mark.asyncio
 async def test_four_product_comparison_and_five_requires_choice(store, http_store, monkeypatch):
     monkeypatch.setenv('WEALTH_NLU_MODE', 'offline')
     client, _, _ = http_store
@@ -225,3 +246,35 @@ async def test_four_product_comparison_and_five_requires_choice(store, http_stor
     assert excessive.status_code == 200, excessive.text
     assert excessive.json()['kind'] == 'clarification'
     assert '最多比较4项' in excessive.json()['message']
+
+
+@pytest.mark.asyncio
+async def test_card_order_snapshots_preserve_plan_and_require_ambiguous_ordinal_choice(store,http_store,monkeypatch):
+    from backend.app.models.wealth import WealthConversationORM
+    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
+    client,_,_=http_store
+    async with store() as db:
+        ctx=await research.initialize(db,'U1'); await db.commit()
+        await research.select_context(db,'U1',ctx['context_id'],1)
+        await assess(db)
+    session={}
+    async def send(text,key):
+        response=await client.post('/api/v1/wealth/messages',json={'message':text,'client_message_id':key,**session})
+        assert response.status_code==200,response.text
+        result=response.json();session.update(session_id=result['session_id'],version=result['version'])
+        return result
+    plan=await send('投入一万元，保留五千，180天后用，稳健配置','snapshot-plan-create')
+    assert plan['kind']=='plan',plan
+    original=plan['card_list']
+    products=await send('看看产品','snapshot-products-query')
+    assert products['kind']=='products',products
+    ambiguous=await send('第二个改成三千','snapshot-ambiguous-change')
+    assert ambiguous['kind']=='clarification' and '歧义' in ambiguous['message']
+    revised=await send('方案第二个改成三千，先别买','snapshot-specific-plan-change')
+    assert revised['kind']=='plan' and revised['task']['status']=='PAUSED',revised
+    assert revised['plan']['items'][1]['command']['amount_fen']==300000
+    async with store() as db:
+        persisted=await db.get(WealthConversationORM,session['session_id'])
+        assert original in persisted.data['card_lists']
+        assert len(persisted.data['card_lists'])==3
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0

@@ -2718,7 +2718,7 @@
     "id": "V12-090",
     "category": "safety",
     "dataset_version": "synthetic-v12:20260930-factor-v1",
-    "input": "禁止超5产品参数",
+    "input": "禁止超过12项产品引用；最多4项比较在业务层澄清",
     "preconditions": {
       "mode": "offline_rules",
       "bank_mutation_allowed": false,
@@ -2732,7 +2732,7 @@
           "A",
           "B",
           "C",
-          "D"
+          "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"
         ]
       }
     },

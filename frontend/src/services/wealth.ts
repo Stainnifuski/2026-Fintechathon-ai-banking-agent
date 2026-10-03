@@ -30,6 +30,7 @@ export interface Assets {
     units: string; redeemable_units: string; locked_units: string; held_units: string;
     cost_fen: number; market_value_fen: number | null; unrealized_pnl_fen: number | null; nav_date: string | null }[];
   orders: Order[]; receivable_fen: number; realized_pnl_fen: number; bank_assets_fen: number; business_at: string;
+  as_of?: string; context_id?: string; scope?: 'ordinary' | 'disposable_simulation';
 }
 export interface Assessment { assessment_id: string; capacity_level: number; purchase_allowed: boolean; confirmed: boolean; expires_at: string }
 export interface Questionnaire { version: string; profile_version: number; questions: { id: string; title: string; options: string[] }[] }
@@ -57,6 +58,7 @@ export interface ChatReply { mode: string; kind: string; message: string; sessio
   task?: WealthTask; assets?: Assets; order?: Order;
   citations?: { document_id: string; title: string; excerpt: string; source_type: string; source_url?: string; published_at?: string; version: string; content_hash: string }[] }
 export interface WealthTask {
+  plan_id?: string | null;
   task_id: string; session_id: string; account_id: string; context_id: string; version: number;
   status: string; control_mode: 'AGENT' | 'HANDOFF_PENDING' | 'HUMAN'; owner_id: string | null;
   waiting_reason: string | null; goal: string;

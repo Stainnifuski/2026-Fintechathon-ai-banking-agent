@@ -27,6 +27,29 @@ def resolve(ref: str,products: list[dict],candidate_ids: list[str]) -> str:
     return matches[0]
 
 
+def card_list(data: dict, kind: str, items: list[str], response: dict) -> None:
+    """Keep each rendered ordering immutable; newer cards supersede only the same kind."""
+    snapshots = list(data.get('card_lists', []))
+    snapshot = {'list_id': 'CL'+uuid4().hex, 'kind': kind, 'items': list(items),
+                'context_id': data.get('context_id', 'legacy-v1')}
+    data['card_lists'] = snapshots + [snapshot]
+    response['card_list'] = snapshot
+
+
+def ordinal_candidates(data: dict, text: str) -> list[list[str]]:
+    latest = {}
+    for snapshot in data.get('card_lists', []):
+        if snapshot['context_id'] == data.get('context_id', 'legacy-v1'):
+            latest[snapshot['kind']] = snapshot['items']
+    if '方案' in text:
+        latest = {key: value for key, value in latest.items() if key == 'plan'}
+    elif '搜索' in text or '目录' in text:
+        latest = {key: value for key, value in latest.items() if key == 'directory'}
+    elif '候选' in text:
+        latest = {key: value for key, value in latest.items() if key == 'products'}
+    return list(latest.values())
+
+
 def offline(text: str) -> Intent:
     from .wealth import parse_money
     refs=re.findall(r'(?<![A-Z0-9])(?:[SB]\d{3}|M[WF]\d{3}|R\d{6})(?![A-Z0-9])',text.upper())
@@ -64,7 +87,7 @@ def offline(text: str) -> Intent:
     return Intent(intent=intent,control_after='pause' if intent=='modify' and re.search('先别买|暂停|先停',text) else None,
         redemption_mode='quick' if '快赎' in text else None,budget_min_fen=lower,budget_max_fen=upper,suggest_budget=suggest,
         sell_then_buy=bool(re.search(r'(?:卖|赎回|快赎).*(?:再买|再申购|再配置)',text)),
-        search_query=re.sub(r'^(?:搜索|查找|查询基金)\s*','',text) if intent=='search' else None,product_refs=refs[:3],amount_fen=amount,budget_fen=budget,reserve_fen=reserve,horizon_days=horizon,need=need,
+        search_query=re.sub(r'^(?:搜索|查找|查询基金)\s*','',text) if intent=='search' else None,product_refs=refs,amount_fen=amount,budget_fen=budget,reserve_fen=reserve,horizon_days=horizon,need=need,
         fraction='half' if '一半' in text else 'all' if '全部' in text else None,exclude_refs=refs if re.search('排除|不要',text) else [])
 
 
@@ -105,9 +128,11 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         data['active_task']={'task_id':task['task_id'],'version':task['version']}
         response.update(kind='task',task=task,message='已保存任务控制状态；已受理或完成的银行订单保留原号核对，不回退账务。')
         return response
-    if (data.get('research_candidates') and data.get('candidates') and
-            any(re.fullmatch(r'(?:第)?[一二三四五六七八九十0-9]+(?:个|只|款)?', ref) for ref in intent.product_refs)):
-        response['message']='当前有真实基金搜索与模拟产品两个候选列表，序号有歧义。请明确产品代码或ID再继续。'
+    stated_ordinals = re.findall(r'第[一二三四五六七八九十0-9]+(?:个|只|款)', text)
+    ordinal = bool(stated_ordinals) or any(re.fullmatch(r'(?:第)?[一二三四五六七八九十0-9]+(?:个|只|款)?', ref) for ref in intent.product_refs)
+    lists = ordinal_candidates(data, text) if ordinal else []
+    if ordinal and (len(lists) > 1 or (not lists and data.get('research_candidates') and data.get('candidates'))):
+        response['message']='当前有多个卡片列表，序号有歧义。请明确“方案／候选／目录中的第几个”或产品ID再继续。'
         return response
     codes = re.findall(r'(?<![0-9])([0-9]{6})(?![0-9])', text)
     if intent.intent == 'compare' and max(len(set(codes)), len(intent.product_refs)) > 4:
@@ -115,7 +140,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         return response
     if intent.intent == 'compare':
         outside = list(dict.fromkeys(codes + [r[1:] for r in intent.product_refs if re.fullmatch(r'R\d{6}', r)]))
-        if not outside and data.get('research_candidates'):
+        if not outside and data.get('research_candidates') and (not lists or all(pid.startswith('R') for pid in lists[0])):
             for ref in intent.product_refs:
                 pid = resolve(ref, [{'product_id':'R'+c, 'name':c} for c in data['research_candidates']], ['R'+c for c in data['research_candidates']])
                 outside.append(pid[1:])
@@ -130,6 +155,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         query = intent.search_query or (codes[0] if codes else text)
         found = await bank.call('POST', '/funds/search', {'subject_user_id': user_id, 'query': query, 'page_size': 8})
         rows = found['items']; data['research_candidates'] = [r['code'] for r in rows]
+        card_list(data, 'directory', ['R'+row['code'] for row in rows], response)
         data['research_candidate_names'] = [{'id':'R'+r['code'],'name':r['name']} for r in rows]
         detail = await bank.call('POST', '/funds/detail', {'subject_user_id': user_id, 'code': rows[0]['code']}) if len(rows) == 1 else None
         response.update(kind='research', directory=found, fund_detail=detail,
@@ -137,14 +163,14 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             ('\n详情缓存：'+', '.join(k+'='+v['status'] for k,v in detail['evidence'].items()) if detail else '')+
             '\n仅研究；目录/净值不等于交易规则完整，不生成未审核订单。详情在后台获取，失败保留旧证据，不返回模拟替代值。')
         return response
-    candidate_ids=data.get('candidates',[])
+    candidate_ids=lists[0] if len(lists) == 1 else data.get('candidates',[])
     active=data.get('active_command')
     # A single active order plus an unqualified amount correction modifies that order.
     # Models occasionally label it as budget; bind it to the explicit active action,
     # never reinterpret an explicitly stated plan budget or reserve.
     if active and intent.intent=='modify' and intent.amount_fen is None and intent.budget_fen is not None and re.search('改成|改为',text) and not re.search('预算|配置|保留|留现金',text):
         intent=intent.model_copy(update={'amount_fen':intent.budget_fen,'budget_fen':None})
-    product_refs=intent.product_refs
+    product_refs=stated_ordinals if stated_ordinals and not re.search(r'(?<![A-Z0-9])(?:[SB]\d{3}|M[WF]\d{3}|R\d{6})(?![A-Z0-9])',text,re.I) else intent.product_refs
     if intent.intent=='redeem' and not active and any(r in {'它','这个','这笔','刚才那笔'} for r in product_refs):
         holdings=data.get('holding_cards',[])
         if len(holdings)!=1:
@@ -192,8 +218,8 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     dataset=next((p.get('dataset_key') for p in products if p.get('dataset_key') and p['dataset_key']!='legacy-v1'),None)
     if intent.intent=='refuse': response['message']='口头确认不会授权或成交，请核对可信预览、本人确认并点击模拟高风险验证按钮。'
     elif intent.intent=='assets':
-        data['holding_cards']=[dict(product_id=pid,account_id=aid) for pid,aid in dict.fromkeys(
-            (lot['product_id'],lot['account_id']) for lot in facts['lots'] if Decimal(lot['redeemable_units'])>0)]
+        data['holding_cards']=[{key: lot[key] for key in ('lot_id','product_id','account_id','redeemable_units')}
+            for lot in facts['lots'] if Decimal(lot['redeemable_units'])>0]
         response.update(kind='assets',assets=facts,message='以下为银行事实；占款、锁定份额、在途和赎回应收分开，不构成即时可用资金。')
     elif intent.intent=='status':
         operation=intent.operation_id or (active or {}).get('operation_id')
@@ -209,6 +235,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             rows=candidates(products,suitable['capacity_level'],slots['horizon_days'],excluded)[:5] if suitable['purchase_allowed'] else []
         else: rows=products[:12]
         data['candidates']=[p['product_id'] for p in rows]; data['candidate_dataset']=dataset
+        card_list(data, 'products', data['candidates'], response)
         response.update(kind='products',products=rows,message='以下候选顺序已保存，支持“第几个”；产品风险、费用和净值来自银行。均为模拟交易，不保证回报。')
     elif intent.intent=='compare':
         if not 2 <= len(refs) <= 4: response['message']='请选择2至4个明确产品，不能用模糊家族名称。'
@@ -236,6 +263,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             task=await wealth_task.control(db,user_id,task['task_id'],'pause',{
                 'request_id':'plan-pause-'+uuid4().hex,'expected_version':task['version'],'reason':'本人修改后先别买'})
         data['active_plan']={'plan_id':plan['plan_id'],'version':plan['version']}
+        card_list(data, 'plan', [item['command']['product_id'] for item in plan['items']], response)
         data['active_task']={'task_id':task['task_id'],'version':task['version']}
         response.update(kind='plan',plan=plan,task=task,message='已更新未提交方案并使旧确认失效；修改后暂停状态已保留，不自动成交。')
     elif intent.intent in {'purchase','redeem','modify'} and (refs or active) and (intent.amount_fen is not None or intent.intent in {'purchase','redeem'}):
@@ -246,6 +274,9 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         quantity=intent.units
         if direction=='redeem':
             lots=[lot for lot in facts['lots'] if lot['product_id']==pid and lot['account_id']==account['account_id']]
+            if intent.fraction and len(lots) > 1 and not re.search('合并|全部持仓|所有批次|总份额', text):
+                response.update(kind='assets',assets=facts,message='此产品有多笔持仓。“一半／全部”指哪个范围？请明确是否按该账户的合并总份额赎回；银行按FIFO分配批次。')
+                return response
             total=sum((Decimal(lot['redeemable_units']) for lot in lots),Decimal(0))
             if intent.fraction: quantity=format((total/(2 if intent.fraction=='half' else 1)).quantize(Decimal('0.0001'),ROUND_DOWN),'.4f')
             if total<=0: response['message']='暂无可赎回份额，可能仍在计价、被占用或锁定；先核对订单。'; return response
@@ -322,7 +353,8 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             data['active_plan']={'plan_id':plan['plan_id'],'version':plan['version']}; data['active_command']=None
             data['awaiting_plan_details']=False
             data['candidates']=[i['command']['product_id'] for i in plan['items']]
-            response.update(kind='plan',plan=plan,message=budget_note+'已保存新版本配置方案，最多5笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。')
+            card_list(data, 'plan', data['candidates'], response)
+            response.update(kind='plan',plan=plan,message=budget_note+'已保存新版本配置方案，默认最多3笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。')
     return response
 
 
@@ -342,6 +374,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
         await db.delete(existing); await db.commit()
     session=await db.get(WealthConversationORM,session_id) if session_id else None
     if session_id and (session is None or session.user_id!=user_id): raise WealthPolicyError('会话不存在','NOT_FOUND',404)
+    if session and session.data.get('legacy_read_only'):
+        raise WealthPolicyError('历史来源归档只读，请使用当前会话','ARCHIVED_HISTORY',409)
     if session and session.version!=version: raise WealthPolicyError('会话已更新，请刷新','STALE_PLAN',409)
     sid=session_id or 'WC'+uuid4().hex
     data=dict(session.data) if session else {'history':[],'pending':{},'candidates':[]}
