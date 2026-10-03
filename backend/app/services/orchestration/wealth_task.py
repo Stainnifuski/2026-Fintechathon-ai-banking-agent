@@ -87,6 +87,8 @@ async def control(db, user_id, task_id, action, body, *, actor_id=None):
         return previous.result
     if task.version != body['expected_version']:
         raise WealthPolicyError('任务已更新，请刷新', 'STALE_TASK', 409)
+    if task.status in TERMINAL and action not in {'note', 'release'}:
+        raise WealthPolicyError('已完成任务不能重新控制或恢复账务', 'TASK_TERMINAL', 409)
     if task.waiting_reason=='ARCHIVED_RUN' and action in {'resume','rollback'}:
         raise WealthPolicyError('旧测试轮次已归档，不能恢复写入', 'ARCHIVED_RUN', 409)
     if actor_id and not operator_allowed(actor_id):
@@ -100,8 +102,9 @@ async def control(db, user_id, task_id, action, body, *, actor_id=None):
         if task.control_mode != 'HUMAN' or task.owner_id != actor:
             raise WealthPolicyError('仅领取操作员可处理或交还', 'HANDOFF_CONFLICT', 409)
         if action == 'release':
-            task.control_mode, task.owner_id, task.status = 'AGENT', None, 'PAUSED'
-            task.waiting_reason = 'REVALIDATION_REQUIRED'
+            task.control_mode, task.owner_id = 'AGENT', None
+            if task.status not in TERMINAL:
+                task.status, task.waiting_reason = 'PAUSED', 'REVALIDATION_REQUIRED'
     else:
         if task.control_mode == 'HUMAN':
             raise WealthPolicyError('操作员接管中，请等待交还', 'HUMAN_CONTROLLED', 409)

@@ -12,6 +12,26 @@ from backend.app.domain.wealth_task import validate_graph
 from backend.app.services.bank.transfer_service import BankError
 
 
+@pytest.mark.asyncio
+async def test_terminal_handoff_cannot_resurrect_or_block_unrelated_cancellation(store,monkeypatch):
+    monkeypatch.setenv('WEALTH_OPERATOR_USER_IDS','OP1')
+    async with store() as db:
+        await assess(db)
+        task=await tasks.create_command(db,'U1','terminal-scope','legacy-v1',command('terminal-command'))
+        row=await tasks.owned(db,'U1',task['task_id'])
+        row.status='COMPLETED';await db.commit()
+        with pytest.raises(WealthPolicyError) as error:
+            await tasks.control(db,'U1',task['task_id'],'handoff',{'request_id':'terminal-handoff','expected_version':1})
+        assert error.value.code=='TASK_TERMINAL';await db.rollback()
+        # A pre-migration terminal HUMAN row is retained, but cannot freeze the account forever.
+        row=await tasks.owned(db,'U1',task['task_id']);row.control_mode='HUMAN';row.owner_id='OP1';await db.commit()
+        cmd=command('unrelated-m1-cancel',product='MF001')
+        await bank.accept_many(db,'U1',[(cmd,await authorize(db,cmd))])
+        assert (await bank.cancel(db,'U1',cmd.operation_id))['status']=='CANCELLED'
+        released=await tasks.control(db,'U1',task['task_id'],'release',{'request_id':'terminal-release','expected_version':1},actor_id='OP1')
+        assert released['status']=='COMPLETED' and released['control_mode']=='AGENT'
+
+
 def test_graph_rejects_cycles_missing_dependencies_unregistered_tools():
     valid=[{'node_id':'a','kind':'READ_FACTS','depends_on':[],'completion_condition':'fact'}]
     validate_graph(valid)

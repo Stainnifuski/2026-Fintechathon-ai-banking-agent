@@ -479,7 +479,8 @@ async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
     await lock_profile(db, user_id)
     initial = await owned_order(db, user_id, operation_id)
     controlled = await db.scalar(select(WealthTaskORM.task_id).where(WealthTaskORM.user_id==user_id,
-        WealthTaskORM.account_id==initial.account_id,WealthTaskORM.control_mode!='AGENT'))
+        WealthTaskORM.account_id==initial.account_id,WealthTaskORM.control_mode!='AGENT',
+        WealthTaskORM.status.not_in({'COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'})))
     if controlled:
         raise BankError('人工接管期间禁止通过旧入口撤单', 'TASK_WRITE_BLOCKED', 409)
     await lock_accounts(db, [initial.account_id])
