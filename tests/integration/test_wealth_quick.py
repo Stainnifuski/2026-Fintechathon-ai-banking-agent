@@ -177,6 +177,29 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid,monkey
             for price in prices:price.price='1.00000000'
             await db.commit()
         unbound=InvestmentCommand(operation_id='quick-redeem-'+pid,direction='redeem',product_id=pid,product_version=1,disclosure_version=1,account_id=buy.account_id,units='1000.0000',command_version=2,redemption_mode='quick')
+        # 所有估值尚未发布或全部缺失：快赎拒绝，不占额度、不改现金份额。
+        from backend.app.models.wealth import WealthNavORM, WealthOrderORM
+        from backend.app.domain.time import utc_now
+        from datetime import timedelta
+        from sqlalchemy import delete
+        prices=list(await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id==pid+':1')))
+        original_publications={p.nav_id:p.available_at for p in prices}
+        order_count=await db.scalar(select(func.count()).select_from(WealthOrderORM))
+        for p in prices:p.available_at=utc_now()+timedelta(days=10)
+        await db.commit()
+        with pytest.raises(BankError) as unavailable:await bank.precheck(db,'U1',unbound)
+        assert unavailable.value.code=='DATA_STALE'
+        for p in prices:p.available_at=original_publications[p.nav_id]
+        await db.commit()
+        await db.execute(delete(WealthNavORM).where(WealthNavORM.version_id==pid+':1'))
+        with pytest.raises(BankError) as missing:await bank.precheck(db,'U1',unbound)
+        assert missing.value.code=='DATA_STALE'
+        await db.rollback()
+        assert (await db.get(AccountORM,buy.account_id)).balance_fen==initial
+        await db.refresh(lot)
+        assert (lot.units_scaled,lot.cost_fen)==(original_units,original_cost)
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==order_count
+        assert await db.scalar(select(func.count()).select_from(WealthQuickQuotaORM))==0
         preview=await bank.precheck(db,'U1',unbound)
         bound=InvestmentCommand.model_validate(preview['command'])
         assert preview['cash_date']==preview['pricing_date']
