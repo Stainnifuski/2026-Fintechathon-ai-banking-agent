@@ -34,6 +34,8 @@ async def seed_bank_data() -> None:
             ("U004", "赵六", "13800000004", "balanced"),
             ("U005", "孙七", "13800000005", "stable"),
             ("U006", "周八", "13800000006", "balanced"),
+            ("U007", "花语鲜花店", "13800000007", "stable"),
+            ("U008", "甜时光蛋糕店", "13800000008", "stable"),
         ]
         existing_users = (await session.execute(select(UserORM))).scalars().all()
         mapped_phones = {}
@@ -79,6 +81,8 @@ async def seed_bank_data() -> None:
             ("A005", "U004", "savings", "6222****7758", 30000.0),
             ("A006", "U005", "savings", "6222****7759", 30000.0),
             ("A007", "U006", "savings", "6222****7760", 30000.0),
+            ("A008", "U007", "savings", "6222****7788", 10000.0),
+            ("A009", "U008", "savings", "6222****7799", 10000.0),
         ]
         for account_id, user_id, kind, card_number, balance in account_specs:
             if await session.get(AccountORM, account_id) is None:

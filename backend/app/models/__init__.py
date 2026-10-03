@@ -17,6 +17,10 @@ from .payment_request import PaymentRequestORM
 from .payment_request_batch import PaymentRequestBatchORM
 from .payment_request_payment import PaymentRequestPaymentORM
 from .subscription import SubscriptionORM
+from .flower_order import FlowerOrderORM
+from .cake_order import CakeOrderORM
+from .calendar_event import CalendarEventORM
+from .merchant_refund import MerchantRefundORM
 from .workflow import (
     AuthorizationORM,
     HumanTicketORM,
@@ -73,6 +77,10 @@ __all__ = [
     "PaymentRequestBatchORM",
     "PaymentRequestPaymentORM",
     "SubscriptionORM",
+    "FlowerOrderORM",
+    "CakeOrderORM",
+    "CalendarEventORM",
+    "MerchantRefundORM",
 ]
 
 from .conversation import ConversationORM, ChatReceiptORM

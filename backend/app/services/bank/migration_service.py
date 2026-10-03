@@ -5,6 +5,9 @@ from sqlalchemy import inspect, select, text
 from ...domain.phone import normalize_phone
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
+from ...models.payment_request import PaymentRequestORM
+from ...models.payment_request_payment import PaymentRequestPaymentORM
+from ...models.transaction import TransactionORM
 from ...domain.money import exact_fen, decimal_yuan, ledger_fen
 
 MONEY_COLUMNS = {
@@ -121,3 +124,57 @@ async def upgrade_phone_registry(session_factory) -> None:
                 by_phone[canonical] = user.user_id
                 by_user[user.user_id] = canonical
         await session.commit()
+
+
+async def upgrade_flower_purchase_transactions(session_factory) -> None:
+    """把早期花店付款的普通转账流水幂等升级为消费与商户收款。"""
+    async with session_factory() as session:
+        merchant = await session.get(UserORM, "U007")
+        if merchant is None:
+            return
+        payments = (
+            await session.execute(
+                select(PaymentRequestORM, PaymentRequestPaymentORM)
+                .join(
+                    PaymentRequestPaymentORM,
+                    PaymentRequestPaymentORM.payment_request_id
+                    == PaymentRequestORM.payment_request_id,
+                )
+                .where(
+                    PaymentRequestORM.requester_user_id == "U007",
+                    PaymentRequestORM.status == "PAID",
+                )
+            )
+        ).all()
+        changed = False
+        for payment, link in payments:
+            payer = await session.get(UserORM, payment.payer_user_id)
+            outgoing = (
+                await session.execute(
+                    select(TransactionORM).where(
+                        TransactionORM.operation_id == link.operation_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if outgoing is not None and outgoing.type == "transfer_out":
+                outgoing.type = "purchase"
+                outgoing.counterparty = merchant.name
+                outgoing.category = "shopping"
+                changed = True
+            incoming = (
+                await session.execute(
+                    select(TransactionORM).where(
+                        TransactionORM.account_id == payment.receive_account_id,
+                        TransactionORM.type == "transfer_in",
+                        TransactionORM.amount_fen == payment.amount_fen,
+                        TransactionORM.note == payment.note,
+                    )
+                )
+            ).scalars().all()
+            for transaction in incoming:
+                transaction.type = "merchant_sale"
+                transaction.counterparty = payer.name if payer else payment.payer_user_id
+                transaction.category = "shopping"
+                changed = True
+        if changed:
+            await session.commit()
