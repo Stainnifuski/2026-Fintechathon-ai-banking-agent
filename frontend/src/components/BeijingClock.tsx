@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '../services/api';
 import { beijingTime } from '../utils/time';
+import { calibrateTime, serverInstant, type TimeAnchor } from '../utils/serverClock';
 
 interface ServerTime { server_time_utc: string; business_timezone: 'Asia/Shanghai' }
 
 export default function BeijingClock() {
-  const origin = useRef<{ utc: number; mono: number } | null>(null);
+  const origin = useRef<TimeAnchor | null>(null);
   const [display, setDisplay] = useState('北京时间获取中');
   const [stale, setStale] = useState(false);
   useEffect(() => {
@@ -13,7 +14,7 @@ export default function BeijingClock() {
     let syncing = false;
     const tick = () => {
       const point = origin.current;
-      if (point && alive) setDisplay(`北京时间 ${beijingTime(point.utc + performance.now() - point.mono)}（UTC+8）`);
+      if (point && alive) setDisplay(`北京时间 ${beijingTime(serverInstant(point,performance.now()))}（UTC+8）`);
     };
     const sync = async () => {
       if (syncing) return;
@@ -22,10 +23,10 @@ export default function BeijingClock() {
       try {
         const { data } = await apiClient.get<ServerTime>('/system/time');
         const received = performance.now();
-        const utc = Date.parse(data.server_time_utc);
-        if (!Number.isFinite(utc) || data.business_timezone !== 'Asia/Shanghai') throw new Error('invalid time');
+        const anchor=calibrateTime(data.server_time_utc,sent,received);
+        if (data.business_timezone !== 'Asia/Shanghai') throw new Error('invalid time');
         if (alive) {
-          origin.current = { utc: utc + (received - sent) / 2, mono: received };
+          origin.current = anchor;
           setStale(false); tick();
         }
       } catch { if (alive) setStale(true); }
