@@ -394,6 +394,8 @@ async def submit_transfer(
             raise BankError("银行账户金额异常", "BANK_LEDGER_INVALID", 503) from error
         error: tuple[str, str] | None = None
         from .available_funds import available_cash
+        from .wealth_reconciliation import require_reconciled
+        await require_reconciled(db, sender.account_id)
         if await available_cash(db, sender.account_id, balance_fen) < command.amount_fen:
             error = ("INSUFFICIENT_FUNDS", "余额不足")
         elif daily_used_fen + command.amount_fen > limit_fen:

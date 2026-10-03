@@ -24,10 +24,11 @@ from backend.app.services.bank.transfer_service import BankError, submit_transfe
 from dataclasses import replace
 
 NOW = datetime(2026, 9, 30, 6, 0, tzinfo=timezone.utc)
+REAL_BUSINESS_NOW = bank.business_now
 
 
 @pytest_asyncio.fixture(params=["sqlite", "postgresql"])
-async def store(tmp_path, request):
+async def store(tmp_path, request, monkeypatch):
     """每例独立文件，写锁行为不依赖内存连接共享。"""
     admin = None
     schema = "bank_test_wealth_"+__import__("uuid").uuid4().hex
@@ -45,6 +46,14 @@ async def store(tmp_path, request):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async def isolated_test_clock(db, account_id=None):
+        """测试专用注入钟；生产普通账户不得读取全局mock钟。"""
+        from backend.app.models.wealth_research import WealthContextORM
+        if account_id and await db.scalar(select(WealthContextORM.context_id).where(WealthContextORM.account_id == account_id)):
+            return await REAL_BUSINESS_NOW(db, account_id)
+        row = await db.get(WealthClockORM, "mock")
+        return row.business_at.replace(tzinfo=timezone.utc) if row.business_at.tzinfo is None else row.business_at
+    monkeypatch.setattr(bank, "business_now", isolated_test_clock)
     async with sessions() as db:
         db.add_all([UserORM(user_id=uid, name=uid, phone=f"1380000000{i}", id_card="mock", status="active")
                     for i, uid in enumerate(("U1", "U2"), 1)])

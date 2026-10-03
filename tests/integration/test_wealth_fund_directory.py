@@ -57,13 +57,16 @@ async def test_mixed_pool_immutable_import_default_and_source_disclosure(store, 
     async with store() as db:
         payload=await compose(db,tmp_path)
         first=await import_dataset(db,payload)
-        assert first['ok'] and first['written']==17
+        from backend.app.services.bank.wealth_preload import bank_products
+        assert first['ok'] and first['written']==len(bank_products())+1
         await seed_mixed(db,payload); await db.commit()
         repeat=await compose(db,tmp_path)
         assert (await import_dataset(db,repeat))['duplicate']
         assert await default_dataset_key(db)==first['dataset_key']
         rows=await catalog(db)
-        assert len(rows)==17 and sum(p['trade_eligible'] for p in rows)==16
+        from backend.app.services.bank.wealth_preload import bank_products
+        expected = len(bank_products())
+        assert len(rows)==expected+1 and sum(p['trade_eligible'] for p in rows)==expected
         assert next(p for p in rows if p['source']=='akshare')['risk_level'] is None
         bank=next(p for p in rows if p['source']=='synthetic')
         assert bank['source_rules'] and bank['official_reference']['sha256']

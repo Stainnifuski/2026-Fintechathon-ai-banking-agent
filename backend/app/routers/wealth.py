@@ -31,6 +31,46 @@ def get_wealth_bank() -> HttpWealthBankApi:
     return HttpWealthBankApi()
 
 
+from ..schemas.wealth_demo import DemoReset, DemoAdjust, DemoDeletePreview, DemoDelete
+
+
+@router.get('/demo/current')
+async def demo_current(user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST', '/demo/current', {'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.get('/demo/archives')
+async def demo_archives(user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    try: return await bank.call('POST', '/demo/archives', {'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+async def demo_call(action: str, request: StrictRequest, user: dict, bank: HttpWealthBankApi) -> dict:
+    try: return await bank.call('POST', '/demo/'+action, {**request.model_dump(), 'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
+
+
+@router.post('/demo/reset')
+async def demo_reset(request: DemoReset, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('reset', request, user, bank)
+
+
+@router.post('/demo/adjust')
+async def demo_adjust(request: DemoAdjust, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('adjust', request, user, bank)
+
+
+@router.post('/demo/delete-preview')
+async def demo_delete_preview(request: DemoDeletePreview, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('delete-preview', request, user, bank)
+
+
+@router.post('/demo/delete')
+async def demo_delete(request: DemoDelete, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
+    return await demo_call('delete', request, user, bank)
+
+
 @router.get('/contexts')
 async def contexts(user: dict=Depends(get_current_user),bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
     try: return await bank.call('POST','/contexts',{'subject_user_id':user['user_id']})
@@ -206,7 +246,7 @@ async def preview(request: InvestmentCommand, user: dict = Depends(get_current_u
     """银行预检通过后固定逐笔授权，不扣款。"""
     try:
         view = await bank.precheck(user["user_id"], request)
-        row = await policy.new_preview_authorization(db, user["user_id"], request)
+        row = await policy.new_preview_authorization(db, user["user_id"], InvestmentCommand.model_validate(view["command"]))
         await db.commit()
         return {**view, "authorization_id": row.authorization_id, "authorization_status": row.status,
                 "expires_at": policy.aware(row.expires_at).isoformat()}
@@ -267,6 +307,15 @@ async def order(operation_id: str, user: dict = Depends(get_current_user),
     """原号恢复查询。"""
     try:
         return await bank.query(user["user_id"], operation_id)
+    except BankApiError as error:
+        fail(error)
+
+
+@router.get("/orders/{operation_id}/cancellation-eligibility")
+async def cancellation_eligibility(operation_id: str, user: dict = Depends(get_current_user),
+                                  bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        return await bank.call("POST", f"/orders/{operation_id}/cancellation-eligibility", {"subject_user_id":user["user_id"]})
     except BankApiError as error:
         fail(error)
 

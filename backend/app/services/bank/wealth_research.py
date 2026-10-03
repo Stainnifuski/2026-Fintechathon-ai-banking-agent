@@ -113,6 +113,7 @@ async def selected(db: AsyncSession,user_id: str) -> WealthContextORM | None:
     if not selection or selection.context_id=="legacy-v1": return None
     context=await db.get(WealthContextORM,selection.context_id)
     if context is None or context.user_id!=user_id: raise BankError("上下文不可用","DATASET_MISMATCH",409)
+    if context.data.get('run_state','ACTIVE')!='ACTIVE': raise BankError('测试轮次已归档','ARCHIVED_RUN',409)
     return context
 
 
@@ -125,6 +126,7 @@ async def select_context(db: AsyncSession,user_id: str,context_id: str,version: 
     if context_id!="legacy-v1":
         context=await db.get(WealthContextORM,context_id)
         if context is None or context.user_id!=user_id: raise BankError("上下文不存在","NOT_FOUND",404)
+        if context.data.get('run_state','ACTIVE')!='ACTIVE': raise BankError('不能选择归档轮次继续写入','ARCHIVED_RUN',409)
     if row is None: row=WealthContextSelectionORM(user_id=user_id,context_id=context_id,version=2); db.add(row)
     else: row.context_id=context_id; row.version+=1
     await db.execute(update(WealthAuthorizationORM).where(WealthAuthorizationORM.user_id==user_id,WealthAuthorizationORM.status.in_(["AWAITING_CONFIRMATION","AWAITING_MFA","VALID"])).values(status="EXPIRED"))

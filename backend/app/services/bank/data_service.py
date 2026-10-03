@@ -310,7 +310,8 @@ async def list_transactions(user_id: str, limit: int = 50) -> list[dict]:
             await session.execute(
                 select(TransactionORM)
                 .join(AccountORM)
-                .where(AccountORM.user_id == user_id)
+                .where(AccountORM.user_id == user_id,
+                    AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
                 .order_by(TransactionORM.timestamp.desc())
                 .limit(limit)
             )

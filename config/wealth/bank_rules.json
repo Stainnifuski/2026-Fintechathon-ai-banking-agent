@@ -442,6 +442,48 @@
       "product_id": "B016",
       "name": "模拟远山·244天封闭参考02",
       "template_id": "closed"
+    },
+    {
+      "product_id": "B017",
+      "name": "模拟远山·现金快取01",
+      "template_id": "cash",
+      "quick_contract": {
+        "version": "simulated-cash-quick-v1",
+        "subtype": "cash_management",
+        "window": "natural_day_maintenance",
+        "start": "00:05",
+        "end": "23:55",
+        "daily_limit_fen": 1000000,
+        "fee_rate": "0",
+        "timezone": "Asia/Shanghai",
+        "settlement": "atomic_immediate",
+        "cancellable_after_acceptance": false,
+        "reference_urls": [
+          "https://www.boc.cn/fimarkets/fp6/fp6_1/202003/t20200313_17615240.html",
+          "https://wap.boc.cn/bif/bi5/202211/t20221118_22112721.html"
+        ]
+      }
+    },
+    {
+      "product_id": "B018",
+      "name": "模拟远山·现金快取02",
+      "template_id": "cash",
+      "quick_contract": {
+        "version": "simulated-cash-quick-v1",
+        "subtype": "cash_management",
+        "window": "trading_day",
+        "start": "09:00",
+        "end": "17:00",
+        "daily_limit_fen": 1000000,
+        "fee_rate": "0",
+        "timezone": "Asia/Shanghai",
+        "settlement": "atomic_immediate",
+        "cancellable_after_acceptance": false,
+        "reference_urls": [
+          "https://www.boc.cn/fimarkets/fp6/fp6_1/202003/t20200313_17615240.html",
+          "https://wap.boc.cn/bif/bi5/202211/t20221118_22112721.html"
+        ]
+      }
     }
   ]
 }

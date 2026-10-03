@@ -77,6 +77,17 @@ class WealthChatRequestORM(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
 
 
+class WealthDemoReceiptORM(Base):
+    """测试管理幂等及最小删除墓碑；不外键依赖可删除账户。"""
+    __tablename__ = "wealth_demo_receipts"
+    receipt_id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class WealthFundDirectoryORM(Base):
     __tablename__ = 'wealth_fund_directory'
     code: Mapped[str] = mapped_column(String(6), primary_key=True)

@@ -11,7 +11,7 @@ from ...models import Base
 from ...models.wealth import WealthSchemaVersionORM
 from .wealth_catalog import seed_catalog
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 async def upgrade(session: AsyncSession) -> None:
@@ -23,7 +23,7 @@ async def upgrade(session: AsyncSession) -> None:
         .on_conflict_do_nothing(index_elements=["schema_id"]))
     row = (await session.scalars(select(WealthSchemaVersionORM).where(
         WealthSchemaVersionORM.schema_id == "wealth").with_for_update())).one()
-    if row.version not in {1, 2, SCHEMA_VERSION}:
+    if row.version not in {1, 2, 3, SCHEMA_VERSION}:
         raise ValueError("理财结构版本不兼容，不能静默降级")
     await session.execute(update(WealthSchemaVersionORM).where(WealthSchemaVersionORM.schema_id == "wealth")
         .values(version=SCHEMA_VERSION))

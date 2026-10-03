@@ -167,6 +167,8 @@ async def simulate_subscription_charge(
         except ValueError as error:
             raise BankError("银行账户金额异常", "BANK_LEDGER_INVALID", 503) from error
         from .available_funds import available_cash
+        from .wealth_reconciliation import require_reconciled
+        await require_reconciled(session, account.account_id)
         if await available_cash(session, account.account_id, balance_fen) < subscription.amount_fen:
             raise BankError("扣费账户余额不足", "INSUFFICIENT_FUNDS", 409)
 

@@ -184,6 +184,27 @@ class WealthClockORM(Base):
     calendar_version: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class WealthLedgerReviewORM(Base):
+    """历史时间原值、来源与核对限制；不覆盖现金或原订单事实。"""
+    __tablename__ = "wealth_ledger_reviews"
+    review_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.account_id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WealthQuickQuotaORM(Base):
+    """用户/产品/北京时间自然日/测试轮次合并额度；不是账户额度。"""
+    __tablename__ = "wealth_quick_quotas"
+    quota_id: Mapped[str] = mapped_column(String(192), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    product_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    business_date: Mapped[date] = mapped_column(Date, nullable=False)
+    scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    paid_fen: Mapped[int] = mapped_column(BigInteger, CheckConstraint("paid_fen >= 0"), nullable=False, default=0)
+
+
 class WealthConversationORM(TimestampMixin, Base):
     """有限离线对话持久化，验证代码不进入此表。"""
     __tablename__ = "wealth_conversations"
@@ -208,3 +229,44 @@ class WealthSchemaVersionORM(Base):
     __tablename__ = "wealth_schema_versions"
     schema_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class WealthTaskORM(TimestampMixin, Base):
+    """应用任务与控制归属持久化；银行事实仍以订单为准。"""
+    __tablename__ = 'wealth_tasks'
+    task_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    context_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default='WAITING')
+    control_mode: Mapped[str] = mapped_column(String(24), nullable=False, default='AGENT')
+    owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    waiting_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class WealthTaskNodeORM(TimestampMixin, Base):
+    __tablename__ = 'wealth_task_nodes'
+    node_id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey('wealth_tasks.task_id'), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default='READY')
+    depends_on: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    operation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lease_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class WealthTaskControlORM(Base):
+    __tablename__ = 'wealth_task_controls'
+    request_key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey('wealth_tasks.task_id'), nullable=False, index=True)
+    actor_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

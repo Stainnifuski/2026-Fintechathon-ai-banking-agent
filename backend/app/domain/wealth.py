@@ -3,14 +3,14 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, localcontext
-from zoneinfo import ZoneInfo
+from .time import BEIJING
 
 CALCULATION_VERSION = "mock-units-v1"
 CALENDAR_VERSION = "mock-cn-2026-v1"
 UNIT = Decimal("0.0001")
 CENT = Decimal("0.01")
 NAV_TICK = Decimal("0.00000001")
-TZ = ZoneInfo("Asia/Shanghai")
+TZ = BEIJING
 # 明确模拟固定休市日，不冒充现实交易所完整日历。
 HOLIDAYS = frozenset(date(2026, 10, day) for day in range(1, 8))
 

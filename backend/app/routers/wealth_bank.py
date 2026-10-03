@@ -28,6 +28,69 @@ class Subject(StrictRequest):
     subject_user_id: str = Field(max_length=32)
 
 
+from ..schemas.wealth_demo import DemoReset, DemoAdjust, DemoDeletePreview, DemoDelete
+
+
+class InternalDemoReset(DemoReset, Subject):
+    pass
+
+
+class InternalDemoAdjust(DemoAdjust, Subject):
+    pass
+
+
+class InternalDemoDeletePreview(DemoDeletePreview, Subject):
+    pass
+
+
+class InternalDemoDelete(DemoDelete, Subject):
+    pass
+
+
+@router.post('/demo/current')
+async def demo_current(request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
+    from ..services.bank import wealth_demo
+    try: return await wealth_demo.current(db, request.subject_user_id)
+    except BankError as error: fail(error)
+
+
+@router.post('/demo/archives')
+async def demo_archives(request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
+    from ..services.bank import wealth_demo
+    try: return await wealth_demo.archives(db, request.subject_user_id)
+    except BankError as error: fail(error)
+
+
+@router.post('/demo/delete-preview')
+async def demo_delete_preview(request: InternalDemoDeletePreview, db: AsyncSession = Depends(get_db)) -> dict:
+    from ..services.bank import wealth_demo
+    try: return await wealth_demo.deletion_preview(db, request.subject_user_id, [r.model_dump() for r in request.runs])
+    except BankError as error: fail(error)
+
+
+async def demo_write(db: AsyncSession, request: Subject, action: str) -> dict:
+    from ..services.bank import wealth_demo
+    try: return await wealth_demo.write(db, request.subject_user_id, action, request.model_dump(exclude={'subject_user_id'}))
+    except BankError as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post('/demo/reset')
+async def demo_reset(request: InternalDemoReset, db: AsyncSession = Depends(get_db)) -> dict:
+    return await demo_write(db, request, 'reset')
+
+
+@router.post('/demo/adjust')
+async def demo_adjust(request: InternalDemoAdjust, db: AsyncSession = Depends(get_db)) -> dict:
+    return await demo_write(db, request, 'adjust')
+
+
+@router.post('/demo/delete')
+async def demo_delete(request: InternalDemoDelete, db: AsyncSession = Depends(get_db)) -> dict:
+    return await demo_write(db, request, 'delete')
+
+
 class Precheck(Subject):
     command: InvestmentCommand
 
@@ -47,6 +110,8 @@ class DemoVerify(Subject):
 
 class Advance(StrictRequest):
     business_at: datetime
+    subject_user_id: str = Field(max_length=32)
+    context_id: str = Field(max_length=64)
 
 
 class ResearchQuery(Subject):
@@ -236,6 +301,15 @@ async def demo_verify(request: DemoVerify, db: AsyncSession = Depends(get_db)) -
         fail(error)
 
 
+@router.post("/orders/{operation_id}/cancellation-eligibility")
+async def cancellation_eligibility(operation_id: str, request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
+    """只读合同窗口资格，不消耗用户授权。"""
+    try:
+        return await bank.cancellation_eligibility(db, request.subject_user_id, operation_id)
+    except (BankError, WealthPolicyError) as error:
+        fail(error)
+
+
 @router.post("/orders")
 async def submit(request: InternalInvestmentSubmission, db: AsyncSession = Depends(get_db)) -> dict:
     """银行独立核验强授权证据后受理。"""
@@ -287,7 +361,7 @@ async def cancel(operation_id: str, request: Subject, db: AsyncSession = Depends
 async def advance(request: Advance, db: AsyncSession = Depends(get_db)) -> dict:
     """受控业务时间只能向前，不延长安全有效期。"""
     try:
-        return await bank.advance_clock(db, request.business_at)
+        return await bank.advance_clock(db, request.business_at, request.subject_user_id, request.context_id)
     except BankError as error:
         await db.rollback()
         fail(error)
