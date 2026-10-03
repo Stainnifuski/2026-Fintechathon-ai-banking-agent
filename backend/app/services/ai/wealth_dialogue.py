@@ -354,7 +354,9 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             data['awaiting_plan_details']=False
             data['candidates']=[i['command']['product_id'] for i in plan['items']]
             card_list(data, 'plan', data['candidates'], response)
-            response.update(kind='plan',plan=plan,message=budget_note+'已保存新版本配置方案，默认最多3笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。')
+            explanation = ('已保存新版本配置方案，默认最多3笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。'
+                if plan['items'] else '当前评估、期限及产品规则下未生成交易项；本版本未生成订单，资金保留为现金。可以继续查看产品资料或调整需求。')
+            response.update(kind='plan',plan=plan,message=budget_note+explanation)
     return response
 
 

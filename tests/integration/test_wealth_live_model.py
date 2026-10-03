@@ -108,6 +108,8 @@ async def test_real_model_research_before_assessment_and_bank_cash_intent(store,
         assert confirmation.status_code==200
         resumed=await send('继续刚才的需求。')
         assert resumed['kind']=='plan' and resumed['plan']['request']['budget_fen']==1000000,resumed
+        if not resumed['plan']['items']:
+            assert '未生成交易项' in resumed['message'] and '未生成订单' in resumed['message']
         async with store() as db:
             risk=await db.get(WealthAssessmentORM,result['assessment_id'])
             assert risk.confirmed_at is not None
