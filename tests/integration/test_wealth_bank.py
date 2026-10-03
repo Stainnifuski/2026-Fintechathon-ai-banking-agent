@@ -352,7 +352,8 @@ async def test_external_goal_double_allocation_and_financial_change_expiry(store
 
 
 @pytest.mark.asyncio
-async def test_chat_pending_resume_and_no_language_execution(store, http_store):
+async def test_chat_pending_resume_and_no_language_execution(store, http_store, monkeypatch):
+    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
     client, _, _ = http_store
     initial = await client.post("/api/v1/wealth/messages", json={"message": "我有两万元，三个月可能要用，留五千备用"})
     assert initial.status_code == 200
@@ -692,7 +693,7 @@ async def test_real_jwt_ownership_and_injected_description_cannot_authorize(stor
     with pytest.raises(ValueError):
         checked_explanation({"product_ids": ["FAKE"], "reason_key": "risk"}, products)
     reply = (await client.post("/api/v1/wealth/messages", json={"message": "验证码123456"})).json()
-    assert reply["kind"] == "clarification"
+    assert reply["kind"] == "refusal"
     async with store() as db:
         assert await db.scalar(select(func.count()).select_from(WealthConversationORM)) == 0
 

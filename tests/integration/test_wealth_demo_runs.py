@@ -9,6 +9,81 @@ from backend.app.models.wealth_research import WealthContextORM
 
 
 @pytest.mark.asyncio
+async def test_selected_multiple_and_all_archives_require_confirmation(store, monkeypatch):
+    """取消删除无副作用；选中集合原子删除，当前轮次与普通账本保留。"""
+    monkeypatch.setenv('WEALTH_DEMO_TOOLS_ENABLED', 'true')
+    async with store() as db:
+        first = await research.initialize(db, 'U1'); await db.commit()
+        await research.select_context(db, 'U1', first['context_id'], 1)
+        for index in range(3):
+            current = await demo.current(db, 'U1')
+            await demo.write(db, 'U1', 'reset', {'run_id': current['run_id'],
+                'expected_version': current['epoch'], 'request_id': f'multiple-reset-{index}'})
+        current = await demo.current(db, 'U1')
+        rows = (await demo.archives(db, 'U1'))['items']
+        assert len(rows) == 3
+        selected = [{'run_id': row['run_id'], 'expected_version': row['expected_version']} for row in rows[:2]]
+        preview = await demo.deletion_preview(db, 'U1', selected)
+        request = {'runs': selected, 'preview_digest': preview['preview_digest'],
+                   'request_id': 'multiple-delete-confirm', 'confirmed': False}
+        with pytest.raises(BankError):
+            await demo.write(db, 'U1', 'delete', request)
+        await db.rollback()
+        assert len((await demo.archives(db, 'U1'))['items']) == 3
+        request['confirmed'] = True
+        result = await demo.write(db, 'U1', 'delete', request)
+        assert result['deleted_count'] == 2
+        assert await demo.write(db, 'U1', 'delete', request) == result
+        remaining = (await demo.archives(db, 'U1'))['items']
+        assert len(remaining) == 1
+        selected = [{'run_id': row['run_id'], 'expected_version': row['expected_version']} for row in remaining]
+        preview = await demo.deletion_preview(db, 'U1', selected)
+        await demo.write(db, 'U1', 'delete', {'runs': selected, 'preview_digest': preview['preview_digest'],
+            'request_id': 'all-remaining-delete', 'confirmed': True})
+        assert not (await demo.archives(db, 'U1'))['items']
+        assert await db.get(AccountORM, current['account_id']) is not None
+        assert (await db.get(AccountORM, 'A1')).balance_fen == 2000000
+        assert (await db.get(AccountORM, 'A2')).balance_fen == 2000000
+        for row in rows:
+            assert await db.get(AccountORM, row['account_id']) is None
+            with pytest.raises(BankError) as error:
+                await demo.context_owned(db, 'U1', row['run_id'])
+            assert error.value.code == 'GONE'
+
+
+@pytest.mark.asyncio
+async def test_concurrent_adjust_replay_and_reset_versions(store, monkeypatch):
+    """独立事务竞争：同号调账只记一次，同版本重置只有一轮获胜。"""
+    import asyncio
+    monkeypatch.setenv('WEALTH_DEMO_TOOLS_ENABLED', 'true')
+    async with store() as db:
+        initial = await research.initialize(db, 'U1'); await db.commit()
+        await research.select_context(db, 'U1', initial['context_id'], 1)
+        current = await demo.current(db, 'U1')
+    async def write(action, body):
+        async with store() as db:
+            try:
+                return await demo.write(db, 'U1', action, body)
+            except BankError as error:
+                await db.rollback()
+                return error.code
+    adjustment = {'run_id': current['run_id'], 'expected_version': current['epoch'],
+                  'request_id': 'concurrent-adjust-repeat', 'action': 'credit', 'amount': '23.45'}
+    results = await asyncio.gather(write('adjust', adjustment), write('adjust', adjustment))
+    assert results[0] == results[1] and results[0]['balance_fen'] == 2002345
+    async with store() as db:
+        assert await db.scalar(select(func.count()).select_from(TransactionORM)) == 1
+        current = await demo.current(db, 'U1')
+    reset = {'run_id': current['run_id'], 'expected_version': current['epoch']}
+    results = await asyncio.gather(*(write('reset', {**reset, 'request_id': f'concurrent-reset-{index}'}) for index in range(2)))
+    assert sum(isinstance(result, dict) for result in results) == 1
+    assert next(result for result in results if isinstance(result, str)) in {'STALE_CONTEXT', 'DEMO_SCOPE_DENIED'}
+    async with store() as db:
+        assert len((await demo.archives(db, 'U1'))['items']) == 1
+        assert (await demo.current(db, 'U1'))['balance_fen'] == 2000000
+
+
+@pytest.mark.asyncio
 async def test_demo_switch_owner_reset_adjust_replay_delete_tombstone(store, monkeypatch):
     monkeypatch.delenv('WEALTH_DEMO_TOOLS_ENABLED', raising=False)
     async with store() as db:

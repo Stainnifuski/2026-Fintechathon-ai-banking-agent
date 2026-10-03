@@ -433,6 +433,9 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
         response.update(model_evidence=evidence,intent=intent.model_dump(),client_message_id=client_message_id)
     except WealthPolicyError as error:
         await db.rollback(); response={'mode':mode,'kind':'assessment_required' if 'ASSESSMENT' in error.code else 'clarification','code':error.code,'message':error.message}
+        if response['kind']=='assessment_required':
+            response['pending']={key:value for key,value in data.get('pending',{}).items()
+                if key in {'budget_fen','reserve_fen','horizon_days','need','excluded_products','budget_source','budget_range'}}
         if error.code == 'INSUFFICIENT_AVAILABLE_FUNDS':
             data['pending']={k:v for k,v in (data.get('pending') or {}).items() if k!='budget_fen'}
             data['awaiting_plan_details']=True
