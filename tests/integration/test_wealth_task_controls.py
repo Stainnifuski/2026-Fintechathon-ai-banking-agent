@@ -155,6 +155,52 @@ async def test_sell_then_buy_requires_actual_cash_reread_and_fresh_authorization
 
 
 @pytest.mark.asyncio
+async def test_cancelled_sell_blocks_buy_dependency_and_human_direct_cancel(store, monkeypatch):
+    """已提交赎回撤单后不生成新买入；人工接管期间旧银行撤单入口受限。"""
+    monkeypatch.setenv('WEALTH_OPERATOR_USER_IDS', 'OP1')
+    async with store() as db:
+        await assess(db)
+        initial=command('cancel-dependency-opening',product='MF001')
+        await bank.accept_many(db,'U1',[(initial,await authorize(db,initial))])
+        await move(db,12)
+        assert (await bank.settle(db,initial.operation_id))['status']=='SETTLED'
+        sell=command('cancel-dependency-sell',product='MF001',direction='redeem',amount=0,quantity='10.0000')
+        task=await tasks.create_command(db,'U1','cancel-dependency-session','legacy-v1',sell,sell_then_buy=True)
+        api=DirectBank(db);await authorize(db,sell)
+        for _ in range(4):await tick(db,task['task_id'],api)
+        assert api.submissions==1
+        handoff=await tasks.control(db,'U1',task['task_id'],'handoff',
+            {'request_id':'cancel-dependency-handoff','expected_version':1})
+        claimed=await tasks.control(db,'U1',task['task_id'],'claim',
+            {'request_id':'cancel-dependency-claim','expected_version':handoff['version']},actor_id='OP1')
+        with pytest.raises(BankError) as error:await bank.cancel(db,'U1',sell.operation_id)
+        assert error.value.code=='TASK_WRITE_BLOCKED';await db.rollback()
+        released=await tasks.control(db,'U1',task['task_id'],'release',
+            {'request_id':'cancel-dependency-release','expected_version':claimed['version']},actor_id='OP1')
+        await tasks.control(db,'U1',task['task_id'],'resume',
+            {'request_id':'cancel-dependency-resume','expected_version':released['version']})
+        assert (await bank.cancel(db,'U1',sell.operation_id))['status']=='CANCELLED'
+        for _ in range(6):await tick(db,task['task_id'],api)
+        state=await tasks.view(db,await tasks.owned(db,'U1',task['task_id']))
+        assert next(node for node in state['nodes'] if node['kind']=='REREAD_CASH')['status']=='CANCELLED'
+        assert next(node for node in state['nodes'] if node['kind']=='BUY_PLAN')['status']=='CANCELLED'
+        assert state['status']=='CANCELLED' and api.submissions==1
+        facts=await api.call('POST','/assets',{'subject_user_id':'U1','account_id':'A1'})
+        replacement=command('cancelled-sell-following-buy',product='MF001').model_copy(update={'plan_id':'WPcancelled-dependency','plan_version':1})
+        assert replacement.amount_fen<=facts['cash'][0]['available_fen']
+        plan={'plan_id':'WPcancelled-dependency','version':1,'stage':'BUY','request':{'kind':'new_cash','account_id':'A1'},
+              'items':[{'command':replacement.model_dump()}]}
+        fresh=await tasks.register_plan(db,'U1','cancel-dependency-session','legacy-v1',plan)
+        assert fresh['task_id']!=task['task_id']
+        assert next(node for node in fresh['nodes'] if node['kind']=='CONFIRM')['status']=='READY'
+        assert next(node for node in fresh['nodes'] if node['kind']=='VERIFY')['status']=='READY'
+        assert not any(node['node_id'] in {old['node_id'] for old in state['nodes']} for node in fresh['nodes'])
+        with pytest.raises(WealthPolicyError):await bank.accept_many(db,'U1',[(replacement,'old-sell-authorization')])
+        await db.rollback()
+        assert api.submissions==1
+
+
+@pytest.mark.asyncio
 async def test_scheduler_actual_dependency_submit_wait_bank_fact_and_restart(store):
     async with store() as db:
         await assess(db)

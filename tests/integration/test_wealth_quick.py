@@ -43,7 +43,9 @@ async def test_quick_http_lost_response_requires_new_buy_confirmation(store, htt
         response=await client.post('/api/v1/wealth/previews',json=command.model_dump())
         assert response.status_code==200,response.text
         view=response.json();base='/api/v1/wealth/previews/'+view['authorization_id']
-        assert (await client.post(base+'/execute',json={})).status_code==403
+        unconfirmed=await client.post(base+'/execute',json={})
+        assert unconfirmed.status_code==(409 if command.plan_id else 403)
+        assert unconfirmed.json()['detail']['code']==('PLAN_EXECUTION_REQUIRED' if command.plan_id else 'AUTHORIZATION_REQUIRED')
         assert (await client.post(base+'/confirm',json={'digest':view['digest'],
             'disclosure_version':1,'accepted':True})).status_code==200
         assert (await client.post(base+'/verify/demo',json={})).status_code==200
@@ -51,6 +53,42 @@ async def test_quick_http_lost_response_requires_new_buy_confirmation(store, htt
     sell=InvestmentCommand(operation_id='http-quick-lost-sell',direction='redeem',account_id=buy.account_id,
         product_id='B017',product_version=1,disclosure_version=1,units='1000.0000',command_version=2,redemption_mode='quick')
     view,base=await preview_confirm(sell)
+    # 原操作号不得改成另一种赎回方式，即便原金额和账户相同。
+    changed_mode=InvestmentCommand.model_validate(view['command']).model_copy(update={'redemption_mode':'standard'})
+    mode_reply=await client.post('/api/v1/wealth/previews',json=changed_mode.model_dump())
+    assert mode_reply.status_code==409
+    assert mode_reply.json()['detail']['code']=='IDEMPOTENCY_CONFLICT'
+    # 模拟业务时钟不能延长真实授权期限。
+    from backend.app.models.wealth import WealthAuthorizationORM
+    from backend.app.domain.time import utc_now
+    from datetime import timedelta
+    expired_view,expired_base=await preview_confirm(sell.model_copy(update={'operation_id':'http-quick-expired','units':'10.0000'}))
+    async with store() as db:
+        auth=await db.get(WealthAuthorizationORM,expired_view['authorization_id'])
+        auth.expires_at=utc_now()-timedelta(seconds=1);await db.commit()
+    expired_reply=await client.post(expired_base+'/execute',json={})
+    assert expired_reply.status_code==409 and expired_reply.json()['detail']['code']=='AUTHORIZATION_EXPIRED'
+    # 原报价净值行变价，旧确认必须拒绝，不能用新价格承接旧同意。
+    changed=sell.model_copy(update={'operation_id':'http-quick-nav-change','units':'10.0000'})
+    changed_reply=await client.post('/api/v1/wealth/previews',json=changed.model_dump())
+    assert changed_reply.status_code==200
+    changed_view=changed_reply.json()
+    async with store() as db:
+        price=await bank.latest_nav(db,'B017:1',await bank.business_now(db,buy.account_id))
+        price_id,old_price=price.nav_id,price.price
+        price.price=str(Decimal(old_price)+Decimal('0.01'));await db.commit()
+    refused=await client.post('/api/v1/wealth/previews/'+changed_view['authorization_id']+'/confirm',
+        json={'digest':changed_view['digest'],'disclosure_version':1,'accepted':True})
+    assert refused.status_code==409 and refused.json()['detail']['code']=='QUOTE_CHANGED'
+    async with store() as db:
+        from backend.app.models.wealth import WealthNavORM
+        price=await db.get(WealthNavORM,price_id);price.price=old_price;await db.commit()
+    from backend.app.services.orchestration import wealth_task as tasks
+    from backend.app.services.orchestration.wealth_task_worker import tick
+    async with store() as db:
+        task=await tasks.create_command(db,'U1','quick-buy-dependency',context['context_id'],
+            InvestmentCommand.model_validate(view['command']),sell_then_buy=True)
+        for _ in range(2):await tick(db,task['task_id'],local)
     local.lose_response=True
     unknown=await client.post(base+'/execute',json={})
     assert unknown.status_code==502 and unknown.json()['detail']['code']=='RESULT_UNKNOWN'
@@ -64,17 +102,40 @@ async def test_quick_http_lost_response_requires_new_buy_confirmation(store, htt
     async with store() as db:
         assert (await db.get(AccountORM,buy.account_id)).balance_fen==cash
         assert await db.scalar(select(func.count()).select_from(TransactionORM).where(TransactionORM.operation_id==sell.operation_id))==1
+        for _ in range(4):await tick(db,task['task_id'],local)
+        graph=await tasks.view(db,await tasks.owned(db,'U1',task['task_id']))
+        reread=next(node for node in graph['nodes'] if node['kind']=='REREAD_CASH')
+        assert reread['status']=='COMPLETED'
+        assert next(node for node in graph['nodes'] if node['kind']=='BUY_PLAN')['status']=='WAITING'
     oversized=sell.model_copy(update={'operation_id':'http-quick-insufficient','units':'999999.0000'})
     assert (await client.post('/api/v1/wealth/previews',json=oversized.model_dump())).status_code==409
-    new_buy=buy.model_copy(update={'operation_id':'http-after-quick-new-buy','amount_fen':50000})
+    new_buy=buy.model_copy(update={'operation_id':'http-after-quick-new-buy','amount_fen':50000,
+                                 'plan_id':'WPquick-followup','plan_version':1})
+    async with store() as db:
+        from backend.app.models.wealth import WealthPlanORM
+        plan={'plan_id':'WPquick-followup','version':1,'stage':'BUY','request':{'kind':'new_cash','account_id':buy.account_id},
+              'items':[{'command':new_buy.model_dump(),'status':'AWAITING_CONFIRMATION'}],'profile_version':1,'goal_versions':{}}
+        continued=await tasks.register_plan(db,'U1','quick-buy-dependency',context['context_id'],plan)
+        assert continued['task_id']==task['task_id'] and continued['version']==2
+        db.add(WealthPlanORM(plan_id=plan['plan_id'],user_id='U1',version=1,status='AWAITING_CONFIRMATION',data=plan))
+        await db.commit()
+    early=await client.post('/api/v1/wealth/plans/WPquick-followup/execute',json={'version':1})
+    assert early.status_code==409 and early.json()['detail']['code']=='AUTHORIZATION_REQUIRED'
     new_view,new_base=await preview_confirm(new_buy)
     assert new_view['authorization_id']!=view['authorization_id']
-    assert (await client.post(new_base+'/execute',json={})).json()['status']=='ACCEPTED'
+    async with store() as db:
+        for _ in range(2):await tick(db,task['task_id'],local)
+    following=await client.post('/api/v1/wealth/plans/WPquick-followup/execute',json={'version':1})
+    assert following.status_code==200,following.text
+    assert following.json()['items'][0]['status']=='ACCEPTED'
     async with store() as db:
         from backend.app.services.bank.available_funds import held_cash
         assert (await db.get(AccountORM,buy.account_id)).balance_fen==cash
         assert await held_cash(db,buy.account_id)==50000
         assert await db.scalar(select(func.count()).select_from(WealthSettlementORM).where(WealthSettlementORM.kind=='quick_cash'))==1
+        for _ in range(3):await tick(db,task['task_id'],local)
+        from backend.app.models.wealth import WealthOrderORM
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM).where(WealthOrderORM.operation_id==new_buy.operation_id))==1
 
 
 def test_legacy_digest_and_fixed_quick_windows():
