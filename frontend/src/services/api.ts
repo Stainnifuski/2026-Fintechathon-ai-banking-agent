@@ -15,6 +15,7 @@ const apiClient: AxiosInstance = axios.create({
 /** 请求拦截器：添加 Authorization header */
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    if (!navigator.onLine) throw new Error('无网络连接，请联网后刷新页面并核对原订单');
     const token = localStorage.getItem('token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
