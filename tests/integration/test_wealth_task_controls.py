@@ -217,8 +217,37 @@ async def test_operator_http_role_owner_scope_and_no_impersonation(store,http_st
     assert (await client.get('/api/v1/wealth/operator/tasks')).json()['items'][0]['task_id']==task['task_id']
     base=f"/api/v1/wealth/operator/tasks/{task['task_id']}"
     assert (await client.get(base+'/facts')).status_code==403
+    assert (await client.get(base+'/context')).status_code==403
     claimed=await client.post(base+'/claim',json={'expected_version':2,'request_id':'http-claim-01'})
     assert claimed.status_code==200
     facts=await client.get(base+'/facts')
     assert facts.status_code==200 and [a['account_id'] for a in facts.json()['cash']]==['A1']
+    original=await client.get(base+'/context')
+    assert original.status_code==200 and original.json()['task']['account_id']=='A1'
+    assert original.json()['conversation'] is None
     assert (await client.get('/api/v1/wealth/tasks/'+task['task_id'])).status_code==404
+
+
+@pytest.mark.asyncio
+async def test_two_operators_concurrently_claim_only_one_owner(store, monkeypatch):
+    import asyncio
+    monkeypatch.setenv('WEALTH_OPERATOR_USER_IDS','OP1,OP2')
+    async with store() as db:
+        task=await tasks.create_command(db,'U1','race-claim-session','legacy-v1',command('race-claim-original'))
+        handoff=await tasks.control(db,'U1',task['task_id'],'handoff',{'request_id':'race-claim-handoff','expected_version':1})
+    async def claim(actor):
+        async with store() as db:
+            try:
+                result=await tasks.control(db,'U1',task['task_id'],'claim',
+                    {'request_id':'race-claim-'+actor,'expected_version':handoff['version']},actor_id=actor)
+                return result['owner_id']
+            except WealthPolicyError as error:
+                await db.rollback()
+                assert error.code in {'STALE_TASK','HANDOFF_CONFLICT'}
+                return None
+    results=await asyncio.gather(claim('OP1'),claim('OP2'))
+    winners=[owner for owner in results if owner]
+    assert len(winners)==1
+    async with store() as db:
+        row=await tasks.owned(db,'U1',task['task_id'])
+        assert row.owner_id==winners[0] and row.control_mode=='HUMAN' and row.version==3

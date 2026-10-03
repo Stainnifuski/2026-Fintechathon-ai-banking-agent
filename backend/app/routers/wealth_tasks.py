@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database.connection import get_db
 from ..middleware.auth import get_current_user
 from ..schemas.wealth import StrictRequest
-from ..models.wealth import WealthTaskORM
+from ..models.wealth import WealthTaskORM, WealthConversationORM, WealthPlanORM
 from ..services.orchestration import wealth_task as tasks
 from ..integrations.wealth_authorization import WealthPolicyError
 from ..integrations.wealth_bank_api import HttpWealthBankApi
@@ -74,6 +74,23 @@ async def operator_facts(task_id:str, user:dict=Depends(operator), db:AsyncSessi
     await db.rollback()
     try: return await bank.call('POST','/assets',{'subject_user_id':subject,'account_id':account_id})
     except BankApiError as error: fail(error)
+
+
+@router.get('/operator/tasks/{task_id}/context')
+async def operator_context(task_id:str, user:dict=Depends(operator), db:AsyncSession=Depends(get_db)):
+    row = await db.get(WealthTaskORM, task_id)
+    if not row or row.control_mode != 'HUMAN' or row.owner_id != user['user_id']:
+        raise HTTPException(403, detail={'code':'HANDOFF_CONFLICT','message':'只有领取操作员可查看处理上下文'})
+    conversation = await db.get(WealthConversationORM, row.session_id)
+    if conversation and (conversation.user_id != row.user_id or conversation.data.get('context_id','legacy-v1') != row.context_id):
+        raise HTTPException(409, detail={'code':'CONTEXT_MISMATCH','message':'原会话范围需要核对'})
+    plan = await db.get(WealthPlanORM, row.data['plan_id']) if row.data.get('plan_id') else None
+    if plan and (plan.user_id != row.user_id or plan.data.get('request',{}).get('account_id') != row.account_id):
+        raise HTTPException(409, detail={'code':'CONTEXT_MISMATCH','message':'原方案范围需要核对'})
+    return {'task':await tasks.view(db,row), 'conversation':{'session_id':conversation.session_id,
+        'version':conversation.version,'history':conversation.data.get('history',[])} if conversation else None,
+        'plan':{'plan_id':plan.plan_id,'version':plan.version,'status':plan.status,'data':plan.data} if plan else None,
+        'notice':'只读原任务上下文；操作员不能代用户确认或授权'}
 
 
 @router.post('/operator/tasks/{task_id}/{action}')

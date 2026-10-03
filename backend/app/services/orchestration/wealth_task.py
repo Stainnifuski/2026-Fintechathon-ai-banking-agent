@@ -34,6 +34,7 @@ async def view(db, task):
     nodes = (await db.scalars(select(Node).where(Node.task_id == task.task_id).order_by(Node.node_id))).all()
     return {'task_id':task.task_id, 'session_id':task.session_id, 'context_id':task.context_id,
         'account_id':task.account_id, 'version':task.version, 'status':task.status,
+        'plan_id':task.data.get('plan_id'),
         'control_mode':task.control_mode, 'owner_id':task.owner_id, 'waiting_reason':task.waiting_reason,
         'goal':task.data.get('goal'), 'notes':task.data.get('notes', []),
         'nodes':[{'node_id':n.node_id, 'kind':n.kind, 'depends_on':n.depends_on, 'status':n.status,
