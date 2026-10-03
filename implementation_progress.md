@@ -1,6 +1,6 @@
 ## 2026-10-03 完整对话与账务一致性任务进行中
 
-当前分支 codex/feature，已整合 origin/main 6120eef，尚未发布。本轮附件632行、2026-10-03 UTC修订已重新确认可读。实施及阶段证据见 docs/wealth/dialogue_ledger_progress.md，E01–E40最终验收尚未完成。真实模型完整申购结算及半仓实际到账双库2 passed；新撤单端点6 passed；本次新增演示并发/多选归档4 passed、删除与重置竞态2 passed、精确快赎额度2 passed。全仓422 passed/8 skipped/4 failed，4项修复后双库定向复验通过，不称全仓一次全绿。历史运行库迁移金融不变、首次重复元数据断言差异仍核查；完整浏览器/时钟及剩余用例继续实施。密钥、账本、备份及模型原始输出不提交。
+当前分支 codex/feature，已整合 origin/main c730f58（卡片管理），尚未发布。本轮附件632行、2026-10-03 UTC修订已重新确认可读。实施及阶段证据见 docs/wealth/dialogue_ledger_progress.md，E01–E40最终验收尚未完成。当前真实模型检索/指代比较/银行现金/可信九题评估续接双库2 passed；目录回归7 passed；快赎丢响应及后续计划DAG2 passed；撤回卖出依赖及HUMAN保护2 passed；净值缺失/尚未发布两产品双库4 passed。卡片管理整合回归36 passed，UTC响应4 passed，前端构建708 modules通过。历史全仓422 passed/8 skipped/4 failed，4项修复后定向复验通过，不称全仓一次全绿。历史运行库迁移金融不变、首次重复元数据断言差异仍核查；完整浏览器/时钟及剩余用例继续实施。密钥、账本、备份及模型原始输出不提交。
 
 ## 2026-10-02 理财v1.2历史进度
 
