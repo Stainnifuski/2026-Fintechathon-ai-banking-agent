@@ -58,6 +58,8 @@ async def initialize_all(db) -> list[dict]:
         if fixture.get('expired_assessment'):
             row=await db.get(WealthAssessmentORM,assessment['assessment_id']); row.expires_at=datetime.now(timezone.utc)-timedelta(days=1)
         context.data={**context.data,'fixture_ready':True,'seeded_identity_confirmation_is_synthetic':True}
+        from .wealth_fixture_baseline import freeze
+        await freeze(db, context)
         from .audit_service import record_bank_event
         record_bank_event(db,event_key=context.context_id+':fixture-ready',subject_user_id=uid,action='investment_scenario_fixture',result='success',facts={'context_id':context.context_id,'scenario':scenario,'synthetic_confirmation':True},decision_chain=['explicit_admin_fixture','not_human_confirmation','bank_rules_used_for_orders'])
         await db.commit(); results.append({**result,'user_id':uid,'phone':user.phone if user else f'1399000{i:04}','scenario':scenario,'ready':True})

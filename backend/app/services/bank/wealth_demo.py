@@ -135,17 +135,21 @@ async def write(db: AsyncSession, user_id: str, action: str, body: dict) -> dict
                 await invalidate(db,user_id,peer.account_id)
                 peer.version+=1; peer.data={**peer.data,'run_state':'ARCHIVED','archived_at':utc_iso(utc_now())}
             tasks=(await db.scalars(select(WealthTaskORM).where(WealthTaskORM.user_id==user_id,
-                WealthTaskORM.account_id.in_([peer.account_id for peer in peers]), WealthTaskORM.status.not_in(['COMPLETED','CANCELLED','FAILED'])))).all()
+                WealthTaskORM.account_id.in_([peer.account_id for peer in peers]), WealthTaskORM.status.not_in(['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'])))).all()
             for task in tasks:
                 task.status='PAUSED'; task.waiting_reason='ARCHIVED_RUN'; task.version+=1
             base=ctx.data.get("fixture_baseline",{})
+            if ctx.data.get('fixture_ready') and not base:
+                raise BankError('此历史场景缺少冻结初始fixture，需管理员从原始场景重建；不能复制当前账务', 'FIXTURE_BASELINE_MISSING', 409)
             business_at=base.get("business_at") or ("2026-09-30T19:00:00+08:00" if ctx.data.get("mode")=="synthetic" else utc_iso(utc_now()))
             db.add(AccountORM(account_id=aid,user_id=user_id,account_type="savings",card_number="模拟测试****"+aid[-4:],
                 balance_fen=2000000,daily_transfer_limit_fen=5000000,daily_transfer_used_fen=0,status="active")); await db.flush()
             db.add(WealthContextORM(context_id=rid,user_id=user_id,account_id=aid,dataset_key=ctx.dataset_key,version=1,
                 data={"label":ctx.data.get("label","虚构测试轮次"),"mode":ctx.data.get("mode"),"scenario":ctx.data.get("scenario"),
                     "fixture":ctx.data.get("fixture",{}),"disposable":True,"run_state":"ACTIVE","business_at":business_at,
-                    "fixture_version":ctx.data.get("fixture_version",ctx.dataset_key),"fixture_baseline":{"cash_fen":2000000,"business_at":business_at},"run_id":rid}))
+                    "fixture_version":ctx.data.get("fixture_version",'disposable-opening-v1:empty'),"fixture_baseline":base or {"cash_fen":2000000,"business_at":business_at,"schema":"disposable-opening-v1","tables":{}},"run_id":rid}))
+            from .wealth_fixture_baseline import restore
+            await restore(db, base, user_id, aid, rid)
             selection.context_id=rid; selection.version+=1
             result={"archived_run_id":ctx.context_id,'archived_run_ids':[peer.context_id for peer in peers],"run_id":rid,"account_id":aid,"epoch":1,"balance_fen":2000000,"selection_version":selection.version}
     else:
@@ -176,9 +180,47 @@ async def archives(db: AsyncSession, user_id: str) -> dict:
     if not enabled():
         raise BankError('测试工具未启用', 'DEMO_TOOLS_DISABLED', 403)
     rows = (await db.scalars(select(WealthContextORM).where(WealthContextORM.user_id == user_id))).all()
-    return {'items': [{'run_id': row.context_id, 'expected_version': row.version,
-        'archived_at': row.data.get('archived_at'), 'fixture_version': row.data.get('fixture_version', row.dataset_key)}
-        for row in rows if row.data.get('disposable') is True and row.data.get('run_state') == 'ARCHIVED']}
+    items = []
+    for row in rows:
+        if row.data.get('disposable') is not True or row.data.get('run_state') != 'ARCHIVED':
+            continue
+        dependencies = await archive_dependencies(db, row)
+        nodes = (await db.scalars(select(WealthTaskNodeORM).where(
+            WealthTaskNodeORM.task_id.in_(dependencies['tasks'])))).all()
+        observations = (await db.scalars(select(WealthExecutionORM).where(
+            WealthExecutionORM.authorization_id.in_(dependencies['auths'])))).all()
+        blocked = []
+        if any(node.lease_until or node.status in {'RUNNING', 'UNKNOWN'} for node in nodes):
+            blocked.append('任务仍有执行租约或未知提交，需先核对')
+        if any(observation.status in {'UNKNOWN', 'SUBMITTING'} for observation in observations):
+            blocked.append('银行提交结果尚未核对')
+        blocked.extend(await cross_scope_blockers(db, row, dependencies))
+        counts = {key: len(value) for key, value in dependencies.items()}
+        counts['transactions'] = len(list(await db.scalars(select(TransactionORM.tx_id).where(
+            TransactionORM.account_id == row.account_id))))
+        items.append({'run_id': row.context_id, 'account_id': row.account_id, 'expected_version': row.version,
+            'archived_at': row.data.get('archived_at'), 'fixture_version': row.data.get('fixture_version', row.dataset_key),
+            'counts': counts, 'deletable': not blocked, 'blocking_reasons': blocked,
+            'notice': '列表仅供选择；删除提交仍重验依赖和整轮关联账户'})
+    return {'items': items}
+
+
+async def cross_scope_blockers(db, ctx, data):
+    reasons = []
+    cross = await db.scalar(select(WealthTaskNodeORM.node_id).where(
+        WealthTaskNodeORM.operation_id.in_(data['operations']), WealthTaskNodeORM.task_id.not_in(data['tasks'])))
+    if cross: reasons.append('订单存在跨轮次任务引用')
+    for sid in data['conversations']:
+        conversation = await db.get(WealthConversationORM, sid)
+        cross = await db.scalar(select(WealthTaskORM.task_id).where(
+            WealthTaskORM.session_id == sid, WealthTaskORM.account_id != ctx.account_id))
+        if conversation.data.get('history_archive') or cross:
+            reasons.append('存在混合历史或跨范围对话引用，需先拆分来源')
+            break
+    cross = await db.scalar(select(WealthUnitHoldORM.hold_id).where(
+        WealthUnitHoldORM.lot_id.in_(data['lots']), WealthUnitHoldORM.operation_id.not_in(data['operations'])))
+    if cross: reasons.append('存在跨范围份额引用')
+    return reasons
 
 
 async def deletion_preview(db: AsyncSession, user_id: str, items: list[dict]) -> dict:
@@ -190,8 +232,10 @@ async def deletion_preview(db: AsyncSession, user_id: str, items: list[dict]) ->
         if ctx.version != item['expected_version']:
             raise BankError('归档版本已改变', 'STALE_CONTEXT', 409)
         dependencies = await archive_dependencies(db, ctx)
+        counts = {key: len(value) for key, value in dependencies.items()}
+        counts['transactions'] = len(list(await db.scalars(select(TransactionORM.tx_id).where(TransactionORM.account_id == ctx.account_id))))
         rows.append({'run_id': ctx.context_id, 'expected_version': ctx.version,
-            'counts': {key: len(value) for key, value in dependencies.items()}})
+            'counts': counts})
     digest = hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return {'runs': rows, 'preview_digest': digest, 'irreversible': True}
 
