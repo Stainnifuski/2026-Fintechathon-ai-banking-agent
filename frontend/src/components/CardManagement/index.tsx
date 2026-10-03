@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as bank from '../../services/bank';
+import { beijingTime } from '../../utils/time';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const yuan = (fen?: number | null) => fen == null ? '-' : `¥${(fen / 100).toFixed(2)}`;
@@ -98,7 +99,7 @@ export default function CardManagement({ accounts, revision, onActivity }: {
           {card.card_type === 'CREDIT' && <small>信用额度 {yuan(card.credit_limit_fen)}（银行核定上限 {yuan(card.credit_limit_cap_fen)}）</small>}
           <small>单笔限额 {yuan(card.single_txn_limit_fen)} · 单日限额 {yuan(card.daily_txn_limit_fen)}</small>
           {card.lock_reason && <small>锁定原因：{card.lock_reason}</small>}
-          {card.lost_reported_at && <small>挂失时间：{new Date(card.lost_reported_at).toLocaleString()}</small>}</span>
+          {card.lost_reported_at && <small>挂失时间（北京时间）：{beijingTime(card.lost_reported_at)}</small>}</span>
         <div className="subscription-action"><strong className={active ? 'in' : card.status === 'LOST' ? 'out' : 'hint'}>{STATUS_LABELS[card.status]}</strong>
           {card.status !== 'LOST' && <div className="card-actions">
             {active && <button className="secondary" disabled={busy} onClick={() => open('card_set_transaction_limits', card)}>交易限额</button>}
@@ -126,7 +127,7 @@ export default function CardManagement({ accounts, revision, onActivity }: {
       <p><strong>{ACTION_LABELS[operation.action]}</strong> <span className={`card-level card-level-${operation.permission_level}`}>{operation.permission_level === 'red' ? '🔴 需确认 + 验证器' : '🟡 需本人确认'}</span></p>
       <p>{operation.message}</p>
       <ul className="history">{operation.changes.map(change => <li key={change.field}><span>{change.label}</span><span>{changeValue(change, change.before)} → <strong>{changeValue(change, change.after)}</strong></span></li>)}</ul>
-      <small>以上数值均由银行返回；确认有效期至 {new Date(operation.expires_at).toLocaleTimeString()}</small>
+      <small>以上数值均由银行返回；确认有效期至（北京时间）{beijingTime(operation.expires_at)}</small>
       {operation.allowed_actions.includes('verify') && <div className="row"><input inputMode="numeric" maxLength={6} value={code} placeholder="验证器 6 位动态码" onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && code.length === 6 && run(() => bank.verifyCardOperation(operation, code))} /></div>}
       <div className="confirm">
         {operation.allowed_actions.includes('cancel') && <button className="secondary" disabled={busy} onClick={() => run(() => bank.cancelCardOperation(operation))}>取消</button>}

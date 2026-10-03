@@ -4,9 +4,10 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
 
 from ..domain import yuan_to_fen
+from ..domain.time import as_utc
 
 CardAction = Literal[
     "card_apply_virtual", "card_set_transaction_limits", "card_adjust_credit_limit",
@@ -85,6 +86,12 @@ class CardView(BaseModel):
     state_version: int
     lost_reported_at: datetime | None = None
 
+    @field_validator('lost_reported_at')
+    @classmethod
+    def utc_reported_at(cls, value: datetime | None) -> datetime | None:
+        """银行事件按UTC传输，兼容SQLite读取的无时区UTC值。"""
+        return as_utc(value, legacy_utc=True) if value is not None else None
+
 
 class CardChange(BaseModel):
     field: str
@@ -111,3 +118,9 @@ class CardOperationView(BaseModel):
     expires_at: datetime
     allowed_actions: list[str]
     message: str
+
+    @field_validator('expires_at')
+    @classmethod
+    def utc_expires_at(cls, value: datetime) -> datetime:
+        """安全有效期保持现实瞬时，不随浏览器所在地变化。"""
+        return as_utc(value, legacy_utc=True)
