@@ -1,0 +1,69 @@
+.third-party { display: grid; gap: 20px; }
+.third-party-title, .section-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+.third-party-title h1 { margin: 2px 0 8px; font-size: clamp(28px, 5vw, 44px); }
+.third-party-title p:not(.eyebrow), .flower-hero p { color: #627087; margin: 0; max-width: 660px; }
+.eyebrow { margin: 0; color: #1769e0; font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.third-party nav { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid #dfe6f0; }
+.third-party-notice { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid #b8d0f5; border-radius: 12px; background: #edf5ff; color: #164f9e; }
+.flower-hero { min-height: 210px; display: flex; align-items: center; justify-content: space-between; gap: 28px; overflow: hidden; background: linear-gradient(125deg, #fff 45%, #fff0f4); }
+.flower-hero h2 { margin: 8px 0 12px; font-size: clamp(24px, 4vw, 36px); }
+.flower-hero-mark { width: 190px; aspect-ratio: 1; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ff9db6, #b51e50 65%, #6f1434); color: #fff; font-size: 18px; font-weight: 900; letter-spacing: .18em; box-shadow: 0 18px 55px #aa255044; transform: rotate(-8deg); }
+.flower-products { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.flower-product { padding: 0; overflow: hidden; display: grid; grid-template-rows: 160px 1fr; }
+.flower-art { display: grid; place-items: center; color: #fff; font-weight: 900; letter-spacing: .16em; }
+.flower-art.rose { background: radial-gradient(circle at 30% 20%, #ff8ead, transparent 24%), linear-gradient(135deg, #82173d, #e04e75); }
+.flower-art.sunflower { background: radial-gradient(circle at 55% 45%, #7e4d0e 0 12%, #ffc627 13% 35%, transparent 36%), linear-gradient(135deg, #4a8b66, #b7d37d); }
+.flower-art.premium { background: linear-gradient(135deg, #1f2940, #765f87 55%, #d6a76c); }
+.flower-product-body { padding: 18px; display: grid; align-content: start; gap: 12px; }
+.flower-product-body h2, .flower-product-body p { margin: 0; }
+.flower-product-body p { color: #627087; font-size: 14px; min-height: 44px; }
+.flower-product-body > strong { color: #a51d4f; font-size: 24px; }
+.flower-product-body label { grid-template-columns: auto 86px; align-items: center; justify-content: space-between; }
+.flower-orders ul { padding: 0; margin: 8px 0 0; list-style: none; }
+.flower-orders li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-top: 1px solid #e5eaf2; }
+.flower-orders li > div:first-child { display: grid; gap: 5px; }
+.order-summary { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 10px; }
+.order-status { padding: 5px 9px; border-radius: 999px; background: #fff4d6; color: #835b00; font-size: 12px; font-weight: 700; }
+.order-status.completed { background: #ddf7e9; color: #087443; }
+.order-status.payment_closed { background: #f1f3f6; color: #68758a; }
+.coming-soon { min-height: 360px; display: grid; place-items: center; align-content: center; text-align: center; color: #68758a; }
+.coming-soon > span { width: 110px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 24px; background: #edf3fd; color: #1769e0; font-size: 20px; font-weight: 900; }
+.coming-soon h2 { margin: 18px 0 0; }
+.flower-modal { position: fixed; inset: 0; z-index: 1100; padding: 18px; display: grid; place-items: center; background: #15233baa; }
+.flower-modal > section { width: min(480px, 100%); }
+.flower-modal dl { display: grid; gap: 10px; margin: 18px 0; }
+.flower-modal dl div { display: flex; justify-content: space-between; border-bottom: 1px solid #e5eaf2; padding-bottom: 9px; }
+.flower-modal dd { margin: 0; }
+@media (max-width: 850px) {
+  .flower-products { grid-template-columns: 1fr; }
+  .flower-product { grid-template-columns: 150px 1fr; grid-template-rows: auto; }
+  .flower-hero-mark { width: 120px; }
+}
+@media (max-width: 600px) {
+  .third-party-title, .third-party-notice, .flower-hero, .flower-orders li { align-items: stretch; flex-direction: column; }
+  .flower-hero-mark { display: none; }
+  .flower-product { grid-template-columns: 1fr; grid-template-rows: 130px 1fr; }
+  .order-summary { justify-content: start; }
+}
+
+.storefront { display: grid; gap: 20px; }
+.cake-shop .flower-hero { background: linear-gradient(125deg, #fff 40%, #fff0df); }
+.cake-shop .eyebrow { color: #a65a32; }
+.cake-shop .flower-hero-mark { background: radial-gradient(circle at 35% 35%, #f8d5a9, #bc724b 65%, #79432d); box-shadow: 0 18px 55px #a65a3233; }
+.cake-shop .flower-product-body > strong { color: #9c4d31; }
+.cake-shop .flower-art { position: relative; overflow: hidden; isolation: isolate; }
+.cake-shop .flower-art::before { content: ''; position: absolute; width: 126px; height: 76px; bottom: 26px; border-radius: 50% / 18%; background: linear-gradient(to bottom, #fff9ed 0 28%, #e6be89 29% 41%, #fff9ed 42% 63%, #e6be89 64% 76%, #fff9ed 77%); box-shadow: 0 12px 18px #733f3526; z-index: -1; }
+.cake-shop .flower-art span { color: #7d4033; font-size: 13px; letter-spacing: .18em; margin-top: 28px; }
+.cake-shop .flower-art.strawberry { background: radial-gradient(ellipse at 50% 18%, #fbc5c7, transparent 65%), #fff0e9; }
+.cake-shop .flower-art.strawberry::after { content: ''; position: absolute; width: 22px; height: 28px; border-radius: 50% 50% 45% 45%; background: radial-gradient(circle, #ffdb91 1px, transparent 2px) 0 0 / 7px 8px, #d94e60; top: 42px; box-shadow: -33px 8px 0 #d94e60, 33px 8px 0 #d94e60; z-index: -1; }
+.cake-shop .flower-art.chocolate { background: linear-gradient(135deg, #eed7c7, #be8e76); }
+.cake-shop .flower-art.chocolate::before { background: linear-gradient(to bottom, #69402f 0 28%, #b88157 29% 41%, #69402f 42% 63%, #b88157 64% 76%, #69402f 77%); }
+.cake-shop .flower-art.chocolate span { color: #fff3e5; }
+.cake-shop .flower-art.celebration { background: linear-gradient(135deg, #fdf0cf, #e7c398); }
+.cake-shop .flower-art.celebration::after { content: ''; position: absolute; width: 82px; height: 52px; top: 35px; border-radius: 50% / 18%; background: linear-gradient(to bottom, #fff9ed 0 35%, #e6be89 36% 50%, #fff9ed 51%); z-index: -1; }
+.order-status.refunded { background: #eae5f8; color: #68439a; }
+@media (max-width: 600px) {
+  .cake-shop .flower-art::before { bottom: 14px; }
+  .cake-shop .flower-art.strawberry::after { top: 24px; }
+  .cake-shop .flower-art.celebration::after { top: 17px; }
+}

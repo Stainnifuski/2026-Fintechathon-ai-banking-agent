@@ -10,7 +10,7 @@ from backend.app.security.passwords import verify_password
 
 
 @pytest.mark.asyncio
-async def test_seed_has_five_contacts_with_consecutive_phones(monkeypatch) -> None:
+async def test_seed_has_contacts_and_shop_merchants(monkeypatch) -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
@@ -44,6 +44,8 @@ async def test_seed_has_five_contacts_with_consecutive_phones(monkeypatch) -> No
         "13800000004",
         "13800000005",
         "13800000006",
+        "13800000007",
+        "13800000008",
     ]
     assert len(contacts) == 5
     assert [contact.phone for contact in contacts] == [
@@ -53,7 +55,8 @@ async def test_seed_has_five_contacts_with_consecutive_phones(monkeypatch) -> No
         "13800000005",
         "13800000006",
     ]
-    assert account_count == 7
+    assert account_count == 9
+    assert users[-1].name == "甜时光蛋糕店"
     assert len(subscriptions) == 2
     assert [(item.merchant_name, item.status) for item in subscriptions] == [
         ("网易云音乐", "ACTIVE"),

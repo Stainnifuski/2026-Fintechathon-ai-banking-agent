@@ -110,7 +110,7 @@ async def _daily_used_fen(
     rows = (await db.execute(
         select(TransactionORM.amount_fen).where(
             TransactionORM.account_id.in_(account_ids),
-            TransactionORM.type == "transfer_out",
+            TransactionORM.type.in_(("transfer_out", "purchase")),
             TransactionORM.status == "completed",
             TransactionORM.timestamp >= start,
         )
@@ -433,17 +433,28 @@ async def submit_transfer(
             payment_request.status = "PAID"
             payment_request.state_version += 1
             payment_request.responded_at = now
+        is_merchant_purchase = (
+            payment_request is not None
+            and payment_request.requester_user_id in {"U007", "U008"}
+            and receiver.user_id == payment_request.requester_user_id
+        )
         db.add_all([
             TransactionORM(
                 tx_id=bank_tx_id, operation_id=command.operation_id,
-                account_id=sender.account_id, type="transfer_out", amount_fen=command.amount_fen,
-                counterparty=receiver.account_id, category="transfer",
+                account_id=sender.account_id,
+                type="purchase" if is_merchant_purchase else "transfer_out",
+                amount_fen=command.amount_fen,
+                counterparty=receiver_user.name if is_merchant_purchase else receiver.account_id,
+                category="shopping" if is_merchant_purchase else "transfer",
                 note=command.note, timestamp=now, status="completed", channel="app",
             ),
             TransactionORM(
                 tx_id=credit_tx_id, operation_id=None,
-                account_id=receiver.account_id, type="transfer_in", amount_fen=command.amount_fen,
-                counterparty=sender.account_id, category="transfer",
+                account_id=receiver.account_id,
+                type="merchant_sale" if is_merchant_purchase else "transfer_in",
+                amount_fen=command.amount_fen,
+                counterparty=sender_user.name if is_merchant_purchase else sender.account_id,
+                category="shopping" if is_merchant_purchase else "transfer",
                 note=command.note, timestamp=now, status="completed", channel="app",
             ),
         ])

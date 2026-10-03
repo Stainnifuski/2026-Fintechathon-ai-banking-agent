@@ -26,6 +26,9 @@ from .routers.users import router as users_router
 from .routers.bills import router as bills_router
 from .routers.wealth_bank import router as wealth_bank_router
 from .routers.wealth import router as wealth_router
+from .routers.flower_shop import router as flower_shop_router
+from .routers.cake_shop import router as cake_shop_router
+from .routers.calendar import router as calendar_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
 from .services.bank.wealth_worker import settlement_loop
 
@@ -98,6 +101,9 @@ app.include_router(cards_router)
 app.include_router(bills_router)
 app.include_router(wealth_bank_router)
 app.include_router(wealth_router)
+app.include_router(flower_shop_router)
+app.include_router(cake_shop_router)
+app.include_router(calendar_router)
 
 
 # ──────────────────── 健康检查 ────────────────────

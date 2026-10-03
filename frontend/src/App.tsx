@@ -4,6 +4,8 @@ import * as bank from './services/bank';
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 const Wealth = lazy(() => import('./components/Wealth'));
 const CardManagement = lazy(() => import('./components/CardManagement'));
+const ThirdPartyServices = lazy(() => import('./components/ThirdPartyServices'));
+const MerchantDashboard = lazy(() => import('./components/MerchantDashboard'));
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const localDateTimeInput = (value: Date) => {
@@ -54,6 +56,8 @@ function App() {
   const [conversation, setConversation] = useState<bank.ChatReply | null>(null);
   const [isChatting, setIsChatting] = useState(false);
   const [retryChat, setRetryChat] = useState<bank.ChatRequest | null>(null);
+  const [appView, setAppView] = useState<'banking' | 'thirdParty'>('banking');
+  const [highlightedPaymentRequest, setHighlightedPaymentRequest] = useState('');
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isActing, setIsActing] = useState(false);
@@ -76,6 +80,16 @@ function App() {
   const load = async () => {
     if (!user) return;
     try {
+      if (['U007', 'U008'].includes(user.user_id)) {
+        const [merchantAccounts, merchantTransactions] = await Promise.all([
+          bank.accounts(user.user_id),
+          bank.history(),
+        ]);
+        setAccounts(merchantAccounts);
+        setTransactions(merchantTransactions);
+        setBankRevision(value => value + 1);
+        return;
+      }
       const [a, r, h, requests, subscriptionItems] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests(), bank.listSubscriptions()]);
       setAccounts(a); setRecipients(r); setTransactions(h); setPaymentRequests(requests); setSubscriptions(subscriptionItems);
       setBankRevision(value => value + 1);
@@ -394,6 +408,14 @@ function App() {
     setAmount(''); setNote(''); setEditingNote(null); setEditNoteCleared(false); setTransferMode('instant');
     setRequestAmount(''); setRequestNote(''); setSplitEqually(false); setChatInput('');
     setTotpEnabled(false); setMfaOpen(false); setMfaCode(''); setEnrollOpen(false); setEnrollData(null); setEnrollCode('');
+    setAppView('banking'); setHighlightedPaymentRequest('');
+  };
+
+  const goToBankPayment = async (paymentRequestId?: string) => {
+    setHighlightedPaymentRequest(paymentRequestId || '');
+    setAppView('banking');
+    await load();
+    window.setTimeout(() => document.getElementById('payment-requests')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   };
 
   const requestAmountNumber = Number(requestAmount) || 0;
@@ -414,9 +436,16 @@ function App() {
   </form><button className="link" onClick={() => setLoginMode(loginMode === 'login' ? 'register' : 'login')}>{loginMode === 'login' ? '没有账号？注册' : '已有账号？登录'}</button>
   <p className="hint">演示账户：张三 13800000001 / password123</p>{status && <p className="notice">{status}</p>}</section></main>;
 
+  if (['U007', 'U008'].includes(user.user_id)) return <Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
+    <MerchantDashboard user={user} accounts={accounts} transactions={transactions} revision={bankRevision} onRefresh={load} onLogout={logout} />
+  </Suspense>;
+
   return <main className="app">
-    <header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><div className="confirm"><button className="secondary" disabled={isActing} onClick={openEnroll}>{totpEnabled ? '🔐 已绑定验证器' : '🔐 绑定验证器'}</button><button className="secondary" onClick={logout}>退出登录</button></div></header>
+    <header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><div className="confirm">{appView === 'banking' && <button onClick={() => setAppView('thirdParty')}>第三方服务</button>}<button className="secondary" disabled={isActing} onClick={openEnroll}>{totpEnabled ? '🔐 已绑定验证器' : '🔐 绑定验证器'}</button><button className="secondary" onClick={logout}>退出登录</button></div></header>
     {status && <p className="notice">{status}</p>}
+    {appView === 'thirdParty' ? <Suspense fallback={<section className="card"><p>正在加载第三方服务…</p></section>}>
+      <ThirdPartyServices revision={bankRevision} onBack={() => setAppView('banking')} onGoBank={goToBankPayment} />
+    </Suspense> : <>
     <Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={user.user_id} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense>
     <Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} /></Suspense>
     <section className="grid">
@@ -456,10 +485,10 @@ function App() {
         <label>备注（可选）<input maxLength={256} value={requestNote} onChange={e => setRequestNote(e.target.value)} /></label>
         <button disabled={requestPayerIds.length === 0 || !requestAccountId || (splitEqually && !splitIsExact) || isActing}>发出申请</button>
       </form></div>
-      <div className="card"><h2>收款申请</h2>{paymentRequests.some(request => ['PENDING', 'ACCEPTED'].includes(request.status) && request.payer_user_id === user.user_id) && <label>付款账户<select value={fromAccount} onChange={e => setFromAccount(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}（¥{a.balance.toFixed(2)}）</option>)}</select></label>}{paymentRequests.length === 0 ? <p className="hint">暂无收款申请</p> : <ul className="history">{paymentRequests.map(request => {
+      <div className="card" id="payment-requests"><h2>收款申请</h2>{paymentRequests.some(request => ['PENDING', 'ACCEPTED'].includes(request.status) && request.payer_user_id === user.user_id) && <label>付款账户<select value={fromAccount} onChange={e => setFromAccount(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}（¥{a.balance.toFixed(2)}）</option>)}</select></label>}{paymentRequests.length === 0 ? <p className="hint">暂无收款申请</p> : <ul className="history">{paymentRequests.map(request => {
         const incoming = request.payer_user_id === user.user_id;
         const canPay = incoming && ['PENDING', 'ACCEPTED'].includes(request.status);
-        return <li key={request.payment_request_id}><span>{incoming ? `${request.requester_name} 向你收款` : `向 ${request.payer_name} 收款`} {request.note && `· ${request.note}`}<small>{request.status} · {new Date(request.created_at).toLocaleString()}</small></span><strong>¥{request.amount.toFixed(2)}</strong>{(canPay || request.status === 'PENDING') && <div className="confirm">{canPay ? <><button disabled={isActing} onClick={() => actOnPaymentRequest(request, 'accept')}>{request.status === 'ACCEPTED' ? '确认付款' : '接受申请'}</button>{request.status === 'PENDING' && <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'reject')}>拒绝</button>}</> : <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'cancel')}>取消</button>}</div>}</li>;
+        return <li className={highlightedPaymentRequest === request.payment_request_id ? 'payment-request-highlight' : ''} key={request.payment_request_id}><span>{incoming ? `${request.requester_name} 向你收款` : `向 ${request.payer_name} 收款`} {request.note && `· ${request.note}`}<small>{request.status} · {new Date(request.created_at).toLocaleString()}</small></span><strong>¥{request.amount.toFixed(2)}</strong>{(canPay || request.status === 'PENDING') && <div className="confirm">{canPay ? <><button disabled={isActing} onClick={() => actOnPaymentRequest(request, 'accept')}>{request.status === 'ACCEPTED' ? '确认付款' : '接受申请'}</button>{request.status === 'PENDING' && <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'reject')}>拒绝</button>}</> : <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'cancel')}>取消</button>}</div>}</li>;
       })}</ul>}<p className="hint">接受申请后先核对转账任务，再确认付款；需要强验证的任务会停留在身份验证阶段。</p></div>
     </section>
     {activeTask && <section className="card">
@@ -504,6 +533,7 @@ function App() {
         return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{new Date(tx.timestamp).toLocaleString()} · {statusLabel}</small></span><strong className={tx.status !== 'completed' ? 'hint' : outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
       })}</ul>}</div>
     </section>
+    </>}
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>

@@ -43,6 +43,7 @@ from .subscription_service import (
     list_subscriptions,
     simulate_subscription_charge,
 )
+from .merchant_refund_service import refund_merchant_payment
 
 __all__ = [
     "authenticate_customer",
@@ -79,4 +80,5 @@ __all__ = [
     "cancel_subscription",
     "list_subscriptions",
     "simulate_subscription_charge",
+    "refund_merchant_payment",
 ]
