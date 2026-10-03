@@ -36,7 +36,9 @@ export interface Assessment { assessment_id: string; capacity_level: number; pur
 export interface Questionnaire { version: string; profile_version: number; questions: { id: string; title: string; options: string[] }[] }
 export interface Preview { authorization_id: string; authorization_status: string; command: Command; digest: string;
   product_risk_level: number; suitability: { capacity_level: number; expires_at: string; matched: boolean } | null;
-  product_name: string; disclosure: Product['disclosure']; estimate: { units?: string; fee_fen: number; cash_fen?: number } | null;
+  product_name: string; disclosure: Product['disclosure']; estimate: { units?: string; fee_fen: number; cash_fen?: number;
+    nav_available_at?:string;daily_used_fen?:number;daily_remaining_fen?:number;
+    contract?:{start:string;end:string;daily_limit_fen:number;window:string} } | null;
   estimated_nav: string | null; estimated_nav_date: string | null; pricing_date: string; confirm_date: string; cash_date: string; expires_at: string }
 export interface PlanRequest { kind: 'new_cash' | 'adjustment'; account_id: string; version: number; budget_fen: number;
   reserve_fen: number; horizon_days: number; excluded_products: string[]; budget_source?: 'bank_available_cash' | 'user_specified' }

@@ -84,6 +84,42 @@ async def test_concurrent_adjust_replay_and_reset_versions(store, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_archive_deletion_races_current_reset_without_partial_scope(store, monkeypatch):
+    """旧范围删除与当前轮次重置共用主体锁，合法集合全部删除且新账户保留。"""
+    import asyncio
+    monkeypatch.setenv('WEALTH_DEMO_TOOLS_ENABLED', 'true')
+    async with store() as db:
+        first = await research.initialize(db, 'U1'); await db.commit()
+        await research.select_context(db, 'U1', first['context_id'], 1)
+        for index in range(2):
+            current = await demo.current(db, 'U1')
+            await demo.write(db, 'U1', 'reset', {'run_id': current['run_id'],
+                'expected_version': current['epoch'], 'request_id': f'deletion-race-setup-{index}'})
+        current = await demo.current(db, 'U1')
+        old = (await demo.archives(db, 'U1'))['items']
+        selected = [{'run_id': row['run_id'], 'expected_version': row['expected_version']} for row in old]
+        preview = await demo.deletion_preview(db, 'U1', selected)
+    delete_body = {'runs': selected, 'preview_digest': preview['preview_digest'],
+                   'request_id': 'deletion-race-delete', 'confirmed': True}
+    reset_body = {'run_id': current['run_id'], 'expected_version': current['epoch'],
+                  'request_id': 'deletion-race-reset'}
+    async def write(action, body):
+        async with store() as db:
+            return await demo.write(db, 'U1', action, body)
+    deleted, reset, repeated = await asyncio.gather(write('delete', delete_body),
+        write('reset', reset_body), write('delete', delete_body))
+    assert deleted == repeated and deleted['deleted_count'] == 2
+    async with store() as db:
+        assert (await demo.current(db, 'U1'))['run_id'] == reset['run_id']
+        assert await db.get(AccountORM, reset['account_id']) is not None
+        assert await db.get(AccountORM, current['account_id']) is not None
+        assert len((await demo.archives(db, 'U1'))['items']) == 1
+        assert (await db.get(AccountORM, 'A1')).balance_fen == 2000000
+        for row in old:
+            assert await db.get(AccountORM, row['account_id']) is None
+
+
+@pytest.mark.asyncio
 async def test_demo_switch_owner_reset_adjust_replay_delete_tombstone(store, monkeypatch):
     monkeypatch.delenv('WEALTH_DEMO_TOOLS_ENABLED', raising=False)
     async with store() as db:
