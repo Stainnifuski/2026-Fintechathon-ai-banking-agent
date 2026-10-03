@@ -34,10 +34,11 @@ async def reconcile(db: AsyncSession, *, apply: bool = False) -> dict:
     if apply:
         await lock_accounts(db, [o.account_id for o in orders])
     audits = (await db.scalars(select(AuditLogORM).where(
-        AuditLogORM.action.in_(["investment_pricing", "investment_cash", "investment_accept"])))).all()
+        AuditLogORM.action.in_(["investment_pricing", "investment_cash", "investment_accept", "investment_quick_cash"])))).all()
     events = {(a.action, a.params.get("operation_id")): a for a in audits}
     rows: list[dict] = []
     summaries: dict[str, dict] = {}
+    ledger_links = []
     for order in orders:
         sandbox = contexts.get(order.account_id)
         scope = "sandbox" if sandbox and sandbox.data.get("disposable") is True else "ordinary"
@@ -47,12 +48,23 @@ async def reconcile(db: AsyncSession, *, apply: bool = False) -> dict:
             tx = await db.get(TransactionORM, stable_id(prefix, order.operation_id))
             if tx is None:
                 continue
+            if tx.operation_id is None:
+                actual=order.details.get('actual',{})
+                expected=(actual.get('gross_fen',0)-actual.get('refund_fen',0)) if kind=='pricing' else actual.get('cash_fen')
+                evidence_audit=events.get((action,order.operation_id)) or (events.get(('investment_quick_cash',order.operation_id)) if kind=='cash' else None)
+                evidence_event=await db.get(WealthSettlementORM,order.operation_id+(':pricing' if kind=='pricing' else ':cash'))
+                if kind=='cash' and evidence_event is None:
+                    evidence_event=await db.get(WealthSettlementORM,order.operation_id+':quick')
+                collision=await db.scalar(select(TransactionORM.tx_id).where(TransactionORM.operation_id==order.operation_id))
+                linked=bool(tx.account_id==order.account_id and tx.amount_fen==expected and evidence_event and evidence_audit and not collision)
+                ledger_links.append({'tx_id':tx.tx_id,'operation_id':order.operation_id,'evidence_verified':linked,'changed_money_or_units':False})
+                if apply and linked: tx.operation_id=order.operation_id
             key = "time-v1:" + tx.tx_id
             old_review = await db.get(WealthLedgerReviewORM, key)
             if old_review:
                 rows.append({**old_review.evidence, "status": old_review.status, "already_recorded": True})
                 continue
-            audit = events.get((action, order.operation_id))
+            audit = events.get((action, order.operation_id)) or (events.get(('investment_quick_cash',order.operation_id)) if kind=='cash' else None)
             event_time = as_utc(audit.timestamp, legacy_utc=True) if audit else None
             # 旧实现将business_now直接写入SQLite；不把旧naive误当UTC。
             old_timestamp = tx.timestamp.isoformat()
@@ -84,7 +96,7 @@ async def reconcile(db: AsyncSession, *, apply: bool = False) -> dict:
             "financial_fields_changed": False}
     if apply:
         await db.commit()
-    return {"mode": "apply" if apply else "dry_run", "rows": rows, "accounts": summaries,
+    return {"mode": "apply" if apply else "dry_run", "rows": rows, "accounts": summaries, "ledger_links":ledger_links,
         "changed_money_or_units": False, "recorded_at": utc_iso(utc_now())}
 
 

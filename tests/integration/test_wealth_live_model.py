@@ -22,11 +22,11 @@ async def close_live_client_between_test_event_loops():
 
 
 @pytest.mark.asyncio
-async def test_real_model_compound_plan_pause_query_resume_and_handoff(store,http_store,monkeypatch):
+async def test_real_model_compound_plan_pause_query_resume_and_handoff(store,http_store,monkeypatch,request):
     from sqlalchemy import select,func
     from backend.app.models.wealth import WealthOrderORM,WealthTaskORM
     monkeypatch.setenv('WEALTH_NLU_MODE','model')
-    client,_,_=http_store;session={}
+    client,_,_=http_store;session={};evidence=[]
     async with store() as db:
         created=await research.initialize(db,'U1');await db.commit()
         await research.select_context(db,'U1',created['context_id'],1);await assess(db)
@@ -35,6 +35,7 @@ async def test_real_model_compound_plan_pause_query_resume_and_handoff(store,htt
         result=await client.post('/api/v1/wealth/messages',json={'message':text,'client_message_id':uuid4().hex,**session})
         assert result.status_code==200,result.text
         reply=result.json();session={'session_id':reply['session_id'],'version':reply['version']}
+        evidence.append({'input':text,'reply':reply})
         return reply
     plan=await send('预算两万元，留五千，180天后用，稳健配置')
     assert plan['kind']=='plan' and len(plan['plan']['items'])>=2,plan
@@ -51,6 +52,10 @@ async def test_real_model_compound_plan_pause_query_resume_and_handoff(store,htt
         assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
         task=await db.get(WealthTaskORM,paused['task']['task_id'])
         assert task.control_mode=='HANDOFF_PENDING' and task.owner_id is None
+    target=os.getenv('WEALTH_LIVE_EVIDENCE')
+    if target:
+        base=Path(target);path=base.with_name(base.stem+'-compound-'+request.node.callspec.params['store']+base.suffix)
+        path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
 
 
 @pytest.mark.asyncio
@@ -79,7 +84,7 @@ async def test_real_deepseek_full_directory_search_and_outside_comparison(store,
 
 
 @pytest.mark.asyncio
-async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,monkeypatch):
+async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,monkeypatch,request):
     monkeypatch.setenv('WEALTH_NLU_MODE','model')
     client,_,_=http_store; evidence=[]; session=None
     async with store() as db:
@@ -129,6 +134,26 @@ async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,
         assert holding['kind']=='assets',holding
         redeem=await send('把它赎回一半。')
         assert redeem['kind']=='command' and redeem['command']['direction']=='redeem',redeem
+        redeem_view=await client.post('/api/v1/wealth/previews',json=redeem['command'])
+        assert redeem_view.status_code==200,redeem_view.text
+        rv=redeem_view.json();rid=rv['authorization_id']
+        assert (await client.post(f'/api/v1/wealth/previews/{rid}/confirm',json={
+            'digest':rv['digest'],'disclosure_version':rv['command']['disclosure_version'],'accepted':True})).status_code==200
+        assert (await client.post(f'/api/v1/wealth/previews/{rid}/verify/demo')).status_code==200
+        redemption=await client.post(f'/api/v1/wealth/previews/{rid}/execute')
+        assert redemption.status_code==200 and redemption.json()['status']=='ACCEPTED',redemption.text
+        async with store() as db:
+            from sqlalchemy import select,func
+            from backend.app.models import TransactionORM
+            context=await db.get(WealthContextORM,ctx['context_id']);context.data={**context.data,'business_at':'2026-10-08T19:00:00+08:00'};await db.commit()
+            redeemed=await bank.settle(db,redeem['command']['operation_id'])
+            assert redeemed['status']=='SETTLED' and redeemed['details']['actual']['cash_fen']>0
+            for _ in range(3):await tick(db,redeem['task']['task_id'],DirectBank(db))
+            facts=await bank.assets(db,'U1')
+            assert facts['receivable_fen']==0 and len(facts['lots'])==1
+            assert await db.scalar(select(func.count()).select_from(TransactionORM).where(
+                TransactionORM.operation_id==redeem['command']['operation_id'],TransactionORM.type=='investment_redemption'))==1
+            evidence.append({'bank_redemption_settlement':redeemed,'post_redemption_assets':facts})
         knowledge=await send('为什么同一家基金的A和C不能算两份分散投资？')
         assert knowledge['kind']=='knowledge' and knowledge['citations'],knowledge
         assert all('同家族' in c['excerpt'] for c in knowledge['citations']),knowledge
@@ -137,7 +162,7 @@ async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,
     finally:
         target=os.getenv('WEALTH_LIVE_EVIDENCE')
         if target:
-            p=Path(target); p.parent.mkdir(parents=True,exist_ok=True)
+            base=Path(target); p=base.with_name(base.stem+'-continuous-'+request.node.callspec.params['store']+base.suffix); p.parent.mkdir(parents=True,exist_ok=True)
             p.write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
 
 

@@ -53,6 +53,27 @@ async def test_reconciliation_preserves_money_and_restricts_ordinary_future_pric
         assert await db.scalar(select(func.count()).select_from(WealthLedgerReviewORM)) == 1
 
 
+@pytest.mark.asyncio
+async def test_proven_legacy_transaction_backlink_is_metadata_only_and_idempotent(store):
+    async with store() as db:
+        await assess(db)
+        cmd = command('legacy-backlink')
+        await bank.accept_many(db, 'U1', [(cmd, await authorize(db, cmd))])
+        await move(db, 12)
+        assert (await bank.settle(db, cmd.operation_id))['status'] == 'SETTLED'
+        tx = await db.get(TransactionORM, bank.stable_id('WPT', cmd.operation_id))
+        tx.operation_id = None
+        await db.commit()
+        before = (tx.amount_fen, (await db.get(AccountORM, 'A1')).balance_fen)
+        preview = await reconcile(db)
+        assert preview['ledger_links'][0]['evidence_verified']
+        assert tx.operation_id is None
+        await reconcile(db, apply=True)
+        assert tx.operation_id == cmd.operation_id
+        assert (tx.amount_fen, (await db.get(AccountORM, 'A1')).balance_fen) == before
+        assert (await reconcile(db, apply=True))['ledger_links'] == []
+
+
 def test_beijing_instant_and_unknown_naive():
     event = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)
     assert event.astimezone(BEIJING).isoformat() == "2026-10-03T00:00:00+08:00"

@@ -69,6 +69,7 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid):
         assert (await db.get(AccountORM,buy.account_id)).balance_fen==initial+bound.quoted_cash_fen
         assert await db.scalar(select(func.count()).select_from(WealthSettlementORM).where(WealthSettlementORM.operation_id==bound.operation_id))==1
         assert await db.scalar(select(func.count()).select_from(TransactionORM).where(TransactionORM.tx_id==bank.stable_id('WRT',bound.operation_id)))==1
+        assert await db.scalar(select(TransactionORM.operation_id).where(TransactionORM.tx_id==bank.stable_id('WRT',bound.operation_id)))==bound.operation_id
         quota=(await db.scalars(select(WealthQuickQuotaORM))).one(); assert quota.paid_fen==bound.quoted_cash_fen
         assert (await bank.cancellation_eligibility(db,'U1',bound.operation_id))['eligibility']=='DENIED'
         with pytest.raises(BankError): await bank.cancel(db,'U1',bound.operation_id)

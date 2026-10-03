@@ -541,7 +541,7 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
             row.units_scaled = scaled(value.units)
             row.details = {**row.details, "actual": asdict(value), "actual_nav": price.price, "waiting_reason": None}
             row.status = "SETTLED"
-            db.add(TransactionORM(tx_id=stable_id("WPT", row.operation_id), account_id=row.account_id,
+            db.add(TransactionORM(tx_id=stable_id("WPT", row.operation_id), operation_id=row.operation_id, account_id=row.account_id,
                 type="investment_purchase", amount_fen=value.gross_fen-value.refund_fen,
                 counterparty=version.name, category="investment", note=None,
                 timestamp=utc_now(), status="completed", channel="app"))
@@ -580,7 +580,7 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
             kind="cash", data={"cash_fen": cash, "business_at": now.isoformat()}, created_at=utc_now())
         db.add(event)
         if cash > 0:
-            db.add(TransactionORM(tx_id=stable_id("WRT", row.operation_id), account_id=row.account_id,
+            db.add(TransactionORM(tx_id=stable_id("WRT", row.operation_id), operation_id=row.operation_id, account_id=row.account_id,
                 type="investment_redemption", amount_fen=cash, counterparty=version.name,
                 category="investment", note=None, timestamp=utc_now(), status="completed", channel="app"))
         record_bank_event(db, event_key=event.event_id, subject_user_id=row.user_id,
@@ -654,5 +654,8 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
         "bank_assets_fen": sum(a["balance_fen"] for a in cash if a["account_type"] != "credit") + receivable
             + sum(lot["market_value_fen"] or 0 for lot in lots),
         "valuation_complete": all(lot["market_value_fen"] is not None for lot in lots),
-        "business_at": now.isoformat(), "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
+        "business_at": now.isoformat(), "as_of": utc_now().isoformat(),
+        "context_id": context.context_id if context else "legacy-v1",
+        "scope": "disposable_simulation" if context else "ordinary",
+        "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
 

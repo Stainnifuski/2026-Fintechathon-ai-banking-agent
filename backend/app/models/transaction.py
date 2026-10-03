@@ -18,7 +18,7 @@ class TransactionORM(Base):
 
     tx_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="交易ID")
     operation_id: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, unique=True, index=True, comment="客户幂等操作编号（仅转出流水保存）"
+        String(64), nullable=True, unique=True, index=True, comment="客户幂等操作编号（付款/理财成交主流水保存）"
     )
     account_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("accounts.account_id"), nullable=False, comment="账户ID"

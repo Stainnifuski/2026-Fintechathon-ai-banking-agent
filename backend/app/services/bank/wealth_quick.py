@@ -111,7 +111,7 @@ async def complete(db: AsyncSession, row, account, command, version, now, estima
         "quick_contract":estimate["contract"],"business_at":now.isoformat(),"occurred_at":utc_now().isoformat()}
     db.add(WealthSettlementORM(event_id=row.operation_id+":quick",operation_id=row.operation_id,
         kind="quick_cash",data=row.details["actual"],created_at=utc_now()))
-    db.add(TransactionORM(tx_id=stable_id("WRT",row.operation_id),account_id=row.account_id,
+    db.add(TransactionORM(tx_id=stable_id("WRT",row.operation_id),operation_id=row.operation_id,account_id=row.account_id,
         type="investment_redemption",amount_fen=cash,counterparty=version.name,category="investment",
         note="模拟快速赎回立即到账",timestamp=utc_now(),status="completed",channel="app"))
     record_bank_event(db,event_key=row.operation_id,subject_user_id=row.user_id,action="investment_quick_cash",result="success",
