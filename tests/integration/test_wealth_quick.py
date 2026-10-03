@@ -50,6 +50,12 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid,monkey
         initial=(await db.get(AccountORM,buy.account_id)).balance_fen
         lot=(await db.scalars(select(WealthLotORM).where(WealthLotORM.account_id==buy.account_id))).one()
         original_units,original_cost=lot.units_scaled,lot.cost_fen
+        if pid=='B018':
+            # 明确的隔离净值场景：已发布净值为1，核对真实成交恰好填满额度。
+            from backend.app.models.wealth import WealthNavORM
+            prices=list(await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id=='B018:1')))
+            for price in prices:price.price='1.00000000'
+            await db.commit()
         unbound=InvestmentCommand(operation_id='quick-redeem-'+pid,direction='redeem',product_id=pid,product_version=1,disclosure_version=1,account_id=buy.account_id,units='1000.0000',command_version=2,redemption_mode='quick')
         preview=await bank.precheck(db,'U1',unbound)
         bound=InvestmentCommand.model_validate(preview['command'])
@@ -74,6 +80,21 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid,monkey
         assert (await bank.cancellation_eligibility(db,'U1',bound.operation_id))['eligibility']=='DENIED'
         with pytest.raises(BankError): await bank.cancel(db,'U1',bound.operation_id)
         await db.rollback()
+        if pid=='B018':
+            remainder=unbound.model_copy(update={'operation_id':'quick-exact-limit','units':'9000.0000'})
+            remainder=InvestmentCommand.model_validate((await bank.precheck(db,'U1',remainder))['command'])
+            assert remainder.quoted_cash_fen==900000
+            result=(await bank.accept_many(db,'U1',[(remainder,await authorize(db,remainder))]))[0]
+            assert result['status']=='SETTLED'
+            await db.refresh(quota)
+            assert quota.paid_fen==1000000
+            balance=(await db.get(AccountORM,buy.account_id)).balance_fen
+            too_much=unbound.model_copy(update={'operation_id':'quick-over-exact-limit','units':'0.0100'})
+            with pytest.raises(BankError) as error:await bank.precheck(db,'U1',too_much)
+            assert error.value.code=='QUICK_DAILY_LIMIT'
+            await db.rollback()
+            assert (await db.get(AccountORM,buy.account_id)).balance_fen==balance
+            assert await db.scalar(select(func.count()).select_from(WealthSettlementORM).where(WealthSettlementORM.kind=='quick_cash'))==2
         if pid=='B017':
             from backend.app.services.bank import wealth_demo as demo
             monkeypatch.setenv('WEALTH_DEMO_TOOLS_ENABLED','true')
