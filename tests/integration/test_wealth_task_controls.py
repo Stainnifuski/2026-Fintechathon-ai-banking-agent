@@ -61,6 +61,40 @@ class DirectBank:
 
 
 @pytest.mark.asyncio
+async def test_rollback_requires_new_preview_and_preserves_submitted_order(store):
+    async with store() as db:
+        await assess(db)
+        original=command('rollback-original')
+        task=await tasks.create_command(db,'U1','rollback-session','legacy-v1',original)
+        aid=await authorize(db,original)
+        api=DirectBank(db)
+        for _ in range(2):await tick(db,task['task_id'],api)
+        rolled=await tasks.control(db,'U1',task['task_id'],'rollback',
+            {'expected_version':1,'request_id':'rollback-unsubmitted'})
+        assert rolled['status']=='PAUSED' and rolled['waiting_reason']=='NEW_PREVIEW_REQUIRED'
+        assert (await db.get(WealthAuthorizationORM,aid)).status=='EXPIRED'
+        for _ in range(3):await tick(db,task['task_id'],api)
+        assert api.submissions==0
+        changed=command('rollback-new-preview',amount=30000)
+        revised=await tasks.revise_command(db,'U1',task['task_id'],rolled['version'],changed)
+        assert revised['status']=='PAUSED'
+        await authorize(db,changed)
+        resumed=await tasks.control(db,'U1',task['task_id'],'resume',
+            {'expected_version':revised['version'],'request_id':'rollback-resume'})
+        for _ in range(4):await tick(db,task['task_id'],api)
+        assert api.submissions==1
+        order=await bank.owned_order(db,'U1',changed.operation_id)
+        assert order.amount_fen==30000
+        with pytest.raises(WealthPolicyError) as submitted:
+            await tasks.control(db,'U1',task['task_id'],'rollback',
+                {'expected_version':resumed['version'],'request_id':'rollback-after-submitted'})
+        assert submitted.value.code=='RECONCILIATION_REQUIRED'
+        await db.rollback()
+        assert (await bank.owned_order(db,'U1',changed.operation_id)).status!='CANCELLED'
+        assert api.submissions==1
+
+
+@pytest.mark.asyncio
 async def test_paused_unknown_submission_remains_queryable_after_not_found(store):
     """未知受理的404不能终止原号核对；暂停后绝不补发提交。"""
     async with store() as db:
