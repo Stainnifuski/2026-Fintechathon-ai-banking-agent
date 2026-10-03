@@ -25,6 +25,8 @@ from .routers.users import router as users_router
 from .routers.bills import router as bills_router
 from .routers.wealth_bank import router as wealth_bank_router
 from .routers.wealth import router as wealth_router
+from .routers.system import router as system_router
+from .routers.wealth_tasks import router as wealth_tasks_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
 from .services.bank.wealth_worker import settlement_loop
 
@@ -68,6 +70,7 @@ app = FastAPI(
     description="AI 银行智能体后端服务",
     lifespan=lifespan,
 )
+app.include_router(wealth_tasks_router)
 
 # ──────────────────── 中间件 ────────────────────
 
@@ -96,6 +99,7 @@ app.include_router(subscriptions_router)
 app.include_router(bills_router)
 app.include_router(wealth_bank_router)
 app.include_router(wealth_router)
+app.include_router(system_router)
 
 
 # ──────────────────── 健康检查 ────────────────────

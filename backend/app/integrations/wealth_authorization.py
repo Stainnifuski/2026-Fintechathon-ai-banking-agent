@@ -207,6 +207,8 @@ async def record_confirmation(db: AsyncSession, user_id: str, authorization_id: 
 async def validate_bank_authorization(db: AsyncSession, user_id: str, authorization_id: str,
                                      command: InvestmentCommand) -> WealthAuthorizationORM:
     """银行调用的策略接口；必须本人确认+验证、完整摘要、当前计划。"""
+    from ..services.orchestration.wealth_task import require_write_control
+    await require_write_control(db, user_id, command)
     row = await owned_authorization(db, user_id, authorization_id)
     from ..models.wealth import WealthVerificationORM
     from .wealth_verification import demo_verification_enabled
