@@ -45,6 +45,20 @@ async def restore(db, base, user_id, account_id, run_id):
         pk = next(iter(model.__table__.primary_key.columns)).key
         for values in tables[model.__tablename__]:
             mapping[values[pk]] = 'FX'+fingerprint([run_id, model.__tablename__, values[pk]])[:40]
+    def remap_json(value):
+        if isinstance(value, list): return [remap_json(item) for item in value]
+        if not isinstance(value, dict): return deepcopy(value)
+        result = {}
+        for key, item in value.items():
+            if key == 'account_id': result[key] = account_id
+            elif key == 'user_id': result[key] = user_id
+            elif key in {'context_id', 'run_id', 'scope_id'}: result[key] = run_id
+            elif key in {'operation_id','lot_id','hold_id','event_id','tx_id'} and isinstance(item,str) and item in mapping:
+                result[key] = mapping[item]
+            elif key == 'authorization_id' and isinstance(item,str):
+                result[key] = 'FIXTURE-NON-AUTH-'+fingerprint([run_id,item])[:24]
+            else: result[key] = remap_json(item)
+        return result
     for model in MODELS:
         for stored in tables[model.__tablename__]:
             values = deepcopy(stored)
@@ -56,13 +70,15 @@ async def restore(db, base, user_id, account_id, run_id):
                 elif key in {'operation_id','lot_id','hold_id','event_id','tx_id'} and value in mapping:
                     values[key] = mapping[value]
                 elif key == 'authorization_id': values[key] = 'FIXTURE-NON-AUTH-'+fingerprint([run_id, value])[:24]
+                elif isinstance(column.type, __import__('sqlalchemy').JSON): values[key] = remap_json(value)
                 elif isinstance(column.type, __import__('sqlalchemy').DateTime) and value:
                     values[key] = datetime.fromisoformat(value)
                 elif isinstance(column.type, __import__('sqlalchemy').Date) and value:
                     values[key] = date.fromisoformat(value)
             if model is WealthOrderORM:
                 values['details'] = {**values.get('details', {}), 'opening_fixture': True,
-                    'fixture_version': VERSION, 'human_authorization_inherited': False}
+                    'fixture_version': VERSION, 'human_authorization_inherited': False,
+                    'verification': {'source':'opening_fixture','simulated':True,'human_authorization_inherited':False}}
                 values['accepted_at'] = utc_now()
                 values['param_digest'] = fingerprint([run_id, stored['param_digest']])
                 values['plan_id'] = None

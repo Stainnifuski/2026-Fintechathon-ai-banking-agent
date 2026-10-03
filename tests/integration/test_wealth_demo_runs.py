@@ -10,6 +10,7 @@ from backend.app.models.wealth_research import WealthContextORM
 
 @pytest.mark.asyncio
 async def test_demo_switch_owner_reset_adjust_replay_delete_tombstone(store, monkeypatch):
+    monkeypatch.delenv('WEALTH_DEMO_TOOLS_ENABLED', raising=False)
     async with store() as db:
         context = await research.initialize(db, 'U1')
         await db.commit()
@@ -131,7 +132,9 @@ async def test_reset_frozen_opening_holdings_and_orders_without_inheriting_autho
             version_id='MF001:1', direction='purchase', amount_fen=100000, units_scaled=10000000,
             param_digest='initial-fixture-digest', authorization_id='fixture-no-human-authorization',
             plan_version=1, status='SETTLED', accepted_at=utc_now(), pricing_date=date(2026,9,29),
-            confirm_date=date(2026,9,30), cash_date=date(2026,9,30), details={'opening_fixture': True}))
+            confirm_date=date(2026,9,30), cash_date=date(2026,9,30), details={'opening_fixture': True,
+                'actual':{'lots':[{'lot_id':'initial-fixture-lot','operation_id':'initial-fixture-order'}]},
+                'verification':{'authorization_id':'fixture-no-human-authorization'}}))
         await db.flush()
         db.add(WealthLotORM(lot_id='initial-fixture-lot',operation_id='initial-fixture-order',user_id='U1',
             account_id=ctx.account_id,version_id='MF001:1',units_scaled=10000000,cost_fen=100000,
@@ -148,6 +151,9 @@ async def test_reset_frozen_opening_holdings_and_orders_without_inheriting_autho
         assert lots[0].lot_id!='initial-fixture-lot'
         order = await db.get(WealthOrderORM, lots[0].operation_id)
         assert order.status=='SETTLED' and order.details['human_authorization_inherited'] is False
+        assert order.details['actual']['lots'][0]['lot_id']==lots[0].lot_id
+        assert order.details['actual']['lots'][0]['operation_id']==order.operation_id
+        assert order.details['verification']['source']=='opening_fixture'
         assert await db.get(WealthAuthorizationORM, order.authorization_id) is None
         assert (await db.get(AccountORM, reset['account_id'])).balance_fen==2000000
         assert (await db.get(WealthLotORM, 'initial-fixture-lot')).units_scaled==3000000

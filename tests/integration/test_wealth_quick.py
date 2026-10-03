@@ -33,7 +33,7 @@ def test_legacy_digest_and_fixed_quick_windows():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('pid',['B017','B018'])
-async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid):
+async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid,monkeypatch):
     async with store() as db:
         payload={'schema_version':1,'dataset_id':'mixed-preload-v12','dataset_version':'quick-test','mode':'snapshot','products':bank_products()}
         for p in payload['products']: p['rules']['dataset_version']='quick-test'
@@ -73,6 +73,28 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid):
         quota=(await db.scalars(select(WealthQuickQuotaORM))).one(); assert quota.paid_fen==bound.quoted_cash_fen
         assert (await bank.cancellation_eligibility(db,'U1',bound.operation_id))['eligibility']=='DENIED'
         with pytest.raises(BankError): await bank.cancel(db,'U1',bound.operation_id)
+        await db.rollback()
+        if pid=='B017':
+            from backend.app.services.bank import wealth_demo as demo
+            monkeypatch.setenv('WEALTH_DEMO_TOOLS_ENABLED','true')
+            current=await demo.current(db,'U1')
+            await db.refresh(quota)
+            paid=quota.paid_fen
+            await demo.write(db,'U1','adjust',{'run_id':current['run_id'],'expected_version':current['epoch'],
+                'request_id':'quota-preserving-fund-adjust','action':'credit','amount':'100.00'})
+            assert (await db.scalars(select(WealthQuickQuotaORM))).one().paid_fen==paid
+            ctx=await db.get(WealthContextORM,context['context_id'])
+            ctx.data={**ctx.data,'business_at':'2026-10-03T00:04:59+08:00'};await db.commit()
+            next_day=bound.model_copy(update={'operation_id':'quick-next-day','nav_quote_id':None,'quoted_cash_fen':None,
+                'context_id':None,'context_epoch':None})
+            with pytest.raises(BankError) as closed:await bank.precheck(db,'U1',next_day)
+            assert closed.value.code=='QUICK_WINDOW_CLOSED';await db.rollback()
+            ctx=await db.get(WealthContextORM,context['context_id'])
+            ctx.data={**ctx.data,'business_at':'2026-10-03T00:05:00+08:00'};await db.commit()
+            next_day=InvestmentCommand.model_validate((await bank.precheck(db,'U1',next_day))['command'])
+            assert (await bank.accept_many(db,'U1',[(next_day,await authorize(db,next_day))]))[0]['status']=='SETTLED'
+            quotas=list(await db.scalars(select(WealthQuickQuotaORM)))
+            assert len(quotas)==2 and sum(row.paid_fen for row in quotas)==paid+next_day.quoted_cash_fen
 
 
 @pytest.mark.asyncio
