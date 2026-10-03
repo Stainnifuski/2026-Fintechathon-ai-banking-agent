@@ -74,6 +74,28 @@ async def test_proven_legacy_transaction_backlink_is_metadata_only_and_idempoten
         assert (await reconcile(db, apply=True))['ledger_links'] == []
 
 
+@pytest.mark.asyncio
+async def test_legacy_acceptance_time_requires_bound_audit_and_preserves_business_dates(store):
+    from backend.app.models.wealth import WealthOrderORM
+    async with store() as db:
+        await assess(db)
+        cmd=command('legacy-acceptance-clock')
+        await bank.accept_many(db,'U1',[(cmd,await authorize(db,cmd))])
+        row=await db.get(WealthOrderORM,cmd.operation_id)
+        dates=(row.pricing_date,row.confirm_date,row.cash_date)
+        row.accepted_at=utc_now()+timedelta(days=100)
+        await db.commit()
+        preview=await reconcile(db)
+        assert preview['acceptance_times'][0]['evidence_verified']
+        assert as_utc(row.accepted_at,legacy_utc=True)>utc_now()+timedelta(days=99)
+        await reconcile(db,apply=True)
+        assert abs((as_utc(row.accepted_at,legacy_utc=True)-utc_now()).total_seconds())<10
+        assert (row.pricing_date,row.confirm_date,row.cash_date)==dates
+        assert (await db.get(AccountORM,'A1')).balance_fen==2000000
+        assert (await reconcile(db,apply=True))['acceptance_times'][0]['already_recorded']
+        with pytest.raises(BankError):await require_reconciled(db,'A1')
+
+
 def test_beijing_instant_and_unknown_naive():
     event = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)
     assert event.astimezone(BEIJING).isoformat() == "2026-10-03T00:00:00+08:00"

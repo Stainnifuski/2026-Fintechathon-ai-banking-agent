@@ -39,9 +39,33 @@ async def reconcile(db: AsyncSession, *, apply: bool = False) -> dict:
     rows: list[dict] = []
     summaries: dict[str, dict] = {}
     ledger_links = []
+    acceptance_times = []
     for order in orders:
         sandbox = contexts.get(order.account_id)
         scope = "sandbox" if sandbox and sandbox.data.get("disposable") is True else "ordinary"
+        accepted_audit = events.get(('investment_accept', order.operation_id))
+        acceptance_key = 'accept-time-v1:' + order.operation_id
+        previous_acceptance = await db.get(WealthLedgerReviewORM, acceptance_key)
+        if previous_acceptance:
+            acceptance_times.append({**previous_acceptance.evidence, 'status': previous_acceptance.status,
+                                     'already_recorded': True})
+        elif accepted_audit:
+            audit_at = as_utc(accepted_audit.timestamp, legacy_utc=True)
+            accepted_at = as_utc(order.accepted_at, legacy_utc=True)
+            if abs((accepted_at-audit_at).total_seconds()) > 2:
+                proven = (accepted_audit.user_id == order.user_id and accepted_audit.result == 'success'
+                          and accepted_audit.params.get('digest') == order.param_digest
+                          and accepted_audit.params.get('version_id') == order.version_id)
+                status = 'TIME_REPAIRED' if scope == 'sandbox' and proven else 'RECONCILIATION_REQUIRED'
+                evidence = {'operation_id': order.operation_id, 'account_id': order.account_id, 'scope': scope,
+                    'old_accepted_at': order.accepted_at.isoformat(), 'audit_id': accepted_audit.audit_id,
+                    'recorded_event_utc': utc_iso(audit_at), 'evidence_verified': proven,
+                    'changed_money_or_units': False, 'reason': 'bound_bank_accept_audit; preserve_business_dates'}
+                acceptance_times.append({**evidence, 'status': status, 'already_recorded': False})
+                if apply:
+                    if proven: order.accepted_at = audit_at
+                    db.add(WealthLedgerReviewORM(review_id=acceptance_key, account_id=order.account_id,
+                        status=status, evidence=evidence, created_at=utc_now()))
         for kind, prefix, action in [("pricing", "WPT", "investment_pricing"), ("cash", "WRT", "investment_cash")]:
             if kind == "pricing" and order.direction != "purchase":
                 continue
@@ -97,6 +121,7 @@ async def reconcile(db: AsyncSession, *, apply: bool = False) -> dict:
     if apply:
         await db.commit()
     return {"mode": "apply" if apply else "dry_run", "rows": rows, "accounts": summaries, "ledger_links":ledger_links,
+        "acceptance_times": acceptance_times,
         "changed_money_or_units": False, "recorded_at": utc_iso(utc_now())}
 
 
