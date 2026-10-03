@@ -30,19 +30,30 @@
 
 schema v5给净值增量增加`available_at`，导入保留数据的可用瞬时。缺少历史字段时采用北京时间净值日18:00的保守**模拟假设**，不称真实基金公布时刻。快赎报价绑定净值行、价格、可用时间、模式、账户、上下文epoch和到账金额，修改后必须重新预览确认。
 
+### 最新main共享页面适配
+
+整合`6120eef`新增店铺和ICS日历。商户/客户订单瞬时使用共享`beijingTime`，商户工作台也显示服务端现实日期时钟。日历有时间事件按北京时间分日，查询窗口显式转换北京午夜到UTC；手工时间按`+08:00`解析，全天事件保留纯日期，ICS源TZID仍由导入服务解释，不能统一改写源时区。日历网格的Date仅表示日历格位置，不作为事件时区。前端类型检查及Vite706模块构建通过；完整日历浏览器回归仍待执行。
+
 ## 模拟测试工具
 
 `WEALTH_DEMO_TOOLS_ENABLED=false`为默认值。启用后仍只允许本人当前disposable轮次；普通/他人账户不能使用。
 
 - `/demo/current`、`/demo/archives`为读取；`/demo/delete-preview`给范围计数与摘要，不做删除。
-- `/demo/reset`归档当前整组run并新建20,000元账户，不复制旧授权或旧成交；完整场景fixture重建尚待验收。
+- `/demo/reset`归档当前整组run并新建20,000元账户。无初始持仓配置时为显式空基线；管理员场景在首次创建完成后冻结`disposable-opening-v1`持仓/订单/占用/流水快照，重置只恢复冻结初始状态，生成新编号，不复制当前轮次或授权。恢复订单标记`opening_fixture`及`human_authorization_inherited=false`；这是虚构开账fixture，不代表本人交易或真实验证。场景和数据库已有的有效本人评估保留。
+- 历史`fixture_ready`场景若没有冻结基线，拒绝重置并报告`FIXTURE_BASELINE_MISSING`，需管理员依据原场景重建；不能把当前已改动的账务当成初始数据。
 - `/demo/adjust`只接受字符串正金额、最多两位小数；debit不能超过可用现金，不释放占款/在途，不重置快赎额度。
 - `/demo/delete`须`confirmed=true`、匹配preview_digest及各范围expected_version；当前轮次、运行租约、未知提交、跨范围引用均阻止删除。所有检查先于同事务删除，保留共享产品/身份评估和最小删除墓碑。
 
 写请求使用原request_id重放；前端按用户在localStorage保留未核对请求，刷新后仍用原请求核对。资金、订单、份额、会话/任务记录及独占审计删除按FK顺序，旧已删除上下文/任务回调返回GONE；其他用户不获得墓碑信息。
+
+归档列表展示账户、时间、记录计数及阻塞原因，支持全选可删除范围；删除预览包含交易流水计数。列表不授予删除资格，提交仍在锁内重验。
 
 ## 升级和历史问题
 
 先停止目标库写入、做一致性备份并在副本运行`python -m backend.app.services.bank.wealth_migration`；重复升级只补结构/种子，不重置账户。存在业务事实时拒绝回退删表。
 
 历史核对工具默认dry-run：`python -m backend.app.services.bank.wealth_reconciliation`。`--apply`须先经副本核对。仅同事务银行审计证明的事件瞬时可修复，原时间、业务日期和来源保存在review中；不改变现金、份额、成本或计价日期。普通账户未来计价资料不足时保留流水并限制新增写入，不能通过改日期、隐藏或清库放行。
+
+旧混合会话拆分工具：`python -m backend.app.services.bank.wealth_history_migration`，默认dry-run；备份并在副本核对后才使用`--apply`。只按条目显式`account_id`定位本人范围；无证据条目保存到`legacy-unassigned`只读档案，多范围/他人账户条目报错不迁移。记录源会话、原区段、序号、内容指纹，保留每个条目，不修改资金表；重复执行无新条目。只读来源档案禁止继续发送交易需求，不作为当前会话恢复。
+
+操作员在成功唯一领取后可读取`GET /operator/tasks/{task_id}/context`，获取原会话、方案版本及DAG；`/facts`读取原账户银行事实。非领取人/无服务端角色拒绝。处理说明与交还仍使用版本、幂等控制；交还进入暂停待重新核验，不签发本人授权。

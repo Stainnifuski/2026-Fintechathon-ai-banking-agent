@@ -436,9 +436,9 @@ function App() {
   </form><button className="link" onClick={() => setLoginMode(loginMode === 'login' ? 'register' : 'login')}>{loginMode === 'login' ? '没有账号？注册' : '已有账号？登录'}</button>
   <p className="hint">演示账户：张三 13800000001 / password123</p>{status && <p className="notice">{status}</p>}</section></main>;
 
-  if (['U007', 'U008'].includes(user.user_id)) return <Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
+  if (['U007', 'U008'].includes(user.user_id)) return <><BeijingClock /><Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
     <MerchantDashboard user={user} accounts={accounts} transactions={transactions} revision={bankRevision} onRefresh={load} onLogout={logout} />
-  </Suspense>;
+  </Suspense></>;
 
   return <main className="app">
     <BeijingClock /><header><div><strong>AI 模拟银行</strong><span>您好，{user.name}</span></div><div className="confirm">{appView === 'banking' && <button onClick={() => setAppView('thirdParty')}>第三方服务</button>}<button className="secondary" disabled={isActing} onClick={openEnroll}>{totpEnabled ? '🔐 已绑定验证器' : '🔐 绑定验证器'}</button><button className="secondary" onClick={logout}>退出登录</button></div></header>

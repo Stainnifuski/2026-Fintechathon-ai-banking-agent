@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as calendar from '../../services/calendar';
+import { beijingTime, beijingInput } from '../../utils/time';
 import './styles.css';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const dayDate = (key: string) => new Date(`${key}T00:00:00`);
-const timeText = (value: string) => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+const timeText = (value: string) => beijingTime(value).split(' ')[1].slice(0, 5);
 const eventKey = (event: calendar.CalendarEvent) => `${event.event_id}-${event.starts_at}`;
-const eventDate = (event: calendar.CalendarEvent) => event.all_day ? event.starts_at.slice(0, 10) : dateKey(new Date(event.starts_at));
+const eventDate = (event: calendar.CalendarEvent) => event.all_day ? event.starts_at.slice(0, 10) : beijingTime(event.starts_at).split(' ')[0];
 
 function onDay(event: calendar.CalendarEvent, day: Date) {
   const key = dateKey(day);
   if (event.all_day) return event.starts_at.slice(0, 10) <= key && key < (event.ends_at?.slice(0, 10) || event.starts_at.slice(0, 10));
   const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
-  return new Date(event.starts_at) < next && (event.ends_at ? new Date(event.ends_at) > day : eventDate(event) === key);
+  const beginInstant = new Date(`${key}T00:00:00+08:00`);
+  const endInstant = new Date(`${dateKey(next)}T00:00:00+08:00`);
+  return new Date(event.starts_at) < endInstant && (event.ends_at ? new Date(event.ends_at) > beginInstant : eventDate(event) === key);
 }
 
 function describeTime(event: calendar.CalendarEvent) {
@@ -21,7 +24,7 @@ function describeTime(event: calendar.CalendarEvent) {
   const start = timeText(event.starts_at);
   if (!event.ends_at) return `${start} · 时间点`;
   const end = new Date(event.ends_at);
-  const endDay = dateKey(end);
+  const endDay = beijingTime(end).split(' ')[0];
   return `${start} – ${eventDate(event) === endDay ? '' : `${endDay} `}${timeText(event.ends_at)}`;
 }
 
@@ -34,10 +37,10 @@ function errorMessage(error: unknown) {
 }
 
 export default function Calendar({ revision }: { revision: number }) {
-  const today = dateKey(new Date());
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const today = beijingTime(new Date()).split(' ')[0];
+  const timeZone = 'Asia/Shanghai';
   const [selected, setSelected] = useState(today);
-  const [month, setMonth] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [month, setMonth] = useState(() => dayDate(`${today.slice(0, 7)}-01`));
   const [events, setEvents] = useState<calendar.CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -60,8 +63,8 @@ export default function Calendar({ revision }: { revision: number }) {
     const offset = (first.getDay() + 6) % 7;
     return Array.from({ length: 42 }, (_, i) => new Date(first.getFullYear(), first.getMonth(), 1 - offset + i));
   }, [month]);
-  const start = days[0].toISOString();
-  const end = new Date(days[41].getFullYear(), days[41].getMonth(), days[41].getDate() + 1).toISOString();
+  const start = new Date(`${dateKey(days[0])}T00:00:00+08:00`).toISOString();
+  const end = new Date(`${dateKey(new Date(days[41].getFullYear(), days[41].getMonth(), days[41].getDate() + 1))}T00:00:00+08:00`).toISOString();
 
   useEffect(() => {
     let active = true;
@@ -101,20 +104,20 @@ export default function Calendar({ revision }: { revision: number }) {
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    const startDate = new Date(starts);
-    const endDate = kind === 'range' ? new Date(ends) : null;
+    const startDate = new Date(`${starts}:00+08:00`);
+    const endDate = kind === 'range' ? new Date(`${ends}:00+08:00`) : null;
     if (!title.trim()) { setFormError('请输入事件名称'); return; }
     if (Number.isNaN(startDate.getTime()) || (endDate && (Number.isNaN(endDate.getTime()) || endDate <= startDate))) {
       setFormError('结束时间必须晚于开始时间'); return;
     }
-    const matchesInput = (date: Date, input: string) => `${dateKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}` === input;
+    const matchesInput = (date: Date, input: string) => beijingInput(date) === input;
     if (!matchesInput(startDate, starts) || (endDate && !matchesInput(endDate, ends))) {
       setFormError('所选时间在当前时区不存在，请重新选择时间'); return;
     }
     setBusy(true); setFormError('');
     try {
       await calendar.createEvent({ title: title.trim(), description, location, starts_at: startDate.toISOString(), ends_at: endDate?.toISOString() ?? null });
-      setOpen(false); selectDay(dateKey(startDate)); setRefresh(value => value + 1); setNotice('事件已添加');
+      setOpen(false); selectDay(beijingTime(startDate).split(' ')[0]); setRefresh(value => value + 1); setNotice('事件已添加');
     } catch (error) { setFormError(errorMessage(error)); }
     finally { setBusy(false); }
   };

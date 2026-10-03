@@ -1,3 +1,4 @@
+import { beijingTime } from '../../utils/time';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Account, Transaction, User } from '../../services/bank';
 import * as flowerShop from '../../services/flowerShop';
@@ -115,7 +116,7 @@ export default function MerchantDashboard({
             <div>
               <strong>{order.product_name} × {order.quantity}</strong>
               <small>{order.payment_request?.payer_name || order.customer_user_id} · {order.order_id}</small>
-              <small>{new Date(order.created_at).toLocaleString()}</small>
+              <small>{beijingTime(order.created_at)}</small>
             </div>
             <div className="merchant-order-action">
               <strong>¥{order.total.toFixed(2)}</strong>
@@ -133,7 +134,7 @@ export default function MerchantDashboard({
             const outgoing = transaction.type === 'refund_out';
             const label = transaction.type === 'merchant_sale' ? '订单收款' : outgoing ? '订单退款' : transaction.type;
             return <li key={transaction.tx_id}>
-              <div><strong>{label} · {transaction.counterparty}</strong><small>{transaction.note || '无备注'}</small><small>{new Date(transaction.timestamp).toLocaleString()}</small></div>
+              <div><strong>{label} · {transaction.counterparty}</strong><small>{transaction.note || '无备注'}</small><small>{beijingTime(transaction.timestamp)}</small></div>
               <strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{transaction.amount.toFixed(2)}</strong>
             </li>;
           })}
