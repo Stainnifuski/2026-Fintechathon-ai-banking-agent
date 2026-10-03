@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as flowerShop from '../../services/flowerShop';
 import * as cakeShop from '../../services/cakeShop';
+import Calendar from '../Calendar';
 import './styles.css';
 
 type ServiceTab = 'calendar' | 'flower' | 'cake';
@@ -36,7 +37,7 @@ export default function ThirdPartyServices({ revision, onBack, onGoBank }: Props
       <div>
         <p className="eyebrow">生活场景联动</p>
         <h1>第三方服务</h1>
-        <p>第三方只能发起付款申请，资金始终由银行在您明确同意后转移。</p>
+        <p>安排日程，选购心意。店铺付款由银行在您明确同意后执行。</p>
       </div>
       <button className="secondary" onClick={onBack}>返回银行</button>
     </div>
@@ -45,9 +46,7 @@ export default function ThirdPartyServices({ revision, onBack, onGoBank }: Props
         <button key={key} className={tab === key ? '' : 'secondary'} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>
       )}
     </nav>
-    {tab === 'calendar' ? <div className="card coming-soon">
-      <span aria-hidden="true">31</span><h2>日历</h2><p>该服务将在后续场景联动版本中开放。</p>
-    </div> : <Storefront key={tab} shopType={tab} revision={revision} onGoBank={onGoBank} />}
+    {tab === 'calendar' ? <Calendar revision={revision} /> : <Storefront key={tab} shopType={tab} revision={revision} onGoBank={onGoBank} />}
   </section>;
 }
 

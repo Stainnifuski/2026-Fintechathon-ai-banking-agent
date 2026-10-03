@@ -11,7 +11,8 @@
 .merchant-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); gap: 20px; }
 .merchant-orders ul, .merchant-transactions ul { margin: 0; padding: 0; list-style: none; }
 .merchant-orders li, .merchant-transactions li { display: flex; justify-content: space-between; gap: 14px; padding: 16px 0; border-bottom: 1px solid #e6ebf2; }
-.merchant-orders li > div:first-child, .merchant-transactions li > div:first-child { display: grid; gap: 5px; }
+.merchant-orders li > div:first-child, .merchant-transactions li > div:first-child { display: grid; gap: 5px; min-width: 0; }
+.merchant-transactions li > strong { white-space: nowrap; flex: none; }
 .merchant-order-action { display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: 8px; }
 .merchant-status { padding: 5px 9px; border-radius: 999px; background: #fff1cf; color: #765400; font-size: 12px; font-weight: 700; }
 .merchant-status.completed { background: #ddf7e9; color: #087443; }

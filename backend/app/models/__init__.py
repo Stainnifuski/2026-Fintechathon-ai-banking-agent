@@ -19,6 +19,7 @@ from .payment_request_payment import PaymentRequestPaymentORM
 from .subscription import SubscriptionORM
 from .flower_order import FlowerOrderORM
 from .cake_order import CakeOrderORM
+from .calendar_event import CalendarEventORM
 from .merchant_refund import MerchantRefundORM
 from .workflow import (
     AuthorizationORM,
@@ -78,6 +79,7 @@ __all__ = [
     "SubscriptionORM",
     "FlowerOrderORM",
     "CakeOrderORM",
+    "CalendarEventORM",
     "MerchantRefundORM",
 ]
 
