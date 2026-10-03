@@ -313,3 +313,20 @@ async def test_repeated_wrong_codes_terminate_authorization(client, db) -> None:
                                 json={"proof": pyotp.TOTP(secret).now()})
     assert correct.json()["detail"]["code"] == "AUTHORIZATION_WRONG_STATE"
     assert (await card(db, "C1")).status == "ACTIVE"
+
+
+def test_card_levels_match_shared_permission_map() -> None:
+    from backend.app.integrations.card_authorization import CARD_PERMISSION_LEVELS
+    from security.common import PERMISSION_MAP
+    assert CARD_PERMISSION_LEVELS == {
+        action: level.value for action, level in PERMISSION_MAP.items() if action.startswith("card_")}
+
+
+def test_backend_runtime_does_not_import_repository_root_packages() -> None:
+    """后端镜像只含 backend/；运行时代码不得依赖根目录 security/agent 包。"""
+    import pathlib, re
+    app_dir = pathlib.Path(__file__).resolve().parents[2] / "backend" / "app"
+    offenders = [str(path) for path in app_dir.rglob("*.py")
+                 if path.name != "permission_guard.py"
+                 and re.search(r"^\s*(from|import)\s+(security|agent)|permission_guard", path.read_text(encoding="utf-8"), re.M)]
+    assert offenders == []

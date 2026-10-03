@@ -1,4 +1,4 @@
-"""3号卡片操作授权策略；不访问卡片、账户等银行ORM，级别只取共享权限表。"""
+"""3号卡片操作授权策略；不访问卡片、账户等银行ORM，级别由服务端固定表判定。"""
 
 import hashlib
 import json
@@ -8,7 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.audit_log import AuditLogORM
 from ..models.card import CardOperationORM
-from ..security.permission_guard import check_operation_permission
+
+# 与 security/common.py 的 PERMISSION_MAP 保持一致（测试校验）；后端镜像只含 backend/，
+# 不能在运行时导入仓库根目录的 security 包。未列出的动作按最高级别处理。
+CARD_PERMISSION_LEVELS = {
+    "card_apply_virtual": "yellow",
+    "card_set_transaction_limits": "yellow",
+    "card_adjust_credit_limit": "red",
+    "card_unlock": "red",
+    "card_report_lost": "red",
+}
 
 CONFIRMATION_TTL = timedelta(minutes=10)
 MAX_FAILED_VERIFICATIONS = 5
@@ -64,11 +73,10 @@ async def open_operation(db: AsyncSession, *, user_id: str, operation_id: str, a
         if existing.user_id != user_id or existing.param_digest != digest:
             raise CardAuthorizationError("原操作号参数冲突", "IDEMPOTENCY_CONFLICT")
         return existing
-    permission = await check_operation_permission(action, user_id)
     row = CardOperationORM(
         operation_id=operation_id, user_id=user_id, action=action, card_id=card_id,
         card_state_version=card_state_version, params=params, preview=preview,
-        param_digest=digest, permission_level=permission["level"],
+        param_digest=digest, permission_level=CARD_PERMISSION_LEVELS.get(action, "red"),
         status=AWAITING_CONFIRMATION, failed_verifications=0,
         expires_at=datetime.now(timezone.utc) + CONFIRMATION_TTL,
     )
