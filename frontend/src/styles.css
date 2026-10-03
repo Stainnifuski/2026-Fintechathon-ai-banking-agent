@@ -3,3 +3,5 @@
 .subscription-action { display: grid; justify-items: end; gap: 8px; }
 .subscription-confirm { margin-top: 14px; padding: 14px; border-radius: 10px; background: #fff7e8; border: 1px solid #f2d39b; }
 .subscription-confirm p { margin: 0 0 6px; }
+.payment-request-highlight { margin-inline: -10px; padding-inline: 10px !important; border-radius: 8px; background: #edf5ff; box-shadow: inset 3px 0 #1769e0; }
+@media (max-width: 720px) { header { align-items: flex-start; gap: 12px; } header .confirm { flex-wrap: wrap; justify-content: flex-end; } }
