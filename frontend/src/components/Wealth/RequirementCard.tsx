@@ -1,4 +1,5 @@
 import { money } from '../../services/wealth';
+import { beijingTime } from '../../utils/time';
 
 export interface RequirementState {
   version: number;
@@ -35,7 +36,7 @@ export default function RequirementCard({state}: {state:RequirementState}) {
   }
   return <article className="wealth-product" aria-label="当前理财需求">
     <h4>当前理财需求 · v{state.version}</h4>
-    {state.bank_cash && <p>银行可用现金 {money(state.bank_cash.available_fen)}<small> · 业务时点 {state.bank_cash.as_of}</small></p>}
+    {state.bank_cash && <p>银行可用现金 {money(state.bank_cash.available_fen)}<small> · 业务时点（北京时间）{beijingTime(state.bank_cash.as_of)}</small></p>}
     <dl>{Object.entries(labels).map(([key,label])=><div key={key}><dt>{label}</dt><dd>{display(key)}</dd></div>)}</dl>
     <p className="hint">可直接回复“改八千”“不要混合”等修订条件；需求卡不代表本人交易确认或授权。</p>
   </article>;

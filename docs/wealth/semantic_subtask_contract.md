@@ -1,4 +1,4 @@
-# 理财语义与子任务接口（本轮实施中）
+# 理财语义与子任务接口
 
 ## 需求与澄清
 
@@ -14,7 +14,7 @@ DeepSeek输出严格`wealth-semantics-v1`，从双向近期对话、最后未回
 
 复用`wealth_tasks`/`wealth_task_nodes`，澄清阶段真实保存READ_FACTS、REQUIRE_INPUT、PLAN/RESEARCH节点及需求版本；修订新增无环节点，保留已完成事实。新规划和旧待确认申购分别保留，主任务选择不撤销旧订单，也不授予交易权限。订单图使用既有确认/模拟授权/提交/结算保护。
 
-## 2号接口（已实现部分）
+## 2号接口
 
 认证主体来自JWT；context_id必须匹配银行当前本人选择。`POST /api/v1/wealth/subtasks`复用同一对话服务，可传raw_text让模型理解，或已通过严格schema的parsed_intent避免重复付费调用。两者均不能替代交易确认授权。
 
@@ -45,7 +45,7 @@ typed方式在同一请求增加：
 }
 ```
 
-返回统一envelope：schema_version、child_task_id、parent_task_id、session_id、request_id、version、requirement_version、status、waiting_reason、cards、result、error/code。
+返回统一envelope：schema_version、child_task_id、parent_task_id、session_id、session_version、request_id、version、requirement_version、status、waiting_reason、cards、result、error/code。`version`为任务版本；继续消息的`version`使用`session_version`，不能互换。节点在`result.nodes`中；卡片保存原对话响应。纯等待上层事件尚无子会话版本时session_version为空。
 
 - `GET /subtasks/{id}`：读取本人状态/需求/节点与已保存卡片。
 - `PATCH /subtasks/{id}`：expected_version、request_id、raw_text、可选parsed_intent，复用原会话修订。
@@ -80,4 +80,6 @@ typed方式在同一请求增加：
 
 4号只核对当前本人账户的`transfer_out/completed`及非未来流水；本接口不执行转账、不写现金、不接受paid、金额或授权标志。同一事件不能满足两个不同依赖，不存在/跨主体/错误父任务/版本冲突拒绝。已完成银行事实先持久化；若后续推荐中断，同一请求可续接，保留原事件，不重新转账。所有依赖完成后`continuation`返回续接的理财子任务envelope，重读当时银行现金再计算一半，买入仍需可信确认与新模拟授权。统一Agent、转账执行和总DAG继续归2号。
 
-真实多轮三组脚本已运行，外部依赖双库验证通过；实际卖出到账比例衔接、图局部版本完整验收与浏览器仍在进行，当前不表示I01/D01整个矩阵已完成。
+三组真实多轮脚本及双库关键路径已运行。实际到账比例由原sell_then_buy任务的完成SETTLEMENT、REREAD_CASH节点约束，并重新查询每个原赎回操作号的SETTLED/同账户实际cash_fen。保存原语义比例及银行解析证据，不用总现金或预估收益替代。买入子图仍新建CONFIRM/VERIFY节点；失败或撤销的卖出依赖阻止后续写入。
+
+局部需求/命令修订追加无环版本节点；完成事实保留，不原位改写旧SUBMIT。先研究再配置保存RESEARCH输出及PLAN依赖，未知或只读建议返回条件研究图，评估缺失保存ASSESS等待。任务暂停/人工接管不会复用旧授权。统一Agent和跨场景总图仍由2号集成，本文只声明理财子任务适配器。
