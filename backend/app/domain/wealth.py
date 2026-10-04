@@ -105,6 +105,8 @@ def redeem(quantity: str, price: str, fee_rate: str, *, lot_units: str,
 
 def business_day(day: date, calendar_version: str = CALENDAR_VERSION) -> bool:
     """判断固定版本模拟营业日。"""
+    from .wealth_calendar import CALENDAR_VERSION as CURRENT_CALENDAR,day_info
+    if calendar_version==CURRENT_CALENDAR:return day_info(day)['trading']
     if calendar_version not in {CALENDAR_VERSION, "synthetic-weekdays-v1"}:
         raise ValueError("未知营业日历")
     return day.weekday() < 5 and (calendar_version == "synthetic-weekdays-v1" or day not in HOLIDAYS)

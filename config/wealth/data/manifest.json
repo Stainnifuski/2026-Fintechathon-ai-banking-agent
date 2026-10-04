@@ -1,0 +1,808 @@
+{
+  "schema_version": "wealth-fixed-data-v1",
+  "data_version": "20261003-cn-fixed-v1",
+  "generator_version": "factor-cn-fixed-v1",
+  "seed": 20261001,
+  "calendar_version": "cn-trading-2021-2027-v1",
+  "coverage_start": "2021-10-01",
+  "coverage_end": "2027-12-31",
+  "publication_rule": "18:00 Asia/Shanghai, stored/transmitted UTC",
+  "annual_fees_included": true,
+  "simulation": true,
+  "files": {
+    "synthetic.json": {
+      "sha256": "6ced8780e7fdd94e383d60d33d95359a47c279f6c05608a650b7c3643af84ea1",
+      "bytes": 14860866
+    },
+    "bank_products.json": {
+      "sha256": "5f6c8ae6e16688ede18b94385e9aae13a81aea72428909d06c0de6f1a23123ca",
+      "bytes": 5003616
+    },
+    "calendar.json": {
+      "sha256": "48300a948881b22757537ba2d6d8966c50a74383437361fe23b933ad9b3385ca",
+      "bytes": 438210
+    }
+  },
+  "products": [
+    {
+      "product_id": "S001",
+      "family_id": "SF001",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "0fe5ebc86ab54c9adfdcdc0416c4af000b4909262668ef7a78f370d2d82559db"
+    },
+    {
+      "product_id": "S002",
+      "family_id": "SF001",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "7b79a4b20ab95782ea33d8ec45b4fdd92951932fd9a5996b0a52908ce8f79b3b"
+    },
+    {
+      "product_id": "S003",
+      "family_id": "SF002",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "cc9c97af6fc56c3c50638c2a968fa5d34344b78284d1680a29f1ed5bcef184eb"
+    },
+    {
+      "product_id": "S004",
+      "family_id": "SF002",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "f424c77b7e5f03ea348da6571ddb9f85eb91586a1e21966c4d09d72058781ca4"
+    },
+    {
+      "product_id": "S005",
+      "family_id": "SF003",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "7db6209843d6fabd4cbacee6eca71b366a610a59e5cfc3b332f618de61d6fe53"
+    },
+    {
+      "product_id": "S006",
+      "family_id": "SF003",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "75ec965c7fb2b7bfcb3d8c6dbdf6151c3b85007f15f20f2613cdb15d36649511"
+    },
+    {
+      "product_id": "S007",
+      "family_id": "SF004",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "2dc4e394c9902aa70da27e950e39b308fb4d91d6aa1095503b292dff0efda8f2"
+    },
+    {
+      "product_id": "S008",
+      "family_id": "SF004",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "96047a05486ae5157d0c5c4e42e4a715470c60868254b9fa23e7516cde2fc47e"
+    },
+    {
+      "product_id": "S009",
+      "family_id": "SF005",
+      "template_id": null,
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "a3a07ecaf00bd322241140bdf58ddb10837d313fcafae77d7be4b9ac00187dd9"
+    },
+    {
+      "product_id": "S010",
+      "family_id": "SF005",
+      "template_id": null,
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "47ef6819806cbdd0dce1284222abcd909d56caff801b09071567e2f4da7125e1"
+    },
+    {
+      "product_id": "S011",
+      "family_id": "SF006",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "8a2ed8b8e3a5bc81f805560e133e252067ccee5333d18d22d6facdb68b9e7b35"
+    },
+    {
+      "product_id": "S012",
+      "family_id": "SF006",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "95a25391de24081c98ffb87431ffc0ccc7aeea50de6b896fbda0b69395465b88"
+    },
+    {
+      "product_id": "S013",
+      "family_id": "SF007",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "e45a034b0a8a3a768dd33249a27b5ce0abeccfab03f30d6cbb70cd8e0a9d001a"
+    },
+    {
+      "product_id": "S014",
+      "family_id": "SF007",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "04bbf46ec4ba2e77d08261d4bf4446ceaaa82cee454cdc1dc2ecbbeb37bf7167"
+    },
+    {
+      "product_id": "S015",
+      "family_id": "SF008",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "45d3b1ad0cfbbde4e7799e750fa87f7bb63a2772b2698aaa05c161de877d7d08"
+    },
+    {
+      "product_id": "S016",
+      "family_id": "SF008",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "f27c565007e9c829f521a272e674180e42c8120d9844b66e3d6288f21b621179"
+    },
+    {
+      "product_id": "S017",
+      "family_id": "SF009",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "ed7809248419e55aace58a38296cb870efc3e2f4fd8d03d4215b2395266c0530"
+    },
+    {
+      "product_id": "S018",
+      "family_id": "SF009",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "ba3c9bb8f6486b6daa6faa59270146515e534b72d78e5afcd0c6b61b8b4f425f"
+    },
+    {
+      "product_id": "S019",
+      "family_id": "SF010",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "fbfac55c7e5f1f2418510ecca2da6637b43bda7634935a139649747df70f717c"
+    },
+    {
+      "product_id": "S020",
+      "family_id": "SF010",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "c5717dc3a13ae11eed57608c4f8272ed20462a78b22ddfefcf0a08682d476b8a"
+    },
+    {
+      "product_id": "S021",
+      "family_id": "SF011",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "c104d89030fc8359c830b3adfeab51fe1b8786cefb1db6ed11b5a855acb46b91"
+    },
+    {
+      "product_id": "S022",
+      "family_id": "SF011",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "b61648b203da30852e44c9eabdf1b7e1dd426e948a5c978f51d1773324e72593"
+    },
+    {
+      "product_id": "S023",
+      "family_id": "SF012",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "c9e89b2f57ff491c7bce2421f87b0e811659e1b8c0e61cf273d651daa116336c"
+    },
+    {
+      "product_id": "S024",
+      "family_id": "SF012",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "e906f32a4af36a15faffe55f61808287e9c310746d18c67ab3eb60d59e164dff"
+    },
+    {
+      "product_id": "S025",
+      "family_id": "SF013",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "b8cbf300fc929a6f0928780c610786004ddc4bdf339f86f761a54e78a8718309"
+    },
+    {
+      "product_id": "S026",
+      "family_id": "SF013",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "e3ecb6125fc42d6102872a3a2e0683078a226e15151f9f2350139a6afe1ff4dd"
+    },
+    {
+      "product_id": "S027",
+      "family_id": "SF014",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "9676f6f7818eb9c68011787d797cf80ceab65997c34cc7673bb4ffb50179b969"
+    },
+    {
+      "product_id": "S028",
+      "family_id": "SF014",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "5eb5040740e5acda2d25c3ffa819f6271a1b8c4745e04d1b2fa7ea64f78e9789"
+    },
+    {
+      "product_id": "S029",
+      "family_id": "SF015",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "4d97517d617a28f604a59d6d85584c3258ddeb26683423441b146c1e250800a2"
+    },
+    {
+      "product_id": "S030",
+      "family_id": "SF015",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "72685fb2aee35b2ab86c007ff5fa78ef1c3913593366a7870ed3bb9fc7b7a512"
+    },
+    {
+      "product_id": "S031",
+      "family_id": "SF016",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "a60388aad0872e5c3f66f8bfbe7e0d24cd71ab6f6d47d01c79b3430fa368c799"
+    },
+    {
+      "product_id": "S032",
+      "family_id": "SF016",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "1156ae24cbb1c05e453d41d4522fb6a196f69f7e10bb789cd173ab3a4582e080"
+    },
+    {
+      "product_id": "S033",
+      "family_id": "SF017",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "d4acf9ac95c401a033853e27ac480ddedb46aa8aa827fcba41ae71bdaa665976"
+    },
+    {
+      "product_id": "S034",
+      "family_id": "SF017",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "218e71017b61232b027dfe788ca5dd5e325f7c047daac5937b8694b2b587caf0"
+    },
+    {
+      "product_id": "S035",
+      "family_id": "SF018",
+      "template_id": null,
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "2919263a49cc26154b81afe66af8d51af90a8934c711da1881ac76fe6880519a"
+    },
+    {
+      "product_id": "S036",
+      "family_id": "SF018",
+      "template_id": null,
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "6bba0f482bfe370613b0447a28bf174c24eb468283fbae1ed74ad20b81394197"
+    },
+    {
+      "product_id": "S037",
+      "family_id": "SF019",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "811a1781fb70bcddc016c3b051897395d5ff0f861a076e5a962ee8d88edf3193"
+    },
+    {
+      "product_id": "S038",
+      "family_id": "SF019",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "97a1196f2a1897235a91c727b3690097d93ee8c6af22fe3c4ef33d304496c065"
+    },
+    {
+      "product_id": "S039",
+      "family_id": "SF020",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "a194af7fe7e5e39a92bed81d8da89ce85048ea6b0978173cf7b61720e87a87af"
+    },
+    {
+      "product_id": "S040",
+      "family_id": "SF020",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "e40ceb49fa314d79217a9931768cbe993e240263936831583e2cedf184bbdfaf"
+    },
+    {
+      "product_id": "S041",
+      "family_id": "SF021",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "4d7abba27f91def3da2ffcde71f45eb219e0f20e80dffb824ab2db73636d2a9e"
+    },
+    {
+      "product_id": "S042",
+      "family_id": "SF021",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "2debe3e4bb62dade2bfeaee042d3c581c81e7c137815df473a97d0ceb182194b"
+    },
+    {
+      "product_id": "S043",
+      "family_id": "SF022",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "429654f57eef8cb16ec174316a56fe1510fbc88a1b5983356dd410a12fed2ec1"
+    },
+    {
+      "product_id": "S044",
+      "family_id": "SF022",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "16f95b89d452b96ce1e0f5bf8b0753074c75572afffa1f6cca081b17abe825b2"
+    },
+    {
+      "product_id": "S045",
+      "family_id": "SF023",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "0bdffca67bc702dffab61d8c76eaf250ddf9e401fbc1382e40d6fcb54fc0b286"
+    },
+    {
+      "product_id": "S046",
+      "family_id": "SF023",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "82ec108ba44fb34bbaa0efb5e2341c5b7575b6ba3575dbf892099cf9fef85a07"
+    },
+    {
+      "product_id": "S047",
+      "family_id": "SF024",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "da2fd03df2668d29c4e324e4f29ad3976911aec64626e86ca98f841bc0e8f34c"
+    },
+    {
+      "product_id": "S048",
+      "family_id": "SF024",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "8c9bff9c50bbd4d5b54446f864e9984b897d64d35612a88f80556fde5fbf6639"
+    },
+    {
+      "product_id": "S049",
+      "family_id": "SF025",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "08cbcb3ec3e3ec46abe0620b79e24be1f8302d261e80054a4e47461de099c7b0"
+    },
+    {
+      "product_id": "S050",
+      "family_id": "SF025",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "0b1465f8aa631e3a15215a9ac2f0d509d9f5db0e6d593855cfe229f6c7c331f8"
+    },
+    {
+      "product_id": "S051",
+      "family_id": "SF026",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "0a600173da9108006007cc86fbe982b058a2b1fc50468ce532c84c509bab50fe"
+    },
+    {
+      "product_id": "S052",
+      "family_id": "SF026",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "1ee269c521e87c30b87840b72713e896ab416a5d3f34af1870c933f7f28cdb55"
+    },
+    {
+      "product_id": "S053",
+      "family_id": "SF027",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "ebbfd12102bd3a2c9266184ecd560894e1c1d528e4fbdf1c9f87d762c0bf3df2"
+    },
+    {
+      "product_id": "S054",
+      "family_id": "SF027",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "2b98439c1b7b6687e2f1b2c6b50e37bef77b4f171a2135851dc4343379a015a0"
+    },
+    {
+      "product_id": "S055",
+      "family_id": "SF028",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "63d3849cfd594760f151645c4ca0289cc4df3775b26da65df589c8d78d66c631"
+    },
+    {
+      "product_id": "S056",
+      "family_id": "SF028",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "5df5bb0575621430a8ed4b5f3f3a96da4cfd80e6cc8007eb05fa6cf70dfea4e1"
+    },
+    {
+      "product_id": "S057",
+      "family_id": "SF029",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "3969dbeb45b37fed28934eba8156947471eedb1fadb07da827ce7d4423eb3bbd"
+    },
+    {
+      "product_id": "S058",
+      "family_id": "SF029",
+      "template_id": null,
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "f51c3651bf970c6640767392e6d3bafbcd57cd06816357c1b841e5976a95cb3f"
+    },
+    {
+      "product_id": "S059",
+      "family_id": "SF030",
+      "template_id": null,
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "38d0b6a0db47a84c0783883b491adccf32fb851d341b31b683f279ae4368db41"
+    },
+    {
+      "product_id": "S060",
+      "family_id": "SF030",
+      "template_id": null,
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "2ab07b65f53837ff780f9e3f1df15577667727ca718254f6a1ee0d678114b1d4"
+    },
+    {
+      "product_id": "B001",
+      "family_id": "BANK-TEMPLATE-cash",
+      "template_id": "cash",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "0e328f1fe3076f9bf2b837193fadd6ba8b505689f3d064d3e7fb41b596c74489"
+    },
+    {
+      "product_id": "B002",
+      "family_id": "BANK-TEMPLATE-cash",
+      "template_id": "cash",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "8eb04072c43e9d1e87f3e4aedf33fd486cac05d1ce2db897cc26fd63732e9fc1"
+    },
+    {
+      "product_id": "B003",
+      "family_id": "BANK-TEMPLATE-cash",
+      "template_id": "cash",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "48e6c7ed04c7ee63e5dbf9f8625ce2e95919a8749f86a9869119ade07f2f60d2"
+    },
+    {
+      "product_id": "B004",
+      "family_id": "BANK-TEMPLATE-cash",
+      "template_id": "cash",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "b306964458ae8a97f82404dba57d9bb6a7f2800326ddbf95647f7a71b47e131f"
+    },
+    {
+      "product_id": "B005",
+      "family_id": "BANK-TEMPLATE-daily",
+      "template_id": "daily",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "93193966f740953c46493077463e57d150973d57a5409d7c5ae8b5e12f316253"
+    },
+    {
+      "product_id": "B006",
+      "family_id": "BANK-TEMPLATE-daily",
+      "template_id": "daily",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "6889935628482b8f93eaaa7f0b12c2026ca2c6044415786dce28f73ee603269a"
+    },
+    {
+      "product_id": "B007",
+      "family_id": "BANK-TEMPLATE-daily",
+      "template_id": "daily",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "8de45340ab0696400c9e7feba394e8f7a4f7721bf9a5dd529905d5178710d5c1"
+    },
+    {
+      "product_id": "B008",
+      "family_id": "BANK-TEMPLATE-daily",
+      "template_id": "daily",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "bf53ee3332a42496c86de71984976efbbbbee322323501ec536bd0bce6916556"
+    },
+    {
+      "product_id": "B009",
+      "family_id": "BANK-TEMPLATE-minimum",
+      "template_id": "minimum",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "3b8f3e11f8bb0bc6a27de72a422eb602c5303af263fdf78b1b9b8da560962363"
+    },
+    {
+      "product_id": "B010",
+      "family_id": "BANK-TEMPLATE-minimum",
+      "template_id": "minimum",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "37829bc8362429f7e6c4bdb98f09ac1dce2be62846b5ed02f2265ea8cc20863b"
+    },
+    {
+      "product_id": "B011",
+      "family_id": "BANK-TEMPLATE-minimum",
+      "template_id": "minimum",
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "6e6adc230926c3cb7923686eef37c00ee2d4e7879bd8190254a7bf504dcfe21b"
+    },
+    {
+      "product_id": "B012",
+      "family_id": "BANK-TEMPLATE-minimum",
+      "template_id": "minimum",
+      "inception_date": "2026-04-01",
+      "rows": 425,
+      "first_date": "2026-04-01",
+      "last_date": "2027-12-31",
+      "history_sha256": "e2677d4645e5361bbd14561e785a554941b24ecbf4ebfcae5e7bdc99a8893cb8"
+    },
+    {
+      "product_id": "B013",
+      "family_id": "BANK-TEMPLATE-periodic",
+      "template_id": "periodic",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "1083ac6d20211f66566f56a88ccde8481f98080069c763130f5f7a21019ee90f"
+    },
+    {
+      "product_id": "B014",
+      "family_id": "BANK-TEMPLATE-periodic",
+      "template_id": "periodic",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "4b76235619380431b30f2ce59ae0cc407e4ea4fe64b1120ba43ec6b3bf424888"
+    },
+    {
+      "product_id": "B015",
+      "family_id": "BANK-TEMPLATE-closed",
+      "template_id": "closed",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "23f1fababdd9400c6be0bc530f3ac7c6e01444b2267a714c7a63d4b6e43883b4"
+    },
+    {
+      "product_id": "B016",
+      "family_id": "BANK-TEMPLATE-closed",
+      "template_id": "closed",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "a7aefcff69cf8c79db2f142ed6ffa39cfe5a686cc83f5cd1b423a3c297c07d3a"
+    },
+    {
+      "product_id": "B017",
+      "family_id": "BANK-TEMPLATE-cash",
+      "template_id": "cash",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "0e328f1fe3076f9bf2b837193fadd6ba8b505689f3d064d3e7fb41b596c74489"
+    },
+    {
+      "product_id": "B018",
+      "family_id": "BANK-TEMPLATE-cash",
+      "template_id": "cash",
+      "inception_date": "2021-10-08",
+      "rows": 1511,
+      "first_date": "2021-10-08",
+      "last_date": "2027-12-31",
+      "history_sha256": "8eb04072c43e9d1e87f3e4aedf33fd486cac05d1ce2db897cc26fd63732e9fc1"
+    }
+  ]
+}

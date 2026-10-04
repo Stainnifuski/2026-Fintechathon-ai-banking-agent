@@ -68,7 +68,7 @@ def constraint_products(products: list[dict], constraints: dict) -> list[dict]:
         if product['category'] in excluded:continue
         if mode=='immediate':
             quick=rules.get('quick_redemption',{})
-            if not quick.get('enabled') or rules['holding_days']>0:continue
+            if not quick or quick.get('enabled') is False or rules['holding_days']>0:continue
         elif mode=='few_business_days' and limit is not None:
             if rules['cash_business_days']>limit or rules['holding_days']>0:continue
         result.append(product)

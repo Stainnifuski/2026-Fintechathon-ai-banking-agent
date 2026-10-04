@@ -4,7 +4,8 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from ...domain.wealth_synthetic import generate, fingerprint, DATASET_ID, DATASET_VERSION
+from ...domain.wealth_synthetic import fingerprint, DATASET_ID
+from ...domain.wealth_fixed_data import synthetic_payload,DATASET_VERSION
 from ...models.account import AccountORM
 from ...models.wealth import WealthProductORM, WealthProductVersionORM, WealthNavORM, WealthOrderORM, WealthAuthorizationORM, WealthConversationORM
 from ...models.wealth_research import WealthDatasetORM, WealthResearchProductORM, WealthContextORM, WealthContextSelectionORM
@@ -177,7 +178,7 @@ async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balanc
         await db.flush(); return {'context_id':cid,'account_id':aid,'created':True}
     key=f"{DATASET_ID}:{DATASET_VERSION}"
     if await db.get(WealthDatasetORM,key) is None:
-        result=await import_dataset(db,generate())
+        result=await import_dataset(db,synthetic_payload())
         if not result["ok"]: raise ValueError(result)
     from .wealth_knowledge import seed
     from ...models.wealth_research import WealthMacroORM
