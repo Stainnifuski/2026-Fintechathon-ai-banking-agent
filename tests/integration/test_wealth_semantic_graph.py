@@ -46,6 +46,14 @@ async def test_ambiguity_assessment_resume_research_plan_and_advice_only(store,h
     assert updated['cards']['kind']=='plan' and updated['cards']['plan']['version']==plan['version']+2,updated
     assert updated['child_task_id']==planned['child_task_id']
     assert {n['node_id'] for n in nodes}<={n['node_id'] for n in updated['result']['nodes']}
+    # A new page load restores durable history, current plan and the chosen main graph.
+    restored_history=(await client.get('/api/v1/wealth/messages/history')).json()
+    restored_task=(await client.get('/api/v1/wealth/subtasks/'+updated['child_task_id'])).json()
+    restored_plans=(await client.get('/api/v1/wealth/plans')).json()
+    assert restored_history['active_task']['task_id']==updated['child_task_id']
+    assert restored_history['version']==updated['session_version']
+    assert restored_task['result']['nodes']==updated['result']['nodes']
+    assert next(p for p in restored_plans if p['plan_id']==plan['plan_id'])['version']==plan['version']+2
     advice=await send('金额还拿不准，先展示有条件选项别下单',{'patches':[
         {'field':'investment_budget','op':'mark_unknown','quote':'金额还拿不准'},
         {'field':'advice_only','op':'set','quote':'先展示有条件选项别下单','flag':True}]})

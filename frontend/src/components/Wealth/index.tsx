@@ -78,7 +78,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       w.get<w.Product[]>('/products'), w.get<w.Assets>('/assets'), w.get<w.Assessment | null>('/assessments/current'),
       w.get<w.Questionnaire>('/questionnaire'), w.get<w.Profile>('/profile'), w.get<w.Plan[]>('/plans'),
       w.get<typeof pending>('/previews'), w.get<typeof executions>('/executions'),
-      w.get<{ session_id: string; version: number; history: { reply: w.ChatReply }[] } | null>('/messages/history'), w.get<w.VerificationMode>('/verification-mode')]);
+      w.get<{ session_id: string; version: number; active_task?: {task_id:string}; history: { reply: w.ChatReply }[] } | null>('/messages/history'), w.get<w.VerificationMode>('/verification-mode')]);
     setVerificationMode(mode);
     setProducts(p); setAssets(a); setAssessment(r); setQuestionnaire(q); setProfile(f); setPlans(plansList); setPending(pendingList);
     setProduct(current => p.some(item => item.product_id === current) ? current : p[0]?.product_id || '');
@@ -89,7 +89,8 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
     const restoredTasks=(await w.get<{items:w.WealthTask[]}>('/tasks')).items;
     setTasks(restoredTasks);
     setHistoryArchives((await w.get<{items:typeof historyArchives}>('/messages/archives')).items);
-    const activeTask=restoredTasks.find(task=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status));
+    const activeTask=restoredTasks.find(task=>task.task_id===history?.active_task?.task_id)
+      ?? restoredTasks.find(task=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status));
     if(activeTask?.plan_id) {
       const restoredPlan=plansList.find(item=>item.plan_id===activeTask.plan_id);
       if(restoredPlan) {setPlan(restoredPlan);setTab(current=>current==='workbench'?'plans':current);}
