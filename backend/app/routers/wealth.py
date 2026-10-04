@@ -16,6 +16,7 @@ from ..services.orchestration import wealth_plan, wealth_profile, wealth_executi
 from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
 from pydantic import Field
 
+
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 
 
@@ -29,6 +30,13 @@ def fail(error: BankApiError | policy.WealthPolicyError) -> None:
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+@router.get('/products/{product_id}/detail')
+async def product_detail(product_id:str,period:str='1y',user:dict=Depends(get_current_user),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    if period not in {'1m','3m','1y'}:raise HTTPException(422,detail={'code':'INVALID_CHART_RANGE'})
+    try:return await bank.call('POST','/product-detail',{'subject_user_id':user['user_id'],'product_id':product_id,'period':period})
+    except BankApiError as error:fail(error)
 
 
 from ..schemas.wealth_demo import DemoReset, DemoAdjust, DemoDeletePreview, DemoDelete

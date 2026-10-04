@@ -6,6 +6,8 @@ import './styles.css';
 import Research from './Research';
 import OperatorPanel from './OperatorPanel';
 import RequirementCard from './RequirementCard';
+import ProductDetail from './ProductDetail';
+import Recommendation from './Recommendation';
 
 interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string }
 type Tab = 'workbench' | 'assets' | 'products' | 'plans' | 'orders';
@@ -32,6 +34,7 @@ function RedemptionQuote({preview}:{preview:w.Preview}) {
 }
 
 export default function Wealth({ accounts, revision, onActivity, userId }: Props) {
+  const [detailProduct,setDetailProduct]=useState<string|null>(null);
   const [tab, setTab] = useState<Tab>('workbench');
   const [history, setHistory] = useState<{user: string; reply: w.ChatReply}[]>([]);
   const [historyArchives, setHistoryArchives] = useState<{session_id:string;context_id:string;history:{user?:string;reply?:{message?:string}}[]}[]>([]);
@@ -248,10 +251,12 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
         })}>{{pause:'暂停',resume:'继续任务',rollback:'返回未提交方案',handoff:'申请人工接管',cancel:'取消未提交部分'}[action]}</button>)}
       </article>)}
       {chat?.requirement_card && <RequirementCard state={chat.requirement_card}/>}
+      {plan && <Recommendation plan={plan} products={products} onDetail={setDetailProduct}/>}
       <label>需求<input value={chatInput} maxLength={500} onChange={e => setChatInput(e.target.value)} /></label><button disabled={busy || !chatInput.trim()} onClick={() => act(() => send(chatInput))}>发送需求</button><button className="secondary" disabled={busy || !session} onClick={() => act(() => send('继续'))}>评估后继续原需求</button>{localStorage.getItem(`wealth-message-${userId}`) && <button className="secondary" disabled={busy} onClick={() => act(async () => { const pending = localStorage.getItem(`wealth-message-${userId}`); if (pending) await send(JSON.parse(pending).message); })}>重试上次未完成请求</button>}
       {chat?.citations?.map(c => <details key={c.document_id}><summary>{c.title} · {c.source_type} · {c.published_at || '发布时间未核实'}</summary><p>{c.excerpt}</p>{c.source_url && <a href={c.source_url} target="_blank" rel="noreferrer">官方原始来源</a>}<small>版本 {c.version} · 摘要指纹 {c.content_hash.slice(0,12)}</small></details>)}
       {chat && <><p>{chat.message}</p>{chat.products && <div className="wealth-table"><table><thead><tr><th>产品</th><th>风险</th><th>申购费率</th><th>持有期</th><th>赎回到账</th></tr></thead><tbody>{chat.products.map(p => <tr key={p.product_id}><td>{p.name}</td><td>R{p.product_risk_level}</td><td>{p.rules.purchase_fee_rate}</td><td>{p.rules.holding_days}天</td><td>{p.rules.cash_business_days}营业日</td></tr>)}</tbody></table></div>}</>}
       <p className="hint">对话不接收验证码，不会因“好的”而交易；页面确认后仍由银行再次检查。</p></aside></div>
+    {detailProduct && <ProductDetail productId={detailProduct} onClose={()=>setDetailProduct(null)}/>}
     {preview && <div className="wealth-modal"><section role="dialog" aria-label="本人订单确认" className="card"><h3>比赛模拟环境／模拟资金 · 本人确认</h3><p>{preview.product_name} · {preview.command.direction === 'purchase' ? `申购总支出 ${w.money(preview.command.amount_fen)}` : `赎回 ${preview.command.units} 份`}</p><p>估算净值 {preview.estimated_nav || '未知'}（{preview.estimated_nav_date || '未知'}）· 估算费用 {w.money(preview.estimate?.fee_fen)} · 估算份额 {preview.estimate?.units || '不适用'} · 估算到账 {w.money(preview.estimate?.cash_fen)}</p><p>计价日 {preview.pricing_date} · 确认日 {preview.confirm_date} · 到账日 {preview.cash_date}</p><details open><summary>产品披露版本 {preview.command.disclosure_version}</summary>{Object.entries(preview.disclosure).map(([key, value]) => <p key={key}>{disclosureLabels[key] || key}：{displayDisclosure(value)}</p>)}</details><p>实际份额/到账以结算为准，预览不保证收益。状态：{preview.authorization_status}，确认有效至 {beijingTime(preview.expires_at)}</p>
       <RedemptionQuote preview={preview}/>
       <label className="wealth-check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />本人已阅读本笔披露，理解本金可能亏损、费用和流动性，同意上述订单</label>

@@ -21,7 +21,7 @@ from ...models.wealth import (WealthCashHoldORM, WealthClockORM, WealthLotORM,
     WealthNavORM, WealthOrderORM, WealthProductORM, WealthProductVersionORM,
     WealthSettlementORM, WealthUnitHoldORM, WealthVerificationORM)
 from ...schemas.wealth import InvestmentCommand
-from ...domain.time import utc_now, as_utc
+from ...domain.time import utc_now, as_utc, utc_iso
 from .available_funds import available_cash, held_cash
 from .audit_service import record_bank_event
 from .transfer_service import BankError
@@ -238,6 +238,7 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
             "kind": row.kind, "category": row.category, "product_risk_level": row.risk_level,
             "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,
             "nav": price.price if price else None, "nav_date": price.nav_date.isoformat() if price else None,
+            "available_at":utc_iso(nav_available_at(price)) if price else None,
             "fund_family_id": row.rules.get("fund_family_id", product.product_id),
             "identity": row.disclosure.get('identity', '虚构产品与模拟行情'),
             "dataset_key": dataset_key if context else "legacy-v1",

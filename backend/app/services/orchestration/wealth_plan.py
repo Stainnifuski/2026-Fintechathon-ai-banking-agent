@@ -15,7 +15,7 @@ from ...integrations.wealth_authorization import WealthPolicyError, require_suit
 from ...models.wealth import WealthPlanORM, WealthProfileORM, WealthGoalORM, WealthAuthorizationORM
 from ...schemas.wealth import InvestmentCommand
 from ...schemas.wealth import AdoptPlan, PlanConfirmation, PersonalConfirmation
-from ...domain.wealth import units
+from ...domain.wealth import units, purchase
 
 
 async def owned_plan(db: AsyncSession, user_id: str, plan_id: str) -> WealthPlanORM:
@@ -219,6 +219,9 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
                           "status": "AWAITING_CONFIRMATION", "depends_on": []})
     profile = await db.get(WealthProfileORM, user_id)
     row.status = "AWAITING_CONFIRMATION" if items else "COMPLETED"
+    config['pricing_snapshot'] = {p['product_id']: {'nav': p['nav'],
+        'purchase_fee_rate': p['rules']['purchase_fee_rate'], 'product_version': p['version']}
+        for p in products if any(i['command']['product_id'] == p['product_id'] for i in items)}
     row.data = {"request": request, "configuration": config, "items": items,
         "history": previous_history,
         "diagnostic": diagnostic,
@@ -350,8 +353,19 @@ async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan
     data["items"] = children
     if data["stage"] == "BUY":
         spent = sum(child["command"]["amount_fen"] for child in children)
+        pricing = data['configuration'].get('pricing_snapshot', {})
+        fees = 0
+        for child in children:
+            command = child['command']; price = pricing.get(command['product_id'])
+            if price is None or price['product_version'] != command['product_version']:
+                fees = None
+                break
+            fees += purchase(command['amount_fen'], price['nav'], price['purchase_fee_rate']).fee_fen
+        cash = next(a['available_fen'] for a in data['snapshot']['cash'] if a['account_id'] == data['request']['account_id'])
         data["configuration"] = {**data["configuration"], "investment_fen": spent,
-            "retained_cash_fen": data["request"]["budget_fen"]-spent}
+            "retained_cash_fen": data["request"]["budget_fen"]-spent,
+            "unallocated_fen": data["request"]["budget_fen"]-spent,
+            "estimated_fee_fen": fees, "account_remaining_cash_fen": cash-spent}
     row.data, row.version = data, row.version+1
     row.status = "AWAITING_CONFIRMATION" if children else "COMPLETED"
     await db.commit()

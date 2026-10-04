@@ -47,7 +47,7 @@ export interface PlanPreview { plan_id: string; version: number; items: Preview[
 export interface Plan { plan_id: string; version: number; status: string; stage: string; next_action?: string; request: PlanRequest;
   history?: { version: number; stage: string; items: { command: Command; status: string; bank_result?: Order }[] }[];
   diagnostic?: { note: string; goal_shortfall_fen: number; allocation: { category: string; current_fen: number; target_percent: number; target_fen: number; difference_fen: number }[] };
-  configuration: { investment_fen: number; retained_cash_fen: number; unallocated_fen: number };
+  configuration: { investment_fen: number; retained_cash_fen: number; unallocated_fen: number; estimated_fee_fen?:number|null; account_remaining_cash_fen?:number; summary?:string[] };
   items: { command: Command; reason: string; status: string; bank_result?: Order }[] }
 export interface ExternalAsset { asset_id: string; label: string; category: string; amount_fen: number; currency: string }
 export interface Goal { goal_id: string; version: number; title: string; amount_fen: number; due_date: string; liquidity: string; priority: number;
