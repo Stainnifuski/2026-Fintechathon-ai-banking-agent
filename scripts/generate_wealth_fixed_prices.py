@@ -39,7 +39,7 @@ def main():
             'template_id':p['rules'].get('source_template_id'),'inception_date':p['inception_date'],
             'rows':len(p['history']),'first_date':p['history'][0]['date'],'last_date':p['history'][-1]['date'],
             'history_sha256':fingerprint(p['history'])} for p in products]}
-    (root/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    (root/'manifest.json').write_bytes((json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode())
     print(json.dumps({'product_count':len(products),'files':files}))
 
 

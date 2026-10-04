@@ -1,0 +1,2 @@
+# Fixed data fingerprints must survive Windows/Linux checkout byte-for-byte.
+config/wealth/data/*.json -text
