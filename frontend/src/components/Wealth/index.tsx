@@ -1,5 +1,5 @@
 import { beijingTime } from '../../utils/time';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import * as w from '../../services/wealth';
 import type { Account } from '../../services/bank';
 import './styles.css';
@@ -37,7 +37,6 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
   const [detailProduct,setDetailProduct]=useState<string|null>(null);
   const [tab, setTab] = useState<Tab>('workbench');
   const [history, setHistory] = useState<{user: string; reply: w.ChatReply}[]>([]);
-  const [historyArchives, setHistoryArchives] = useState<{session_id:string;context_id:string;history:{user?:string;reply?:{message?:string}}[]}[]>([]);
   const [tasks, setTasks] = useState<w.WealthTask[]>([]);
   const [redemptionMode, setRedemptionMode] = useState<'standard' | 'quick'>('standard');
   const [products, setProducts] = useState<w.Product[]>([]);
@@ -53,15 +52,12 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
   const [editingGoal, setEditingGoal] = useState<w.Goal | null>(null);
   const [goalLiquidity, setGoalLiquidity] = useState('immediate'); const [goalPriority, setGoalPriority] = useState('1');
   const [goalSource, setGoalSource] = useState(''); const [goalAssigned, setGoalAssigned] = useState('0');
-  const [plans, setPlans] = useState<w.Plan[]>([]);
   const [plan, setPlan] = useState<w.Plan | null>(null);
-  const [account, setAccount] = useState(''); const [budget, setBudget] = useState(''); const [reserve, setReserve] = useState('');
-  const [horizon, setHorizon] = useState(''); const [excluded, setExcluded] = useState<string[]>([]); const [kind, setKind] = useState<'new_cash' | 'adjustment'>('new_cash');
+  const [account,setAccount]=useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [product, setProduct] = useState(''); const [direction, setDirection] = useState<'purchase' | 'redeem'>('purchase');
   const [amount, setAmount] = useState('1000'); const [units, setUnits] = useState('');
   const [preview, setPreview] = useState<w.Preview | null>(null); const [consent, setConsent] = useState(false); const [code, setCode] = useState('');
-  const [pending, setPending] = useState<{ authorization_id: string; command: w.Command; status: string }[]>([]);
   const [executions, setExecutions] = useState<{ authorization_id: string; operation_id: string; status: string }[]>([]);
   const [adopted, setAdopted] = useState<string[]>([]);
   const [childAmounts, setChildAmounts] = useState<Record<string, string>>({});
@@ -73,38 +69,30 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
   const [chatInput, setChatInput] = useState(''); const [chat, setChat] = useState<w.ChatReply | null>(null);
   const [session, setSession] = useState<{ session_id: string; version: number } | null>(null);
 
-  const load = async () => {
-    const [p, a, r, q, f, plansList, pendingList, executionsList, history, mode] = await Promise.all([
-      w.get<w.Product[]>('/products'), w.get<w.Assets>('/assets'), w.get<w.Assessment | null>('/assessments/current'),
-      w.get<w.Questionnaire>('/questionnaire'), w.get<w.Profile>('/profile'), w.get<w.Plan[]>('/plans'),
-      w.get<typeof pending>('/previews'), w.get<typeof executions>('/executions'),
-      w.get<{ session_id: string; version: number; active_task?: {task_id:string}; history: { reply: w.ChatReply }[] } | null>('/messages/history'), w.get<w.VerificationMode>('/verification-mode')]);
-    setVerificationMode(mode);
-    setProducts(p); setAssets(a); setAssessment(r); setQuestionnaire(q); setProfile(f); setPlans(plansList); setPending(pendingList);
-    setProduct(current => p.some(item => item.product_id === current) ? current : p[0]?.product_id || '');
-    setAccount(current => a.cash.some(item => item.account_id === current) ? current : a.cash.find(item => item.account_type !== 'credit')?.account_id || '');
-    setExecutions(executionsList);
-    if (history) { setSession({ session_id: history.session_id, version: history.version }); setHistory(history.history as {user: string; reply: w.ChatReply}[]); setChat(history.history[history.history.length - 1]?.reply || null); }
-    else {setSession(null);setHistory([]);setChat(null);}
-    const restoredTasks=(await w.get<{items:w.WealthTask[]}>('/tasks')).items;
-    setTasks(restoredTasks);
-    setHistoryArchives((await w.get<{items:typeof historyArchives}>('/messages/archives')).items);
-    const activeTask=restoredTasks.find(task=>task.task_id===history?.active_task?.task_id)
-      ?? restoredTasks.find(task=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status));
-    if(activeTask?.plan_id) {
-      const restoredPlan=plansList.find(item=>item.plan_id===activeTask.plan_id);
-      if(restoredPlan) {setPlan(restoredPlan);setTab(current=>current==='workbench'?'plans':current);}
-    }
+  const sessionRef=useRef<{session_id:string;version:number}|null>(null);
+  const dirtyRef=useRef<Promise<unknown>|null>(null);
+  const [requirementsDirty,setRequirementsDirty]=useState(false);
+  const load=async()=>{
+    const [p,a,r,q,f,e,mode,t]=await Promise.all([w.get<w.Product[]>('/products'),w.get<w.Assets>('/assets'),w.get<w.Assessment|null>('/assessments/current'),w.get<w.Questionnaire>('/questionnaire'),w.get<w.Profile>('/profile'),w.get<typeof executions>('/executions'),w.get<w.VerificationMode>('/verification-mode'),w.get<{items:w.WealthTask[]}>('/tasks')]);
+    setProducts(p);setAssets(a);setAssessment(r);setQuestionnaire(q);setProfile(f);setExecutions(e);setVerificationMode(mode);setTasks(t.items);
+    setProduct(v=>p.some(x=>x.product_id===v)?v:p[0]?.product_id||'');
+    setAccount(v=>a.cash.some(x=>x.account_id===v)?v:a.cash.find(x=>x.account_type!=='credit')?.account_id||'');
   };
-  useEffect(() => { load().catch(error => setNotice(errorText(error))); }, [revision, userId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!tasks.some(task => !['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status))) return;
-    const timer=window.setInterval(() => {
-      void Promise.all([w.get<{items:w.WealthTask[]}>('/tasks'),w.get<w.Assets>('/assets')])
-        .then(([result,facts]) => {setTasks(result.items);setAssets(facts);}).catch(() => setNotice('进度暂未核对，保留原订单；可刷新银行事实。'));
-    },5000);
-    return () => window.clearInterval(timer);
-  },[tasks.some(task => !['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status)),userId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const newConversation=async()=>{
+    setHistory([]);setChat(null);setPlan(null);setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);setChatInput('');setSession(null);setRequirementsDirty(false);dirtyRef.current=null;
+    localStorage.removeItem(`wealth-message-${userId}`);
+    const next=await w.post<{session_id:string;version:number}>('/sessions',{});sessionRef.current=next;setSession(next);
+  };
+  useEffect(()=>{let live=true;let owned:string|undefined;
+    localStorage.removeItem(`wealth-message-${userId}`);
+    void w.post<{session_id:string;version:number}>('/sessions',{}).then(next=>{owned=next.session_id;if(live){sessionRef.current=next;setSession(next);}else void w.post(`/sessions/${owned}/close`,{});}).catch(e=>{if(live)setNotice(errorText(e));});
+    return ()=>{live=false;if(owned)void w.post(`/sessions/${owned}/close`,{}).catch(()=>{});sessionRef.current=null;};
+  },[userId]);
+  useEffect(()=>{void load().catch(e=>setNotice(errorText(e)));},[revision,userId]);
+  useEffect(()=>{const timer=window.setInterval(()=>void load().catch(()=>{}),5000);return()=>window.clearInterval(timer);},[userId]);
+  const markDirty=()=>{if(dirtyRef.current||!sessionRef.current)return;setRequirementsDirty(true);setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);
+    dirtyRef.current=w.post(`/sessions/${sessionRef.current.session_id}/dirty`,{});void dirtyRef.current.catch(e=>setNotice(errorText(e)));
+  };
   useEffect(() => { if (profile) { setIncome(String((profile.data.monthly_income_fen || 0) / 100)); setExpenses(String((profile.data.monthly_expenses_fen || 0) / 100)); setDebt(String((profile.data.liabilities_fen || 0) / 100)); } }, [profile?.version]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (plan) { setAdopted(plan.items.map(item => item.command.operation_id)); setChildAmounts(Object.fromEntries(plan.items.map(item => [item.command.operation_id, item.command.direction === 'purchase' ? String(item.command.amount_fen / 100) : item.command.units]))); } }, [plan?.plan_id, plan?.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const act = async (action: () => Promise<void>) => {
@@ -114,10 +102,9 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
   };
   const showPreview = async (command: w.Command) => {
     const view = await w.post<w.Preview>('/previews', command);
+    if(sessionRef.current)await w.post(`/sessions/${sessionRef.current.session_id}/preview-link`,{authorization_id:view.authorization_id});
     setPreview(view); setConsent(false); setCode('');
   };
-  const planRequest = (): w.PlanRequest => ({ kind, account_id: account, version: plan?.version || 1,
-    budget_fen: w.fen(budget), reserve_fen: reserve.trim() ? w.fen(reserve) : null, horizon_days: Number(horizon), excluded_products: excluded });
   const previewAdopted = async () => {
     if (!plan) return;
     const picks = plan.items.filter(item => adopted.includes(item.command.operation_id)).map(item => ({ operation_id: item.command.operation_id,
@@ -129,27 +116,27 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
     setGroupPreview(views); setGroupConsent(false); setGroupStage('PREVIEW');
   };
   const send = async (text: string) => {
-    const storageKey = `wealth-message-${userId}`;
-    const old = localStorage.getItem(storageKey);
-    const body = old ? JSON.parse(old) : { message: text, ...session, client_message_id: crypto.randomUUID() };
-    if (body.message !== text) throw new Error('上一次请求尚未核对，请重试原消息。');
-    localStorage.setItem(storageKey, JSON.stringify(body));
-    let reply: w.ChatReply;
-    try { reply = await w.post<w.ChatReply>('/messages', body); }
-    catch (error) {
-      const detail = (error as { response?: { data?: { detail?: { code?: string } } } })?.response?.data?.detail;
-      if (detail?.code === 'STALE_PLAN' || detail?.code === 'IDEMPOTENCY_CONFLICT') { localStorage.removeItem(storageKey); await load(); }
-      throw error;
-    }
-    localStorage.removeItem(storageKey);
+    if(!sessionRef.current)throw new Error('会话正在初始化');
+    const body={message:text,...sessionRef.current,client_message_id:crypto.randomUUID()};
+    const reply=await w.post<w.ChatReply>('/messages',body);
+    setHistory(h=>[...h,{user:text,reply}]);
     setChat(reply); setChatInput('');
     if (reply.plan || reply.command) {setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);}
     if (reply.kind === 'assets') setTab('assets');
     else if (reply.kind === 'assessment_required') setTab('assets');
     else if (reply.kind === 'order') setTab('orders');
-    if (reply.session_id && reply.version) setSession({ session_id: reply.session_id, version: reply.version });
-    if (reply.plan) { setPlan(reply.plan); setBudget(String(reply.plan.request.budget_fen / 100)); setReserve(reply.plan.request.reserve_fen == null ? '' : String(reply.plan.request.reserve_fen / 100)); setHorizon(String(reply.plan.request.horizon_days)); setKind(reply.plan.request.kind); setExcluded(reply.plan.request.excluded_products); setTab('plans'); }
+    if(reply.session_id&&reply.version){const next={session_id:reply.session_id,version:reply.version};sessionRef.current=next;setSession(next);}
+    setRequirementsDirty(false);dirtyRef.current=null;
+    if(reply.plan)setPlan(reply.plan);
     if (reply.command && reply.task?.status !== 'PAUSED') await showPreview(reply.command);
+  };
+  const updateRequirements=async(semantic:unknown)=>{
+    if(!sessionRef.current)throw new Error('会话正在初始化');
+    if(dirtyRef.current)await dirtyRef.current;
+    const reply=await w.post<w.ChatReply>(`/sessions/${sessionRef.current.session_id}/requirements`,{version:sessionRef.current.version,client_message_id:crypto.randomUUID(),semantic});
+    setChat(reply);setHistory(h=>[...h,{user:'更新建议',reply}]);
+    if(reply.session_id&&reply.version){sessionRef.current={session_id:reply.session_id,version:reply.version};setSession(sessionRef.current);}
+    setPlan(reply.plan||null);setRequirementsDirty(false);dirtyRef.current=null;
   };
   const accountOptions = assets?.cash.filter(a => a.account_type !== 'credit').map(a => <option key={a.account_id} value={a.account_id}>{accounts.find(acc => acc.account_id === a.account_id)?.card_number || `模拟账户 ${a.account_id.slice(-4)}`}</option>);
   const chosen = products.find(p => p.product_id === product);
@@ -169,7 +156,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
     {verificationMode?.simulated && <p className="notice">演示授权：理财申购／赎回属于高风险操作。点击按钮模拟支付密码授权，不采集或验证真实密码、短信码、指纹或人脸。</p>}
       <details><summary>辅助查看与调试工具</summary><nav aria-label="理财功能">{([['workbench','对话工作台'], ['assets', '资产与目标'], ['products', '产品探索'], ['plans', '配置方案'], ['orders', '持仓与订单']] as [Tab, string][]).map(([key, title]) =>
         <button key={key} className={tab === key ? '' : 'secondary'} onClick={() => setTab(key)}>{title}</button>)}</nav>
-        <Research onChoose={pid => { setProduct(pid); setTab('products'); }} onSwitch={async () => { setSession(null); setChat(null); setHistory([]); setPreview(null); setPlan(null); setGroupPreview(null); localStorage.removeItem(`wealth-message-${userId}`); await load();onActivity(); }} />
+        <Research onChoose={pid => { setProduct(pid); setTab('products'); }} onSwitch={async () => { await newConversation();await load();onActivity(); }} />
       </details>
     {notice && <p role="alert" className="notice">{notice}</p>}
     <div className="wealth-layout"><div>
@@ -218,46 +205,36 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
           ...(direction === 'redeem' && redemptionMode === 'quick' ? {command_version:2, redemption_mode:'quick'} as const : {}),
           amount_fen: direction === 'purchase' ? w.fen(amount) : 0, units: direction === 'redeem' ? units : '0.0000' }); })}>生成估算预览（不扣款）</button>
       </>}
-      {(tab === 'plans' || (plan && tasks.some(task=>task.plan_id===plan.plan_id && !['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status)))) && <>
-        <details><summary>调试表单：新资金配置／现有持仓调整</summary><label>方案类型<select value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option value="new_cash">新资金配置</option><option value="adjustment">现有持仓诊断与调整</option></select></label>
-        <label>资金账户<select value={account} onChange={e => setAccount(e.target.value)}>{accountOptions}</select></label><label>本次现金预算（元）<input value={budget} onChange={e => setBudget(e.target.value)} /></label><label>账户至少保留现金（元，可选）<input value={reserve} onChange={e => setReserve(e.target.value)} /></label><label>预计使用期限（天）<input value={horizon} onChange={e => setHorizon(e.target.value)} /></label>
-        <details><summary>排除不采用的产品</summary>{products.map(p => <label key={p.product_id} className="wealth-check"><input type="checkbox" checked={excluded.includes(p.product_id)} onChange={e => setExcluded(e.target.checked ? [...excluded, p.product_id] : excluded.filter(value => value !== p.product_id))} />{p.name}</label>)}</details>
-        <button disabled={busy} onClick={() => act(async () => { setPlan(await w.post<w.Plan>('/plans', planRequest())); })}>生成新方案</button>
-        {plan && <button className="secondary" disabled={busy || !['AWAITING_CONFIRMATION', 'PAUSED'].includes(plan.status)} onClick={() => act(async () => { setPlan(await w.put<w.Plan>(`/plans/${plan.plan_id}`, planRequest())); setPreview(null); })}>按当前表单修改方案（旧确认失效）</button>}</details>
-        {plan && <><h3>方案 v{plan.version} · {plan.items.length ? (statusLabel[plan.status] || plan.status) : '本版本无交易项'}</h3><p>保留现金 {w.money(plan.configuration.retained_cash_fen)} · 拟投入 {w.money(plan.configuration.investment_fen)}</p><p>{plan.next_action}</p>{plan.history?.map(stage => <section key={stage.version}><h4>原方案 v{stage.version} 的成功事实</h4>{stage.items.map(item => <p key={item.command.operation_id}>{item.command.product_id} · {statusLabel[item.status] || item.status} · {item.command.direction === 'redeem' ? `实际到账 ${w.money(item.bank_result?.details.actual?.cash_fen)}` : `实际份额 ${item.bank_result?.details.actual?.units || '等待确认'}`} · 原号 {item.command.operation_id}</p>)}</section>)}
-          {plan.request.budget_source === 'bank_available_cash' && <p>建议预算上限 {w.money(plan.request.budget_fen)} 来自生成时银行可用现金；持仓、占款及在途未计入，可修改本次投入额度。</p>}{plan.diagnostic && <><p>{plan.diagnostic.note}</p><p>近期目标预算缺口 {w.money(plan.diagnostic.goal_shortfall_fen)}（不代表目标已达成）</p><div className="wealth-table"><table><thead><tr><th>类别</th><th>当前金额</th><th>模拟目标</th><th>差额</th></tr></thead><tbody>{(plan.diagnostic.allocation || []).map(item => <tr key={item.category}><td>{item.category}</td><td>{w.money(item.current_fen)}</td><td>{item.target_percent}% · {w.money(item.target_fen)}</td><td>{w.money(item.difference_fen)}</td></tr>)}</tbody></table></div></>}
-          {plan.items.map(item => <article className="wealth-product" key={item.command.operation_id}><p>{item.command.product_id} · {item.command.direction === 'purchase' ? `申购 ${w.money(item.command.amount_fen)}` : `赎回 ${item.command.units} 份`} · {statusLabel[item.status] || item.status}</p><p>{item.reason}</p>{item.status === 'AWAITING_CONFIRMATION' && <><label className="wealth-check"><input type="checkbox" checked={adopted.includes(item.command.operation_id)} onChange={e => setAdopted(e.target.checked ? [...adopted, item.command.operation_id] : adopted.filter(value => value !== item.command.operation_id))} />采用这笔</label><label>{item.command.direction === 'purchase' ? '采用金额（元，可减少）' : '采用份额（可减少）'}<input value={childAmounts[item.command.operation_id] || ''} onChange={e => setChildAmounts({ ...childAmounts, [item.command.operation_id]: e.target.value })} /></label></>}<button disabled={busy || item.status !== 'AWAITING_CONFIRMATION'} onClick={() => act(() => showPreview(item.command))}>查看单笔详情（可选）</button></article>)}
-          <button disabled={busy || plan.status !== 'AWAITING_CONFIRMATION'} onClick={() => act(previewAdopted)}>预览采用方案（统一确认）</button>
-          <button className="secondary" disabled={busy} onClick={() => act(async () => { setPlan(await w.get<w.Plan>(`/plans/${plan.plan_id}/progress`)); })}>核对逐笔进度</button></>}
-        <details><summary>当前资金范围已保存方案</summary>{plans.map(item => <button key={item.plan_id} className="secondary" onClick={() => { setPlan(item); setBudget(String(item.request.budget_fen / 100)); setReserve(item.request.reserve_fen == null ? '' : String(item.request.reserve_fen / 100)); setHorizon(String(item.request.horizon_days)); setKind(item.request.kind); setExcluded(item.request.excluded_products); }}>{item.plan_id.slice(-8)} · v{item.version} · {item.items.length ? (statusLabel[item.status] || item.status) : '本版本无交易项'}</button>)}</details>
-      </>}
       {tab === 'orders' && <>
         <h3>持仓批次（不含外部模拟资产）</h3>{assets?.lots.length === 0 && <p>尚无结算持仓，受理后等待模拟结算。</p>}{assets?.lots.map(lot => <article key={lot.lot_id} className="wealth-product"><p>{lot.product_name} · {lot.units} 份 · 可赎回 {lot.redeemable_units} · 锁定 {lot.locked_units} · 占用 {lot.held_units}</p><p>成本 {w.money(lot.cost_fen)} · 估值 {w.money(lot.market_value_fen)} · 浮动盈亏 {w.money(lot.unrealized_pnl_fen)}（{lot.nav_date}）</p><button disabled={busy} onClick={() => { setProduct(lot.product_id); setAccount(lot.account_id); setDirection('redeem'); setUnits(lot.units); setTab('products'); }}>按全部持有份额预览赎回</button></article>)}
         <h3>订单</h3>{assets?.orders.map(order => <article key={order.operation_id} className="wealth-product"><p>{order.version_id} · {order.direction} · {statusLabel[order.status] || order.status}</p><p>计价 {order.pricing_date} · 确认 {order.confirm_date}{order.direction === 'redeem' ? ` · 赎回到账 ${order.cash_date}` : ''}</p><p>实际净值 {order.details.actual_nav || '未确认'} · 实际费用 {w.money(order.details.actual?.fee_fen)} · {order.direction === 'redeem' ? `实际到账 ${w.money(order.details.actual?.cash_fen)}` : `实际份额 ${order.details.actual?.units || '等待确认'}`}</p>{order.details.verification?.simulated && <p className="notice">模拟授权订单 · 未进行真实身份验证</p>}<p className="hint">原操作号 {order.operation_id}</p>
           <button className="secondary" disabled={busy} onClick={() => act(async () => { const fact = await w.get<w.Order>(`/orders/${order.operation_id}`); setNotice(statusLabel[fact.status] || fact.status); })}>原号核对</button>
           {['ACCEPTED', 'PENDING_PRICING'].includes(order.status) && <button className="secondary" disabled={busy} onClick={() => { if (window.confirm('确认撤销这笔模拟订单？已计价或超过窗口将拒绝。')) act(async () => { await w.post(`/orders/${order.operation_id}/cancel`, { digest: order.digest, disclosure_version: Number(order.version_id.split(':')[1]), accepted: true }); onActivity(); }); }}>明确撤单</button>}</article>)}
         <h3>提交观察与原号恢复</h3>{executions.filter(item => ['UNKNOWN', 'SUBMITTING'].includes(item.status)).map(item => <article className="wealth-product" key={item.operation_id}><p>{statusLabel[item.status]} · {item.operation_id}</p><button disabled={busy} onClick={() => act(async () => { const fact = await w.post<w.Order>(`/previews/${item.authorization_id}/execute`, {}); setNotice(statusLabel[fact.status] || fact.status); onActivity(); })}>核对并恢复原号（同号同参）</button></article>)}
-        <h3>刷新后可恢复的预览</h3>{pending.map(item => <button key={item.authorization_id} className="secondary" disabled={busy} onClick={() => act(() => showPreview(item.command))}>{item.command.product_id} · {item.status} · 重新读取预览</button>)}
+
       </>}
-    </div><aside><h3>理财对话工作台</h3><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与模拟授权。</p>
-      <div className="wealth-history" aria-label="服务端对话记录">{history.map((entry,index) => <article key={`${entry.reply.client_message_id || index}`}><strong>您：</strong>{entry.user}<p><strong>助手：</strong>{entry.reply.message}</p></article>)}</div>
-      {historyArchives.length>0 && <details><summary>旧轮次对话（只读）</summary><p>按账户证据拆分；无法证明资金范围的记录标为未归属，不恢复交易或授权。</p>{historyArchives.map(archive=><details key={archive.session_id}><summary>{archive.context_id==='legacy-unassigned'?'未归属历史':archive.context_id==='legacy-v1'?'普通账户历史':`模拟范围 ${archive.context_id}`} · {archive.history.length}条</summary>{archive.history.map((entry,index)=><article key={index}><strong>您：</strong>{entry.user || '历史记录'}<p><strong>助手：</strong>{entry.reply?.message || '结构化历史记录已保留'}</p></article>)}</details>)}</details>}
-      {pending.filter(item=>['AWAITING_CONFIRMATION','AWAITING_MFA','VALID'].includes(item.status) && assets?.cash.some(cash=>cash.account_id===item.command.account_id)).map(item=><article className="wealth-product" key={item.authorization_id}><p>待完成本人订单 · {item.command.product_id} · {item.command.direction==='purchase'?'申购':'赎回'} · {item.status==='AWAITING_CONFIRMATION'?'等待本人确认':item.status==='AWAITING_MFA'?'等待模拟授权':'已授权，等待提交'}</p><button disabled={busy} onClick={()=>act(()=>showPreview(item.command))}>核验并恢复原订单预览</button><p className="hint">恢复沿用原操作号和授权有效期；失效或银行条件变化时须重新预览。</p></article>)}
-      {tasks.filter(task => !['COMPLETED','CANCELLED'].includes(task.status)).map(task => <article className="wealth-product" key={task.task_id}>
+    </div><aside><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与模拟授权。</p>
+      <RequirementCard state={{...(chat?.requirement_card||{version:0,bank_cash:null,fields:{}}),bank_cash:assets?.cash.find(x=>x.account_id===account)?{available_fen:assets.cash.find(x=>x.account_id===account)!.available_fen,account_id:account,as_of:assets.business_at}:null}} busy={busy||!session} onDirty={markDirty} onUpdate={async semantic=>{setBusy(true);try{await updateRequirements(semantic);}finally{setBusy(false);}}}/>
+      {plan && <>
+        {plan && <><h3>方案 v{plan.version} · {plan.items.length ? (statusLabel[plan.status] || plan.status) : '本版本无交易项'}</h3><p>保留现金 {w.money(plan.configuration.retained_cash_fen)} · 拟投入 {w.money(plan.configuration.investment_fen)}</p><p>{plan.next_action}</p>          {plan.request.budget_source === 'bank_available_cash' && <p>建议预算上限 {w.money(plan.request.budget_fen)} 来自生成时银行可用现金；持仓、占款及在途未计入，可修改本次投入额度。</p>}{plan.diagnostic && <><p>{plan.diagnostic.note}</p><p>近期目标预算缺口 {w.money(plan.diagnostic.goal_shortfall_fen)}（不代表目标已达成）</p><div className="wealth-table"><table><thead><tr><th>类别</th><th>当前金额</th><th>模拟目标</th><th>差额</th></tr></thead><tbody>{(plan.diagnostic.allocation || []).map(item => <tr key={item.category}><td>{item.category}</td><td>{w.money(item.current_fen)}</td><td>{item.target_percent}% · {w.money(item.target_fen)}</td><td>{w.money(item.difference_fen)}</td></tr>)}</tbody></table></div></>}
+          {requirementsDirty&&<p role="status">需求已修改，待更新</p>}<Recommendation plan={plan} products={products} onDetail={setDetailProduct}/>
+          {plan.items.map(item => <article className="wealth-product" key={item.command.operation_id}><p>{item.command.product_id} · {item.command.direction === 'purchase' ? `申购 ${w.money(item.command.amount_fen)}` : `赎回 ${item.command.units} 份`} · {statusLabel[item.status] || item.status}</p><p>{item.reason}</p>{item.status === 'AWAITING_CONFIRMATION' && <><label className="wealth-check"><input type="checkbox" checked={adopted.includes(item.command.operation_id)} onChange={e => setAdopted(e.target.checked ? [...adopted, item.command.operation_id] : adopted.filter(value => value !== item.command.operation_id))} />采用这笔</label><label>{item.command.direction === 'purchase' ? '采用金额（元，可减少）' : '采用份额（可减少）'}<input value={childAmounts[item.command.operation_id] || ''} onChange={e => setChildAmounts({ ...childAmounts, [item.command.operation_id]: e.target.value })} /></label></>}<button disabled={busy || item.status !== 'AWAITING_CONFIRMATION'} onClick={() => act(() => showPreview(item.command))}>查看单笔详情（可选）</button></article>)}
+          <button disabled={busy || requirementsDirty || plan.status !== 'AWAITING_CONFIRMATION'} onClick={() => act(previewAdopted)}>预览采用方案（统一确认）</button>
+          <button className="secondary" disabled={busy} onClick={() => act(async () => { setPlan(await w.get<w.Plan>(`/plans/${plan.plan_id}/progress`)); })}>核对逐笔进度</button></>}
+
+      </>}
+      <div className="wealth-history" aria-label="当前对话">{history.map((entry,index) => <article key={`${entry.reply.client_message_id || index}`}><strong>您：</strong>{entry.user}<p><strong>助手：</strong>{entry.reply.message}</p></article>)}</div>
+      {tasks.filter(task => task.task_id===chat?.task?.task_id && !['COMPLETED','CANCELLED'].includes(task.status)).map(task => <article className="wealth-product" key={task.task_id}>
         <h4>当前任务 · v{task.version}</h4><p>{statusLabel[task.status] || task.status} · {task.control_mode === 'AGENT' ? '助手处理' : task.control_mode === 'HANDOFF_PENDING' ? '等待人工领取' : `人工处理中（${task.owner_id}）`}</p>
-        <button className="secondary" disabled={busy} onClick={()=>act(async()=>{
-          const selected=await w.post<{session_id:string;session_version:number}>(`/tasks/${task.task_id}/select-main`,{request_id:crypto.randomUUID(),expected_version:task.version});
-          setSession({session_id:selected.session_id,version:selected.session_version});setNotice('已选择主任务；此操作不确认、不授权、不成交。');
-        })}>选择为主任务</button>
+
         <p>{task.waiting_reason === 'BANK_SETTLEMENT' ? '等待银行实际结算或到账；预计资金不能用于买入。' : task.waiting_reason === 'PERSONAL_CONFIRMATION' ? '请核对订单并本人确认。' : task.waiting_reason === 'NEW_BUY_PLAN_AND_CONFIRMATION' ? '赎回已到账，需重新生成买入方案并确认授权。' : task.waiting_reason === 'ARCHIVED_RUN' ? '旧测试轮次已归档。' : task.waiting_reason === 'REVALIDATION_REQUIRED' ? '继续前将重新核验银行事实和授权。' : ''}</p>
         {!['PARTIAL_COMPLETED','FAILED'].includes(task.status) && (['pause','resume','rollback','handoff','cancel'] as const).map(action => <button className="secondary" key={action} disabled={busy || task.control_mode === 'HUMAN'} onClick={() => act(async () => {
           if (action === 'cancel' && !window.confirm('取消未提交的任务部分？已受理及完成订单仍保留原号核对，不撤销账务。')) return;
           await w.post(`/tasks/${task.task_id}/${action}`, {request_id:crypto.randomUUID(), expected_version:task.version});
         })}>{{pause:'暂停',resume:'继续任务',rollback:'返回未提交方案',handoff:'申请人工接管',cancel:'取消未提交部分'}[action]}</button>)}
       </article>)}
-      {chat?.requirement_card && <RequirementCard state={chat.requirement_card}/>}
-      {plan && <Recommendation plan={plan} products={products} onDetail={setDetailProduct}/>}
-      <label>需求<input value={chatInput} maxLength={500} onChange={e => setChatInput(e.target.value)} /></label><button disabled={busy || !chatInput.trim()} onClick={() => act(() => send(chatInput))}>发送需求</button><button className="secondary" disabled={busy || !session} onClick={() => act(() => send('继续'))}>评估后继续原需求</button>{localStorage.getItem(`wealth-message-${userId}`) && <button className="secondary" disabled={busy} onClick={() => act(async () => { const pending = localStorage.getItem(`wealth-message-${userId}`); if (pending) await send(JSON.parse(pending).message); })}>重试上次未完成请求</button>}
+
+      <label>需求<input value={chatInput} maxLength={500} onChange={e => setChatInput(e.target.value)} /></label><button disabled={busy || !chatInput.trim()} onClick={() => act(() => send(chatInput))}>发送需求</button><button className="secondary" disabled={busy || !session} onClick={() => act(() => send('继续'))}>评估后继续原需求</button>
       {chat?.citations?.map(c => <details key={c.document_id}><summary>{c.title} · {c.source_type} · {c.published_at || '发布时间未核实'}</summary><p>{c.excerpt}</p>{c.source_url && <a href={c.source_url} target="_blank" rel="noreferrer">官方原始来源</a>}<small>版本 {c.version} · 摘要指纹 {c.content_hash.slice(0,12)}</small></details>)}
       {chat && <><p>{chat.message}</p>{chat.products && <div className="wealth-table"><table><thead><tr><th>产品</th><th>风险</th><th>申购费率</th><th>持有期</th><th>赎回到账</th></tr></thead><tbody>{chat.products.map(p => <tr key={p.product_id}><td>{p.name}</td><td>R{p.product_risk_level}</td><td>{p.rules.purchase_fee_rate}</td><td>{p.rules.holding_days}天</td><td>{p.rules.cash_business_days}营业日</td></tr>)}</tbody></table></div>}</>}
       <p className="hint">对话不接收验证码，不会因“好的”而交易；页面确认后仍由银行再次检查。</p></aside></div>

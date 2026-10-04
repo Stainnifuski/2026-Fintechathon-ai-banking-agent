@@ -482,6 +482,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
         await db.delete(existing); await db.commit()
     session=await db.get(WealthConversationORM,session_id) if session_id else None
     if session_id and (session is None or session.user_id!=user_id): raise WealthPolicyError('会话不存在','NOT_FOUND',404)
+    if session and session.data.get('closed'):
+        raise WealthPolicyError('当前窗口已关闭，请开始新对话','SESSION_CLOSED',409)
     if session and session.data.get('legacy_read_only'):
         raise WealthPolicyError('历史来源归档只读，请使用当前会话','ARCHIVED_HISTORY',409)
     if session and session.version!=version: raise WealthPolicyError('会话已更新，请刷新','STALE_PLAN',409)
@@ -581,6 +583,9 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
                 evidence['invalid_fields']=[{'path':list(e['loc']),'type':e['type']} for e in error.errors()]
     await lock_profile(db,user_id)
     session=await db.get(WealthConversationORM,sid,with_for_update=True,populate_existing=True)
+    if session and session.data.get('closed'):
+        await db.rollback()
+        raise WealthPolicyError('当前窗口已关闭，本轮不再恢复','SESSION_CLOSED',409)
     if session and session.version!=version:
         await db.rollback()
         raise WealthPolicyError('处理期间会话发生变化，请刷新','STALE_PLAN',409)

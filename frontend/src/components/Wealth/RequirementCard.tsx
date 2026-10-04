@@ -1,43 +1,28 @@
-import { money } from '../../services/wealth';
-import { beijingTime } from '../../utils/time';
-
-export interface RequirementState {
-  version: number;
-  bank_cash: {available_fen:number;account_id:string;as_of:string} | null;
-  fields: Record<string, {state:string; value?:unknown; resolved_fen?:number; resolved_days?:number; base_fen?:number; quote?:string}>;
-}
-
-export default function RequirementCard({state}: {state:RequirementState}) {
-  const labels: Record<string,string> = {investment_budget:'投入预算',declared_assets:'自述资产（非银行余额）',
-    reserve_requirement:'投资后最低保留现金',investment_goal:'投资目标',horizon:'可投资期限',liquidity_requirement:'临时用钱到账要求',spending_purpose:'具体支出用途',preferences:'偏好',excluded_categories:'排除类别'};
-  const states: Record<string,string> = {unmentioned:'未提及',unknown:'不确定',skipped:'已跳过',
-    no_extra_requirement:'不要求额外留现金',no_specific_purpose:'无特别用途',base_pending:'等待核对比例基数'};
-  const categories: Record<string,string> = {cash:'现金管理',bond:'债券',mixed:'混合',equity:'股票',index:'指数'};
-  function display(key:string) {
-    const field=state.fields[key];
-    if (!field) return '未提及';
-    if (states[field.state]) return states[field.state];
-    if (key==='investment_budget') {
-      const budget=field.value as {mode:string;ratio?:string;base?:string;min_fen?:number;max_fen?:number};
-      if (budget.mode==='proportion') return `${Number(budget.ratio)*100}% × ${money(field.base_fen)} = ${money(field.resolved_fen)}（向下取整到分）`;
-      if (budget.mode==='range') return `${money(budget.min_fen)}—${money(budget.max_fen)}（待选择）`;
-      if (budget.mode==='request_suggestion') return '请求建议，尚未接受金额';
-      return money(field.resolved_fen);
-    }
-    if (key==='horizon') return (field.value as {text?:string})?.text || '不确定';
-    if (key==='investment_goal') return ({reduce_volatility:'尽量减少波动',growth:'争取增长',balanced:'兼顾波动与增长',preserve_value:'保值目标（不代表保本）'} as Record<string,string>)[String(field.value)] || '未提及';
-    if (key==='liquidity_requirement') {
-      const value=field.value as {mode:string;max_business_days?:number};
-      return value.mode==='immediate'?'立即到账':value.mode==='few_business_days'?`可等待${value.max_business_days ?? '几个'}工作日`:'灵活';
-    }
-    if (key==='declared_assets' || key==='reserve_requirement') return money(field.value as number);
-    if (Array.isArray(field.value)) return field.value.map(value=>categories[String(value)] || String(value)).join('、') || '未指定';
-    return String(field.value ?? '未提及');
-  }
-  return <article className="wealth-product" aria-label="当前理财需求">
-    <h4>当前理财需求 · v{state.version}</h4>
-    {state.bank_cash && <p>银行可用现金 {money(state.bank_cash.available_fen)}<small> · 业务时点（北京时间）{beijingTime(state.bank_cash.as_of)}</small></p>}
-    <dl>{Object.entries(labels).map(([key,label])=><div key={key}><dt>{label}</dt><dd>{display(key)}</dd></div>)}</dl>
-    <p className="hint">可直接回复“改八千”“不要混合”等修订条件；需求卡不代表本人交易确认或授权。</p>
-  </article>;
+import {useEffect,useState} from 'react';
+import {fen,money} from '../../services/wealth';
+export interface RequirementState {version:number;bank_cash:{available_fen:number;account_id:string;as_of:string}|null;fields:Record<string,{state:string;value?:unknown;resolved_fen?:number;resolved_days?:number;base_fen?:number;quote?:string}>;}
+type Patch=Record<string,unknown>;
+export default function RequirementCard({state,busy,onDirty,onUpdate}:{state:RequirementState;busy:boolean;onDirty:()=>void;onUpdate:(semantic:unknown)=>Promise<void>}) {
+ const [d,setD]=useState<Record<string,string>>({}),[changes,setChanges]=useState<string[]>([]),[error,setError]=useState('');
+ useEffect(()=>{const f=state.fields;const b=f.investment_budget?.value as {mode?:string;ratio?:string}|undefined;const h=f.horizon?.value as {unit?:string;count?:number;use_date?:string}|undefined;const l=f.liquidity_requirement?.value as {mode?:string;max_business_days?:number}|undefined;
+ setD({budgetMode:b?.mode==='proportion'?'proportion':'fixed',budget:b?.mode==='proportion'?String(Number(b.ratio)*100):f.investment_budget?.resolved_fen==null?'':String(f.investment_budget.resolved_fen/100),investment_goal:f.investment_goal?.state==='explicit'?String(f.investment_goal.value):'unknown',horizonUnit:h?.unit||'unknown',horizonCount:String(h?.count||''),horizonDate:h?.use_date||'',liquidity_requirement:l?.mode||'unknown',waitDays:String(l?.max_business_days??''),reserveMode:f.reserve_requirement?.state==='no_extra_requirement'?'none':f.reserve_requirement?.state==='explicit'?'amount':f.reserve_requirement?.state==='unknown'?'unknown':'unmentioned',reserve:typeof f.reserve_requirement?.value==='number'?String(f.reserve_requirement.value/100):'',spending_purpose:String(f.spending_purpose?.value||''),preferences:((f.preferences?.value||[]) as string[]).join('、'),excluded_categories:((f.excluded_categories?.value||[]) as string[]).join('、')});setChanges([]);setError('');},[state.version]);
+ const edit=(key:string,value:string,field:string)=>{setD(x=>({...x,[key]:value}));setChanges(x=>Array.from(new Set([...x,field])));onDirty();};
+ const input=(key:string,field=key,type='text')=><input aria-label={key} type={type} value={d[key]||''} onChange={e=>edit(key,e.target.value,field)}/>;
+ const select=(key:string,options:[string,string][],field=key)=><select aria-label={key} value={d[key]||options[0][0]} onChange={e=>edit(key,e.target.value,field)}>{options.map(([v,t])=><option key={v} value={v}>{t}</option>)}</select>;
+ const update=async()=>{try{const patches:Patch[]=changes.map(field=>{const base={field,op:'set',quote:`表格修改${field}`};
+ if(field==='investment_budget'){if(d.budgetMode==='proportion'){const n=Number(d.budget);if(!Number.isFinite(n)||n<=0||n>100)throw new Error('比例须大于0且不超过100%');return {...base,budget:{mode:'proportion',ratio:String(n/100),base:'available_cash'}};}return {...base,budget:{mode:'fixed',amount_fen:fen(d.budget)}};}
+ if(field==='investment_goal')return d[field]==='unknown'?{...base,op:'mark_unknown'}:{...base,goal:d[field]};
+ if(field==='horizon'){if(d.horizonUnit==='unknown')return {...base,op:'mark_unknown'};if(d.horizonUnit==='date')return {...base,horizon:{unit:'date',use_date:d.horizonDate,text:d.horizonDate}};const n=Number(d.horizonCount);if(!Number.isInteger(n)||n<1)throw new Error('期限须为正整数');return {...base,horizon:{unit:d.horizonUnit,count:n,text:`${n}${d.horizonUnit==='months'?'个月':d.horizonUnit==='years'?'年':'天'}`}};}
+ if(field==='liquidity_requirement'){if(d[field]==='unknown')return {...base,op:'mark_unknown'};const n=Number(d.waitDays);if(d[field]==='few_business_days'&&(!Number.isInteger(n)||n<0||n>30))throw new Error('等待交易日须在0至30之间');return {...base,liquidity:d[field],...(d[field]==='few_business_days'?{max_business_days:n}:{})};}
+ if(field==='reserve_requirement')return d.reserveMode==='unmentioned'?{...base,op:'clear'}:d.reserveMode==='unknown'?{...base,op:'mark_unknown'}:{...base,amount_fen:d.reserveMode==='none'?0:fen(d.reserve)};
+ return field==='spending_purpose'?{...base,text:d[field]}:{...base,values:d[field].split(/[、,，]/).map(x=>x.trim()).filter(Boolean)};
+ });await onUpdate({schema_version:'wealth-semantics-v1',patches,intents:[{action:'plan',relation:'independent'}]});setChanges([]);setError('');}catch(e){setError(e instanceof Error?e.message:'更新失败');}};
+ return <article className="wealth-product" aria-label="当前理财需求"><h4>当前理财需求</h4><table className="wealth-requirements"><thead><tr><th>需求项目</th><th>当前选择／编辑</th></tr></thead><tbody>
+ <tr><th>投入金额</th><td>{select('budgetMode',[['fixed','金额（元）'],['proportion','比例（%）']],'investment_budget')}{input('budget','investment_budget')}{d.budgetMode==='proportion'&&<small>基数：当前账户可用现金 {money(state.bank_cash?.available_fen)}；换算 {money(Math.floor((state.bank_cash?.available_fen||0)*Number(d.budget)/100))}</small>}{state.fields.investment_budget?.state==='base_pending'&&<small>原比例基数待银行核对</small>}</td></tr>
+ <tr><th>投资目标</th><td>{select('investment_goal',[['unknown','暂不确定'],['preserve_value','保值（不代表保本）'],['reduce_volatility','减少波动'],['balanced','稳健增长／兼顾两者'],['growth','追求增长']])}</td></tr>
+ <tr><th>可持续投资多久</th><td><small>{(state.fields.horizon?.value as {text?:string})?.text}</small>{select('horizonUnit',[['unknown','暂不确定'],['months','月'],['days','天'],['years','年'],['date','自定义日期']],'horizon')}{d.horizonUnit==='date'?input('horizonDate','horizon','date'):d.horizonUnit!=='unknown'&&input('horizonCount','horizon')}</td></tr>
+ <tr><th>需要用钱时</th><td>{select('liquidity_requirement',[['unknown','暂不确定'],['immediate','随时可用'],['few_business_days','可等几个交易日'],['flexible','无特别要求']])}{d.liquidity_requirement==='few_business_days'&&input('waitDays','liquidity_requirement')}</td></tr>
+ <tr><th>至少留多少可用现金</th><td>{select('reserveMode',[['unmentioned','未说明'],['none','无额外要求'],['amount','指定金额（元）'],['unknown','暂不确定']],'reserve_requirement')}{d.reserveMode==='amount'&&input('reserve','reserve_requirement')}</td></tr>
+ {(['spending_purpose','preferences','excluded_categories'] as const).filter(k=>state.fields[k]&&state.fields[k].state!=='unmentioned').map(k=><tr key={k}><th>{{spending_purpose:'具体用途',preferences:'偏好',excluded_categories:'排除类别'}[k]}</th><td>{input(k)}</td></tr>)}
+ </tbody></table>{state.fields.declared_assets?.value!=null&&<p>您自述总资产：{money(Number(state.fields.declared_assets.value))}（非银行事实）</p>}<p className="hint">{changes.length?'需求已修改，待更新。原确认不可提交。':'目标不代替正式风险评估；可直接用自然语言修改。'}</p>{error&&<p role="alert">{error}</p>}<button disabled={busy||!changes.length} onClick={()=>void update()}>更新建议</button></article>;
 }

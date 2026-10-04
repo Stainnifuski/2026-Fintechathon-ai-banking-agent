@@ -6,6 +6,12 @@
 .wealth-layout > * { min-width:0; }
 .wealth aside { padding:20px; background:#f3f6fd; border-radius:16px; order:-1; width:100%; box-sizing:border-box; }
 .wealth-history { max-height:420px; overflow:auto; }
+.wealth-requirements { width:100%; table-layout:fixed; }
+.wealth-requirements th:first-child { width:32%; }
+.wealth-requirements td,.wealth-requirements th { overflow-wrap:anywhere; }
+.wealth-requirements input,.wealth-requirements select { width:100%; box-sizing:border-box; min-width:0; }
+.wealth-requirements small { display:block; }
+.wealth { min-width:0; overflow-wrap:anywhere; }
 .wealth-history article { padding:12px; border-bottom:1px solid #dce4f4; overflow-wrap:anywhere; white-space:pre-wrap; }
 .wealth label { display:block; margin-block:12px; }
 .wealth .wealth-check { display:flex; align-items:start; gap:10px; }

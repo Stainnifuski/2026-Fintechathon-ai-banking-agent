@@ -50,6 +50,8 @@ async def execute(db: AsyncSession, user_id: str, authorization_id: str, bank: H
             await record(db, user_id, command.operation_id, authorization_id, "REJECTED", {"code": rejected.code})
             raise
     await record(db, user_id, command.operation_id, authorization_id, fact["status"], fact)
+    from .wealth_lifecycle import prune_tasks
+    await prune_tasks(db,user_id);await db.commit()
     return fact
 
 

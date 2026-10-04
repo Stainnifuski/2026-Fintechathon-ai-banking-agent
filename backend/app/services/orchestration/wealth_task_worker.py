@@ -16,8 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 async def tick(db, task_id, bank):
+    from .wealth_lifecycle import prune_tasks
     initial = await db.get(Task, task_id)
     if initial is None or initial.status in TERMINAL:
+        await prune_tasks(db);await db.commit()
         return
     user_id = initial.user_id
     await lock_profile(db, user_id)
@@ -26,7 +28,7 @@ async def tick(db, task_id, bank):
     runnable = ready([{'node_id':n.node_id, 'status':n.status, 'depends_on':n.depends_on} for n in nodes])
     eligible_ids = {r['node_id'] for r in runnable}
     now = utc_now()
-    controlled = task.control_mode!='AGENT' or task.status=='PAUSED' or task.data.get('stop_new_submissions',False)
+    controlled = task.control_mode!='AGENT' or task.status=='PAUSED' or task.data.get('stop_new_submissions',False) or task.data.get('session_closed',False)
     # 租约到期只恢复原节点，后续执行先按原操作号查银行。
     for n in nodes:
         if n.kind=='SUBMIT' and n.status=='RUNNING' and n.lease_until and as_utc(n.lease_until, legacy_utc=True)<=now:
@@ -48,7 +50,7 @@ async def tick(db, task_id, bank):
             task.waiting_reason='SUBMITTED_RESULTS_PRESERVED'
             await db.commit();return
     node = next((n for n in sorted(nodes, key=lambda n:(n.attempts,n.node_id)) if n.node_id in eligible_ids and
-        (not controlled or n.kind in {'SETTLEMENT','RESULT'} or n.kind=='SUBMIT' and n.status=='UNKNOWN')), None)
+        (not controlled or n.kind in {'SETTLEMENT','REREAD_CASH','RESULT'} or n.kind=='SUBMIT' and n.status=='UNKNOWN')), None)
     if node is None:
         await db.rollback(); return
     submit=next((n for n in nodes if n.kind=='SUBMIT' and
@@ -56,7 +58,7 @@ async def tick(db, task_id, bank):
     auth=await db.scalar(select(Authorization).where(Authorization.user_id==user_id,
         Authorization.operation_id==submit.operation_id)) if submit else None
     query_only = controlled and node.kind=='SUBMIT' and node.status=='UNKNOWN'
-    if controlled and node.kind not in {'SETTLEMENT', 'RESULT'} and not query_only:
+    if controlled and node.kind not in {'SETTLEMENT', 'REREAD_CASH', 'RESULT'} and not query_only:
         await db.rollback(); return
     if node.kind in {'CONFIRM','VERIFY'}:
         node.attempts+=1
@@ -67,7 +69,7 @@ async def tick(db, task_id, bank):
         await db.commit(); return
     if node.kind=='RESULT':
         node.status='COMPLETED'; task.status='COMPLETED'; task.waiting_reason=None
-        await db.commit(); return
+        await db.commit();await prune_tasks(db,user_id);await db.commit(); return
     if node.kind=='BUY_PLAN':
         node.status='WAITING'; task.status='WAITING'; task.waiting_reason='NEW_BUY_PLAN_AND_CONFIRMATION'
         await db.commit(); return
@@ -119,6 +121,8 @@ async def loop(sessions):
     while True:
         await asyncio.sleep(3)
         async with sessions() as db:
+            from .wealth_lifecycle import expire
+            await expire(db)
             ids=list(await db.scalars(select(Task.task_id).where(Task.status.not_in(TERMINAL))))
         for key in ids:
             async with sessions() as db:
