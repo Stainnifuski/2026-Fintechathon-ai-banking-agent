@@ -5,10 +5,10 @@
 """
 
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from ...domain.time import as_utc
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,8 @@ from ...models.wealth_research import WealthContextORM
 from ...models.transaction import TransactionORM
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
+from ...models.sms_challenge import SmsChallengeORM
+from ...security import sms
 from ...security.passwords import hash_password, verify_password
 from ...security.totp import (
     current_timestep,
@@ -27,7 +29,7 @@ from ...security.totp import (
     verify_code,
 )
 from .transfer_service import BankError, transfer_directory, _daily_used_fen
-from .phone import normalize_phone
+from .phone import mask_phone, normalize_phone
 from .available_funds import available_cash, held_cash
 
 
@@ -303,6 +305,151 @@ async def verify_totp_for_operation(
     if user.totp_last_timestep is not None and step <= user.totp_last_timestep:
         raise BankError("该验证码已被使用，请等待新验证码", "TOTP_REPLAY", 409)
     user.totp_last_timestep = step
+
+
+async def _sms_phone(session: AsyncSession, user: UserORM) -> str:
+    """短信只发往银行登记的本人手机号，从不接受请求方提供的号码。"""
+    registered = await session.scalar(
+        select(UserPhoneRegistryORM.canonical_phone).where(UserPhoneRegistryORM.user_id == user.user_id)
+    )
+    try:
+        return registered or normalize_phone(user.phone)
+    except ValueError as error:
+        raise BankError("未登记可接收短信的手机号", "SMS_NO_PHONE", 409) from error
+
+
+async def send_sms_challenge(
+    session: AsyncSession, user_id: str, purpose: str, reference_id: str
+) -> dict:
+    """为一笔具体操作生成短信验证码并发送，返回挑战信息（不含验证码）。"""
+    if not sms.sms_enabled():
+        raise BankError("短信验证未启用，请使用验证器", "SMS_DISABLED", 403)
+    if purpose not in sms.PURPOSE_LABELS:
+        raise BankError("不支持的短信验证用途", "SMS_PURPOSE_INVALID", 422)
+    user = await session.get(UserORM, user_id)
+    if user is None:
+        raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
+    if user.status != "active":
+        raise BankError("用户已被停用", "CUSTOMER_INACTIVE", 403)
+    phone = await _sms_phone(session, user)
+    now = datetime.now(timezone.utc)
+
+    sent_last_hour = await session.scalar(
+        select(func.count()).select_from(SmsChallengeORM).where(
+            SmsChallengeORM.user_id == user_id,
+            SmsChallengeORM.created_at >= now - timedelta(hours=1),
+        )
+    )
+    if sent_last_hour >= sms.MAX_SENDS_PER_HOUR:
+        raise BankError("短信发送过于频繁，请稍后再试或使用验证器", "SMS_RATE_LIMITED", 429)
+    previous = (await session.execute(
+        select(SmsChallengeORM).where(
+            SmsChallengeORM.user_id == user_id,
+            SmsChallengeORM.purpose == purpose,
+            SmsChallengeORM.reference_id == reference_id,
+            SmsChallengeORM.consumed_at.is_(None),
+        )
+    )).scalars().all()
+    for row in previous:
+        wait = sms.RESEND_COOLDOWN_SECONDS - (now - as_utc(row.created_at, legacy_utc=True)).total_seconds()
+        if wait > 0:
+            raise BankError(f"请{int(wait) + 1}秒后再重新获取验证码", "SMS_COOLDOWN", 429)
+    # 重新获取后旧验证码立即作废，同一操作任何时刻只有一条有效短信码。
+    for row in previous:
+        row.consumed_at = now
+
+    challenge_id = f"SMS{uuid4().hex}"
+    code = sms.generate_code()
+    masked = mask_phone(phone)
+    session.add(SmsChallengeORM(
+        challenge_id=challenge_id, user_id=user_id, purpose=purpose, reference_id=reference_id,
+        code_hash=sms.hash_code(challenge_id, code), phone_masked=masked, attempts=0,
+        expires_at=now + timedelta(seconds=sms.CODE_TTL_SECONDS), created_at=now,
+    ))
+    try:
+        await sms.get_sms_provider().send(phone, sms.render_message(purpose, code))
+    except sms.SmsDeliveryError as error:
+        raise BankError("短信发送失败，请稍后重试或使用验证器", "SMS_DELIVERY_FAILED", 503) from error
+    await session.commit()
+    return {
+        "challenge_id": challenge_id,
+        "phone_masked": masked,
+        "expires_in": sms.CODE_TTL_SECONDS,
+        "resend_after": sms.RESEND_COOLDOWN_SECONDS,
+    }
+
+
+async def verify_sms_for_operation(
+    session: AsyncSession,
+    user_id: str,
+    code: str,
+    *,
+    challenge_id: str | None,
+    purpose: str,
+    reference_id: str,
+) -> None:
+    """校验短信验证码：须属于本人、对应同一操作、未过期且未使用。
+
+    成功时消费挑战，随调用方事务提交。验证码错误时尝试次数单独提交后再抛错，
+    否则调用方回滚会抹掉计数，使暴力猜测不受限制。
+    """
+    if not sms.sms_enabled():
+        raise BankError("短信验证未启用，请使用验证器", "SMS_DISABLED", 403)
+    if not challenge_id:
+        raise BankError("请先获取短信验证码", "SMS_CHALLENGE_REQUIRED", 409)
+    row = (await session.execute(
+        select(SmsChallengeORM).where(SmsChallengeORM.challenge_id == challenge_id).with_for_update()
+    )).scalar_one_or_none()
+    if row is None or row.user_id != user_id:
+        raise BankError("短信验证码不存在，请重新获取", "SMS_CHALLENGE_NOT_FOUND", 404)
+    if row.purpose != purpose or row.reference_id != reference_id:
+        raise BankError("该短信验证码不属于当前操作，请重新获取", "SMS_CHALLENGE_MISMATCH", 409)
+    if row.consumed_at is not None:
+        raise BankError("该短信验证码已使用或已作废，请重新获取", "SMS_USED", 409)
+    if as_utc(row.expires_at, legacy_utc=True) <= datetime.now(timezone.utc):
+        raise BankError("短信验证码已过期，请重新获取", "SMS_EXPIRED", 409)
+    if row.attempts >= sms.MAX_ATTEMPTS:
+        raise BankError("短信验证码错误次数过多，请重新获取", "SMS_LOCKED", 429)
+    if not sms.code_matches(challenge_id, code, row.code_hash):
+        row.attempts += 1
+        await session.commit()
+        raise BankError("短信验证码错误", "SMS_INVALID", 401)
+    row.consumed_at = datetime.now(timezone.utc)
+
+
+async def verify_second_factor(
+    session: AsyncSession,
+    user_id: str,
+    proof: str,
+    *,
+    method: str = "totp",
+    challenge_id: str | None = None,
+    purpose: str,
+    reference_id: str,
+) -> None:
+    """红色强验证统一入口：验证器 TOTP 或短信验证码，二者择一。"""
+    if method == "sms":
+        await verify_sms_for_operation(
+            session, user_id, proof,
+            challenge_id=challenge_id, purpose=purpose, reference_id=reference_id,
+        )
+    elif method == "totp":
+        await verify_totp_for_operation(session, user_id, proof)
+    else:
+        raise BankError("不支持的验证方式", "MFA_METHOD_INVALID", 422)
+
+
+async def sms_dev_inbox(session: AsyncSession, user_id: str) -> list[dict]:
+    """模拟通道开发收件箱：仅演示环境读取本人最近短信。"""
+    provider = sms.get_sms_provider()
+    if not sms.dev_inbox_enabled() or not isinstance(provider, sms.MockSmsProvider):
+        raise BankError("开发短信收件箱未启用", "SMS_DEV_INBOX_DISABLED", 404)
+    user = await session.get(UserORM, user_id)
+    if user is None:
+        raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
+    phone = await _sms_phone(session, user)
+    return [{"content": m.content, "sent_at": m.sent_at.isoformat()}
+            for m in provider.messages_for(phone)]
 
 
 async def list_transactions(user_id: str, limit: int = 50) -> list[dict]:

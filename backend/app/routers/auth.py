@@ -3,9 +3,15 @@
 from ..schemas.bank import BANK_ERROR_RESPONSES
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..database.connection import get_db
 from ..middleware.auth import create_access_token, get_current_user
 from ..models.user import (
     LoginSchema,
+    SmsChallengeSchema,
+    SmsInboxMessage,
+    SmsSendRequest,
     TokenSchema,
     TotpConfirmRequest,
     TotpEnrollSchema,
@@ -20,6 +26,8 @@ from ..services.bank import (
     confirm_totp_enrollment,
     get_customer,
     register_customer,
+    send_sms_challenge,
+    sms_dev_inbox,
     totp_status,
 )
 
@@ -106,5 +114,33 @@ async def totp_confirm(
         return TotpStatusSchema(
             **await confirm_totp_enrollment(current_user["user_id"], payload.code)
         )
+    except BankError as error:
+        _raise_bank_error(error)
+
+
+@router.post("/sms/send", response_model=SmsChallengeSchema)
+async def sms_send(
+    payload: SmsSendRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SmsChallengeSchema:
+    """向本人登记手机号发送绑定到指定操作的短信验证码（验证器之外的第二因素）。"""
+    try:
+        return SmsChallengeSchema(**await send_sms_challenge(
+            db, current_user["user_id"], payload.purpose, payload.reference_id
+        ))
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)
+
+
+@router.get("/sms/dev-inbox", response_model=list[SmsInboxMessage])
+async def sms_dev_inbox_endpoint(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SmsInboxMessage]:
+    """仅模拟短信通道：查看本人最近收到的模拟短信，生产通道下不可用。"""
+    try:
+        return [SmsInboxMessage(**m) for m in await sms_dev_inbox(db, current_user["user_id"])]
     except BankError as error:
         _raise_bank_error(error)

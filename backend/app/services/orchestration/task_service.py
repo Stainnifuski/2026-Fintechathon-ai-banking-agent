@@ -998,12 +998,15 @@ async def verify_task(
     state_version: int,
     challenge_id: str,
     proof: str,
+    method: str = "totp",
 ) -> dict:
-    """红色路径 MFA 核验：TOTP 验证码通过后将授权推进到 VALID，任务推进到 READY。
+    """红色路径 MFA 核验：TOTP 或短信验证码通过后将授权推进到 VALID，任务推进到 READY。
 
     Args:
-        challenge_id: 前端发起验证时的挑战 ID（TOTP 无状态，固定传占位值即可）。
-        proof: 用户从 Google Authenticator 等验证器 App 读取的 6 位验证码。
+        challenge_id: TOTP 无状态，固定传占位值即可；短信方式须传 ``/auth/sms/send``
+            返回的挑战 ID，该挑战必须以本任务 ID 作为 reference_id 获取。
+        proof: 验证器 App 的 6 位动态码，或短信收到的 6 位验证码。
+        method: ``totp``（默认）或 ``sms``。
     """
     from ...integrations.authorization import verify_consent
     task = await _owned_task(db, task_id, user_id)
@@ -1020,9 +1023,13 @@ async def verify_task(
     if authorization.status != AuthorizationStatus.PENDING_VERIFICATION:
         raise TaskError("授权不在待验证状态", 409, "AUTHORIZATION_WRONG_STATE")
 
-    # 由模拟银行内部 API 校验 TOTP；编排不直接读取银行客户表。
+    # 由模拟银行内部 API 校验第二因素；编排不直接读取银行客户表。
     try:
-        await bank.verify_totp(subject_user_id=user_id, proof=proof)
+        if method == "sms":
+            await bank.verify_sms(subject_user_id=user_id, proof=proof,
+                                  challenge_id=challenge_id, reference_id=task_id)
+        else:
+            await bank.verify_totp(subject_user_id=user_id, proof=proof)
     except BankResponseUnknown as error:
         raise TaskError("验证结果未知，请等待新验证码后重试", 503, error.code) from error
     except BankApiError as error:
@@ -1051,7 +1058,7 @@ async def verify_task(
         event_type="MFA_VERIFIED",
         actor=user_id,
         before={"phase": TaskPhase.WAITING_VERIFICATION, "authorization": AuthorizationStatus.PENDING_VERIFICATION},
-        after={"phase": task.phase, "authorization": AuthorizationStatus.VALID},
+        after={"phase": task.phase, "authorization": AuthorizationStatus.VALID, "mfa_method": method},
     )
     await db.commit()
     return await task_snapshot(db, task_id, user_id)

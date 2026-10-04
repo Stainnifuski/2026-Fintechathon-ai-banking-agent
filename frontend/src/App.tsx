@@ -1,6 +1,7 @@
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 import BeijingClock from './components/BeijingClock';
+import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
 
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
@@ -65,6 +66,7 @@ function App() {
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [mfaOpen, setMfaOpen] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
+  const [mfaFactor, setMfaFactor] = useState<bank.SecondFactor | null>({ method: 'totp' });
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollData, setEnrollData] = useState<bank.TotpEnroll | null>(null);
   const [enrollCode, setEnrollCode] = useState('');
@@ -358,10 +360,10 @@ function App() {
 
   // 提交 TOTP 验证码完成红色路径强验证。
   const submitMfa = async () => {
-    if (!activeTask || mfaCode.length !== 6 || isActing) return;
+    if (!activeTask || !mfaFactor || mfaCode.length !== 6 || isActing) return;
     setIsActing(true); setStatus('');
     try {
-      let task = await bank.verifyTask(activeTask, newId(), mfaCode);
+      let task = await bank.verifyTask(activeTask, newId(), mfaCode, mfaFactor);
       if (task.allowed_actions.includes('accept')) {
         task = await bank.acceptTask(task, newId());
       }
@@ -515,7 +517,7 @@ function App() {
       <div className="confirm">
         {activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('cancel')}>取消任务</button>}
         {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('confirm')}>{activeTask.scheduled_at ? '确认定时转账' : '确认并提交'}</button>}
-        {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => { setMfaCode(''); setMfaOpen(true); }}>身份验证</button>}
+        {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => { setMfaCode(''); setMfaFactor({ method: 'totp' }); setMfaOpen(true); }}>身份验证</button>}
         {activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}
       </div>
     </section>}
@@ -539,11 +541,11 @@ function App() {
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>
-        <p className="hint">请打开 Google Authenticator（或其他验证器 App），输入当前显示的 6 位验证码。</p>
+        {activeTask && <SecondFactor purpose="transfer" referenceId={activeTask.task_id} factor={mfaFactor} onChange={setMfaFactor} disabled={isActing} />}
         <input inputMode="numeric" maxLength={6} value={mfaCode} placeholder="6 位验证码" onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && submitMfa()} />
         <div className="confirm">
           <button className="secondary" disabled={isActing} onClick={() => { setMfaOpen(false); setMfaCode(''); }}>取消</button>
-          <button disabled={isActing || mfaCode.length !== 6} onClick={submitMfa}>{isActing ? '验证中…' : '提交验证'}</button>
+          <button disabled={isActing || !mfaFactor || mfaCode.length !== 6} onClick={submitMfa}>{isActing ? '验证中…' : '提交验证'}</button>
         </div>
       </div>
     </div>}

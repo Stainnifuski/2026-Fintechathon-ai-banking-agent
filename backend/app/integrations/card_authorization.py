@@ -51,13 +51,14 @@ def operation_digest(*, action: str, card_id: str | None, card_state_version: in
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def _audit(db: AsyncSession, row: CardOperationORM, phase: str, result: str, chain: list[str]) -> None:
+def _audit(db: AsyncSession, row: CardOperationORM, phase: str, result: str, chain: list[str],
+           mfa_method: str | None = None) -> None:
     db.add(AuditLogORM(
         audit_id=hashlib.sha256(f"card-{phase}:{row.operation_id}".encode()).hexdigest(),
         session_id=row.operation_id, user_id=row.user_id, intent="card_management",
         permission_level=row.permission_level, action=f"{row.action}_{phase}",
         params={"operation_id": row.operation_id, "card_id": row.card_id, "digest": row.param_digest},
-        user_confirmed=row.confirmed_at is not None, mfa_method="totp" if phase == "verify" else None,
+        user_confirmed=row.confirmed_at is not None, mfa_method=mfa_method,
         result=result, decision_chain=chain,
     ))
 
@@ -115,13 +116,13 @@ def require_verification_pending(row: CardOperationORM) -> None:
     _require_open(row, AWAITING_MFA)
 
 
-def record_verification(db: AsyncSession, row: CardOperationORM) -> None:
-    """仅在银行已校验TOTP后调用。"""
+def record_verification(db: AsyncSession, row: CardOperationORM, mfa_method: str = "totp") -> None:
+    """仅在银行已校验TOTP或短信验证码后调用。"""
     _require_open(row, AWAITING_MFA)
     row.verified_at = datetime.now(timezone.utc)
     row.status = AUTHORIZED
     _audit(db, row, "verify", "success", ["authenticated_subject", "personal_confirmation",
-                                          "totp_verified", "preview_digest_bound"])
+                                          f"{mfa_method}_verified", "preview_digest_bound"], mfa_method)
 
 
 def record_failed_verification(row: CardOperationORM) -> CardAuthorizationError | None:

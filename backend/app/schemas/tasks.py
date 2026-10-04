@@ -41,6 +41,7 @@ class ModifyTaskRequest(TaskActionRequest):
 class VerificationRequest(TaskActionRequest):
     challenge_id: str
     proof: str
+    method: Literal["totp", "sms"] = "totp"
 
 
 class HumanActionRequest(BaseModel):

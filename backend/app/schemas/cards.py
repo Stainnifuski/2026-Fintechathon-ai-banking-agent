@@ -66,6 +66,8 @@ class CardConfirmRequest(BaseModel):
 class CardVerifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     proof: str = Field(pattern=r"^\d{6}$")
+    method: Literal["totp", "sms"] = "totp"
+    challenge_id: str | None = Field(default=None, max_length=64)
 
 
 class CardView(BaseModel):

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as bank from '../../services/bank';
 import { beijingTime } from '../../utils/time';
+import { SecondFactor } from '../SecondFactor';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const yuan = (fen?: number | null) => fen == null ? '-' : `¥${(fen / 100).toFixed(2)}`;
@@ -28,6 +29,7 @@ export default function CardManagement({ accounts, revision, onActivity }: {
   const [creditLimit, setCreditLimit] = useState('');
   const [operation, setOperation] = useState<bank.CardOperation | null>(null);
   const [code, setCode] = useState('');
+  const [factor, setFactor] = useState<bank.SecondFactor | null>({ method: 'totp' });
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -45,7 +47,7 @@ export default function CardManagement({ accounts, revision, onActivity }: {
   useEffect(() => { reload(); }, [revision]);
 
   const open = (action: bank.CardAction, card?: bank.BankCard) => {
-    setDraft({ action, card }); setOperation(null); setCode(''); setStatus(''); setError('');
+    setDraft({ action, card }); setOperation(null); setCode(''); setFactor({ method: 'totp' }); setStatus(''); setError('');
     setAccountId(eligibleAccounts[0]?.account_id ?? '');
     setSingleLimit(card ? (card.single_txn_limit_fen / 100).toFixed(2) : '');
     setDailyLimit(card ? (card.daily_txn_limit_fen / 100).toFixed(2) : '');
@@ -124,15 +126,16 @@ export default function CardManagement({ accounts, revision, onActivity }: {
     </div>}
 
     {operation && <div className="subscription-confirm">
-      <p><strong>{ACTION_LABELS[operation.action]}</strong> <span className={`card-level card-level-${operation.permission_level}`}>{operation.permission_level === 'red' ? '🔴 需确认 + 验证器' : '🟡 需本人确认'}</span></p>
+      <p><strong>{ACTION_LABELS[operation.action]}</strong> <span className={`card-level card-level-${operation.permission_level}`}>{operation.permission_level === 'red' ? '🔴 需确认 + 验证器/短信' : '🟡 需本人确认'}</span></p>
       <p>{operation.message}</p>
       <ul className="history">{operation.changes.map(change => <li key={change.field}><span>{change.label}</span><span>{changeValue(change, change.before)} → <strong>{changeValue(change, change.after)}</strong></span></li>)}</ul>
       <small>以上数值均由银行返回；确认有效期至（北京时间）{beijingTime(operation.expires_at)}</small>
-      {operation.allowed_actions.includes('verify') && <div className="row"><input inputMode="numeric" maxLength={6} value={code} placeholder="验证器 6 位动态码" onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && code.length === 6 && run(() => bank.verifyCardOperation(operation, code))} /></div>}
+      {operation.allowed_actions.includes('verify') && <SecondFactor purpose="card" referenceId={operation.operation_id} factor={factor} onChange={setFactor} disabled={busy} />}
+      {operation.allowed_actions.includes('verify') && <div className="row"><input inputMode="numeric" maxLength={6} value={code} placeholder="6 位验证码" onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && code.length === 6 && factor && run(() => bank.verifyCardOperation(operation, code, factor))} /></div>}
       <div className="confirm">
         {operation.allowed_actions.includes('cancel') && <button className="secondary" disabled={busy} onClick={() => run(() => bank.cancelCardOperation(operation))}>取消</button>}
         {operation.allowed_actions.includes('confirm') && <button disabled={busy} onClick={() => run(() => bank.confirmCardOperation(operation))}>{busy ? '处理中…' : operation.requires_mfa ? '确认，下一步验证' : '确认执行'}</button>}
-        {operation.allowed_actions.includes('verify') && <button disabled={busy || code.length !== 6} onClick={() => run(() => bank.verifyCardOperation(operation, code))}>{busy ? '验证中…' : '提交验证'}</button>}
+        {operation.allowed_actions.includes('verify') && <button disabled={busy || !factor || code.length !== 6} onClick={() => factor && run(() => bank.verifyCardOperation(operation, code, factor))}>{busy ? '验证中…' : '提交验证'}</button>}
       </div>
     </div>}
     {error && <p className="error">{error}</p>}
