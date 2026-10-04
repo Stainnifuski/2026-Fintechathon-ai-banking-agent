@@ -13,6 +13,7 @@ from ...schemas.wealth import InvestmentCommand,PlanInput
 from ..orchestration import wealth_plan
 from ...domain.wealth_allocation import candidates
 from .wealth_model import Intent,understand,explain
+from ...domain.wealth_requirements import apply_frame, planning_slots
 
 
 def resolve(ref: str,products: list[dict],candidate_ids: list[str]) -> str:
@@ -105,6 +106,11 @@ async def claim(db,user_id,client_id,digest):
 
 
 async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
+    semantic_fields={p.field for p in intent.semantic.patches} if intent.semantic else set()
+    if intent.intent in {'modify','allocate'} and semantic_fields and intent.amount_fen is None:
+        intent=intent.model_copy(update={'product_refs':[]})
+    if 'excluded_categories' in semantic_fields:
+        intent=intent.model_copy(update={'exclude_refs':[]})
     # 明确只读资产短句由服务端绑定到银行事实，不被历史订单意图劫持。
     if re.fullmatch(r'(?:查一下|查询|查看|查)(?:我的|本人|当前)?(?:持仓|资产|余额|账户)(?:资产|情况)?[。？?]?',text.strip()):
         intent=intent.model_copy(update={'intent':'assets'})
@@ -115,7 +121,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         intent=intent.model_copy(update={'intent':'allocate'})
     if text.strip()=='采用建议金额' and data.get('budget_proposal'):
         intent=intent.model_copy(update={'intent':'allocate'})
-    response={'mode':mode,'kind':'clarification','message':'请说明要查询资产、了解产品还是规划现有资金；我会读取银行资金事实。规划请说明保留现金、使用期限和用途，交易仍需在可信卡片确认。'}
+    response={'mode':mode,'kind':'clarification','message':'请说明要查询资产、了解产品还是规划现有资金；我会读取银行资金事实，交易仍需在可信卡片确认。'}
     if intent.intent in {'pause','resume','rollback','handoff','cancel_task'}:
         prior=data.get('active_task')
         if not prior:
@@ -168,7 +174,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     # A single active order plus an unqualified amount correction modifies that order.
     # Models occasionally label it as budget; bind it to the explicit active action,
     # never reinterpret an explicitly stated plan budget or reserve.
-    if active and intent.intent=='modify' and intent.amount_fen is None and intent.budget_fen is not None and re.search('改成|改为',text) and not re.search('预算|配置|保留|留现金',text):
+    if intent.semantic is None and active and intent.intent=='modify' and intent.amount_fen is None and intent.budget_fen is not None and re.search('改成|改为',text) and not re.search('预算|配置|保留|留现金',text):
         intent=intent.model_copy(update={'amount_fen':intent.budget_fen,'budget_fen':None})
     product_refs=stated_ordinals if stated_ordinals and not re.search(r'(?<![A-Z0-9])(?:[SB]\d{3}|M[WF]\d{3}|R\d{6})(?![A-Z0-9])',text,re.I) else intent.product_refs
     if intent.intent=='redeem' and not active and any(r in {'它','这个','这笔','刚才那笔'} for r in product_refs):
@@ -200,7 +206,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         slots.pop('budget_fen',None)
         slots['budget_range']=[intent.budget_min_fen,intent.budget_max_fen]
     for name in ('budget_fen','reserve_fen','horizon_days','need'):
-        if getattr(intent,name) is not None: slots[name]=getattr(intent,name)
+        if getattr(intent,name) is not None and (intent.semantic is None or name=='need'): slots[name]=getattr(intent,name)
     excluded=list(slots.get('excluded_products',[]))
     for ref in intent.exclude_refs:
         pid=resolve(ref,products,candidate_ids)
@@ -213,6 +219,38 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         if selected_account: data['account_id']=selected_account
         else: response['message']='请从当前资金上下文的付款账户选择，不支持其他用户账户。'; return response
     account=next((a for a in accounts if a['account_id']==data.get('account_id')),accounts[0] if len(accounts)==1 else None)
+    if intent.semantic:
+        previous_categories=data.get('requirements',{}).get('fields',{}).get('excluded_categories',{}).get('value',[])
+        previous_category_ids={p['product_id'] for p in products if p['category'] in previous_categories}
+        state=apply_frame(data.get('requirements'),intent.semantic,message=text,
+            message_id=data.get('_message_id',uuid4().hex),session_id=data['_session_id'],
+            bank_facts=facts,account=account)
+        data['requirements']=state
+        slots=planning_slots(state,slots)
+        excluded=[pid for pid in slots.get('excluded_products',[]) if pid not in previous_category_ids]
+        categories=state['fields'].get('excluded_categories',{}).get('value',[])
+        excluded=list(dict.fromkeys(excluded+[p['product_id'] for p in products if p['category'] in categories]))
+        slots['excluded_products']=excluded;data['pending']=slots
+        response['requirement_card']=state
+        if state['ambiguities'] and intent.semantic.ambiguity_kind in {'reference','contradiction'} and intent.intent not in {'products','search','compare','knowledge','assets','status'}:
+            data['last_question']={'field':'ambiguity','text':state['ambiguities'][0]}
+            data['awaiting_plan_details']=True
+            from ..orchestration.wealth_requirement_task import record
+            task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                account['account_id'] if account else None,state,facts,data.get('planning_task_id'))
+            data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
+            response['task']=task
+            response['message']=state['ambiguities'][0]
+            return response
+        semantic_actions=[i.action for i in intent.semantic.intents]
+        if semantic_actions==['compare']:
+            intent=intent.model_copy(update={'intent':'compare'})
+        changed=set(state['changed_fields'])
+        if ('plan' in semantic_actions or (data.get('awaiting_plan_details') and changed)) and intent.intent not in {'purchase','redeem','assets','status','products','search','compare','knowledge','pause','resume','handoff','cancel_task'}:
+            intent=intent.model_copy(update={'intent':'allocate'})
+        # Planning changes never revise an unrelated pending single-product order.
+        if intent.intent=='allocate':
+            data['active_command']=None
     if len(accounts)>1 and account is None and intent.intent in {'allocate','purchase','redeem','modify'}:
         response['message']='有多个可交易账户，请明确'+ '、'.join(f'账户{i}' for i in range(1,len(accounts)+1)); return response
     dataset=next((p.get('dataset_key') for p in products if p.get('dataset_key') and p['dataset_key']!='legacy-v1'),None)
@@ -230,7 +268,9 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         else: response.update(kind='assets', assets=facts, message='请从本人订单卡选择要查询的原操作号，多笔订单不能猜测“刚才那笔”。')
     elif intent.intent in {'products','recommend'}:
         if intent.intent=='recommend':
-            if not slots.get('horizon_days') or not slots.get('need'): response['message']='个性化推荐前请明确预计使用期限及资金用途。'; return response
+            if not slots.get('horizon_days'):
+                response.update(kind='products',products=products[:8],message='先展示产品资料；使用期限尚未明确，未生成个性化配置或交易。')
+                return response
             suitable=await require_suitability(db,user_id,1,allow_cash_only=True); await db.rollback()
             rows=candidates(products,suitable['capacity_level'],slots['horizon_days'],excluded)[:5] if suitable['purchase_allowed'] else []
         else: rows=products[:12]
@@ -294,7 +334,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         if prior and intent.intent=='modify':
             task=await wealth_task.revise_command(db,user_id,prior['task_id'],prior['version'],command)
         else:
-            task=await wealth_task.create_command(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),command,sell_then_buy=intent.sell_then_buy)
+            task=await wealth_task.create_command(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),command,sell_then_buy=intent.sell_then_buy,requirements=data.get('requirements'))
         if intent.control_after=='pause':
             task=await wealth_task.control(db,user_id,task['task_id'],'pause',{
                 'request_id':'compound-'+command.operation_id,'expected_version':task['version'],'reason':'本人修改后先别买'})
@@ -307,10 +347,16 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         data['active_command']=command.model_dump(); data['active_plan']=None
         data['pending']={}; data['awaiting_plan_details']=False
         response.update(kind='command',command=command.model_dump(),message='已生成新版本待确认模拟订单；金额修改使用新操作号，旧授权不会用于新参数。请在可信卡片本人确认与模拟验证。')
-    elif intent.intent=='allocate' or (intent.intent=='modify' and
+    elif intent.intent=='allocate' or (intent.intent=='modify' and intent.semantic and intent.semantic.patches) or (intent.intent=='modify' and
             (intent.exclude_refs or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))) or (intent.intent=='clarify' and data.get('awaiting_plan_details') and
             (text.strip()=='继续' or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))):
         data['awaiting_plan_details']=True
+        if data.get('requirements',{}).get('fields',{}).get('investment_budget',{}).get('state')=='base_pending':
+            from ..orchestration.wealth_settled_budget import resolve as resolve_proceeds
+            data['requirements']=await resolve_proceeds(db,user_id,bank,
+                (data.get('active_task') or {}).get('task_id'),data['requirements'],facts,account)
+            slots=planning_slots(data['requirements'],slots)
+            response['requirement_card']=data['requirements']
         # 银行可用现金是约束事实，不是本人投入意愿。旧会话自动预算需重新确认。
         if slots.get('budget_source') == 'bank_available_cash' and intent.budget_fen is None:
             slots.pop('budget_fen', None)
@@ -321,9 +367,17 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         data['pending']=slots
         budget_note=(f"已查询银行事实：账户{account['account_id']}可用现金¥{account['available_fen']/100:.2f}，这是可投入上限。" if account else '')
         response['budget_source']=slots.get('budget_source','user_specified')
-        missing=[key for key in ('budget_fen','reserve_fen','horizon_days','need') if key not in slots]
+        fields=data.get('requirements',{}).get('fields',{})
+        # Specific expenses are optional; goals/horizon drive suitability and liquidity.
+        budget_unresolved=fields.get('investment_budget',{}).get('state') in {'unknown','skipped'}
+        missing=[key for key in ('budget_fen',) if key not in slots and not budget_unresolved]
+        if intent.semantic and 'investment_goal' not in fields and not slots.get('need'):
+            missing.append('investment_goal')
+        if 'horizon_days' not in slots and 'horizon' not in fields:missing.append('horizon_days')
+        if fields.get('investment_goal',{}).get('value') in {'reduce_volatility','preserve_value'} and slots.get('horizon_days',9999)<=30 and 'liquidity_requirement' not in fields:
+            missing.append('liquidity_requirement')
         if missing==['budget_fen'] and account and (slots.get('suggest_budget') or slots.get('budget_range')):
-            ceiling=max(0,account['available_fen']-slots['reserve_fen'])
+            ceiling=max(0,account['available_fen']-(slots.get('reserve_fen') or 0))
             bounds=slots.get('budget_range')
             amount=bounds[0] if bounds else ceiling//2//100*100
             if amount<=0 or amount>ceiling:
@@ -333,18 +387,69 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
                 ('采用您给定范围的下限，避免擅自扩大投入。' if bounds else '透明规则：保留现金后剩余可用金额的一半，向下取整到元。')+
                 '如接受请回复“采用建议金额”；这仅选择规划预算，不代表交易确认或授权。')
             return response
-        if missing: response['message']=budget_note+'请补充：'+ '、'.join({'budget_fen':'愿意投入的金额或范围（也可先让我建议，需您确认后才生成方案）','reserve_fen':'希望保留的现金','horizon_days':'预计使用期限','need':'资金用途'}[key] for key in missing)
+        if missing:
+            key=missing[0]
+            proposed=intent.semantic.clarification_field if intent.semantic else None
+            proposed={'investment_budget':'budget_fen','horizon':'horizon_days'}.get(proposed,proposed)
+            if proposed in missing:key=proposed
+            question={'budget_fen':'您愿意投入多少？可以给金额、比例、范围，或让我先建议。',
+                'investment_goal':'这笔钱您更希望尽量减少波动、争取增长，还是兼顾两者？',
+                'horizon_days':'您大约可以让这笔钱持续投资多久？可以回答随时需要、半年后使用或不确定。',
+                'liquidity_requirement':'如果临时需要用钱，您希望立即到账，还是可以等待几个工作日？'}[key]
+            data['last_question']={'field':'investment_budget' if key=='budget_fen' else 'horizon','text':question}
+            if key in {'investment_goal','liquidity_requirement'}:data['last_question']['field']=key
+            response['message']=budget_note+question
+            if data.get('requirements'):
+                from ..orchestration.wealth_requirement_task import record
+                task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                    account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'))
+                data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
+                response['task']=task
+        elif (budget_unresolved or fields.get('advice_only',{}).get('value') is True or 'horizon_days' not in slots or any(fields.get(key,{}).get('state') in {'unknown','skipped','unmentioned'}
+                for key in ('investment_goal','horizon','liquidity_requirement'))):
+            # Unknown/declined conditions produce explicitly conditional research, not executable orders.
+            from ...domain.wealth_recommendation import conditional_research
+            suitable=await require_suitability(db,user_id,1,allow_cash_only=True);await db.rollback()
+            recommendation=conditional_research({'products':products,'constraints':fields,'capacity':suitable['capacity_level'],
+                'horizon_days':slots.get('horizon_days'),'excluded':excluded,'as_of':facts['business_at'],
+                'available_cash_fen':account['available_fen'] if account else None,
+                'data_versions':{p['product_id']:p['version'] for p in products}})
+            rows=[next(p for p in products if p['product_id']==item['product_id']) for item in recommendation['items']]
+            data['candidates']=[p['product_id'] for p in rows];card_list(data,'products',data['candidates'],response)
+            data.pop('last_question',None)
+            response.update(kind='products',products=rows,conditional=True,
+                recommendation= recommendation,
+                message='部分目标、期限或到账要求尚未确定：以下仅为条件候选资料，不生成可执行配置。请结合产品持有期及到账规则判断；可以随时补充条件，不会循环追问。')
+            from ..orchestration.wealth_requirement_task import record
+            task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'),
+                waiting_reason=None,result=recommendation)
+            response['task']=task;data['planning_task_id']=None
         elif account:
-            request=PlanInput(account_id=account['account_id'],budget_fen=slots['budget_fen'],reserve_fen=slots['reserve_fen'],horizon_days=slots['horizon_days'],excluded_products=excluded,need=slots['need']).model_dump()
+            from ..orchestration.wealth_requirement_task import record
+            if any(i.get('action') in {'research','compare'} and i.get('relation')=='sequential'
+                   for i in data.get('requirements',{}).get('intents',[])):
+                suitable=await require_suitability(db,user_id,1,allow_cash_only=True);await db.rollback()
+                from ...domain.wealth_recommendation import conditional_research
+                research=conditional_research({'products':products,'constraints':fields,'capacity':suitable['capacity_level'],
+                    'horizon_days':slots.get('horizon_days'),'excluded':excluded,'as_of':facts['business_at'],
+                    'available_cash_fen':account['available_fen'],'data_versions':{p['product_id']:p['version'] for p in products}})
+                research_task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                    account['account_id'],data['requirements'],facts,data.get('planning_task_id'),waiting_reason=None,result=research)
+                data['planning_task_id']=research_task['task_id']
+            request=PlanInput(account_id=account['account_id'],budget_fen=slots['budget_fen'],reserve_fen=slots.get('reserve_fen'),horizon_days=slots['horizon_days'],excluded_products=excluded,need=slots.get('need'),constraint_states=slots.get('constraint_states',{})).model_dump()
             request['budget_source']=slots.get('budget_source','user_specified')
+            request['requirement_task_id']=data.get('planning_task_id')
+            request['requirement_version']=data.get('requirements',{}).get('version')
             previous=data.get('active_plan')
             if previous: request['version']=previous['version']
             if data.get('active_task') and not previous:
                 from ..orchestration import wealth_task
                 current=await wealth_task.owned(db,user_id,data['active_task']['task_id'])
                 current_view=await wealth_task.view(db,current)
-                if current.data.get('goal')!='sell_then_buy' or not any(n['kind']=='REREAD_CASH' and n['status']=='COMPLETED' for n in current_view['nodes']):
+                if current.data.get('goal')=='sell_then_buy' and not any(n['kind']=='REREAD_CASH' and n['status']=='COMPLETED' for n in current_view['nodes']):
                     raise WealthPolicyError('须先按原号确认赎回实际到账并重读可用现金，不能用预计资金买入','TASK_DEPENDENCY_PENDING',409)
+                if current.data.get('goal')=='sell_then_buy': request['parent_task_id']=current.task_id
             plan=await wealth_plan.create(db,user_id,bank,request,previous['plan_id'] if previous else None)
             from ..orchestration import wealth_task
             task=await wealth_task.register_plan(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),plan)
@@ -352,6 +457,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             response['task']=task
             data['active_plan']={'plan_id':plan['plan_id'],'version':plan['version']}; data['active_command']=None
             data['awaiting_plan_details']=False
+            data.pop('last_question',None)
             data['candidates']=[i['command']['product_id'] for i in plan['items']]
             card_list(data, 'plan', data['candidates'], response)
             explanation = ('已保存新版本配置方案，默认最多3笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。'
@@ -360,14 +466,14 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     return response
 
 
-async def message(db,user_id,bank,text,session_id,version,client_message_id):
-    mode=os.getenv('WEALTH_NLU_MODE','offline')
-    if mode not in {'offline','model'}: raise ValueError('WEALTH_NLU_MODE_INVALID')
+async def message(db,user_id,bank,text,session_id,version,client_message_id,*,parsed_intent: Intent | None=None):
+    mode='typed' if parsed_intent is not None else os.getenv('WEALTH_NLU_MODE','offline')
+    if mode not in {'offline','model','typed'}: raise ValueError('WEALTH_NLU_MODE_INVALID')
     # Never send credentials or bypass requests to a model. Known fund codes remain valid references.
     if re.search(r'密码|验证码|TOTP|口令|sk-[A-Za-z0-9]|绕过|忽略.*(?:规则|风控|授权)|代答|替我.*评估|提高.*等级',text,re.I):
         return {'mode':mode,'kind':'refusal','message':'请使用可信组件；对话不接收凭据，不代答评估、不绕过授权。'}
     key=user_id+':'+client_message_id
-    digest=fingerprint([text,session_id,version])
+    digest=fingerprint([text,session_id,version,parsed_intent.model_dump() if parsed_intent else None])
     existing=await db.get(WealthChatRequestORM,key)
     if existing:
         if existing.digest!=digest: raise WealthPolicyError('消息编号对应不同内容','IDEMPOTENCY_CONFLICT',409)
@@ -382,6 +488,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
     sid=session_id or 'WC'+uuid4().hex
     data=dict(session.data) if session else {'history':[],'pending':{},'candidates':[]}
     data['_session_id']=sid
+    data['_message_id']=client_message_id
     await db.rollback()
     row=await claim(db,user_id,client_message_id,digest)
     evidence={}
@@ -406,6 +513,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
                 data.update(pending={},active_plan=None,awaiting_plan_details=False)
             elif previous.status in {'EXECUTING','WAITING_SETTLEMENT'}:
                 data.update(pending={},awaiting_plan_details=False)
+            else:
+                data['active_plan']={'plan_id':previous.plan_id,'version':previous.version}
             await db.rollback()
         elif not data.get('awaiting_plan_details'):
             # Also repairs pre-fix persisted sessions without deleting their history/orders.
@@ -428,8 +537,14 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
                 'products':[{'id':p['product_id'],'name':p['name']} for p in products], 'active':{'direction':data['active_command']['direction'],'product_id':data['active_command']['product_id'],'amount_fen':data['active_command']['amount_fen']} if data.get('active_command') else None,
                 'accounts':[f'账户{i}' for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
                 'available_cash_fen':[{'account_ref':f'账户{i}','available_fen':a['available_fen']} for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
-                'active_plan':plan_context,'history':[h['user'] for h in data.get('history',[])[-4:]]}
+                'active_plan':plan_context,'recent_turns':[{'user':h['user'],'assistant':h['reply'].get('message','')[:1000]} for h in data.get('history',[])[-6:]],
+                'last_question':data.get('last_question'),'requirements':data.get('requirements'),
+                'main_task':data.get('active_task'),'card_lists':data.get('card_lists',[])[-4:],
+                'pending_orders':[{'operation_id':o['operation_id'],'status':o['status'],
+                    'product_id':o.get('product_id') or o['version_id'].split(':')[0]} for o in facts['orders'][-8:]]}
             intent,evidence=await understand(text,context)
+        elif parsed_intent is not None:
+            intent=parsed_intent;evidence={'provider':'validated-typed-input','live':False}
         else: intent=offline(text)
         response=await action(db,user_id,bank,text,intent,data,products,facts,contexts,mode)
         response.update(model_evidence=evidence,intent=intent.model_dump(),client_message_id=client_message_id)
@@ -438,6 +553,15 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
         if response['kind']=='assessment_required':
             response['pending']={key:value for key,value in data.get('pending',{}).items()
                 if key in {'budget_fen','reserve_fen','horizon_days','need','excluded_products','budget_source','budget_range'}}
+            if data.get('requirements'):
+                from ..orchestration.wealth_requirement_task import record
+                account=next((a for a in facts['cash'] if a['account_id']==data.get('account_id')),None)
+                if account is None and len(facts['cash'])==1:account=facts['cash'][0]
+                task=await record(db,user_id,sid,data.get('context_id','legacy-v1'),
+                    account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'),
+                    waiting_reason='ASSESSMENT_REQUIRED')
+                data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
+                response['task']=task
         if error.code == 'INSUFFICIENT_AVAILABLE_FUNDS':
             data['pending']={k:v for k,v in (data.get('pending') or {}).items() if k!='budget_fen'}
             data['awaiting_plan_details']=True
@@ -452,6 +576,9 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
             if isinstance(error,ValidationError):code='MODEL_SCHEMA_INVALID'
             elif isinstance(error,ValueError) and re.fullmatch(r'MODEL_[A-Z0-9_]+',str(error)):code=str(error)
             response={'mode':mode,'kind':'model_unavailable' if mode=='model' else 'clarification','code':code if mode=='model' else 'CLARIFICATION_REQUIRED','message':'模型请求失败，本轮未生成新的交易参数；可重试或使用可信表单。' if mode=='model' else '无法生成预览，请明确参数。'}
+            evidence={**evidence,'failure_type':type(error).__name__}
+            if isinstance(error,ValidationError):
+                evidence['invalid_fields']=[{'path':list(e['loc']),'type':e['type']} for e in error.errors()]
     await lock_profile(db,user_id)
     session=await db.get(WealthConversationORM,sid,with_for_update=True,populate_existing=True)
     if session and session.version!=version:
@@ -460,6 +587,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
     if session is None: session=WealthConversationORM(session_id=sid,user_id=user_id,version=1,data={}); db.add(session)
     else: session.version+=1
     response.update(session_id=sid,version=session.version,model_evidence=evidence)
+    if data.get('requirements'): response['requirement_card']=data['requirements']
     if 'intent' not in response and 'intent' in locals(): response['intent']=intent.model_dump()
     data['history']=[*data.get('history',[]),{'user':text,'reply':response}]; session.data=data
     row=await db.get(WealthChatRequestORM,key); row.status='DONE'; row.response=response

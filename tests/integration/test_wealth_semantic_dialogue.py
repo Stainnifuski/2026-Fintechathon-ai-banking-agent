@@ -1,0 +1,73 @@
+"""Typed recorded responses through real HTTP/database orchestration (not live NLU)."""
+import pytest
+from uuid import uuid4
+from sqlalchemy import select,func
+from tests.integration.test_wealth_bank import store,http_store,assess
+from backend.app.models import AccountORM
+from backend.app.models.wealth import WealthOrderORM,WealthTaskORM,WealthConversationORM
+from backend.app.services.ai import wealth_dialogue
+from backend.app.services.ai.wealth_model import Intent
+from backend.app.domain.wealth_requirements import SemanticFrame
+
+
+@pytest.mark.asyncio
+async def test_pending_purchase_does_not_become_planning_dependency(store,http_store,monkeypatch):
+    client,_,_=http_store
+    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    responses=[Intent(intent='purchase',product_refs=['B017'],amount_fen=100000),
+        Intent(intent='allocate',semantic=SemanticFrame()),
+        Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
+            {'field':'investment_budget','op':'set','quote':'投入5成','budget':{'mode':'proportion','ratio':'0.5','base':'available_cash'}}]})),
+        Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
+            {'field':'horizon','op':'set','quote':'半年','horizon':{'unit':'months','count':6,'text':'半年'}},
+            {'field':'investment_goal','op':'set','quote':'兼顾两者','goal':'balanced'}]})),
+        Intent(intent='modify',semantic=SemanticFrame.model_validate({'patches':[
+            {'field':'declared_assets','op':'set','quote':'我有2万','amount_fen':2000000}]})),
+        Intent(intent='assets')]
+    async def recorded(text,context):
+        assert 'recent_turns' in context and 'last_question' in context
+        return responses.pop(0),{'live':False,'provider':'recorded-typed-fixture'}
+    monkeypatch.setattr(wealth_dialogue,'understand',recorded)
+    async with store() as db:
+        await assess(db)
+        from backend.app.domain.wealth_fixed_data import bank_products
+        from backend.app.services.bank import wealth_research as research
+        from backend.app.models.wealth_research import WealthContextORM
+        products=bank_products()
+        for p in products:p['rules'].update(dataset_id='n01-fixed-bank',dataset_version='semantic-test')
+        imported=await research.import_dataset(db,{'schema_version':1,'dataset_id':'n01-fixed-bank',
+            'dataset_version':'semantic-test','mode':'snapshot','products':products})
+        context=await research.initialize(db,'U1',dataset_key=imported['dataset_key'])
+        scope=await db.get(WealthContextORM,context['context_id'])
+        scope.data={**scope.data,'business_at':'2026-09-30T14:00:00+08:00'}
+        await db.commit();await research.select_context(db,'U1',scope.context_id,1)
+        account=await db.get(AccountORM,scope.account_id);account.balance_fen=1922900
+        await db.commit()
+    session={}
+    async def send(text):
+        result=await client.post('/api/v1/wealth/messages',json={'message':text,'client_message_id':uuid4().hex,**session})
+        assert result.status_code==200,result.text
+        reply=result.json();session.update(session_id=reply['session_id'],version=reply['version'])
+        return reply
+    purchase=await send('申购B017一千元')
+    assert purchase['kind']=='command',purchase
+    planning=await send('规划现有资金')
+    assert planning['kind']=='clarification' and '投入' in planning['message'],planning
+    ratio=await send('投入5成')
+    assert ratio['requirement_card']['fields']['investment_budget']['resolved_fen']==961450
+    assert '波动' in ratio['message'],ratio
+    plan=await send('半年，兼顾两者')
+    assert plan['kind']=='plan',plan
+    assert plan['plan']['request']['reserve_fen'] is None
+    assert plan['plan']['request']['need'] is None
+    assert plan['task']['task_id']!=purchase['task']['task_id']
+    stated=await send('我有2万')
+    assert stated['requirement_card']['fields']['investment_budget']['resolved_fen']==961450,stated
+    queried=await send('先查持仓')
+    assert queried['kind']=='assets'
+    async with store() as db:
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+        old=await db.get(WealthTaskORM,purchase['task']['task_id'])
+        assert old.status=='WAITING' and old.data['goal']=='purchase'
+        conversation=await db.get(WealthConversationORM,session['session_id'])
+        assert conversation.data['active_task']['task_id']==stated['task']['task_id']

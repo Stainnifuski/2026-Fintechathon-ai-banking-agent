@@ -37,20 +37,25 @@ async def view(db, task):
         'plan_id':task.data.get('plan_id'),
         'control_mode':task.control_mode, 'owner_id':task.owner_id, 'waiting_reason':task.waiting_reason,
         'goal':task.data.get('goal'), 'notes':task.data.get('notes', []),
+        'schema_version':task.data.get('schema_version','wealth-subtask-v1'),
+        'requirement_version':task.data.get('requirement_version'),
+        'requirements':task.data.get('requirements'), 'parent_task_id':task.data.get('parent_task_id'),
         'nodes':[{'node_id':n.node_id, 'kind':n.kind, 'depends_on':n.depends_on, 'status':n.status,
             'operation_id':n.operation_id, 'attempts':n.attempts, **n.data} for n in nodes]}
 
 
-async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False):
+async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None):
     await lock_profile(db, user_id)
-    active = await db.scalar(select(Task).where(Task.user_id == user_id,
-        Task.context_id == context_id, Task.status.not_in(TERMINAL)))
+    pending = (await db.scalars(select(Task).where(Task.user_id == user_id,
+        Task.context_id == context_id, Task.status.not_in(TERMINAL)))).all()
+    active = next((t for t in pending if not t.data.get('read_only')),None)
     if active:
         raise WealthPolicyError('已有进行中的交易任务，请先选择继续、暂停或取消未提交任务', 'ACTIVE_TASK_SELECTION_REQUIRED', 409)
     key = 'WT'+uuid4().hex
     task = Task(task_id=key, user_id=user_id, session_id=session_id, context_id=context_id,
         account_id=command.account_id, version=1, status='WAITING', control_mode='AGENT',
-        waiting_reason='PERSONAL_CONFIRMATION', data={'goal':'sell_then_buy' if sell_then_buy else command.direction})
+        waiting_reason='PERSONAL_CONFIRMATION', data={'goal':'sell_then_buy' if sell_then_buy else command.direction,
+            'requirements':requirements,'requirement_version':(requirements or {}).get('version')})
     db.add(task); await db.flush()
     sequence = ['READ_FACTS', 'CONFIRM', 'VERIFY', 'SUBMIT', 'SETTLEMENT']
     if sell_then_buy: sequence += ['REREAD_CASH', 'BUY_PLAN']
@@ -154,7 +159,7 @@ async def revise_command(db, user_id, task_id, expected_version, command):
     nodes=(await db.scalars(select(Node).where(Node.task_id==task_id))).all()
     if task.version!=expected_version or task.control_mode!='AGENT' or task.status in TERMINAL:
         raise WealthPolicyError('任务已变化或不归Agent处理', 'STALE_TASK', 409)
-    submit=next(n for n in nodes if n.kind=='SUBMIT')
+    submit=next(n for n in nodes if n.kind=='SUBMIT' and n.status!='CANCELLED')
     if submit.status in {'RUNNING','COMPLETED','UNKNOWN'}:
         raise WealthPolicyError('原笔已提交或结果未知，先按原号核对，不能直接改单', 'RECONCILIATION_REQUIRED', 409)
     old=submit.operation_id
@@ -164,11 +169,22 @@ async def revise_command(db, user_id, task_id, expected_version, command):
         {'version':task.version,'operation_id':old,'command':submit.data['command']}]}
     task.account_id=command.account_id; task.version+=1; task.status='PAUSED' if was_paused else 'WAITING'; task.waiting_reason='PERSONAL_CONFIRMATION'
     for node in nodes:
-        if node.kind!='READ_FACTS': node.status='READY'
-        node.lease_version=None; node.lease_until=None
-        node.data={**node.data,'operation_ref':command.operation_id,'output':None}
-        if node.kind=='SUBMIT':
-            node.operation_id=command.operation_id; node.data={**node.data,'command':command.model_dump()}
+        if node.status not in {'COMPLETED','CANCELLED'}:
+            node.status='CANCELLED'
+            node.data={**node.data,'superseded_by_task_version':task.version}
+    prefix=task_id+f':v{task.version:04}'
+    previous=[]
+    sequence=['READ_FACTS','CONFIRM','VERIFY','SUBMIT','SETTLEMENT']
+    if task.data.get('goal')=='sell_then_buy':sequence+=['REREAD_CASH','BUY_PLAN']
+    else:sequence+=['RESULT']
+    for index,kind in enumerate(sequence):
+        node_id=f'{prefix}:{index:02}'
+        db.add(Node(node_id=node_id,task_id=task_id,kind=kind,depends_on=previous,
+            status='COMPLETED' if kind=='READ_FACTS' else 'READY',attempts=0,
+            operation_id=command.operation_id if kind=='SUBMIT' else None,
+            data={'completion_condition':'BANK_SETTLED' if kind=='SETTLEMENT' else 'TRUSTED_FACT_OR_USER_ACTION',
+                  'operation_ref':command.operation_id,'command':command.model_dump() if kind=='SUBMIT' else None}))
+        previous=[node_id]
     await db.commit()
     return await view(db,task)
 
@@ -177,9 +193,22 @@ async def register_plan(db, user_id, session_id, context_id, plan):
     """方案逐笔节点持久化；申购仍由可信整份方案原子执行入口提交。"""
     from sqlalchemy import delete
     await lock_profile(db,user_id)
-    task=await db.scalar(select(Task).where(Task.user_id==user_id,Task.context_id==context_id,Task.status.not_in(TERMINAL)))
-    if task and task.data.get('plan_id')!=plan['plan_id'] and not (task.data.get('goal')=='sell_then_buy' and not task.data.get('plan_id')):
-        raise WealthPolicyError('已有交易任务，请明确选择当前任务或取消未提交部分','ACTIVE_TASK_SELECTION_REQUIRED',409)
+    candidates=(await db.scalars(select(Task).where(Task.user_id==user_id,Task.context_id==context_id,Task.status.not_in(TERMINAL)))).all()
+    # Selecting a new planning goal preserves unrelated pending orders and graphs.
+    task=next((t for t in candidates if t.data.get('plan_id')==plan['plan_id']),None)
+    if task and task.data.get('plan_version')==plan['version']:
+        return await view(db,task)
+    if task is None:
+        task=next((t for t in candidates if t.task_id==plan['request'].get('requirement_task_id')
+            and t.data.get('goal')=='wealth_planning'),None)
+    if task is None and plan['request'].get('requirement_task_id'):
+        requested=await owned(db,user_id,plan['request']['requirement_task_id'])
+        if (requested.session_id==session_id and requested.context_id==context_id and
+                requested.data.get('read_only') and requested.status=='COMPLETED' and not requested.data.get('plan_id')):
+            task=requested
+    if task is None:
+        task=next((t for t in candidates if t.data.get('goal')=='sell_then_buy' and not t.data.get('plan_id')
+            and t.task_id==plan['request'].get('parent_task_id')),None)
     was_paused=bool(task and task.status=='PAUSED')
     continuation=False
     previous_nodes=[]
@@ -200,19 +229,28 @@ async def register_plan(db, user_id, session_id, context_id, plan):
                 'commands':[n.data.get('command') for n in old_nodes if n.kind=='SUBMIT']}]}
         task.version+=1
         if not continuation:
-            await db.execute(delete(Node).where(Node.task_id==task.task_id))
+            for node in old_nodes:
+                if node.kind=='REQUIRE_INPUT':node.status='COMPLETED'
+                elif node.status not in {'COMPLETED','RUNNING','UNKNOWN'}:node.status='CANCELLED'
+            previous_nodes=old_nodes
     else:
         task=Task(task_id='WT'+uuid4().hex,user_id=user_id,session_id=session_id,context_id=context_id,
             account_id=plan['request']['account_id'],version=1,status='WAITING',control_mode='AGENT',data={})
         db.add(task);await db.flush()
     task.data={**task.data,'goal':task.data.get('goal',plan['request']['kind']),
-        'plan_id':plan['plan_id'],'plan_version':plan['version'],'stage':plan['stage']}
+        'plan_id':plan['plan_id'],'plan_version':plan['version'],'stage':plan['stage'],
+        'requirements':{'fields':plan['request'].get('constraint_states',{}),'version':plan['request'].get('requirement_version')},
+        'requirement_version':plan['request'].get('requirement_version')}
     task.status='PAUSED' if was_paused else 'WAITING';task.waiting_reason='PERSONAL_CONFIRMATION'
-    prefix=task.task_id+f':v{plan["version"]:04}' if continuation else task.task_id
-    graph=[{'node_id':prefix+':00','kind':'READ_FACTS','depends_on':[buy_gate.node_id] if continuation else [], 'completion_condition':'CURRENT_BANK_FACTS'}]
+    prefix=task.task_id+f':v{task.version:04}'
+    research_dependencies=[n.node_id for n in previous_nodes if n.kind=='RESEARCH' and n.status=='COMPLETED']
+    graph=[{'node_id':prefix+':00','kind':'READ_FACTS','depends_on':[buy_gate.node_id] if continuation else research_dependencies, 'completion_condition':'CURRENT_BANK_FACTS'}]
+    graph.append({'node_id':prefix+':plan','kind':'PLAN','depends_on':[prefix+':00'],
+        'completion_condition':'VALIDATED_RECOMMENDATION','input':plan['request'],
+        'output':{'plan_id':plan['plan_id'],'version':plan['version'],'configuration':plan.get('configuration')}})
     settles=[]
     for index,item in enumerate(plan['items']):
-        previous=graph[0]['node_id']
+        previous=prefix+':plan'
         for step,kind in enumerate(['CONFIRM','VERIFY','SUBMIT','SETTLEMENT']):
             nid=f'{prefix}:{index+1:02}:{step:02}'
             graph.append({'node_id':nid,'kind':kind,'depends_on':[previous],
@@ -228,7 +266,7 @@ async def register_plan(db, user_id, session_id, context_id, plan):
         'completion_condition':n.data['completion_condition']} for n in previous_nodes]+graph)
     for row in graph:
         db.add(Node(node_id=row['node_id'],task_id=task.task_id,kind=row['kind'],depends_on=row['depends_on'],
-            status='COMPLETED' if row['kind']=='READ_FACTS' else 'READY',attempts=0,
+            status='COMPLETED' if row['kind'] in {'READ_FACTS','PLAN'} else 'READY',attempts=0,
             operation_id=row.get('operation_ref') if row['kind']=='SUBMIT' else None,
             data={k:v for k,v in row.items() if k not in {'node_id','kind','depends_on'}}))
     await db.commit()
@@ -251,13 +289,17 @@ async def require_write_control(db, user_id, command, authorization=None):
     """银行调用的控制策略；调用方持有与控制请求相同的用户锁。"""
     tasks = (await db.scalars(select(Task).where(Task.user_id==user_id,
         Task.account_id==command.account_id, Task.status.not_in(TERMINAL)))).all()
+    linked=False
+    has_transaction_task=False
     for task in tasks:
-        if task.control_mode != 'AGENT' or task.status == 'PAUSED' or task.data.get('stop_new_submissions'):
-            raise WealthPolicyError('任务暂停或人工接管中，禁止新银行写入', 'TASK_WRITE_BLOCKED', 409)
+        if task.data.get('read_only') and not task.data.get('plan_id'):continue
+        has_transaction_task=True
         nodes = (await db.scalars(select(Node).where(Node.task_id==task.task_id))).all()
         submit = next((n for n in nodes if n.operation_id==command.operation_id), None)
-        if not submit:
-            raise WealthPolicyError('请先处理当前交易任务，不可并行提交新交易', 'ACTIVE_TASK_SELECTION_REQUIRED', 409)
+        if not submit:continue
+        linked=True
+        if task.control_mode != 'AGENT' or task.status == 'PAUSED' or task.data.get('stop_new_submissions'):
+            raise WealthPolicyError('任务暂停或人工接管中，禁止新银行写入', 'TASK_WRITE_BLOCKED', 409)
         # 最终银行授权已核验后，允许同步可信确认/验证节点；不能凭模型文本推进。
         if authorization:
             completed = {n.node_id for n in nodes if n.status=='COMPLETED'}
@@ -270,3 +312,5 @@ async def require_write_control(db, user_id, command, authorization=None):
             raise WealthPolicyError('任务依赖未完成，禁止提交', 'TASK_DEPENDENCY_PENDING', 409)
         if submit.lease_version is not None and submit.lease_version != task.version:
             raise WealthPolicyError('任务控制版本已变化', 'STALE_TASK', 409)
+    if has_transaction_task and not linked:
+        raise WealthPolicyError('交易操作尚未绑定本人任务图','ACTIVE_TASK_SELECTION_REQUIRED',409)

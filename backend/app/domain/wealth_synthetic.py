@@ -24,9 +24,9 @@ def calendar(start: date, end: date) -> list[date]:
     return [start+timedelta(days=i) for i in range((end-start).days+1) if (start+timedelta(days=i)).weekday()<5]
 
 
-def generate(seed: int = SEED, end: str = "2027-12-31") -> dict:
+def generate(seed: int = SEED, end: str = "2027-12-31", *, calendar_days: list[date] | None=None) -> dict:
     """60份额/30家族，共同因子含确定下跌及债券回撤，A/C共享家族扰动。"""
-    days = calendar(date(2021,10,1),date.fromisoformat(end))
+    days = calendar_days if calendar_days is not None else calendar(date(2021,10,1),date.fromisoformat(end))
     rng = random.Random(seed)
     factors=[]
     for i,day in enumerate(days):

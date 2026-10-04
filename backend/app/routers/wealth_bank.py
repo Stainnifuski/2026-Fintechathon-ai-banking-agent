@@ -28,6 +28,40 @@ class Subject(StrictRequest):
     subject_user_id: str = Field(max_length=32)
 
 
+class ProductDetail(Subject):
+    product_id: str = Field(min_length=1,max_length=32)
+    period: str = Field(default='1y',pattern=r'^(1m|3m|1y)$')
+
+
+class ExternalEvidence(Subject):
+    account_id: str = Field(min_length=1,max_length=32)
+    event_reference: str = Field(min_length=1,max_length=64)
+
+
+@router.post('/external-evidence')
+async def external_evidence(request:ExternalEvidence,db:AsyncSession=Depends(get_db)):
+    from ..models import AccountORM,TransactionORM
+    from ..domain.time import as_utc,utc_iso
+    account=await db.get(AccountORM,request.account_id)
+    event=await db.get(TransactionORM,request.event_reference)
+    if (account is None or account.user_id!=request.subject_user_id or event is None
+        or event.account_id!=account.account_id or event.type!='transfer_out' or event.status!='completed'):
+        fail(BankError('未找到当前本人账户的已完成转账事实','EXTERNAL_EVIDENCE_INVALID',409))
+    now=await bank.business_now(db,account.account_id)
+    if as_utc(event.timestamp,legacy_utc=True)>now:
+        fail(BankError('未来流水不能用于完成外部依赖','EXTERNAL_EVIDENCE_INVALID',409))
+    return {'event_reference':event.tx_id,'account_id':account.account_id,'type':event.type,
+        'status':'completed','occurred_at':utc_iso(as_utc(event.timestamp,legacy_utc=True)),
+        'operation_id':event.operation_id,'source':'bank_ledger'}
+
+
+@router.post('/product-detail')
+async def product_detail(request:ProductDetail,db:AsyncSession=Depends(get_db)):
+    from ..services.bank.wealth_product_detail import detail
+    try:return await detail(db,request.subject_user_id,request.product_id,request.period)
+    except BankError as error:fail(error)
+
+
 from ..schemas.wealth_demo import DemoReset, DemoAdjust, DemoDeletePreview, DemoDelete
 
 

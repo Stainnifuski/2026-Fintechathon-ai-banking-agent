@@ -1,20 +1,22 @@
 """5号持久化理财计划；通过HTTP获取事实，无银行ORM依赖。"""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from ...domain.time import BEIJING
 from decimal import Decimal, ROUND_DOWN
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...domain.wealth_allocation import allocate, WEIGHTS, DEVIATION_PERCENT
+from ...domain.wealth_allocation import DEVIATION_PERCENT
+from ...domain.wealth_recommendation import recommend
 from ...integrations.wealth_bank_api import HttpWealthBankApi
 from ...integrations.bank_api import BankApiError, BankResponseUnknown
 from ...integrations.wealth_authorization import WealthPolicyError, require_suitability, lock_profile
 from ...models.wealth import WealthPlanORM, WealthProfileORM, WealthGoalORM, WealthAuthorizationORM
 from ...schemas.wealth import InvestmentCommand
 from ...schemas.wealth import AdoptPlan, PlanConfirmation, PersonalConfirmation
-from ...domain.wealth import units
+from ...domain.wealth import units, purchase
 
 
 async def owned_plan(db: AsyncSession, user_id: str, plan_id: str) -> WealthPlanORM:
@@ -100,21 +102,31 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     if request.get('need')=='cash': suitability={**suitability,'capacity_level':1}
     elif request.get('need')=='balanced': suitability={**suitability,'capacity_level':min(suitability['capacity_level'],3)}
     external = list(profile.data.get("external_assets", [])) if profile else []
-    budget, reserve = request["budget_fen"], request["reserve_fen"]
+    budget, reserve = request["budget_fen"], request.get("reserve_fen")
     account = next((a for a in facts["cash"] if a["account_id"] == request["account_id"] and a["account_type"] != "credit"), None)
     if account is None:
         raise WealthPolicyError("账户不存在或不支持", "ACCOUNT_NOT_FOUND", 404)
     if budget > account["available_fen"]:
         raise WealthPolicyError(f"本次方案预算¥{budget/100:.2f}超过银行可用现金¥{account['available_fen']/100:.2f}。持仓和在途不属于可用现金，请明确修改本次预算。", "INSUFFICIENT_AVAILABLE_FUNDS")
     goals = (await db.scalars(select(WealthGoalORM).where(WealthGoalORM.user_id == user_id))).all()
-    business_date = date.fromisoformat(facts["business_at"][:10])
+    business_date = datetime.fromisoformat(facts["business_at"]).astimezone(BEIJING).date()
     goal_reserve = sum(goal.data["amount_fen"] for goal in goals if
         date.fromisoformat(goal.data["due_date"]) <= business_date+timedelta(days=365)
         and goal.data["liquidity"] == "immediate")
     # 现金保留属于整个账户；预算之外的可用现金已满足的部分不重复扣除。
     outside_budget=max(0,account['available_fen']-budget)
-    effective_reserve=min(budget,max(0,max(reserve,goal_reserve)-outside_budget))
-    config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+    effective_reserve=min(budget,max(0,max(reserve or 0,goal_reserve)-outside_budget))
+    category_values = {}
+    def allocation(products, **parameters):
+        versions={p['product_id']:{'product_version':p['version'],
+            'dataset_key':p.get('dataset_key'),'calendar_version':p['rules']['calendar_version'],
+            'nav_date':p.get('nav_date')} for p in products}
+        return recommend({'products':products,'allocation':parameters,'as_of':facts['business_at'],
+            'available_cash_fen':account['available_fen'],'minimum_account_cash_fen':max(reserve or 0,goal_reserve),
+            'constraints':request.get('constraint_states',{}),'data_versions':versions,
+            'features':{'history_status':'not_required_by_rule_provider'},
+            'current_exposure_fen':category_values})
+    config = allocation(products, budget_fen=budget, reserve_fen=effective_reserve,
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"])
     goal_versions = {g.goal_id: g.version for g in goals}
@@ -132,20 +144,21 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         "current_fen": category_values.get(category, 0), "target_percent": weight,
         "target_fen": total_value*weight//100,
         "difference_fen": total_value*weight//100-category_values.get(category, 0)}
-        for category, weight in WEIGHTS[suitability["capacity_level"]].items()]
+        for category, weight in config['target_category_weights'].items()]
     diagnostic["goal_shortfall_fen"] = max(0, goal_reserve-budget)
     diagnostic["expense_reserve_fen"] = profile.data.get("monthly_expenses_fen", 0) if profile else 0
     effective_reserve=max(effective_reserve,min(budget,max(0,diagnostic['expense_reserve_fen']-outside_budget)))
-    config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+    config = allocation(products, budget_fen=budget, reserve_fen=effective_reserve,
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
         exposure_fen=category_values if request["kind"] == "adjustment" or facts["lots"] or external else None)
     await db.rollback()
     await lock_profile(db, user_id)
     row = await owned_plan(db, user_id, plan_id) if plan_id else None
+    linked_task=None
     if row:
         from .wealth_task import require_plan_edit
-        await require_plan_edit(db,user_id,plan_id)
+        linked_task=await require_plan_edit(db,user_id,plan_id)
     if row and (row.version != request.get("version") or row.status in {"EXECUTING", "WAITING_SETTLEMENT", "COMPLETED"}):
         raise WealthPolicyError("方案版本已改变或已受理，请先核对在途", "STALE_PLAN")
     if row and any(item["status"] in {"SUBMITTING", "UNKNOWN", "ACCEPTED", "PENDING_PRICING", "PENDING_CASH"} for item in row.data["items"]):
@@ -167,7 +180,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         db.add(row)
     prior_count = sum(len(stage["items"]) for stage in previous_history)
     if prior_count:
-        config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+        config = allocation(products, budget_fen=budget, reserve_fen=effective_reserve,
             capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
             excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
             exposure_fen=category_values, max_items=max(0, 5-prior_count))
@@ -176,7 +189,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         # 先用新增现金改善配置；预算能投资时不先卖出，避免不必要费用。
         if not config["items"]:
             total = sum(category_values.values())
-            target = WEIGHTS[suitability["capacity_level"]]
+            target = config['target_category_weights']
             current = dict(category_values)
             for lot in facts["lots"]:
                 if len(items) >= 5:
@@ -208,6 +221,9 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
                           "status": "AWAITING_CONFIRMATION", "depends_on": []})
     profile = await db.get(WealthProfileORM, user_id)
     row.status = "AWAITING_CONFIRMATION" if items else "COMPLETED"
+    config['pricing_snapshot'] = {p['product_id']: {'nav': p['nav'],
+        'purchase_fee_rate': p['rules']['purchase_fee_rate'], 'product_version': p['version']}
+        for p in products if any(i['command']['product_id'] == p['product_id'] for i in items)}
     row.data = {"request": request, "configuration": config, "items": items,
         "history": previous_history,
         "diagnostic": diagnostic,
@@ -217,6 +233,9 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         "limitations": ["外部资产只诊断，不能形成银行交易", "目标分配为标签，不自动冻结余额", "锁定和在途份额不强制卖出"],
         "notice": "比赛模拟环境／模拟资金；调整不自动交易，赎回后买入需新确认和强验证"}
     await db.commit()
+    if linked_task:
+        from .wealth_task import register_plan
+        await register_plan(db,user_id,linked_task.session_id,linked_task.context_id,plan_view(row))
     return plan_view(row)
 
 
@@ -339,8 +358,19 @@ async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan
     data["items"] = children
     if data["stage"] == "BUY":
         spent = sum(child["command"]["amount_fen"] for child in children)
+        pricing = data['configuration'].get('pricing_snapshot', {})
+        fees = 0
+        for child in children:
+            command = child['command']; price = pricing.get(command['product_id'])
+            if price is None or price['product_version'] != command['product_version']:
+                fees = None
+                break
+            fees += purchase(command['amount_fen'], price['nav'], price['purchase_fee_rate']).fee_fen
+        cash = next(a['available_fen'] for a in data['snapshot']['cash'] if a['account_id'] == data['request']['account_id'])
         data["configuration"] = {**data["configuration"], "investment_fen": spent,
-            "retained_cash_fen": data["request"]["budget_fen"]-spent}
+            "retained_cash_fen": data["request"]["budget_fen"]-spent,
+            "unallocated_fen": data["request"]["budget_fen"]-spent,
+            "estimated_fee_fen": fees, "account_remaining_cash_fen": cash-spent}
     row.data, row.version = data, row.version+1
     row.status = "AWAITING_CONFIRMATION" if children else "COMPLETED"
     await db.commit()

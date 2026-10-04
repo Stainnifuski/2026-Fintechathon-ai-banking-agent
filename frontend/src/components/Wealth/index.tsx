@@ -5,6 +5,9 @@ import type { Account } from '../../services/bank';
 import './styles.css';
 import Research from './Research';
 import OperatorPanel from './OperatorPanel';
+import RequirementCard from './RequirementCard';
+import ProductDetail from './ProductDetail';
+import Recommendation from './Recommendation';
 
 interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string }
 type Tab = 'workbench' | 'assets' | 'products' | 'plans' | 'orders';
@@ -31,6 +34,7 @@ function RedemptionQuote({preview}:{preview:w.Preview}) {
 }
 
 export default function Wealth({ accounts, revision, onActivity, userId }: Props) {
+  const [detailProduct,setDetailProduct]=useState<string|null>(null);
   const [tab, setTab] = useState<Tab>('workbench');
   const [history, setHistory] = useState<{user: string; reply: w.ChatReply}[]>([]);
   const [historyArchives, setHistoryArchives] = useState<{session_id:string;context_id:string;history:{user?:string;reply?:{message?:string}}[]}[]>([]);
@@ -74,7 +78,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       w.get<w.Product[]>('/products'), w.get<w.Assets>('/assets'), w.get<w.Assessment | null>('/assessments/current'),
       w.get<w.Questionnaire>('/questionnaire'), w.get<w.Profile>('/profile'), w.get<w.Plan[]>('/plans'),
       w.get<typeof pending>('/previews'), w.get<typeof executions>('/executions'),
-      w.get<{ session_id: string; version: number; history: { reply: w.ChatReply }[] } | null>('/messages/history'), w.get<w.VerificationMode>('/verification-mode')]);
+      w.get<{ session_id: string; version: number; active_task?: {task_id:string}; history: { reply: w.ChatReply }[] } | null>('/messages/history'), w.get<w.VerificationMode>('/verification-mode')]);
     setVerificationMode(mode);
     setProducts(p); setAssets(a); setAssessment(r); setQuestionnaire(q); setProfile(f); setPlans(plansList); setPending(pendingList);
     setProduct(current => p.some(item => item.product_id === current) ? current : p[0]?.product_id || '');
@@ -85,7 +89,8 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
     const restoredTasks=(await w.get<{items:w.WealthTask[]}>('/tasks')).items;
     setTasks(restoredTasks);
     setHistoryArchives((await w.get<{items:typeof historyArchives}>('/messages/archives')).items);
-    const activeTask=restoredTasks.find(task=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status));
+    const activeTask=restoredTasks.find(task=>task.task_id===history?.active_task?.task_id)
+      ?? restoredTasks.find(task=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status));
     if(activeTask?.plan_id) {
       const restoredPlan=plansList.find(item=>item.plan_id===activeTask.plan_id);
       if(restoredPlan) {setPlan(restoredPlan);setTab(current=>current==='workbench'?'plans':current);}
@@ -112,7 +117,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
     setPreview(view); setConsent(false); setCode('');
   };
   const planRequest = (): w.PlanRequest => ({ kind, account_id: account, version: plan?.version || 1,
-    budget_fen: w.fen(budget), reserve_fen: w.fen(reserve), horizon_days: Number(horizon), excluded_products: excluded });
+    budget_fen: w.fen(budget), reserve_fen: reserve.trim() ? w.fen(reserve) : null, horizon_days: Number(horizon), excluded_products: excluded });
   const previewAdopted = async () => {
     if (!plan) return;
     const picks = plan.items.filter(item => adopted.includes(item.command.operation_id)).map(item => ({ operation_id: item.command.operation_id,
@@ -143,7 +148,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
     else if (reply.kind === 'assessment_required') setTab('assets');
     else if (reply.kind === 'order') setTab('orders');
     if (reply.session_id && reply.version) setSession({ session_id: reply.session_id, version: reply.version });
-    if (reply.plan) { setPlan(reply.plan); setBudget(String(reply.plan.request.budget_fen / 100)); setReserve(String(reply.plan.request.reserve_fen / 100)); setHorizon(String(reply.plan.request.horizon_days)); setKind(reply.plan.request.kind); setExcluded(reply.plan.request.excluded_products); setTab('plans'); }
+    if (reply.plan) { setPlan(reply.plan); setBudget(String(reply.plan.request.budget_fen / 100)); setReserve(reply.plan.request.reserve_fen == null ? '' : String(reply.plan.request.reserve_fen / 100)); setHorizon(String(reply.plan.request.horizon_days)); setKind(reply.plan.request.kind); setExcluded(reply.plan.request.excluded_products); setTab('plans'); }
     if (reply.command && reply.task?.status !== 'PAUSED') await showPreview(reply.command);
   };
   const accountOptions = assets?.cash.filter(a => a.account_type !== 'credit').map(a => <option key={a.account_id} value={a.account_id}>{accounts.find(acc => acc.account_id === a.account_id)?.card_number || `模拟账户 ${a.account_id.slice(-4)}`}</option>);
@@ -202,7 +207,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
         <button disabled={busy || !goalName} onClick={() => act(async () => { const allocations = (editingGoal?.allocations || []).filter(item => item.asset_ref !== goalSource); if (goalSource && w.fen(goalAssigned) > 0) allocations.push({ asset_ref: goalSource, amount_fen: w.fen(goalAssigned) }); await w.post('/goals', { goal_id: editingGoal?.goal_id || null, version: editingGoal?.version || 1, title: goalName, amount_fen: w.fen(goalAmount), due_date: goalDate, liquidity: goalLiquidity, priority: Number(goalPriority), allocations }); setGoalName(''); setEditingGoal(null); })}>{editingGoal ? '保存目标修改' : '添加目标'}</button><button className="secondary" onClick={() => { setEditingGoal(null); setGoalName(''); setGoalSource(''); }}>清空目标表单</button>
       </details></>}
       {tab === 'products' && <>
-        <h3>{products.length} 个当前上下文模拟产品</h3>{products.map(p => <article key={p.product_id} className="wealth-product"><label className="wealth-check"><input type="checkbox" checked={selected.includes(p.product_id)} disabled={!selected.includes(p.product_id) && selected.length >= 4} onChange={e => setSelected(e.target.checked ? [...selected, p.product_id] : selected.filter(value => value !== p.product_id))} />{p.name} · {p.product_id}</label><p>产品风险 R{p.product_risk_level} · 净值 {p.nav ?? '未知'}（{p.nav_date ?? '未知'}） · 最低持有 {p.rules.holding_days} 天</p><details><summary>查看规则与披露</summary>{Object.entries(p.disclosure).map(([key, value]) => <p key={key}>{disclosureLabels[key] || key}：{displayDisclosure(value)}</p>)}</details></article>)}
+        <h3>{products.length} 个当前上下文模拟产品</h3>{products.map(p => <article key={p.product_id} className="wealth-product"><label className="wealth-check"><input type="checkbox" checked={selected.includes(p.product_id)} disabled={!selected.includes(p.product_id) && selected.length >= 4} onChange={e => setSelected(e.target.checked ? [...selected, p.product_id] : selected.filter(value => value !== p.product_id))} />{p.name} · {p.product_id}</label><p>产品风险 R{p.product_risk_level} · 净值 {p.nav ?? '未知'}（{p.nav_date ?? '未知'}） · 最低持有 {p.rules.holding_days} 天</p><button className="secondary" onClick={()=>setDetailProduct(p.product_id)}>查看产品详情与净值</button><details><summary>查看规则与披露</summary>{Object.entries(p.disclosure).map(([key, value]) => <p key={key}>{disclosureLabels[key] || key}：{displayDisclosure(value)}</p>)}</details></article>)}
         <button disabled={busy || selected.length < 2} onClick={() => act(async () => { const rows = await w.get<w.Product[]>(`/compare?product_ids=${selected.join(',')}`); setChat({ mode: 'offline', kind: 'comparison', products: rows, message: '按服务端产品规则客观比较' }); })}>对比所选产品</button>
         <h3>单产品预览</h3><label>方向<select value={direction} onChange={e => setDirection(e.target.value as typeof direction)}><option value="purchase">申购</option><option value="redeem">赎回（正式份额）</option></select></label>
         <label>产品<select value={product} onChange={e => setProduct(e.target.value)}>{products.map(p => <option key={p.product_id} value={p.product_id}>{p.name}</option>)}</select></label><label>本人付款／到账账户<select value={account} onChange={e => setAccount(e.target.value)}>{accountOptions}</select></label>
@@ -215,7 +220,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       </>}
       {(tab === 'plans' || (plan && tasks.some(task=>task.plan_id===plan.plan_id && !['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(task.status)))) && <>
         <details><summary>调试表单：新资金配置／现有持仓调整</summary><label>方案类型<select value={kind} onChange={e => setKind(e.target.value as typeof kind)}><option value="new_cash">新资金配置</option><option value="adjustment">现有持仓诊断与调整</option></select></label>
-        <label>资金账户<select value={account} onChange={e => setAccount(e.target.value)}>{accountOptions}</select></label><label>本次现金预算（元）<input value={budget} onChange={e => setBudget(e.target.value)} /></label><label>预算内保留现金（元）<input value={reserve} onChange={e => setReserve(e.target.value)} /></label><label>预计使用期限（天）<input value={horizon} onChange={e => setHorizon(e.target.value)} /></label>
+        <label>资金账户<select value={account} onChange={e => setAccount(e.target.value)}>{accountOptions}</select></label><label>本次现金预算（元）<input value={budget} onChange={e => setBudget(e.target.value)} /></label><label>账户至少保留现金（元，可选）<input value={reserve} onChange={e => setReserve(e.target.value)} /></label><label>预计使用期限（天）<input value={horizon} onChange={e => setHorizon(e.target.value)} /></label>
         <details><summary>排除不采用的产品</summary>{products.map(p => <label key={p.product_id} className="wealth-check"><input type="checkbox" checked={excluded.includes(p.product_id)} onChange={e => setExcluded(e.target.checked ? [...excluded, p.product_id] : excluded.filter(value => value !== p.product_id))} />{p.name}</label>)}</details>
         <button disabled={busy} onClick={() => act(async () => { setPlan(await w.post<w.Plan>('/plans', planRequest())); })}>生成新方案</button>
         {plan && <button className="secondary" disabled={busy || !['AWAITING_CONFIRMATION', 'PAUSED'].includes(plan.status)} onClick={() => act(async () => { setPlan(await w.put<w.Plan>(`/plans/${plan.plan_id}`, planRequest())); setPreview(null); })}>按当前表单修改方案（旧确认失效）</button>}</details>
@@ -224,7 +229,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
           {plan.items.map(item => <article className="wealth-product" key={item.command.operation_id}><p>{item.command.product_id} · {item.command.direction === 'purchase' ? `申购 ${w.money(item.command.amount_fen)}` : `赎回 ${item.command.units} 份`} · {statusLabel[item.status] || item.status}</p><p>{item.reason}</p>{item.status === 'AWAITING_CONFIRMATION' && <><label className="wealth-check"><input type="checkbox" checked={adopted.includes(item.command.operation_id)} onChange={e => setAdopted(e.target.checked ? [...adopted, item.command.operation_id] : adopted.filter(value => value !== item.command.operation_id))} />采用这笔</label><label>{item.command.direction === 'purchase' ? '采用金额（元，可减少）' : '采用份额（可减少）'}<input value={childAmounts[item.command.operation_id] || ''} onChange={e => setChildAmounts({ ...childAmounts, [item.command.operation_id]: e.target.value })} /></label></>}<button disabled={busy || item.status !== 'AWAITING_CONFIRMATION'} onClick={() => act(() => showPreview(item.command))}>查看单笔详情（可选）</button></article>)}
           <button disabled={busy || plan.status !== 'AWAITING_CONFIRMATION'} onClick={() => act(previewAdopted)}>预览采用方案（统一确认）</button>
           <button className="secondary" disabled={busy} onClick={() => act(async () => { setPlan(await w.get<w.Plan>(`/plans/${plan.plan_id}/progress`)); })}>核对逐笔进度</button></>}
-        <details><summary>当前资金范围已保存方案</summary>{plans.map(item => <button key={item.plan_id} className="secondary" onClick={() => { setPlan(item); setBudget(String(item.request.budget_fen / 100)); setReserve(String(item.request.reserve_fen / 100)); setHorizon(String(item.request.horizon_days)); setKind(item.request.kind); setExcluded(item.request.excluded_products); }}>{item.plan_id.slice(-8)} · v{item.version} · {item.items.length ? (statusLabel[item.status] || item.status) : '本版本无交易项'}</button>)}</details>
+        <details><summary>当前资金范围已保存方案</summary>{plans.map(item => <button key={item.plan_id} className="secondary" onClick={() => { setPlan(item); setBudget(String(item.request.budget_fen / 100)); setReserve(item.request.reserve_fen == null ? '' : String(item.request.reserve_fen / 100)); setHorizon(String(item.request.horizon_days)); setKind(item.request.kind); setExcluded(item.request.excluded_products); }}>{item.plan_id.slice(-8)} · v{item.version} · {item.items.length ? (statusLabel[item.status] || item.status) : '本版本无交易项'}</button>)}</details>
       </>}
       {tab === 'orders' && <>
         <h3>持仓批次（不含外部模拟资产）</h3>{assets?.lots.length === 0 && <p>尚无结算持仓，受理后等待模拟结算。</p>}{assets?.lots.map(lot => <article key={lot.lot_id} className="wealth-product"><p>{lot.product_name} · {lot.units} 份 · 可赎回 {lot.redeemable_units} · 锁定 {lot.locked_units} · 占用 {lot.held_units}</p><p>成本 {w.money(lot.cost_fen)} · 估值 {w.money(lot.market_value_fen)} · 浮动盈亏 {w.money(lot.unrealized_pnl_fen)}（{lot.nav_date}）</p><button disabled={busy} onClick={() => { setProduct(lot.product_id); setAccount(lot.account_id); setDirection('redeem'); setUnits(lot.units); setTab('products'); }}>按全部持有份额预览赎回</button></article>)}
@@ -240,16 +245,23 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       {pending.filter(item=>['AWAITING_CONFIRMATION','AWAITING_MFA','VALID'].includes(item.status) && assets?.cash.some(cash=>cash.account_id===item.command.account_id)).map(item=><article className="wealth-product" key={item.authorization_id}><p>待完成本人订单 · {item.command.product_id} · {item.command.direction==='purchase'?'申购':'赎回'} · {item.status==='AWAITING_CONFIRMATION'?'等待本人确认':item.status==='AWAITING_MFA'?'等待模拟授权':'已授权，等待提交'}</p><button disabled={busy} onClick={()=>act(()=>showPreview(item.command))}>核验并恢复原订单预览</button><p className="hint">恢复沿用原操作号和授权有效期；失效或银行条件变化时须重新预览。</p></article>)}
       {tasks.filter(task => !['COMPLETED','CANCELLED'].includes(task.status)).map(task => <article className="wealth-product" key={task.task_id}>
         <h4>当前任务 · v{task.version}</h4><p>{statusLabel[task.status] || task.status} · {task.control_mode === 'AGENT' ? '助手处理' : task.control_mode === 'HANDOFF_PENDING' ? '等待人工领取' : `人工处理中（${task.owner_id}）`}</p>
+        <button className="secondary" disabled={busy} onClick={()=>act(async()=>{
+          const selected=await w.post<{session_id:string;session_version:number}>(`/tasks/${task.task_id}/select-main`,{request_id:crypto.randomUUID(),expected_version:task.version});
+          setSession({session_id:selected.session_id,version:selected.session_version});setNotice('已选择主任务；此操作不确认、不授权、不成交。');
+        })}>选择为主任务</button>
         <p>{task.waiting_reason === 'BANK_SETTLEMENT' ? '等待银行实际结算或到账；预计资金不能用于买入。' : task.waiting_reason === 'PERSONAL_CONFIRMATION' ? '请核对订单并本人确认。' : task.waiting_reason === 'NEW_BUY_PLAN_AND_CONFIRMATION' ? '赎回已到账，需重新生成买入方案并确认授权。' : task.waiting_reason === 'ARCHIVED_RUN' ? '旧测试轮次已归档。' : task.waiting_reason === 'REVALIDATION_REQUIRED' ? '继续前将重新核验银行事实和授权。' : ''}</p>
         {!['PARTIAL_COMPLETED','FAILED'].includes(task.status) && (['pause','resume','rollback','handoff','cancel'] as const).map(action => <button className="secondary" key={action} disabled={busy || task.control_mode === 'HUMAN'} onClick={() => act(async () => {
           if (action === 'cancel' && !window.confirm('取消未提交的任务部分？已受理及完成订单仍保留原号核对，不撤销账务。')) return;
           await w.post(`/tasks/${task.task_id}/${action}`, {request_id:crypto.randomUUID(), expected_version:task.version});
         })}>{{pause:'暂停',resume:'继续任务',rollback:'返回未提交方案',handoff:'申请人工接管',cancel:'取消未提交部分'}[action]}</button>)}
       </article>)}
+      {chat?.requirement_card && <RequirementCard state={chat.requirement_card}/>}
+      {plan && <Recommendation plan={plan} products={products} onDetail={setDetailProduct}/>}
       <label>需求<input value={chatInput} maxLength={500} onChange={e => setChatInput(e.target.value)} /></label><button disabled={busy || !chatInput.trim()} onClick={() => act(() => send(chatInput))}>发送需求</button><button className="secondary" disabled={busy || !session} onClick={() => act(() => send('继续'))}>评估后继续原需求</button>{localStorage.getItem(`wealth-message-${userId}`) && <button className="secondary" disabled={busy} onClick={() => act(async () => { const pending = localStorage.getItem(`wealth-message-${userId}`); if (pending) await send(JSON.parse(pending).message); })}>重试上次未完成请求</button>}
       {chat?.citations?.map(c => <details key={c.document_id}><summary>{c.title} · {c.source_type} · {c.published_at || '发布时间未核实'}</summary><p>{c.excerpt}</p>{c.source_url && <a href={c.source_url} target="_blank" rel="noreferrer">官方原始来源</a>}<small>版本 {c.version} · 摘要指纹 {c.content_hash.slice(0,12)}</small></details>)}
       {chat && <><p>{chat.message}</p>{chat.products && <div className="wealth-table"><table><thead><tr><th>产品</th><th>风险</th><th>申购费率</th><th>持有期</th><th>赎回到账</th></tr></thead><tbody>{chat.products.map(p => <tr key={p.product_id}><td>{p.name}</td><td>R{p.product_risk_level}</td><td>{p.rules.purchase_fee_rate}</td><td>{p.rules.holding_days}天</td><td>{p.rules.cash_business_days}营业日</td></tr>)}</tbody></table></div>}</>}
       <p className="hint">对话不接收验证码，不会因“好的”而交易；页面确认后仍由银行再次检查。</p></aside></div>
+    {detailProduct && <ProductDetail productId={detailProduct} onClose={()=>setDetailProduct(null)}/>}
     {preview && <div className="wealth-modal"><section role="dialog" aria-label="本人订单确认" className="card"><h3>比赛模拟环境／模拟资金 · 本人确认</h3><p>{preview.product_name} · {preview.command.direction === 'purchase' ? `申购总支出 ${w.money(preview.command.amount_fen)}` : `赎回 ${preview.command.units} 份`}</p><p>估算净值 {preview.estimated_nav || '未知'}（{preview.estimated_nav_date || '未知'}）· 估算费用 {w.money(preview.estimate?.fee_fen)} · 估算份额 {preview.estimate?.units || '不适用'} · 估算到账 {w.money(preview.estimate?.cash_fen)}</p><p>计价日 {preview.pricing_date} · 确认日 {preview.confirm_date} · 到账日 {preview.cash_date}</p><details open><summary>产品披露版本 {preview.command.disclosure_version}</summary>{Object.entries(preview.disclosure).map(([key, value]) => <p key={key}>{disclosureLabels[key] || key}：{displayDisclosure(value)}</p>)}</details><p>实际份额/到账以结算为准，预览不保证收益。状态：{preview.authorization_status}，确认有效至 {beijingTime(preview.expires_at)}</p>
       <RedemptionQuote preview={preview}/>
       <label className="wealth-check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />本人已阅读本笔披露，理解本金可能亏损、费用和流动性，同意上述订单</label>

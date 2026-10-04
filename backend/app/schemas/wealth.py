@@ -125,10 +125,11 @@ class PlanInput(StrictRequest):
     account_id: str = Field(min_length=1, max_length=32)
     version: int = Field(default=1, ge=1, strict=True)
     budget_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
-    reserve_fen: int = Field(ge=0, le=2_000_000_000, strict=True)
+    reserve_fen: int | None = Field(default=None, ge=0, le=2_000_000_000, strict=True)
     horizon_days: int = Field(ge=1, le=3650, strict=True)
     excluded_products: list[str] = Field(default_factory=list, max_length=60)
     need: Literal['cash','balanced','growth'] | None = None
+    constraint_states: dict = Field(default_factory=dict)
 
 
 class PlanVersion(StrictRequest):
