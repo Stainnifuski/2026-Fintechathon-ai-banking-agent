@@ -1,6 +1,7 @@
 """5号持久化理财计划；通过HTTP获取事实，无银行ORM依赖。"""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from ...domain.time import BEIJING
 from decimal import Decimal, ROUND_DOWN
 from uuid import uuid4
 
@@ -108,7 +109,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     if budget > account["available_fen"]:
         raise WealthPolicyError(f"本次方案预算¥{budget/100:.2f}超过银行可用现金¥{account['available_fen']/100:.2f}。持仓和在途不属于可用现金，请明确修改本次预算。", "INSUFFICIENT_AVAILABLE_FUNDS")
     goals = (await db.scalars(select(WealthGoalORM).where(WealthGoalORM.user_id == user_id))).all()
-    business_date = date.fromisoformat(facts["business_at"][:10])
+    business_date = datetime.fromisoformat(facts["business_at"]).astimezone(BEIJING).date()
     goal_reserve = sum(goal.data["amount_fen"] for goal in goals if
         date.fromisoformat(goal.data["due_date"]) <= business_date+timedelta(days=365)
         and goal.data["liquidity"] == "immediate")

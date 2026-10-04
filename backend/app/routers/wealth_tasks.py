@@ -12,7 +12,7 @@ from ..services.orchestration import wealth_task as tasks
 from ..integrations.wealth_authorization import WealthPolicyError
 from ..integrations.wealth_bank_api import HttpWealthBankApi
 from .wealth import get_wealth_bank
-from ..schemas.wealth_subtask import SubtaskCreate,SubtaskPatch
+from ..schemas.wealth_subtask import SubtaskCreate,SubtaskPatch,ExternalCompletion
 from ..services.orchestration import wealth_subtask
 
 router = APIRouter(prefix='/api/v1/wealth', tags=['wealth-tasks'])
@@ -28,6 +28,13 @@ async def create_subtask(request:SubtaskCreate,user:dict=Depends(get_current_use
 async def get_subtask(task_id:str,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
     try:return await wealth_subtask.query(db,user['user_id'],task_id)
     except WealthPolicyError as error:fail(error)
+
+
+@router.post('/subtasks/{task_id}/external-completed')
+async def external_completed(task_id:str,request:ExternalCompletion,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..integrations.bank_api import BankApiError
+    try:return await wealth_subtask.complete_external(db,user['user_id'],bank,task_id,request)
+    except (WealthPolicyError,BankApiError) as error:await db.rollback();fail(error)
 
 
 @router.patch('/subtasks/{task_id}')

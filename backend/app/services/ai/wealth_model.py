@@ -79,6 +79,9 @@ async def understand(text: str,context: dict) -> tuple[Intent,dict]:
     一句话“兼顾增长和波动，半年后用，临时用钱可以等三工作日”同时set目标、六个月期限、few_business_days且max_business_days=3，不相互覆盖。
     只说稳健可以解释目标reduce_volatility；不能自动填期限或到账要求。“不确定”“你帮我建议”“暂不提供”针对last_question所问field分别mark_unknown/mark_unknown/skip，不循环询问、不擅自给默认值。产品查询/比较没有这些前置问题。'''
     instruction += '''以上表达只是示例，不是穷举规则或固定关键词。结合当前自然语言、双向上下文和最后问题泛化解释同义、隐含信息、否定、更正及复合需求。
+    若last_question正在询问某个需求字段，当前回答语义是没想好、拿不准、请你帮忙建议或暂时不回答，必须对该field输出mark_unknown或skip及本轮原文quote。不能遗漏patch并把它标成missing_condition继续追问。同一句要求“带条件的选择”应记录该真实未知状态并保留plan动作。
+    ambiguities只描述有多种解释的真实歧义。ambiguity_kind=reference是多所指或基数不明，contradiction是本轮不能唯一消解的冲突；只是尚未提供目标/期限用missing_condition，已明确不知道或跳过不是歧义，用none和空列表。服务端负责必要条件检查与条件候选。
+    类别排除或撤销仅使用semantic.excluded_categories，不能把“混合”“债券”等类别填product_refs或exclude_refs；这两个legacy字段仅指明确产品或有唯一上下文指代的单项。语义比较动作应以intent=compare表达，不能被“不要替我买”改成recommend或allocate。
     更正以本轮最终肯定表达为准：否定旧目标不等于否定投资，撤销一个约束不清空其他约束；“不是立即要用，但周转时不能拖过两工作日”只表达流动性上限，不自动编投资期限。
     隐含信息只有语义唯一时才能结构化，例如“整整六个月内不会动它”可提取六个月；“开春”“过一阵子”“到时候”不能凭空精确成某一天。若这类范围歧义影响下一步则列ambiguities，并选择相应clarification_field；纯查询不需要强制消除投资参数歧义。
     用户一句话提供多个方面应一并提取，先后或条件关系分别列intents；不把资产陈述、产品比较、交易执行混为一类。任何口头同意均不产生本人确认或授权。

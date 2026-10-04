@@ -52,4 +52,32 @@ typed方式在同一请求增加：
 - 控制沿用`POST /tasks/{id}/{pause|resume|rollback|cancel|handoff}`；`POST /tasks/{id}/select-main`只改变会话主任务，返回更新后session_version。
 - create请求按完整参数幂等：换parent/context/typed内容重放拒绝；跨用户不能读任务。
 
-外部依赖完成接口、复合动作自动分解和端到端局部修订仍待本轮完成；不得把上层“已付房租”当现金到账或本人授权。最终联调示例与验收尚需补齐，当前文档不表示I01/D01已完整通过。
+## 上层先付房租，再规划剩余现金
+
+创建请求额外传`external_dependencies:["rent_completed"]`及`parent_task_id`。服务端保存EXTERNAL_EVENT等待节点、原raw/typed请求，暂不解析/推荐；待实际银行事实完成后只解析一次原请求。此路径要求新子会话，不能把其他会话的在途动作改造成上层依赖。
+
+```json
+{
+  "context_id":"当前本人范围",
+  "request_id":"parent-rent-wealth-0001",
+  "parent_task_id":"parent-rent-2",
+  "external_dependencies":["rent_completed"],
+  "raw_text":"投入剩余可用现金的一半，半年后用，希望兼顾波动和增长"
+}
+```
+
+上层取得本人转账完成流水后调用`POST /subtasks/{child_task_id}/external-completed`：
+
+```json
+{
+  "request_id":"parent-rent-event-0001",
+  "expected_version":1,
+  "parent_task_id":"parent-rent-2",
+  "node_id":"创建返回的EXTERNAL_EVENT节点ID",
+  "event_reference":"4号已有的本人转账完成流水tx_id"
+}
+```
+
+4号只核对当前本人账户的`transfer_out/completed`及非未来流水；本接口不执行转账、不写现金、不接受paid、金额或授权标志。同一事件不能满足两个不同依赖，不存在/跨主体/错误父任务/版本冲突拒绝。已完成银行事实先持久化；若后续推荐中断，同一请求可续接，保留原事件，不重新转账。所有依赖完成后`continuation`返回续接的理财子任务envelope，重读当时银行现金再计算一半，买入仍需可信确认与新模拟授权。统一Agent、转账执行和总DAG继续归2号。
+
+真实多轮三组脚本已运行，外部依赖双库验证通过；实际卖出到账比例衔接、图局部版本完整验收与浏览器仍在进行，当前不表示I01/D01整个矩阵已完成。

@@ -327,6 +327,10 @@ async def test_plans_partial_adoption_and_old_confirm_invalidated(store, http_st
     assert adopted.status_code == 200
     assert len(adopted.json()["items"]) == 1
     assert adopted.json()["configuration"]["retained_cash_fen"] == 1_990_000
+    config=adopted.json()['configuration'];price=config['pricing_snapshot'][child['product_id']]
+    from backend.app.domain.wealth import purchase
+    assert config['estimated_fee_fen']==purchase(10000,price['nav'],price['purchase_fee_rate']).fee_fen
+    assert config['account_remaining_cash_fen']==1_990_000 and config['unallocated_fen']==1_990_000
 
 
 @pytest.mark.asyncio

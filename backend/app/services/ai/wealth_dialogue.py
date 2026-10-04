@@ -106,6 +106,11 @@ async def claim(db,user_id,client_id,digest):
 
 
 async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
+    semantic_fields={p.field for p in intent.semantic.patches} if intent.semantic else set()
+    if intent.intent in {'modify','allocate'} and semantic_fields and intent.amount_fen is None:
+        intent=intent.model_copy(update={'product_refs':[]})
+    if 'excluded_categories' in semantic_fields:
+        intent=intent.model_copy(update={'exclude_refs':[]})
     # 明确只读资产短句由服务端绑定到银行事实，不被历史订单意图劫持。
     if re.fullmatch(r'(?:查一下|查询|查看|查)(?:我的|本人|当前)?(?:持仓|资产|余额|账户)(?:资产|情况)?[。？?]?',text.strip()):
         intent=intent.model_copy(update={'intent':'assets'})
@@ -227,11 +232,13 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         excluded=list(dict.fromkeys(excluded+[p['product_id'] for p in products if p['category'] in categories]))
         slots['excluded_products']=excluded;data['pending']=slots
         response['requirement_card']=state
-        if state['ambiguities'] and intent.intent not in {'products','search','compare','knowledge','assets','status'}:
+        if state['ambiguities'] and intent.semantic.ambiguity_kind in {'reference','contradiction'} and intent.intent not in {'products','search','compare','knowledge','assets','status'}:
             data['last_question']={'field':'ambiguity','text':state['ambiguities'][0]}
             response['message']=state['ambiguities'][0]
             return response
         semantic_actions=[i.action for i in intent.semantic.intents]
+        if semantic_actions==['compare']:
+            intent=intent.model_copy(update={'intent':'compare'})
         changed=set(state['changed_fields'])
         if ('plan' in semantic_actions or (data.get('awaiting_plan_details') and changed)) and intent.intent not in {'purchase','redeem','assets','status','pause','resume','handoff','cancel_task'}:
             intent=intent.model_copy(update={'intent':'allocate'})
@@ -507,7 +514,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
                 'active_plan':plan_context,'recent_turns':[{'user':h['user'],'assistant':h['reply'].get('message','')[:1000]} for h in data.get('history',[])[-6:]],
                 'last_question':data.get('last_question'),'requirements':data.get('requirements'),
                 'main_task':data.get('active_task'),'card_lists':data.get('card_lists',[])[-4:],
-                'pending_orders':[{'operation_id':o['operation_id'],'status':o['status'],'product_id':o['product_id']} for o in facts['orders'][-8:]]}
+                'pending_orders':[{'operation_id':o['operation_id'],'status':o['status'],
+                    'product_id':o.get('product_id') or o['version_id'].split(':')[0]} for o in facts['orders'][-8:]]}
             intent,evidence=await understand(text,context)
         elif parsed_intent is not None:
             intent=parsed_intent;evidence={'provider':'validated-typed-input','live':False}
@@ -533,6 +541,9 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
             if isinstance(error,ValidationError):code='MODEL_SCHEMA_INVALID'
             elif isinstance(error,ValueError) and re.fullmatch(r'MODEL_[A-Z0-9_]+',str(error)):code=str(error)
             response={'mode':mode,'kind':'model_unavailable' if mode=='model' else 'clarification','code':code if mode=='model' else 'CLARIFICATION_REQUIRED','message':'模型请求失败，本轮未生成新的交易参数；可重试或使用可信表单。' if mode=='model' else '无法生成预览，请明确参数。'}
+            evidence={**evidence,'failure_type':type(error).__name__}
+            if isinstance(error,ValidationError):
+                evidence['invalid_fields']=[{'path':list(e['loc']),'type':e['type']} for e in error.errors()]
     await lock_profile(db,user_id)
     session=await db.get(WealthConversationORM,sid,with_for_update=True,populate_existing=True)
     if session and session.version!=version:

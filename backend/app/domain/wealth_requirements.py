@@ -1,6 +1,7 @@
 """Versioned semantic patches. Model interpretation never grants spending authority."""
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from .time import BEIJING
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Literal
 
@@ -106,11 +107,16 @@ class SemanticFrame(StrictSemantic):
     intents: list[SemanticIntent] = Field(default_factory=list, max_length=8)
     patches: list[Patch] = Field(default_factory=list, max_length=16)
     ambiguities: list[str] = Field(default_factory=list, max_length=4)
+    ambiguity_kind: Literal['reference','contradiction','missing_condition','none'] = 'reference'
     clarification_field: Literal['investment_budget','investment_goal','horizon','liquidity_requirement'] | None = None
 
 
 def horizon_days(horizon: dict, business_date: str) -> int | None:
-    start = date.fromisoformat(business_date[:10])
+    if 'T' in business_date:
+        instant=datetime.fromisoformat(business_date)
+        if instant.tzinfo is None:raise ValueError('BUSINESS_TIMEZONE_REQUIRED')
+        start=instant.astimezone(BEIJING).date()
+    else:start = date.fromisoformat(business_date)
     item = Horizon.model_validate(horizon)
     if item.unit == 'unknown':
         return None

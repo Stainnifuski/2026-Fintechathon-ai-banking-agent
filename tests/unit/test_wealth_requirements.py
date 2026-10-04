@@ -50,6 +50,7 @@ def test_short_answer_only_changes_bound_field_and_clear_is_not_skip():
 def test_calendar_months_and_leap_year():
     assert horizon_days({'unit':'months','count':1,'text':'一个月'},'2026-01-31')==28
     assert horizon_days({'unit':'years','count':1,'text':'一年'},'2024-02-29')==365
+    assert horizon_days({'unit':'months','count':1,'text':'一个月'},'2026-01-30T17:00:00+00:00')==28
 
 
 @pytest.mark.parametrize('ratio',['NaN','Infinity','-0.5','1.1','0','bad'])
