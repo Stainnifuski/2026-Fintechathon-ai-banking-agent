@@ -196,6 +196,8 @@ async def register_plan(db, user_id, session_id, context_id, plan):
     candidates=(await db.scalars(select(Task).where(Task.user_id==user_id,Task.context_id==context_id,Task.status.not_in(TERMINAL)))).all()
     # Selecting a new planning goal preserves unrelated pending orders and graphs.
     task=next((t for t in candidates if t.data.get('plan_id')==plan['plan_id']),None)
+    if task and task.data.get('plan_version')==plan['version']:
+        return await view(db,task)
     if task is None:
         task=next((t for t in candidates if t.task_id==plan['request'].get('requirement_task_id')
             and t.data.get('goal')=='wealth_planning'),None)

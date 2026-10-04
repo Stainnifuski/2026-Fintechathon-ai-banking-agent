@@ -513,6 +513,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
                 data.update(pending={},active_plan=None,awaiting_plan_details=False)
             elif previous.status in {'EXECUTING','WAITING_SETTLEMENT'}:
                 data.update(pending={},awaiting_plan_details=False)
+            else:
+                data['active_plan']={'plan_id':previous.plan_id,'version':previous.version}
             await db.rollback()
         elif not data.get('awaiting_plan_details'):
             # Also repairs pre-fix persisted sessions without deleting their history/orders.

@@ -32,14 +32,15 @@ async def test_new_cash_products_keep_standard_redemption_settlement(store,pid):
         assert (await research.import_dataset(db,payload))['duplicate']
         context=await research.initialize(db,'U1',dataset_key='mixed-preload-v12:standard-compat')
         ctx=await db.get(WealthContextORM,context['context_id'])
-        ctx.data={**ctx.data,'business_at':'2026-09-30T19:00:00+08:00'}
+        ctx.data={**ctx.data,'business_at':'2026-09-29T14:00:00+08:00'}
         await db.commit();await research.select_context(db,'U1',ctx.context_id,1);await assess(db)
         buy=InvestmentCommand(operation_id='standard-opening-'+pid,direction='purchase',account_id=ctx.account_id,
             product_id=pid,product_version=1,disclosure_version=1,amount_fen=100000)
         await bank.accept_many(db,'U1',[(buy,await authorize(db,buy))])
-        ctx.data={**ctx.data,'business_at':'2026-10-02T10:00:00+08:00'};await db.commit()
+        ctx.data={**ctx.data,'business_at':'2026-09-30T10:00:00+08:00'};await db.commit()
         assert (await bank.settle(db,buy.operation_id))['status']=='SETTLED'
         initial=(await db.get(AccountORM,buy.account_id)).balance_fen
+        ctx.data={**ctx.data,'business_at':'2026-09-30T19:00:00+08:00'};await db.commit()
         sell=InvestmentCommand(operation_id='standard-sell-'+pid,direction='redeem',account_id=buy.account_id,
             product_id=pid,product_version=1,disclosure_version=1,units='100.0000')
         preview=await bank.precheck(db,'U1',sell)
@@ -48,12 +49,12 @@ async def test_new_cash_products_keep_standard_redemption_settlement(store,pid):
         assert (await db.get(AccountORM,buy.account_id)).balance_fen==initial
         assert await db.scalar(select(func.count()).select_from(WealthUnitHoldORM).where(WealthUnitHoldORM.status=='HELD'))==1
         # 隔离测试中的确定性模拟净值；18点发布前不能被当作已知价格。
-        price=await db.get(WealthNavORM,pid+':1:2026-10-02')
+        price=await db.get(WealthNavORM,pid+':1:2026-10-08')
         if price is None:
-            price=WealthNavORM(nav_id=pid+':1:2026-10-02',version_id=pid+':1',nav_date=date(2026,10,2),price='1.00000000')
+            price=WealthNavORM(nav_id=pid+':1:2026-10-08',version_id=pid+':1',nav_date=date(2026,10,8),price='1.00000000')
             db.add(price)
-        price.price='1.00000000';price.available_at=datetime(2026,10,2,10,tzinfo=timezone.utc)
-        ctx.data={**ctx.data,'business_at':'2026-10-05T10:00:00+08:00'};await db.commit()
+        price.price='1.00000000';price.available_at=datetime(2026,10,8,10,tzinfo=timezone.utc)
+        ctx.data={**ctx.data,'business_at':'2026-10-09T10:00:00+08:00'};await db.commit()
         settled=await bank.settle(db,sell.operation_id)
         assert settled['status']=='SETTLED' and settled['details']['actual']['cash_fen']==10000
         assert (await db.get(AccountORM,buy.account_id)).balance_fen==initial+10000
@@ -73,13 +74,13 @@ async def test_quick_http_lost_response_requires_new_buy_confirmation(store, htt
         assert (await research.import_dataset(db,payload))['ok']
         context=await research.initialize(db,'U1',dataset_key='mixed-preload-v12:quick-http')
         ctx=await db.get(WealthContextORM,context['context_id'])
-        ctx.data={**ctx.data,'business_at':'2026-09-30T19:00:00+08:00'}
+        ctx.data={**ctx.data,'business_at':'2026-09-29T14:00:00+08:00'}
         await db.commit();await research.select_context(db,'U1',ctx.context_id,1);await assess(db)
         buy=InvestmentCommand(operation_id='http-quick-opening-buy',direction='purchase',account_id=context['account_id'],
             product_id='B017',product_version=1,disclosure_version=1,amount_fen=2000000)
         await bank.accept_many(db,'U1',[(buy,await authorize(db,buy))])
         ctx=await db.get(WealthContextORM,context['context_id'])
-        ctx.data={**ctx.data,'business_at':'2026-10-02T10:00:00+08:00'};await db.commit()
+        ctx.data={**ctx.data,'business_at':'2026-09-30T10:00:00+08:00'};await db.commit()
         assert (await bank.settle(db,buy.operation_id))['status']=='SETTLED'
         initial=(await db.get(AccountORM,buy.account_id)).balance_fen
     async def preview_confirm(command):
@@ -156,7 +157,7 @@ async def test_quick_http_lost_response_requires_new_buy_confirmation(store, htt
                                  'plan_id':'WPquick-followup','plan_version':1})
     async with store() as db:
         from backend.app.models.wealth import WealthPlanORM
-        plan={'plan_id':'WPquick-followup','version':1,'stage':'BUY','request':{'kind':'new_cash','account_id':buy.account_id},
+        plan={'plan_id':'WPquick-followup','version':1,'stage':'BUY','request':{'kind':'new_cash','account_id':buy.account_id,'parent_task_id':task['task_id']},
               'items':[{'command':new_buy.model_dump(),'status':'AWAITING_CONFIRMATION'}],'profile_version':1,'goal_versions':{}}
         continued=await tasks.register_plan(db,'U1','quick-buy-dependency',context['context_id'],plan)
         assert continued['task_id']==task['task_id'] and continued['version']==2

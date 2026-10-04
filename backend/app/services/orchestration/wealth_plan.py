@@ -155,9 +155,10 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     await db.rollback()
     await lock_profile(db, user_id)
     row = await owned_plan(db, user_id, plan_id) if plan_id else None
+    linked_task=None
     if row:
         from .wealth_task import require_plan_edit
-        await require_plan_edit(db,user_id,plan_id)
+        linked_task=await require_plan_edit(db,user_id,plan_id)
     if row and (row.version != request.get("version") or row.status in {"EXECUTING", "WAITING_SETTLEMENT", "COMPLETED"}):
         raise WealthPolicyError("方案版本已改变或已受理，请先核对在途", "STALE_PLAN")
     if row and any(item["status"] in {"SUBMITTING", "UNKNOWN", "ACCEPTED", "PENDING_PRICING", "PENDING_CASH"} for item in row.data["items"]):
@@ -232,6 +233,9 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         "limitations": ["外部资产只诊断，不能形成银行交易", "目标分配为标签，不自动冻结余额", "锁定和在途份额不强制卖出"],
         "notice": "比赛模拟环境／模拟资金；调整不自动交易，赎回后买入需新确认和强验证"}
     await db.commit()
+    if linked_task:
+        from .wealth_task import register_plan
+        await register_plan(db,user_id,linked_task.session_id,linked_task.context_id,plan_view(row))
     return plan_view(row)
 
 
