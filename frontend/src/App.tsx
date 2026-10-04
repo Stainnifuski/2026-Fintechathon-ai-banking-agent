@@ -1,6 +1,7 @@
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 import BeijingClock from './components/BeijingClock';
+import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
 
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
@@ -60,6 +61,7 @@ function App() {
   const [retryChat, setRetryChat] = useState<bank.ChatRequest | null>(null);
   const [appView, setAppView] = useState<'banking' | 'thirdParty'>('banking');
   const [bankingSection, setBankingSection] = useState<BankingSection>('home');
+  const [wealthTestMode, setWealthTestMode] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [highlightedPaymentRequest, setHighlightedPaymentRequest] = useState('');
 
@@ -68,6 +70,7 @@ function App() {
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [mfaOpen, setMfaOpen] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
+  const [mfaFactor, setMfaFactor] = useState<bank.SecondFactor | null>({ method: 'totp' });
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollData, setEnrollData] = useState<bank.TotpEnroll | null>(null);
   const [enrollCode, setEnrollCode] = useState('');
@@ -361,10 +364,10 @@ function App() {
 
   // 提交 TOTP 验证码完成红色路径强验证。
   const submitMfa = async () => {
-    if (!activeTask || mfaCode.length !== 6 || isActing) return;
+    if (!activeTask || !mfaFactor || mfaCode.length !== 6 || isActing) return;
     setIsActing(true); setStatus('');
     try {
-      let task = await bank.verifyTask(activeTask, newId(), mfaCode);
+      let task = await bank.verifyTask(activeTask, newId(), mfaCode, mfaFactor);
       if (task.allowed_actions.includes('accept')) {
         task = await bank.acceptTask(task, newId());
       }
@@ -412,7 +415,7 @@ function App() {
     setAmount(''); setNote(''); setEditingNote(null); setEditNoteCleared(false); setTransferMode('instant');
     setRequestAmount(''); setRequestNote(''); setSplitEqually(false); setChatInput('');
     setTotpEnabled(false); setMfaOpen(false); setMfaCode(''); setEnrollOpen(false); setEnrollData(null); setEnrollCode('');
-    setAppView('banking'); setBankingSection('home'); setAgentOpen(false); setHighlightedPaymentRequest('');
+    setAppView('banking'); setBankingSection('home'); setWealthTestMode(false); setAgentOpen(false); setHighlightedPaymentRequest('');
   };
 
   const goToBankPayment = async (paymentRequestId?: string) => {
@@ -432,9 +435,10 @@ function App() {
   const requestTotal = splitEqually
     ? requestAmountNumber
     : requestAmountNumber * requestPayerIds.length;
-  const totalBalance = accounts.reduce((sum, account) => sum + account.balance, 0);
-  const availableBalance = accounts.reduce((sum, account) => sum + ((account.available_fen ?? Math.round(account.balance * 100)) / 100), 0);
-  const heldBalance = accounts.reduce((sum, account) => sum + ((account.held_fen || 0) / 100), 0);
+  const cashAccounts = accounts.filter(account => account.account_type === 'savings');
+  const totalBalance = cashAccounts.reduce((sum, account) => sum + account.balance, 0);
+  const availableBalance = cashAccounts.reduce((sum, account) => sum + ((account.available_fen ?? Math.round(account.balance * 100)) / 100), 0);
+  const heldBalance = cashAccounts.reduce((sum, account) => sum + ((account.held_fen || 0) / 100), 0);
   const activeSubscriptions = subscriptions.filter(subscription => subscription.status === 'ACTIVE');
   const pendingRequests = paymentRequests.filter(request => ['PENDING', 'ACCEPTED'].includes(request.status)).length;
   const recentSpend = transactions.slice(0, 8).filter(transaction => ['transfer_out', 'purchase', 'subscription', 'investment_purchase'].includes(transaction.type)).reduce((sum, transaction) => sum + transaction.amount, 0);
@@ -490,7 +494,7 @@ function App() {
           </section>
           <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
         </>}
-        {bankingSection === 'wealth' && <><div className="page-intro"><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense><Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
+        {bankingSection === 'wealth' && <><div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
         {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>让每一笔变化都有解释。</h1><p>账单分析保持只读，不会通过问答直接修改账户。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} /></Suspense></>}
         {bankingSection === 'transfer' && <><div className="page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账、收款和任务状态集中在一处。</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="grid">
       <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong>{a.available_fen != null && <small>可用 ¥{(a.available_fen / 100).toFixed(2)} · 占款 ¥{((a.held_fen || 0) / 100).toFixed(2)}</small>}<small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
@@ -534,11 +538,22 @@ function App() {
           : <div className="row"><input maxLength={256} disabled={editNoteCleared} value={editingNote} onChange={e => setEditingNote(e.target.value)} /><label><input type="checkbox" checked={editNoteCleared} onChange={e => setEditNoteCleared(e.target.checked)} />清空</label><button disabled={isActing || (!editNoteCleared && !editingNote.trim())} onClick={saveEditedNote}>保存并重新确认</button><button className="secondary" onClick={() => setEditingNote(null)}>返回</button></div>}
       </>}
       {activeTask.scheduled_at && <p className="notice">计划执行时间：{beijingTime(activeTask.scheduled_at)}</p>}
-      <p className="hint">应用操作：{activeTask.operation.status} · 银行状态：{activeTask.operation.bank_status || '尚未受理'} {activeTask.operation.bank_tx_id && `· 银行流水 ${activeTask.operation.bank_tx_id}`}</p>
-      <div className="confirm">{activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing || isChatting} onClick={() => actOnTask('cancel')}>取消任务</button>}{activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting} onClick={() => actOnTask('confirm')}>{activeTask.scheduled_at ? '确认定时转账' : '确认并提交'}</button>}{activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting} onClick={() => { setMfaCode(''); setMfaOpen(true); }}>身份验证</button>}{activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing || isChatting} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}</div>
+      <p className="hint">应用操作：{activeTask.operation.status} · 银行状态：{activeTask.operation.bank_status || '尚未受理'} {activeTask.operation.bank_tx_id && `· 银行流水 ${activeTask.operation.bank_tx_id}`} · 最终备注：{activeTask.operation.note ?? '无'}</p>
+      <div className="confirm">
+        {activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('cancel')}>取消任务</button>}
+        {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('confirm')}>{activeTask.scheduled_at ? '确认定时转账' : '确认并提交'}</button>}
+        {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => { setMfaCode(''); setMfaFactor({ method: 'totp' }); setMfaOpen(true); }}>身份验证</button>}
+        {activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}
+      </div>
     </section>}
     <section className="grid"><div className="card"><h2>即时转账对话</h2><p className="hint">例如：给手机号13800000002转300元，备注房租；改成500元；清空备注。当前模式：{conversation?.mode === 'model' ? '模型理解' : '离线规则（有限表达）'}。</p><button className="secondary" disabled={isChatting || !!retryChat} onClick={newConversation}>新建转账会话</button><div className="chat">{chat.map((item,index)=><p key={index}>{item}</p>)}</div>{conversation?.candidates.map(candidate=><button key={candidate.candidate_id} disabled={isChatting || !!retryChat} onClick={()=>sendChat(candidate.candidate_id)}>{candidate.label}</button>)}<div className="row"><input value={chatInput} disabled={isChatting || !!retryChat} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!retryChat&&sendChat()} placeholder="给手机号13800000002转300元，备注聚餐"/><button disabled={isChatting || !!retryChat} onClick={()=>sendChat()}>发送</button></div>{retryChat&&!isChatting&&<button onClick={()=>sendChat(undefined,true)}>重试原消息（避免重复建单）</button>}</div>
-      <div className="card"><h2>最近流水</h2>{transactions.length===0?<p className="hint">暂无流水</p>:<ul className="history">{transactions.slice(0,8).map(tx=>{const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type);return <li key={tx.tx_id}><span>{tx.note||tx.type}<small>{beijingTime(tx.timestamp)}</small></span><strong className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</strong></li>})}</ul>}</div></section></>}
+      <div className="card"><h2>最近流水</h2>{transactions.length === 0 ? <p className="hint">暂无流水</p> : <ul className="history">{transactions.slice(0, 8).map(tx => {
+        const outgoing = ['transfer_out', 'purchase', 'subscription', 'investment_purchase'].includes(tx.type);
+        const label = tx.type === 'investment_purchase' ? '理财申购' : tx.type === 'investment_redemption' ? '理财赎回到账' : tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type === 'refund' ? '退款' : tx.type === 'salary' ? '工资' : tx.type;
+        const statusLabel = ({ completed: '已完成', pending: '处理中', failed: '失败', cancelled: '已取消' } as Record<string, string>)[tx.status] || tx.status;
+        const counterparty = recipients.find(recipient => recipient.account_id === tx.counterparty)?.name || tx.counterparty;
+        return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{beijingTime(tx.timestamp)} · {statusLabel}</small></span><strong className={tx.status !== 'completed' ? 'hint' : outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
+      })}</ul>}</div></section></>}
     {bankingSection === 'cards' && <><div className="page-intro"><p className="eyebrow">CARDS</p><h1>卡片控制，清楚而克制。</h1><p>低风险设置与高风险操作明确分层。</p></div><Suspense fallback={<section className="card"><p>正在加载卡片管理…</p></section>}><CardManagement key={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
     {bankingSection === 'subscriptions' && <><div className="page-intro"><p className="eyebrow">SUBSCRIPTIONS</p><h1>看清每一笔周期支出。</h1><p>取消前展示影响，历史流水不会被删除。</p></div><section className="card subscription-card">
       <h2>订阅管理</h2>
@@ -557,11 +572,11 @@ function App() {
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>
-        <p className="hint">请打开 Google Authenticator（或其他验证器 App），输入当前显示的 6 位验证码。</p>
+        {activeTask && <SecondFactor purpose="transfer" referenceId={activeTask.task_id} factor={mfaFactor} onChange={setMfaFactor} disabled={isActing} />}
         <input inputMode="numeric" maxLength={6} value={mfaCode} placeholder="6 位验证码" onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && submitMfa()} />
         <div className="confirm">
           <button className="secondary" disabled={isActing} onClick={() => { setMfaOpen(false); setMfaCode(''); }}>取消</button>
-          <button disabled={isActing || mfaCode.length !== 6} onClick={submitMfa}>{isActing ? '验证中…' : '提交验证'}</button>
+          <button disabled={isActing || !mfaFactor || mfaCode.length !== 6} onClick={submitMfa}>{isActing ? '验证中…' : '提交验证'}</button>
         </div>
       </div>
     </div>}

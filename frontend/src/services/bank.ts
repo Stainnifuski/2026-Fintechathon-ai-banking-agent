@@ -49,6 +49,14 @@ export interface TotpEnroll { secret: string; otpauth_uri: string; qr_data_uri: 
 export const totpStatus = () => apiClient.get<TotpStatus>('/auth/totp/status').then(r => r.data);
 export const totpEnroll = () => apiClient.post<TotpEnroll>('/auth/totp/enroll').then(r => r.data);
 export const totpConfirm = (code: string) => apiClient.post<TotpStatus>('/auth/totp/confirm', { code }).then(r => r.data);
+/** 第二因素：验证器 TOTP 或绑定到具体操作的短信验证码。 */
+export type SecondFactor = { method: 'totp' } | { method: 'sms'; challengeId: string };
+export type SmsPurpose = 'transfer' | 'card' | 'wealth';
+export interface SmsChallenge { challenge_id: string; phone_masked: string; expires_in: number; resend_after: number; }
+export interface SmsInboxMessage { content: string; sent_at: string; }
+export const sendSms = (purpose: SmsPurpose, referenceId: string) =>
+  apiClient.post<SmsChallenge>('/auth/sms/send', { purpose, reference_id: referenceId }).then(r => r.data);
+export const smsDevInbox = () => apiClient.get<SmsInboxMessage[]>('/auth/sms/dev-inbox').then(r => r.data);
 export const accounts = (userId: string) => apiClient.get<Account[]>(`/accounts/${userId}/accounts`).then(r => r.data);
 export const recipients = () => apiClient.get<Recipient[]>('/users/recipients').then(r => r.data);
 export interface PhoneRecipientCandidate { account_id: string; label: string; }
@@ -115,10 +123,10 @@ export const reconcileTask = (task: TaskSnapshot, requestId: string) =>
   apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/reconcile`, {
     request_id: requestId, state_version: task.state_version,
   }).then(r => r.data);
-export const verifyTask = (task: TaskSnapshot, requestId: string, code: string) =>
+export const verifyTask = (task: TaskSnapshot, requestId: string, code: string, factor: SecondFactor = { method: 'totp' }) =>
   apiClient.post<TaskSnapshot>(`/tasks/${task.task_id}/verify`, {
     request_id: requestId, state_version: task.state_version,
-    challenge_id: 'totp', proof: code,
+    challenge_id: factor.method === 'sms' ? factor.challengeId : 'totp', proof: code, method: factor.method,
   }).then(r => r.data);
 
 
@@ -154,8 +162,9 @@ export const previewCardOperation = (payload: CardOperationRequest) =>
   apiClient.post<CardOperation>('/cards/operations', payload).then(r => r.data);
 export const confirmCardOperation = (operation: CardOperation) =>
   apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/confirm`, { digest: operation.digest }).then(r => r.data);
-export const verifyCardOperation = (operation: CardOperation, proof: string) =>
-  apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/verify`, { proof }).then(r => r.data);
+export const verifyCardOperation = (operation: CardOperation, proof: string, factor: SecondFactor = { method: 'totp' }) =>
+  apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/verify`,
+    factor.method === 'sms' ? { proof, method: 'sms', challenge_id: factor.challengeId } : { proof }).then(r => r.data);
 export const cancelCardOperation = (operation: CardOperation) =>
   apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/cancel`).then(r => r.data);
 export const getCardOperation = (operationId: string) =>

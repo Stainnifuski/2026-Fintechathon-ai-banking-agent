@@ -21,6 +21,7 @@ from ..services.bank import (
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
+    verify_sms_for_operation,
     verify_totp_for_operation,
 )
 
@@ -84,6 +85,13 @@ class InternalTotpVerification(BaseModel):
     proof: str = Field(min_length=6, max_length=6)
 
 
+class InternalSmsVerification(BaseModel):
+    subject_user_id: str
+    proof: str = Field(pattern=r"^\d{6}$")
+    challenge_id: str = Field(min_length=1, max_length=64)
+    reference_id: str = Field(min_length=1, max_length=64)
+
+
 def require_internal_token(x_internal_token: str = Header(default="")) -> None:
     if not INTERNAL_BANK_TOKEN or INTERNAL_BANK_TOKEN in {
         "dev-internal-token", "replace-with-a-separate-internal-secret"
@@ -104,6 +112,21 @@ def _raise_bank_error(error: BankError) -> None:
 async def verify_totp(request: InternalTotpVerification, db: AsyncSession = Depends(get_db)) -> dict:
     try:
         await verify_totp_for_operation(db, request.subject_user_id, request.proof)
+        await db.commit()
+        return {"verified": True}
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)
+
+
+@router.post("/sms/verify", response_model=TotpVerificationView, dependencies=[Depends(require_internal_token)])
+async def verify_sms(request: InternalSmsVerification, db: AsyncSession = Depends(get_db)) -> dict:
+    """转账任务的短信第二因素：挑战须绑定到同一任务。"""
+    try:
+        await verify_sms_for_operation(
+            db, request.subject_user_id, request.proof,
+            challenge_id=request.challenge_id, purpose="transfer", reference_id=request.reference_id,
+        )
         await db.commit()
         return {"verified": True}
     except BankError as error:

@@ -12,7 +12,11 @@ from .data_service import (
     list_recipients,
     list_transactions,
     register_customer,
+    send_sms_challenge,
+    sms_dev_inbox,
     totp_status,
+    verify_second_factor,
+    verify_sms_for_operation,
     verify_totp_for_operation,
 )
 
@@ -51,6 +55,10 @@ __all__ = [
     "confirm_totp_enrollment",
     "totp_status",
     "verify_totp_for_operation",
+    "send_sms_challenge",
+    "sms_dev_inbox",
+    "verify_second_factor",
+    "verify_sms_for_operation",
     "BankError",
     "BankOperationResult",
     "BankResponseLost",

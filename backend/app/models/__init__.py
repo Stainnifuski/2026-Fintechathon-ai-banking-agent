@@ -22,6 +22,7 @@ from .flower_order import FlowerOrderORM
 from .cake_order import CakeOrderORM
 from .calendar_event import CalendarEventORM
 from .merchant_refund import MerchantRefundORM
+from .sms_challenge import SmsChallengeORM
 from .workflow import (
     AuthorizationORM,
     HumanTicketORM,
@@ -84,6 +85,7 @@ __all__ = [
     "CakeOrderORM",
     "CalendarEventORM",
     "MerchantRefundORM",
+    "SmsChallengeORM",
 ]
 
 from .conversation import ConversationORM, ChatReceiptORM

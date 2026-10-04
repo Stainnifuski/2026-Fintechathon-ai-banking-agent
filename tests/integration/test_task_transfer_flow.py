@@ -23,6 +23,7 @@ from backend.app.services.bank import (
     resolve_transfer_parties,
     submit_transfer,
     validate_transfer_parties,
+    verify_sms_for_operation,
     verify_totp_for_operation,
 )
 from backend.app.services.orchestration import (
@@ -46,6 +47,14 @@ class InProcessBankApi:
     async def verify_totp(self, *, subject_user_id: str, proof: str) -> None:
         try:
             await verify_totp_for_operation(self.db, subject_user_id, proof)
+            await self.db.commit()
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
+
+    async def verify_sms(self, *, subject_user_id: str, proof: str, challenge_id: str, reference_id: str) -> None:
+        try:
+            await verify_sms_for_operation(self.db, subject_user_id, proof, challenge_id=challenge_id,
+                                           purpose="transfer", reference_id=reference_id)
             await self.db.commit()
         except BankError as error:
             raise BankApiError(error.message, error.code, error.status_code) from error
@@ -272,6 +281,56 @@ async def test_high_risk_transfer_requires_totp_verification(db) -> None:
     assert executed["outcome"] == "SUCCEEDED"
     assert (await db.get(AccountORM, "A1")).balance == 3500.0
     assert (await db.get(AccountORM, "A2")).balance == 2500.0
+
+
+@pytest.mark.asyncio
+async def test_high_risk_transfer_accepts_sms_code_bound_to_task(db) -> None:
+    import re
+    from backend.app.security import sms
+    from backend.app.services.bank import send_sms_challenge
+
+    provider = sms.MockSmsProvider()
+    sms.set_sms_provider(provider)
+    try:
+        bank = InProcessBankApi(db)
+        task = await create_transfer_task(
+            db, bank, user_id="U1", request_id="request-create-sms", operation_id="operation-sms",
+            from_account="A1", to_account="A2", amount=1500.0,
+        )
+        waiting = await confirm_task(
+            db, task_id=task["task_id"], user_id="U1", request_id="request-confirm-sms",
+            state_version=task["state_version"], plan_version=task["plan_version"],
+        )
+        assert waiting["phase"] == "WAITING_VERIFICATION"
+
+        # 为其他任务获取的短信码不能用于本任务。
+        foreign = await send_sms_challenge(db, "U1", "transfer", "another-task")
+        foreign_code = re.search(r"验证码 (\d{6})", provider.messages_for("13800000001", 1)[0].content).group(1)
+        with pytest.raises(TaskError):
+            await verify_task(
+                db, bank, task_id=task["task_id"], user_id="U1", request_id="request-verify-sms-foreign",
+                state_version=waiting["state_version"], challenge_id=foreign["challenge_id"],
+                proof=foreign_code, method="sms",
+            )
+        await db.rollback()
+
+        sent = await send_sms_challenge(db, "U1", "transfer", task["task_id"])
+        code = re.search(r"验证码 (\d{6})", provider.messages_for("13800000001", 1)[0].content).group(1)
+        ready = await verify_task(
+            db, bank, task_id=task["task_id"], user_id="U1", request_id="request-verify-sms",
+            state_version=waiting["state_version"], challenge_id=sent["challenge_id"],
+            proof=code, method="sms",
+        )
+        assert ready["phase"] == "READY"
+        assert ready["authorization"]["status"] == "VALID"
+        executed = await accept_task(
+            db, bank, task_id=task["task_id"], user_id="U1", request_id="request-accept-sms",
+            state_version=ready["state_version"],
+        )
+        assert executed["outcome"] == "SUCCEEDED"
+        assert (await db.get(AccountORM, "A1")).balance == 3500.0
+    finally:
+        sms.set_sms_provider(None)
 
 
 @pytest.mark.asyncio

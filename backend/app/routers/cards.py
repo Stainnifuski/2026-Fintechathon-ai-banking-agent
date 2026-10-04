@@ -13,7 +13,7 @@ from ..schemas.bank import BANK_ERROR_RESPONSES
 from ..schemas.cards import (
     CardConfirmRequest, CardOperationCreate, CardOperationView, CardVerifyRequest, CardView,
 )
-from ..services.bank import BankError, card_service as cards, verify_totp_for_operation
+from ..services.bank import BankError, card_service as cards, verify_second_factor
 
 router = APIRouter(prefix="/api/v1/cards", tags=["cards"], responses=BANK_ERROR_RESPONSES)
 
@@ -153,10 +153,12 @@ async def verify_operation(operation_id: str, request: CardVerifyRequest,
         if row.status != auth.AUTHORIZED:
             auth.require_verification_pending(row)
             try:
-                await verify_totp_for_operation(db, user_id, request.proof)
+                await verify_second_factor(db, user_id, request.proof, method=request.method,
+                                           challenge_id=request.challenge_id,
+                                           purpose="card", reference_id=operation_id)
             except BankError as error:
                 await db.rollback()
-                if error.code in ("TOTP_INVALID", "TOTP_REPLAY"):
+                if error.code in ("TOTP_INVALID", "TOTP_REPLAY", "SMS_INVALID"):
                     row = await auth.owned_operation(db, user_id, operation_id)
                     locked = auth.record_failed_verification(row)
                     await db.commit()
@@ -164,7 +166,7 @@ async def verify_operation(operation_id: str, request: CardVerifyRequest,
                         raise locked from error
                 raise HTTPException(error.status_code,
                                     detail={"code": error.code, "message": error.message}) from error
-            auth.record_verification(db, row)
+            auth.record_verification(db, row, request.method)
             await db.commit()
     except CardAuthorizationError as error:
         await _fail(db, error)

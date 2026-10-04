@@ -66,6 +66,10 @@ class ResolvedTransferParties(TransferValidation):
 class BankApi(Protocol):
     async def verify_totp(self, *, subject_user_id: str, proof: str) -> None: ...
 
+    async def verify_sms(
+        self, *, subject_user_id: str, proof: str, challenge_id: str, reference_id: str
+    ) -> None: ...
+
     async def transfer_directory(self, *, subject_user_id: str, recipient_name: str | None = None, recipient_phone: str | None = None) -> dict: ...
 
     async def validate_transfer(
@@ -127,6 +131,17 @@ class HttpBankApiClient:
         response = await self._request(
             "POST", "/api/v1/internal/bank/totp/verify",
             json={"subject_user_id": subject_user_id, "proof": proof},
+        )
+        if response.is_error:
+            raise self._error(response)
+
+    async def verify_sms(
+        self, *, subject_user_id: str, proof: str, challenge_id: str, reference_id: str
+    ) -> None:
+        response = await self._request(
+            "POST", "/api/v1/internal/bank/sms/verify",
+            json={"subject_user_id": subject_user_id, "proof": proof,
+                  "challenge_id": challenge_id, "reference_id": reference_id},
         )
         if response.is_error:
             raise self._error(response)

@@ -1,6 +1,7 @@
 """用户数据模型"""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import BigInteger, Boolean, DateTime, String, func
@@ -106,3 +107,26 @@ class TotpConfirmRequest(BaseModel):
     """确认绑定请求。"""
 
     code: str = Field(min_length=6, max_length=6)
+
+
+class SmsSendRequest(BaseModel):
+    """为一笔待强验证操作获取短信验证码。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    purpose: Literal["transfer", "card", "wealth"]
+    reference_id: str = Field(min_length=1, max_length=64, description="任务ID/卡片操作ID/理财授权ID")
+
+
+class SmsChallengeSchema(BaseModel):
+    """已发送的短信挑战；不包含验证码本身。"""
+
+    challenge_id: str
+    phone_masked: str
+    expires_in: int
+    resend_after: int
+
+
+class SmsInboxMessage(BaseModel):
+    content: str
+    sent_at: str
