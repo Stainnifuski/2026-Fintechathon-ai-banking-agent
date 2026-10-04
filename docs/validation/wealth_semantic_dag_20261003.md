@@ -27,7 +27,7 @@
 | B01 | 新数据申赎账务 | PASS | fixed_ledger双库4项及B017场景2项；普通到账10月9日、快赎实际余额/份额/唯一流水 |
 | B02 | 授权和快赎保护 | PASS | 新价格参数绑定/不可撤，复用双库快赎额度/回滚/跨账户6项，普通/丢响应6项 |
 | L01 | 备份/归属清理/20,000空基线 | PASS | 实际demo一次备份与归属清理；受保护表哈希不变；升级服务双库 |
-| F01 | 构建、回归、文档、PR同步 | IN_PROGRESS | tsc/Vite通过、文档更新中；仅PR前fetch，尚未远端写入 |
+| F01 | 构建、回归、文档、PR同步 | PASS | tsc/Vite、受影响回归及文档完成；PR前唯一fetch无新冲突；正常push，main PR #6已创建，未合并 |
 
 真实DeepSeek限制为三组必要多轮脚本；mock记录不得记为真实模型验收。双库只运行关键持久化/事务路径。重启条件不足可NOT_RUN。所有必需项完成前不发布PR。
 
@@ -61,3 +61,5 @@ S008一年241点、1月18点、3月62点；1月波动率暂无（少于20个收�
 ## PR前同步
 
 本地必需验收后执行本轮唯一一次`git fetch origin main`；最新main仍为`02c51e7309321206baa43b978efbf5557f95f948`，与起始基线完全相同，无新增文件、规范或队友修改待整合。`merge-base --is-ancestor origin/main HEAD`成功；无需制造空merge或重复运行未受影响测试。最终tsc及Vite711模块9.33s通过，演示后端已加载最新提交，`/health`返回ok。功能分支未发现同名远端分支；待正常push并创建main PR后记录URL。密钥、.env、数据库与本地备份未加入提交。
+
+功能分支已正常推送；[main PR #6](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/pull/6)已创建并附到本任务，创建时HEAD为`ae88825c0c43d4bad01e7203c7aacc26204b40eb`。此后只补交发布记录；最终完整SHA以GitHub PR head为准。main未修改、未合并、未开启自动合并。本表24项必需范围有证据，额外浏览器最终取消/刷新工具问题如上单列未验证，未冒充完整全仓测试。
