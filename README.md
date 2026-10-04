@@ -10,7 +10,7 @@
 |---|---|---|
 | 智能转账 | 姓名/手机号转账、备注、多轮修改、定时转账、AA收款及原号恢复 | 聊天处理即时人民币转账；定时/AA走表单；可配置外部模型 |
 | 账单分析 | 月度/年度报告、分类趋势、异常提示、流水下钻及只读问答 | 默认离线，可配置模型理解 |
-| 理财操作 | 全量基金搜索／池外缓存、44真实基金＋18模拟银行理财池、产品及组合分析、版本化知识与8宏观指标、DeepSeek多轮、本人评估、申赎/配置/调整/异步结算；新增单一对话工作台、任务DAG与控制、人工接管、快赎及测试轮次工具 | 真实行情仅研究；可信页面确认和模拟授权；日更需显式启用；本轮完整验收结果以E01–E40记录为准 |
+| 理财操作 | 全量基金搜索／池外缓存、44真实基金＋18模拟银行理财池、产品及组合分析、知识与宏观指标；DeepSeek结构化多轮语义、可修订需求卡、按需澄清、主任务选择、持久化理财子DAG及替换推荐provider；配置条形图、产品详情、净值曲线和三个指标；本人评估、模拟申赎/快赎、异步结算及测试轮次工具 | 真实行情仅研究；另有S001–S060＋B001–B018共78个固定价格模拟条目；中国2021–2026历史日历、2027明确预测；可信页面确认和模拟授权；统一Agent/跨场景总DAG由2号衔接 |
 | 订阅管理 | 已有订阅记录及相关操作 | 范围以现有接口与测试为准，不等同完成全部自动识别能力 |
 | 卡片管理 | 卡片查询、申请虚拟卡、设置交易限额（黄色确认）；调整信用额度、解锁、挂失（红色：确认＋TOTP） | 网页可信面板；聊天不处理卡片；Agent工具只能查询和生成预览 |
 | 日历 | 月视图、时间点／时间段事件、ICS 上传导入、全天与重复日程、用户隔离和事件删除 | 本地日历，不含提醒推送或外部日历同步 |
@@ -62,6 +62,8 @@ docker compose up --build
 | v1.2验收与比赛 | [当前混合池验收](docs/validation/wealth_v1_2_supplement_20261002.md)、[清理与干净复现](docs/validation/development_cleanup_20261002.md)、[比赛材料与差距](docs/competition/wealth_v1_2.md) |
 | 理财开发与联调 | [接口契约](docs/wealth/contract.md)、[设计决策](docs/wealth/decisions.md)、[数据库交接](docs/wealth/handoff.md) |
 | 理财对话与账务增量（开发中） | [任务/时间/测试轮次契约](docs/wealth/dialogue_tasks_and_time.md)、[当前进度](docs/wealth/dialogue_ledger_progress.md)、[E01–E40验收](docs/validation/dialogue_ledger_20261002.md) |
+| 理财语义、推荐与子DAG | [子任务接口](docs/wealth/semantic_subtask_contract.md)、[推荐provider](docs/wealth/recommendation_provider.md)、[推荐与详情展示](docs/wealth/recommendation_display.md)、[固定24项验收](docs/validation/wealth_semantic_dag_20261003.md) |
+| 固定行情与本地基线升级 | [价格和日历](docs/wealth/fixed_prices_and_calendar.md)、[备份与归属清理](docs/wealth/baseline_upgrade.md)、[本轮进度](docs/wealth/semantic_dag_progress.md) |
 | 安全与模拟限制 | [理财安全自评](docs/wealth/security.md)、[模拟授权及统一接口](docs/wealth/simulated_authorization.md) |
 | 验证证据 | [理财原始验收](docs/validation/wealth_20261001.md)、[本次授权调整](docs/validation/wealth_authorization_demo_20261001.md)、[账单验收](docs/validation/bills_20260930.md) |
 | 开发历史 | [实施进度](implementation_progress.md)、[历史README](docs/archive/README_before_authorization_20261001.md) |
