@@ -7,7 +7,8 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...domain.wealth_allocation import allocate, WEIGHTS, DEVIATION_PERCENT
+from ...domain.wealth_allocation import DEVIATION_PERCENT
+from ...domain.wealth_recommendation import recommend
 from ...integrations.wealth_bank_api import HttpWealthBankApi
 from ...integrations.bank_api import BankApiError, BankResponseUnknown
 from ...integrations.wealth_authorization import WealthPolicyError, require_suitability, lock_profile
@@ -114,7 +115,17 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     # 现金保留属于整个账户；预算之外的可用现金已满足的部分不重复扣除。
     outside_budget=max(0,account['available_fen']-budget)
     effective_reserve=min(budget,max(0,max(reserve or 0,goal_reserve)-outside_budget))
-    config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+    category_values = {}
+    def allocation(products, **parameters):
+        versions={p['product_id']:{'product_version':p['version'],
+            'dataset_key':p.get('dataset_key'),'calendar_version':p['rules']['calendar_version'],
+            'nav_date':p.get('nav_date')} for p in products}
+        return recommend({'products':products,'allocation':parameters,'as_of':facts['business_at'],
+            'available_cash_fen':account['available_fen'],'minimum_account_cash_fen':max(reserve or 0,goal_reserve),
+            'constraints':request.get('constraint_states',{}),'data_versions':versions,
+            'features':{'history_status':'not_required_by_rule_provider'},
+            'current_exposure_fen':category_values})
+    config = allocation(products, budget_fen=budget, reserve_fen=effective_reserve,
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"])
     goal_versions = {g.goal_id: g.version for g in goals}
@@ -132,11 +143,11 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         "current_fen": category_values.get(category, 0), "target_percent": weight,
         "target_fen": total_value*weight//100,
         "difference_fen": total_value*weight//100-category_values.get(category, 0)}
-        for category, weight in WEIGHTS[suitability["capacity_level"]].items()]
+        for category, weight in config['target_category_weights'].items()]
     diagnostic["goal_shortfall_fen"] = max(0, goal_reserve-budget)
     diagnostic["expense_reserve_fen"] = profile.data.get("monthly_expenses_fen", 0) if profile else 0
     effective_reserve=max(effective_reserve,min(budget,max(0,diagnostic['expense_reserve_fen']-outside_budget)))
-    config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+    config = allocation(products, budget_fen=budget, reserve_fen=effective_reserve,
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
         exposure_fen=category_values if request["kind"] == "adjustment" or facts["lots"] or external else None)
@@ -167,7 +178,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         db.add(row)
     prior_count = sum(len(stage["items"]) for stage in previous_history)
     if prior_count:
-        config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
+        config = allocation(products, budget_fen=budget, reserve_fen=effective_reserve,
             capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
             excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
             exposure_fen=category_values, max_items=max(0, 5-prior_count))
@@ -176,7 +187,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         # 先用新增现金改善配置；预算能投资时不先卖出，避免不必要费用。
         if not config["items"]:
             total = sum(category_values.values())
-            target = WEIGHTS[suitability["capacity_level"]]
+            target = config['target_category_weights']
             current = dict(category_values)
             for lot in facts["lots"]:
                 if len(items) >= 5:
