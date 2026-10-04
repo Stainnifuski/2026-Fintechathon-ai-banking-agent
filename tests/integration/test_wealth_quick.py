@@ -203,12 +203,12 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid,monkey
         assert (await research.import_dataset(db,payload))['ok']
         context=await research.initialize(db,'U1',dataset_key='mixed-preload-v12:quick-test')
         ctx=await db.get(WealthContextORM,context['context_id'])
-        ctx.data={**ctx.data,'business_at':'2026-09-30T19:00:00+08:00'}
+        ctx.data={**ctx.data,'business_at':'2026-09-29T14:00:00+08:00'}
         await db.commit(); await research.select_context(db,'U1',ctx.context_id,1)
         await assess(db)
         buy=InvestmentCommand(operation_id='quick-buy-'+pid,direction='purchase',product_id=pid,product_version=1,disclosure_version=1,account_id=context['account_id'],amount_fen=2000000)
         await bank.accept_many(db,'U1',[(buy,await authorize(db,buy))])
-        ctx=await db.get(WealthContextORM,context['context_id']); ctx.data={**ctx.data,'business_at':'2026-10-02T10:00:00+08:00'}; await db.commit()
+        ctx=await db.get(WealthContextORM,context['context_id']); ctx.data={**ctx.data,'business_at':'2026-09-30T10:00:00+08:00'}; await db.commit()
         assert (await bank.settle(db,buy.operation_id))['status']=='SETTLED'
         initial=(await db.get(AccountORM,buy.account_id)).balance_fen
         lot=(await db.scalars(select(WealthLotORM).where(WealthLotORM.account_id==buy.account_id))).one()
@@ -316,13 +316,13 @@ async def test_quick_cash_atomic_unique_quota_and_quote_binding(store,pid,monkey
                 'request_id':'quota-preserving-fund-adjust','action':'credit','amount':'100.00'})
             assert (await db.scalars(select(WealthQuickQuotaORM))).one().paid_fen==paid
             ctx=await db.get(WealthContextORM,context['context_id'])
-            ctx.data={**ctx.data,'business_at':'2026-10-03T00:04:59+08:00'};await db.commit()
+            ctx.data={**ctx.data,'business_at':'2026-10-01T00:04:59+08:00'};await db.commit()
             next_day=bound.model_copy(update={'operation_id':'quick-next-day','nav_quote_id':None,'quoted_cash_fen':None,
                 'context_id':None,'context_epoch':None})
             with pytest.raises(BankError) as closed:await bank.precheck(db,'U1',next_day)
             assert closed.value.code=='QUICK_WINDOW_CLOSED';await db.rollback()
             ctx=await db.get(WealthContextORM,context['context_id'])
-            ctx.data={**ctx.data,'business_at':'2026-10-03T00:05:00+08:00'};await db.commit()
+            ctx.data={**ctx.data,'business_at':'2026-10-01T00:05:00+08:00'};await db.commit()
             next_day=InvestmentCommand.model_validate((await bank.precheck(db,'U1',next_day))['command'])
             assert (await bank.accept_many(db,'U1',[(next_day,await authorize(db,next_day))]))[0]['status']=='SETTLED'
             quotas=list(await db.scalars(select(WealthQuickQuotaORM)))
@@ -338,7 +338,7 @@ async def test_quick_multi_account_concurrency_shared_quota_and_transaction_faul
         assert (await research.import_dataset(db,payload))['ok']
         context=await research.initialize(db,'U1',dataset_key='mixed-preload-v12:quick-race')
         first=await db.get(WealthContextORM,context['context_id'])
-        first.data={**first.data,'run_id':'RUNquick-race','business_at':'2026-09-30T19:00:00+08:00'}
+        first.data={**first.data,'run_id':'RUNquick-race','business_at':'2026-09-29T14:00:00+08:00'}
         db.add(AccountORM(account_id='SAquick-peer',user_id='U1',account_type='savings',card_number='fictional-peer',balance_fen=2000000,daily_transfer_limit_fen=5000000))
         await db.flush()
         db.add(WealthContextORM(context_id='CTXquick-peer',user_id='U1',account_id='SAquick-peer',dataset_key=first.dataset_key,
@@ -349,7 +349,7 @@ async def test_quick_multi_account_concurrency_shared_quota_and_transaction_faul
             buy=InvestmentCommand(operation_id='multi-quick-buy-'+str(i),direction='purchase',product_id='B017',product_version=1,disclosure_version=1,account_id=aid,amount_fen=2000000)
             await bank.accept_many(db,'U1',[(buy,await authorize(db,buy))])
         for cid in ctx_ids:
-            ctx=await db.get(WealthContextORM,cid);ctx.data={**ctx.data,'business_at':'2026-10-02T10:00:00+08:00'}
+            ctx=await db.get(WealthContextORM,cid);ctx.data={**ctx.data,'business_at':'2026-09-30T10:00:00+08:00'}
         await db.commit()
         for i in range(2):assert (await bank.settle(db,'multi-quick-buy-'+str(i)))['status']=='SETTLED'
         commands=[]

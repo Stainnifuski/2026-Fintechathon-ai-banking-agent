@@ -4,14 +4,14 @@ from pathlib import Path
 import hashlib
 import json
 from backend.app.domain.wealth_synthetic import generate,fingerprint,SEED
-from backend.app.domain.wealth_calendar import load,CALENDAR_VERSION
+from backend.app.domain.wealth_calendar import CALENDAR_VERSION
 from backend.app.domain.wealth_fixed_data import DATASET_VERSION
 from backend.app.domain.wealth_bank_simulation import _generate_bank_products
 
 
 def main():
     root=Path(__file__).resolve().parents[1]/'config/wealth/data';root.mkdir(parents=True,exist_ok=True)
-    calendar,_=load();days=[date.fromisoformat(row['date']) for row in calendar['days'] if row['trading']]
+    calendar=json.loads((root/'calendar.json').read_text(encoding='utf-8'));days=[date.fromisoformat(row['date']) for row in calendar['days'] if row['trading']]
     payload=generate(calendar_days=days)
     payload.update(dataset_version=DATASET_VERSION,generator_version='factor-cn-fixed-v1',calendar_version=CALENDAR_VERSION)
     for p in payload['products']:

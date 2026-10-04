@@ -192,7 +192,8 @@ async def product_version(db: AsyncSession, command: InvestmentCommand) -> Wealt
     if not required <= row.rules.keys() or not {"nature", "manager", "seller", "risk", "fees", "liquidity",
         "holding_period_days", "pricing", "settlement", "cancellation", "limitations"} <= row.disclosure.keys():
         raise BankError("产品规则或披露不完整", "PRODUCT_UNAVAILABLE", 409)
-    if row.rules["calendar_version"] not in {CALENDAR_VERSION, "synthetic-weekdays-v1"}:
+    from ...domain.wealth_calendar import CALENDAR_VERSION as CN_CALENDAR_VERSION
+    if row.rules["calendar_version"] not in {CALENDAR_VERSION, "synthetic-weekdays-v1", CN_CALENDAR_VERSION}:
         raise BankError("不支持此交易日历版本", "PRODUCT_UNAVAILABLE", 409)
     if command.direction == "purchase" and (product.status != "on_sale" or row.rules["purchase_paused"]):
         raise BankError("产品当前不可申购", "PRODUCT_UNAVAILABLE", 409)

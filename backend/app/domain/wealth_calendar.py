@@ -10,7 +10,8 @@ PATH=Path(__file__).resolve().parents[3]/'config/wealth/data/calendar.json'
 
 @lru_cache(maxsize=1)
 def load():
-    data=json.loads(PATH.read_text(encoding='utf-8'))
+    from .wealth_fixed_data import load_file
+    data=load_file('calendar.json',PATH.parent)
     if data['calendar_version']!=CALENDAR_VERSION:raise ValueError('CALENDAR_VERSION_MISMATCH')
     return data,{row['date']:row for row in data['days']}
 

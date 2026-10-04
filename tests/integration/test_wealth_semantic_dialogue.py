@@ -14,7 +14,7 @@ from backend.app.domain.wealth_requirements import SemanticFrame
 async def test_pending_purchase_does_not_become_planning_dependency(store,http_store,monkeypatch):
     client,_,_=http_store
     monkeypatch.setenv('WEALTH_NLU_MODE','model')
-    responses=[Intent(intent='purchase',product_refs=['MF002'],amount_fen=100000),
+    responses=[Intent(intent='purchase',product_refs=['B017'],amount_fen=100000),
         Intent(intent='allocate',semantic=SemanticFrame()),
         Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
             {'field':'investment_budget','op':'set','quote':'投入5成','budget':{'mode':'proportion','ratio':'0.5','base':'available_cash'}}]})),
@@ -30,7 +30,18 @@ async def test_pending_purchase_does_not_become_planning_dependency(store,http_s
     monkeypatch.setattr(wealth_dialogue,'understand',recorded)
     async with store() as db:
         await assess(db)
-        account=await db.get(AccountORM,'A1');account.balance_fen=1922900
+        from backend.app.domain.wealth_fixed_data import bank_products
+        from backend.app.services.bank import wealth_research as research
+        from backend.app.models.wealth_research import WealthContextORM
+        products=bank_products()
+        for p in products:p['rules'].update(dataset_id='n01-fixed-bank',dataset_version='semantic-test')
+        imported=await research.import_dataset(db,{'schema_version':1,'dataset_id':'n01-fixed-bank',
+            'dataset_version':'semantic-test','mode':'snapshot','products':products})
+        context=await research.initialize(db,'U1',dataset_key=imported['dataset_key'])
+        scope=await db.get(WealthContextORM,context['context_id'])
+        scope.data={**scope.data,'business_at':'2026-09-30T14:00:00+08:00'}
+        await db.commit();await research.select_context(db,'U1',scope.context_id,1)
+        account=await db.get(AccountORM,scope.account_id);account.balance_fen=1922900
         await db.commit()
     session={}
     async def send(text):
@@ -38,7 +49,7 @@ async def test_pending_purchase_does_not_become_planning_dependency(store,http_s
         assert result.status_code==200,result.text
         reply=result.json();session.update(session_id=reply['session_id'],version=reply['version'])
         return reply
-    purchase=await send('申购MF002一千元')
+    purchase=await send('申购B017一千元')
     assert purchase['kind']=='command',purchase
     planning=await send('规划现有资金')
     assert planning['kind']=='clarification' and '投入' in planning['message'],planning
