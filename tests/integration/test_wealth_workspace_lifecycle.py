@@ -80,6 +80,9 @@ async def test_accepted_single_is_compacted_bank_still_settles_and_replays(store
         await bank.accept_many(db,'U1',[(cmd,auth)])
         before=await facts(db)
         await lifecycle.close(db,'U1',session['session_id'])
+        closed_at=(await db.get(Conversation,session['session_id'])).data['closed_at']
+        await lifecycle.close(db,'U1',session['session_id'])
+        assert (await db.get(Conversation,session['session_id'])).data['closed_at']==closed_at
         assert await facts(db)==before
         row=await db.get(Task,task['task_id']);assert row.data['compacted']
         assert await db.scalar(select(func.count()).select_from(Node).where(Node.task_id==task['task_id']))==0

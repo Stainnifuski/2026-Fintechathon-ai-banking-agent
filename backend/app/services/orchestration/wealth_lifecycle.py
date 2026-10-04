@@ -1,5 +1,5 @@
 """Transient wealth workspace state; bank facts and unresolved dependencies survive."""
-from datetime import timedelta
+from datetime import datetime,timedelta
 from uuid import uuid4
 from sqlalchemy import select, delete
 from ...domain.time import utc_now, as_utc
@@ -100,7 +100,8 @@ async def close(db,user_id,session_id):
                 'schema_version','child_task_id','task_id','session_id','parent_task_id','request_id',
                 'version','session_version','status','waiting_reason','error','code'}}
     # No history or requirements retained. Tombstone blocks late requests from this window.
-    session.data={'closed':True,'window_session':True,'context_id':context};session.version+=1
+    session.data={'closed':True,'window_session':True,'context_id':context,
+        'closed_at':session.data.get('closed_at') or utc_now().isoformat()};session.version+=1
     await db.execute(delete(ChatRequest).where(ChatRequest.user_id==user_id,
         ChatRequest.response['session_id'].as_string()==session_id))
     await prune_tasks(db,user_id)
@@ -145,7 +146,8 @@ async def clean_archives(db, *, apply=False):
 async def expire(db):
     cutoff=utc_now()-timedelta(hours=24)
     for row in list(await db.scalars(select(Conversation))):
-        if as_utc(row.updated_at,legacy_utc=True)<cutoff:
+        expired_at=datetime.fromisoformat(row.data['closed_at']) if row.data.get('closed_at') else row.updated_at
+        if as_utc(expired_at,legacy_utc=True)<cutoff:
             if not row.data.get('closed'):await close(db,row.user_id,row.session_id)
             await db.delete(row)
     await prune_tasks(db)
