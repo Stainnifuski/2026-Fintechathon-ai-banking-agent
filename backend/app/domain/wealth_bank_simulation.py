@@ -47,4 +47,3 @@ def _generate_bank_products(config_dir=CONFIG, source_payload=None):
                 '快赎净值仅用当时已发布版本；普通申赎仍按T+1模拟日历']
         result.append(p)
     return result
-

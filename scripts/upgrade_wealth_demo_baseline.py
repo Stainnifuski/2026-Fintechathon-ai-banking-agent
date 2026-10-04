@@ -1,6 +1,6 @@
 """One-off explicit local demo upgrade. Stop demo writers first; never use main DB.
 
-python scripts/upgrade_wealth_demo_baseline.py --expected-account <UI account> 
+python scripts/upgrade_wealth_demo_baseline.py --expected-account <UI account>
     --backup /demo/backups/<verified copy>.db --apply
 """
 import argparse,asyncio,hashlib,json,sqlite3
