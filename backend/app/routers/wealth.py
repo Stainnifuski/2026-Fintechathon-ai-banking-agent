@@ -120,14 +120,8 @@ async def dirty_requirements(session_id:str,user:dict=Depends(get_current_user),
     row=await db.get(WealthConversationORM,session_id,populate_existing=True)
     if not row or row.user_id!=user['user_id'] or row.data.get('closed'):
         raise HTTPException(409,detail={'code':'SESSION_CLOSED','message':'请开始新对话'})
-    plan=await db.get(WealthPlanORM,(row.data.get('active_plan') or {}).get('plan_id')) if row.data.get('active_plan') else None
-    if plan and plan.status not in {'EXECUTING','WAITING_SETTLEMENT','COMPLETED'}:
-        plan.status='REQUIREMENTS_DIRTY'
-    for auth in await db.scalars(select(WealthAuthorizationORM).where(WealthAuthorizationORM.user_id==user['user_id'],
-            WealthAuthorizationORM.status.not_in(['CONSUMED','EXPIRED']))):
-        if ((plan and auth.command.get('plan_id')==plan.plan_id) or auth.authorization_id in row.data.get('preview_ids',[]) or
-                auth.operation_id==(row.data.get('active_command') or {}).get('operation_id')):auth.status='EXPIRED'
-    await db.commit()
+    from ..services.orchestration.wealth_lifecycle import invalidate
+    await invalidate(db,user['user_id'],row.data)
     return {'dirty':True}
 
 

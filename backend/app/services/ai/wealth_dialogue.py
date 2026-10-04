@@ -548,6 +548,13 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
         elif parsed_intent is not None:
             intent=parsed_intent;evidence={'provider':'validated-typed-input','live':False}
         else: intent=offline(text)
+        # Model latency must not revive a window that was closed meanwhile.
+        current_window=await db.get(WealthConversationORM,sid,populate_existing=True)
+        if current_window and current_window.data.get('closed'):
+            raise WealthPolicyError('当前窗口已关闭，本轮不再恢复','SESSION_CLOSED',409)
+        if intent.semantic and intent.semantic.patches:
+            from ..orchestration.wealth_lifecycle import invalidate
+            await invalidate(db,user_id,data)
         response=await action(db,user_id,bank,text,intent,data,products,facts,contexts,mode)
         response.update(model_evidence=evidence,intent=intent.model_dump(),client_message_id=client_message_id)
     except WealthPolicyError as error:
