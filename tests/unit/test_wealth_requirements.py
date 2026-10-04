@@ -74,10 +74,10 @@ def test_non_set_cannot_carry_value():
 
 
 def test_novel_compound_expression_keeps_goal_duration_liquidity_separate():
-    message='别大起大落，来年开春才动这笔钱，周转时等三工作日没关系'
+    message='别大起大落，到明年三月一日才动这笔钱，周转时等三工作日没关系'
     state=apply(None,message,[
         {'field':'investment_goal','op':'set','quote':'别大起大落','goal':'reduce_volatility'},
-        {'field':'horizon','op':'set','quote':'来年开春才动这笔钱','horizon':{'unit':'date','use_date':'2027-03-01','text':'来年开春才动这笔钱'}},
+        {'field':'horizon','op':'set','quote':'到明年三月一日才动这笔钱','horizon':{'unit':'date','use_date':'2027-03-01','text':'到明年三月一日才动这笔钱'}},
         {'field':'liquidity_requirement','op':'set','quote':'等三工作日没关系','liquidity':'few_business_days','max_business_days':3}])
     assert state['fields']['investment_goal']['value']=='reduce_volatility'
     assert state['fields']['horizon']['resolved_days']==149
@@ -86,3 +86,24 @@ def test_novel_compound_expression_keeps_goal_duration_liquidity_separate():
     state=apply(state,'拿不准，先给我几个有条件的选项',[{'field':'investment_goal','op':'mark_unknown','quote':'拿不准'}])
     assert state['fields']['investment_goal']['state']=='unknown'
     assert state['fields']['horizon']['resolved_days']==149
+
+
+def test_unseen_negation_correction_and_implicit_duration_do_not_clear_other_fields():
+    state=apply(None,'整整六个月内不会动它，收益和起伏折中',[
+        {'field':'horizon','op':'set','quote':'整整六个月内不会动它','horizon':{'unit':'months','count':6,'text':'整整六个月内不会动它'}},
+        {'field':'investment_goal','op':'set','quote':'收益和起伏折中','goal':'balanced'}])
+    state=apply(state,'不是追求快涨，改成尽量少起伏；不是立即要用，但周转时不能拖过两工作日',[
+        {'field':'investment_goal','op':'set','quote':'改成尽量少起伏','goal':'reduce_volatility'},
+        {'field':'liquidity_requirement','op':'set','quote':'周转时不能拖过两工作日','liquidity':'few_business_days','max_business_days':2}])
+    assert state['fields']['horizon']['resolved_days']==182
+    assert state['fields']['investment_goal']['value']=='reduce_volatility'
+    assert state['fields']['liquidity_requirement']['value']['max_business_days']==2
+    assert 'investment_budget' not in state['fields']
+
+
+@pytest.mark.parametrize('patch',[
+    {'field':'investment_goal','op':'set','quote':'稳妥','goal':'balanced','amount_fen':100},
+    {'field':'liquidity_requirement','op':'set','quote':'随时','liquidity':'immediate','max_business_days':2},
+])
+def test_inconsistent_typed_values_rejected(patch):
+    with pytest.raises(ValidationError):SemanticFrame.model_validate({'patches':[patch]})

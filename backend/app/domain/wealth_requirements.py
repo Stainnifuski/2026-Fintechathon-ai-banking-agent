@@ -79,6 +79,17 @@ class Patch(StrictSemantic):
                     'investment_goal':self.goal,'liquidity_requirement':self.liquidity}
         if self.field in required and required[self.field] is None:
             raise ValueError('patch value missing')
+        allowed = {'investment_budget': {'budget'}, 'horizon': {'horizon'},
+                   'declared_assets': {'amount_fen'}, 'reserve_requirement': {'amount_fen'},
+                   'spending_purpose': {'text'}, 'advice_only': {'flag'},
+                   'investment_goal': {'goal'}, 'liquidity_requirement': {'liquidity', 'max_business_days'},
+                   'preferences': {'values'}, 'excluded_categories': {'values'}}[self.field]
+        for key in ('budget', 'horizon', 'amount_fen', 'text', 'flag', 'goal', 'liquidity', 'max_business_days', 'values'):
+            value = getattr(self, key)
+            if key not in allowed and value is not None and value != []:
+                raise ValueError('patch carries a value for a different field')
+        if self.max_business_days is not None and self.liquidity != 'few_business_days':
+            raise ValueError('workday limit requires workday liquidity mode')
         if self.field == 'excluded_categories' and any(v not in {'cash','bond','mixed','equity','index'} for v in self.values):
             raise ValueError('unknown category')
         return self

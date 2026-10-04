@@ -43,8 +43,8 @@ class TaskControl(StrictRequest):
 
 
 @router.post('/tasks/{task_id}/select-main')
-async def select_main(task_id:str,request:TaskControl,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
-    try:return await wealth_subtask.select_main(db,user['user_id'],task_id,request.model_dump())
+async def select_main(task_id:str,request:TaskControl,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    try:return await wealth_subtask.select_main(db,user['user_id'],task_id,request.model_dump(),bank)
     except WealthPolicyError as error:await db.rollback();fail(error)
 
 

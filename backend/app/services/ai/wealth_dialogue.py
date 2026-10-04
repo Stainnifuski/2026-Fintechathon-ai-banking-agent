@@ -169,7 +169,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     # A single active order plus an unqualified amount correction modifies that order.
     # Models occasionally label it as budget; bind it to the explicit active action,
     # never reinterpret an explicitly stated plan budget or reserve.
-    if active and intent.intent=='modify' and intent.amount_fen is None and intent.budget_fen is not None and re.search('改成|改为',text) and not re.search('预算|配置|保留|留现金',text):
+    if intent.semantic is None and active and intent.intent=='modify' and intent.amount_fen is None and intent.budget_fen is not None and re.search('改成|改为',text) and not re.search('预算|配置|保留|留现金',text):
         intent=intent.model_copy(update={'amount_fen':intent.budget_fen,'budget_fen':None})
     product_refs=stated_ordinals if stated_ordinals and not re.search(r'(?<![A-Z0-9])(?:[SB]\d{3}|M[WF]\d{3}|R\d{6})(?![A-Z0-9])',text,re.I) else intent.product_refs
     if intent.intent=='redeem' and not active and any(r in {'它','这个','这笔','刚才那笔'} for r in product_refs):
@@ -215,17 +215,19 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         else: response['message']='请从当前资金上下文的付款账户选择，不支持其他用户账户。'; return response
     account=next((a for a in accounts if a['account_id']==data.get('account_id')),accounts[0] if len(accounts)==1 else None)
     if intent.semantic:
+        previous_categories=data.get('requirements',{}).get('fields',{}).get('excluded_categories',{}).get('value',[])
+        previous_category_ids={p['product_id'] for p in products if p['category'] in previous_categories}
         state=apply_frame(data.get('requirements'),intent.semantic,message=text,
             message_id=data.get('_message_id',uuid4().hex),session_id=data['_session_id'],
             bank_facts=facts,account=account)
         data['requirements']=state
         slots=planning_slots(state,slots)
-        excluded=list(slots.get('excluded_products',[]))
+        excluded=[pid for pid in slots.get('excluded_products',[]) if pid not in previous_category_ids]
         categories=state['fields'].get('excluded_categories',{}).get('value',[])
         excluded=list(dict.fromkeys(excluded+[p['product_id'] for p in products if p['category'] in categories]))
         slots['excluded_products']=excluded;data['pending']=slots
         response['requirement_card']=state
-        if state['ambiguities']:
+        if state['ambiguities'] and intent.intent not in {'products','search','compare','knowledge','assets','status'}:
             data['last_question']={'field':'ambiguity','text':state['ambiguities'][0]}
             response['message']=state['ambiguities'][0]
             return response
@@ -319,7 +321,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         if prior and intent.intent=='modify':
             task=await wealth_task.revise_command(db,user_id,prior['task_id'],prior['version'],command)
         else:
-            task=await wealth_task.create_command(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),command,sell_then_buy=intent.sell_then_buy)
+            task=await wealth_task.create_command(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),command,sell_then_buy=intent.sell_then_buy,requirements=data.get('requirements'))
         if intent.control_after=='pause':
             task=await wealth_task.control(db,user_id,task['task_id'],'pause',{
                 'request_id':'compound-'+command.operation_id,'expected_version':task['version'],'reason':'本人修改后先别买'})

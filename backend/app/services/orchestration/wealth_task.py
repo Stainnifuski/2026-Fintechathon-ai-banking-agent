@@ -44,16 +44,18 @@ async def view(db, task):
             'operation_id':n.operation_id, 'attempts':n.attempts, **n.data} for n in nodes]}
 
 
-async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False):
+async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None):
     await lock_profile(db, user_id)
-    active = await db.scalar(select(Task).where(Task.user_id == user_id,
-        Task.context_id == context_id, Task.status.not_in(TERMINAL)))
+    pending = (await db.scalars(select(Task).where(Task.user_id == user_id,
+        Task.context_id == context_id, Task.status.not_in(TERMINAL)))).all()
+    active = next((t for t in pending if not t.data.get('read_only')),None)
     if active:
         raise WealthPolicyError('已有进行中的交易任务，请先选择继续、暂停或取消未提交任务', 'ACTIVE_TASK_SELECTION_REQUIRED', 409)
     key = 'WT'+uuid4().hex
     task = Task(task_id=key, user_id=user_id, session_id=session_id, context_id=context_id,
         account_id=command.account_id, version=1, status='WAITING', control_mode='AGENT',
-        waiting_reason='PERSONAL_CONFIRMATION', data={'goal':'sell_then_buy' if sell_then_buy else command.direction})
+        waiting_reason='PERSONAL_CONFIRMATION', data={'goal':'sell_then_buy' if sell_then_buy else command.direction,
+            'requirements':requirements,'requirement_version':(requirements or {}).get('version')})
     db.add(task); await db.flush()
     sequence = ['READ_FACTS', 'CONFIRM', 'VERIFY', 'SUBMIT', 'SETTLEMENT']
     if sell_then_buy: sequence += ['REREAD_CASH', 'BUY_PLAN']

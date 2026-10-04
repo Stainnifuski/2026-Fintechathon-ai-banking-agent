@@ -47,10 +47,10 @@ async def test_member_two_typed_create_and_idempotency_are_scoped(store,http_sto
     async def forbidden(*args):raise AssertionError('typed subtask must not call model')
     monkeypatch.setattr(wealth_dialogue,'understand',forbidden)
     request={'context_id':'legacy-v1','request_id':uuid4().hex,'parent_task_id':'parent-2',
-        'raw_text':'拨一万元，来年春天再用，追求缓慢增长',
+        'raw_text':'拨一万元，明年三月一日再用，追求缓慢增长',
         'parsed_intent':{'intent':'allocate','semantic':{'patches':[
             {'field':'investment_budget','op':'set','quote':'拨一万元','budget':{'mode':'fixed','amount_fen':1000000}},
-            {'field':'horizon','op':'set','quote':'来年春天再用','horizon':{'unit':'date','use_date':'2027-03-01','text':'来年春天再用'}},
+            {'field':'horizon','op':'set','quote':'明年三月一日再用','horizon':{'unit':'date','use_date':'2027-03-01','text':'明年三月一日再用'}},
             {'field':'investment_goal','op':'set','quote':'追求缓慢增长','goal':'growth'}]}}}
     async with store() as db:await assess(db)
     response=await client.post('/api/v1/wealth/subtasks',json=request)
@@ -62,5 +62,19 @@ async def test_member_two_typed_create_and_idempotency_are_scoped(store,http_sto
     assert changed.status_code==409
     task=(await client.get('/api/v1/wealth/subtasks/'+created['child_task_id'])).json()
     assert task['child_task_id']==created['child_task_id']
+    patch={'request_id':uuid4().hex,'expected_version':task['version'],
+        'raw_text':'额度改为八千，不必排除混合类',
+        'parsed_intent':{'intent':'modify','semantic':{'patches':[
+            {'field':'investment_budget','op':'set','quote':'额度改为八千','budget':{'mode':'fixed','amount_fen':800000}},
+            {'field':'excluded_categories','op':'clear','quote':'不必排除混合类'}]}}}
+    patched=await client.patch('/api/v1/wealth/subtasks/'+created['child_task_id'],json=patch)
+    assert patched.status_code==200,patched.text
+    replay=await client.patch('/api/v1/wealth/subtasks/'+created['child_task_id'],json=patch)
+    assert replay.json()==patched.json()
+    collision=await client.patch('/api/v1/wealth/subtasks/'+created['child_task_id'],json={**patch,'raw_text':'另一个修订'})
+    assert collision.status_code==409
+    selected=await client.post('/api/v1/wealth/tasks/'+patched.json()['child_task_id']+'/select-main',json={
+        'request_id':uuid4().hex,'expected_version':patched.json()['version']})
+    assert selected.status_code==200,selected.text
     wrong=await client.post('/api/v1/wealth/subtasks',json={**request,'request_id':uuid4().hex,'context_id':'other-user'})
     assert wrong.status_code==409

@@ -78,7 +78,11 @@ async def understand(text: str,context: dict) -> tuple[Intent,dict]:
     liquidity_requirement.liquidity:立即到账=immediate，可等几个工作日=few_business_days，灵活=flexible；只有用户明确工作日数才max_business_days。
     一句话“兼顾增长和波动，半年后用，临时用钱可以等三工作日”同时set目标、六个月期限、few_business_days且max_business_days=3，不相互覆盖。
     只说稳健可以解释目标reduce_volatility；不能自动填期限或到账要求。“不确定”“你帮我建议”“暂不提供”针对last_question所问field分别mark_unknown/mark_unknown/skip，不循环询问、不擅自给默认值。产品查询/比较没有这些前置问题。'''
-    instruction += '以上表达只是示例，按自然语言和上下文泛化处理同义、隐含信息、否定、更正和复合需求，不进行关键词匹配。clarification_field仅在下一步确实需要的条件未明确时选择，按歧义影响决定而非固定问序。用户已说明的信息不重复问；不要因具体支出用途缺失追问。'
+    instruction += '''以上表达只是示例，不是穷举规则或固定关键词。结合当前自然语言、双向上下文和最后问题泛化解释同义、隐含信息、否定、更正及复合需求。
+    更正以本轮最终肯定表达为准：否定旧目标不等于否定投资，撤销一个约束不清空其他约束；“不是立即要用，但周转时不能拖过两工作日”只表达流动性上限，不自动编投资期限。
+    隐含信息只有语义唯一时才能结构化，例如“整整六个月内不会动它”可提取六个月；“开春”“过一阵子”“到时候”不能凭空精确成某一天。若这类范围歧义影响下一步则列ambiguities，并选择相应clarification_field；纯查询不需要强制消除投资参数歧义。
+    用户一句话提供多个方面应一并提取，先后或条件关系分别列intents；不把资产陈述、产品比较、交易执行混为一类。任何口头同意均不产生本人确认或授权。
+    clarification_field仅在下一步确实需要的条件未明确时选择，按歧义影响决定而非固定问序。用户已说明的信息不重复问；不知道/暂不回答的真实状态保留，不循环追问；不要因具体支出用途缺失追问。'''
     result,evidence=await request([{'role':'system','content':instruction},{'role':'user','content':json.dumps({'message':text,'context':context},ensure_ascii=False)}],Intent.model_json_schema(),1800)
     intent=Intent.model_validate(result)
     if intent.semantic is None: raise ValueError('MODEL_SCHEMA_INVALID')

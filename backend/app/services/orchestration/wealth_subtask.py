@@ -60,6 +60,12 @@ async def query(db,user_id,task_id):
 
 async def patch(db,user_id,bank,task_id,request):
     row=await wealth_task.owned(db,user_id,task_id)
+    key=fingerprint(['wealth-subtask-patch',user_id,task_id,request.request_id])
+    digest=fingerprint(request.model_dump())
+    previous=await db.get(WealthTaskControlORM,key)
+    if previous:
+        if previous.digest!=digest:raise WealthPolicyError('修订请求编号冲突','IDEMPOTENCY_CONFLICT',409)
+        return previous.result
     if row.version!=request.expected_version:
         raise WealthPolicyError('子任务版本已变化','STALE_TASK',409)
     session=await db.get(WealthConversationORM,row.session_id)
@@ -67,14 +73,21 @@ async def patch(db,user_id,bank,task_id,request):
         raise WealthPolicyError('子任务会话不存在','NOT_FOUND',404)
     context_id=row.context_id;parent=row.data.get('parent_task_id')
     from ...schemas.wealth_subtask import SubtaskCreate
-    return await create(db,user_id,bank,SubtaskCreate(raw_text=request.raw_text,parsed_intent=request.parsed_intent,
-        request_id=request.request_id,session_id=session.session_id,version=session.version,
+    result=await create(db,user_id,bank,SubtaskCreate(raw_text=request.raw_text,parsed_intent=request.parsed_intent,
+        request_id=key,session_id=session.session_id,version=session.version,
         context_id=context_id,parent_task_id=parent))
+    result={**result,'request_id':request.request_id}
+    db.add(WealthTaskControlORM(request_key=key,task_id=task_id,actor_id=user_id,action='subtask_patch',
+        digest=digest,result=result,occurred_at=utc_now()))
+    await db.commit()
+    return result
 
 
-async def select_main(db,user_id,task_id,body):
+async def select_main(db,user_id,task_id,body,bank):
+    scope=(await bank.call('POST','/contexts',{'subject_user_id':user_id}))['selected']
     await lock_profile(db,user_id)
     task=await wealth_task.owned(db,user_id,task_id)
+    if task.context_id!=scope:raise WealthPolicyError('主任务不在当前资金范围','STALE_CONTEXT',409)
     key=user_id+':'+body['request_id'];digest=fingerprint(['select_main',task_id,body])
     old=await db.get(WealthTaskControlORM,key)
     if old:
@@ -83,7 +96,11 @@ async def select_main(db,user_id,task_id,body):
     if task.version!=body['expected_version']:raise WealthPolicyError('任务已变化','STALE_TASK',409)
     session=await db.get(WealthConversationORM,task.session_id)
     if session is None or session.user_id!=user_id:raise WealthPolicyError('会话不存在','NOT_FOUND',404)
+    view=await wealth_task.view(db,task)
+    command=next((n.get('command') for n in reversed(view['nodes'])
+        if n['kind']=='SUBMIT' and n.get('command') and n['status']!='CANCELLED'),None)
     session.data={**session.data,'active_task':{'task_id':task_id,'version':task.version},
+        'active_command':command,
         'active_plan':{'plan_id':task.data['plan_id'],'version':task.data['plan_version']} if task.data.get('plan_id') else None,
         'requirements':task.data.get('requirements',session.data.get('requirements'))}
     session.version+=1
