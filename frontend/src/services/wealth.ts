@@ -55,6 +55,7 @@ export interface Goal { goal_id: string; version: number; title: string; amount_
 export interface Profile { version: number; data: { monthly_income_fen?: number; monthly_expenses_fen?: number;
   liabilities_fen?: number; external_assets?: ExternalAsset[]; updated_at?: string }; goals: Goal[] }
 export interface ChatReply { mode: string; kind: string; message: string; session_id?: string; version?: number;
+  requirement_card?: import('../components/Wealth/RequirementCard').RequirementState;
   client_message_id?: string;
   plan?: Plan; command?: Command; products?: Product[];
   task?: WealthTask; assets?: Assets; order?: Order;

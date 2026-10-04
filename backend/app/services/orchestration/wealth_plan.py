@@ -100,7 +100,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     if request.get('need')=='cash': suitability={**suitability,'capacity_level':1}
     elif request.get('need')=='balanced': suitability={**suitability,'capacity_level':min(suitability['capacity_level'],3)}
     external = list(profile.data.get("external_assets", [])) if profile else []
-    budget, reserve = request["budget_fen"], request["reserve_fen"]
+    budget, reserve = request["budget_fen"], request.get("reserve_fen")
     account = next((a for a in facts["cash"] if a["account_id"] == request["account_id"] and a["account_type"] != "credit"), None)
     if account is None:
         raise WealthPolicyError("账户不存在或不支持", "ACCOUNT_NOT_FOUND", 404)
@@ -113,7 +113,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         and goal.data["liquidity"] == "immediate")
     # 现金保留属于整个账户；预算之外的可用现金已满足的部分不重复扣除。
     outside_budget=max(0,account['available_fen']-budget)
-    effective_reserve=min(budget,max(0,max(reserve,goal_reserve)-outside_budget))
+    effective_reserve=min(budget,max(0,max(reserve or 0,goal_reserve)-outside_budget))
     config = allocate(products, budget_fen=budget, reserve_fen=effective_reserve,
         capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
         excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"])

@@ -177,9 +177,12 @@ async def register_plan(db, user_id, session_id, context_id, plan):
     """方案逐笔节点持久化；申购仍由可信整份方案原子执行入口提交。"""
     from sqlalchemy import delete
     await lock_profile(db,user_id)
-    task=await db.scalar(select(Task).where(Task.user_id==user_id,Task.context_id==context_id,Task.status.not_in(TERMINAL)))
-    if task and task.data.get('plan_id')!=plan['plan_id'] and not (task.data.get('goal')=='sell_then_buy' and not task.data.get('plan_id')):
-        raise WealthPolicyError('已有交易任务，请明确选择当前任务或取消未提交部分','ACTIVE_TASK_SELECTION_REQUIRED',409)
+    candidates=(await db.scalars(select(Task).where(Task.user_id==user_id,Task.context_id==context_id,Task.status.not_in(TERMINAL)))).all()
+    # Selecting a new planning goal preserves unrelated pending orders and graphs.
+    task=next((t for t in candidates if t.data.get('plan_id')==plan['plan_id']),None)
+    if task is None:
+        task=next((t for t in candidates if t.data.get('goal')=='sell_then_buy' and not t.data.get('plan_id')
+            and t.task_id==plan['request'].get('parent_task_id')),None)
     was_paused=bool(task and task.status=='PAUSED')
     continuation=False
     previous_nodes=[]

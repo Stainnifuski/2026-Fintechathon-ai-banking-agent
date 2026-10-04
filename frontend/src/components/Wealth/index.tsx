@@ -5,6 +5,7 @@ import type { Account } from '../../services/bank';
 import './styles.css';
 import Research from './Research';
 import OperatorPanel from './OperatorPanel';
+import RequirementCard from './RequirementCard';
 
 interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string }
 type Tab = 'workbench' | 'assets' | 'products' | 'plans' | 'orders';
@@ -246,6 +247,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
           await w.post(`/tasks/${task.task_id}/${action}`, {request_id:crypto.randomUUID(), expected_version:task.version});
         })}>{{pause:'暂停',resume:'继续任务',rollback:'返回未提交方案',handoff:'申请人工接管',cancel:'取消未提交部分'}[action]}</button>)}
       </article>)}
+      {chat?.requirement_card && <RequirementCard state={chat.requirement_card}/>}
       <label>需求<input value={chatInput} maxLength={500} onChange={e => setChatInput(e.target.value)} /></label><button disabled={busy || !chatInput.trim()} onClick={() => act(() => send(chatInput))}>发送需求</button><button className="secondary" disabled={busy || !session} onClick={() => act(() => send('继续'))}>评估后继续原需求</button>{localStorage.getItem(`wealth-message-${userId}`) && <button className="secondary" disabled={busy} onClick={() => act(async () => { const pending = localStorage.getItem(`wealth-message-${userId}`); if (pending) await send(JSON.parse(pending).message); })}>重试上次未完成请求</button>}
       {chat?.citations?.map(c => <details key={c.document_id}><summary>{c.title} · {c.source_type} · {c.published_at || '发布时间未核实'}</summary><p>{c.excerpt}</p>{c.source_url && <a href={c.source_url} target="_blank" rel="noreferrer">官方原始来源</a>}<small>版本 {c.version} · 摘要指纹 {c.content_hash.slice(0,12)}</small></details>)}
       {chat && <><p>{chat.message}</p>{chat.products && <div className="wealth-table"><table><thead><tr><th>产品</th><th>风险</th><th>申购费率</th><th>持有期</th><th>赎回到账</th></tr></thead><tbody>{chat.products.map(p => <tr key={p.product_id}><td>{p.name}</td><td>R{p.product_risk_level}</td><td>{p.rules.purchase_fee_rate}</td><td>{p.rules.holding_days}天</td><td>{p.rules.cash_business_days}营业日</td></tr>)}</tbody></table></div>}</>}
