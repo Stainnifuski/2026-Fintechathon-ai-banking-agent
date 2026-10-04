@@ -71,3 +71,18 @@ def test_quote_and_settled_proceeds_are_not_guessed():
 def test_non_set_cannot_carry_value():
     with pytest.raises(ValidationError):
         SemanticFrame.model_validate({'patches':[{'field':'reserve_requirement','op':'clear','quote':'删除','amount_fen':0}]})
+
+
+def test_novel_compound_expression_keeps_goal_duration_liquidity_separate():
+    message='别大起大落，来年开春才动这笔钱，周转时等三工作日没关系'
+    state=apply(None,message,[
+        {'field':'investment_goal','op':'set','quote':'别大起大落','goal':'reduce_volatility'},
+        {'field':'horizon','op':'set','quote':'来年开春才动这笔钱','horizon':{'unit':'date','use_date':'2027-03-01','text':'来年开春才动这笔钱'}},
+        {'field':'liquidity_requirement','op':'set','quote':'等三工作日没关系','liquidity':'few_business_days','max_business_days':3}])
+    assert state['fields']['investment_goal']['value']=='reduce_volatility'
+    assert state['fields']['horizon']['resolved_days']==149
+    assert state['fields']['liquidity_requirement']['value']=={'mode':'few_business_days','max_business_days':3}
+    assert 'spending_purpose' not in state['fields']
+    state=apply(state,'拿不准，先给我几个有条件的选项',[{'field':'investment_goal','op':'mark_unknown','quote':'拿不准'}])
+    assert state['fields']['investment_goal']['state']=='unknown'
+    assert state['fields']['horizon']['resolved_days']==149

@@ -12,14 +12,40 @@ from ..services.orchestration import wealth_task as tasks
 from ..integrations.wealth_authorization import WealthPolicyError
 from ..integrations.wealth_bank_api import HttpWealthBankApi
 from .wealth import get_wealth_bank
+from ..schemas.wealth_subtask import SubtaskCreate,SubtaskPatch
+from ..services.orchestration import wealth_subtask
 
 router = APIRouter(prefix='/api/v1/wealth', tags=['wealth-tasks'])
+
+
+@router.post('/subtasks')
+async def create_subtask(request:SubtaskCreate,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    try:return await wealth_subtask.create(db,user['user_id'],bank,request)
+    except WealthPolicyError as error:await db.rollback();fail(error)
+
+
+@router.get('/subtasks/{task_id}')
+async def get_subtask(task_id:str,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    try:return await wealth_subtask.query(db,user['user_id'],task_id)
+    except WealthPolicyError as error:fail(error)
+
+
+@router.patch('/subtasks/{task_id}')
+async def patch_subtask(task_id:str,request:SubtaskPatch,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    try:return await wealth_subtask.patch(db,user['user_id'],bank,task_id,request)
+    except WealthPolicyError as error:await db.rollback();fail(error)
 
 
 class TaskControl(StrictRequest):
     request_id: str = Field(min_length=8, max_length=64)
     expected_version: int = Field(ge=1, strict=True)
     reason: str = Field(default='', max_length=1000)
+
+
+@router.post('/tasks/{task_id}/select-main')
+async def select_main(task_id:str,request:TaskControl,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    try:return await wealth_subtask.select_main(db,user['user_id'],task_id,request.model_dump())
+    except WealthPolicyError as error:await db.rollback();fail(error)
 
 
 def fail(error):

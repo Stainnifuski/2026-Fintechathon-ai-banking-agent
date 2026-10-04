@@ -8,7 +8,7 @@ export interface RequirementState {
 
 export default function RequirementCard({state}: {state:RequirementState}) {
   const labels: Record<string,string> = {investment_budget:'投入预算',declared_assets:'自述资产（非银行余额）',
-    reserve_requirement:'投资后最低保留现金',horizon:'使用期限',spending_purpose:'用途',preferences:'偏好',excluded_categories:'排除类别'};
+    reserve_requirement:'投资后最低保留现金',investment_goal:'投资目标',horizon:'可投资期限',liquidity_requirement:'临时用钱到账要求',spending_purpose:'具体支出用途',preferences:'偏好',excluded_categories:'排除类别'};
   const states: Record<string,string> = {unmentioned:'未提及',unknown:'不确定',skipped:'已跳过',
     no_extra_requirement:'不要求额外留现金',no_specific_purpose:'无特别用途',base_pending:'等待核对比例基数'};
   const categories: Record<string,string> = {cash:'现金管理',bond:'债券',mixed:'混合',equity:'股票',index:'指数'};
@@ -24,6 +24,11 @@ export default function RequirementCard({state}: {state:RequirementState}) {
       return money(field.resolved_fen);
     }
     if (key==='horizon') return (field.value as {text?:string})?.text || '不确定';
+    if (key==='investment_goal') return ({reduce_volatility:'尽量减少波动',growth:'争取增长',balanced:'兼顾波动与增长',preserve_value:'保值目标（不代表保本）'} as Record<string,string>)[String(field.value)] || '未提及';
+    if (key==='liquidity_requirement') {
+      const value=field.value as {mode:string;max_business_days?:number};
+      return value.mode==='immediate'?'立即到账':value.mode==='few_business_days'?`可等待${value.max_business_days ?? '几个'}工作日`:'灵活';
+    }
     if (key==='declared_assets' || key==='reserve_requirement') return money(field.value as number);
     if (Array.isArray(field.value)) return field.value.map(value=>categories[String(value)] || String(value)).join('、') || '未指定';
     return String(field.value ?? '未提及');

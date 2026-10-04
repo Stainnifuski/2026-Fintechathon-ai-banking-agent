@@ -19,7 +19,8 @@ async def test_pending_purchase_does_not_become_planning_dependency(store,http_s
         Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
             {'field':'investment_budget','op':'set','quote':'投入5成','budget':{'mode':'proportion','ratio':'0.5','base':'available_cash'}}]})),
         Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
-            {'field':'horizon','op':'set','quote':'半年','horizon':{'unit':'months','count':6,'text':'半年'}}]})),
+            {'field':'horizon','op':'set','quote':'半年','horizon':{'unit':'months','count':6,'text':'半年'}},
+            {'field':'investment_goal','op':'set','quote':'兼顾两者','goal':'balanced'}]})),
         Intent(intent='modify',semantic=SemanticFrame.model_validate({'patches':[
             {'field':'declared_assets','op':'set','quote':'我有2万','amount_fen':2000000}]})),
         Intent(intent='assets')]
@@ -43,8 +44,8 @@ async def test_pending_purchase_does_not_become_planning_dependency(store,http_s
     assert planning['kind']=='clarification' and '投入' in planning['message'],planning
     ratio=await send('投入5成')
     assert ratio['requirement_card']['fields']['investment_budget']['resolved_fen']==961450
-    assert '随时' in ratio['message'],ratio
-    plan=await send('半年')
+    assert '波动' in ratio['message'],ratio
+    plan=await send('半年，兼顾两者')
     assert plan['kind']=='plan',plan
     assert plan['plan']['request']['reserve_fen'] is None
     assert plan['plan']['request']['need'] is None

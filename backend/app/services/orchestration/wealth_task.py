@@ -37,6 +37,9 @@ async def view(db, task):
         'plan_id':task.data.get('plan_id'),
         'control_mode':task.control_mode, 'owner_id':task.owner_id, 'waiting_reason':task.waiting_reason,
         'goal':task.data.get('goal'), 'notes':task.data.get('notes', []),
+        'schema_version':task.data.get('schema_version','wealth-subtask-v1'),
+        'requirement_version':task.data.get('requirement_version'),
+        'requirements':task.data.get('requirements'), 'parent_task_id':task.data.get('parent_task_id'),
         'nodes':[{'node_id':n.node_id, 'kind':n.kind, 'depends_on':n.depends_on, 'status':n.status,
             'operation_id':n.operation_id, 'attempts':n.attempts, **n.data} for n in nodes]}
 
@@ -181,6 +184,9 @@ async def register_plan(db, user_id, session_id, context_id, plan):
     # Selecting a new planning goal preserves unrelated pending orders and graphs.
     task=next((t for t in candidates if t.data.get('plan_id')==plan['plan_id']),None)
     if task is None:
+        task=next((t for t in candidates if t.task_id==plan['request'].get('requirement_task_id')
+            and t.data.get('goal')=='wealth_planning'),None)
+    if task is None:
         task=next((t for t in candidates if t.data.get('goal')=='sell_then_buy' and not t.data.get('plan_id')
             and t.task_id==plan['request'].get('parent_task_id')),None)
     was_paused=bool(task and task.status=='PAUSED')
@@ -203,15 +209,20 @@ async def register_plan(db, user_id, session_id, context_id, plan):
                 'commands':[n.data.get('command') for n in old_nodes if n.kind=='SUBMIT']}]}
         task.version+=1
         if not continuation:
-            await db.execute(delete(Node).where(Node.task_id==task.task_id))
+            for node in old_nodes:
+                if node.kind=='REQUIRE_INPUT':node.status='COMPLETED'
+                elif node.status not in {'COMPLETED','RUNNING','UNKNOWN'}:node.status='CANCELLED'
+            previous_nodes=old_nodes
     else:
         task=Task(task_id='WT'+uuid4().hex,user_id=user_id,session_id=session_id,context_id=context_id,
             account_id=plan['request']['account_id'],version=1,status='WAITING',control_mode='AGENT',data={})
         db.add(task);await db.flush()
     task.data={**task.data,'goal':task.data.get('goal',plan['request']['kind']),
-        'plan_id':plan['plan_id'],'plan_version':plan['version'],'stage':plan['stage']}
+        'plan_id':plan['plan_id'],'plan_version':plan['version'],'stage':plan['stage'],
+        'requirements':{'fields':plan['request'].get('constraint_states',{}),'version':plan['request'].get('requirement_version')},
+        'requirement_version':plan['request'].get('requirement_version')}
     task.status='PAUSED' if was_paused else 'WAITING';task.waiting_reason='PERSONAL_CONFIRMATION'
-    prefix=task.task_id+f':v{plan["version"]:04}' if continuation else task.task_id
+    prefix=task.task_id+f':v{task.version:04}'
     graph=[{'node_id':prefix+':00','kind':'READ_FACTS','depends_on':[buy_gate.node_id] if continuation else [], 'completion_condition':'CURRENT_BANK_FACTS'}]
     settles=[]
     for index,item in enumerate(plan['items']):
@@ -254,13 +265,17 @@ async def require_write_control(db, user_id, command, authorization=None):
     """银行调用的控制策略；调用方持有与控制请求相同的用户锁。"""
     tasks = (await db.scalars(select(Task).where(Task.user_id==user_id,
         Task.account_id==command.account_id, Task.status.not_in(TERMINAL)))).all()
+    linked=False
+    has_transaction_task=False
     for task in tasks:
-        if task.control_mode != 'AGENT' or task.status == 'PAUSED' or task.data.get('stop_new_submissions'):
-            raise WealthPolicyError('任务暂停或人工接管中，禁止新银行写入', 'TASK_WRITE_BLOCKED', 409)
+        if task.data.get('read_only') and not task.data.get('plan_id'):continue
+        has_transaction_task=True
         nodes = (await db.scalars(select(Node).where(Node.task_id==task.task_id))).all()
         submit = next((n for n in nodes if n.operation_id==command.operation_id), None)
-        if not submit:
-            raise WealthPolicyError('请先处理当前交易任务，不可并行提交新交易', 'ACTIVE_TASK_SELECTION_REQUIRED', 409)
+        if not submit:continue
+        linked=True
+        if task.control_mode != 'AGENT' or task.status == 'PAUSED' or task.data.get('stop_new_submissions'):
+            raise WealthPolicyError('任务暂停或人工接管中，禁止新银行写入', 'TASK_WRITE_BLOCKED', 409)
         # 最终银行授权已核验后，允许同步可信确认/验证节点；不能凭模型文本推进。
         if authorization:
             completed = {n.node_id for n in nodes if n.status=='COMPLETED'}
@@ -273,3 +288,5 @@ async def require_write_control(db, user_id, command, authorization=None):
             raise WealthPolicyError('任务依赖未完成，禁止提交', 'TASK_DEPENDENCY_PENDING', 409)
         if submit.lease_version is not None and submit.lease_version != task.version:
             raise WealthPolicyError('任务控制版本已变化', 'STALE_TASK', 409)
+    if has_transaction_task and not linked:
+        raise WealthPolicyError('交易操作尚未绑定本人任务图','ACTIVE_TASK_SELECTION_REQUIRED',409)

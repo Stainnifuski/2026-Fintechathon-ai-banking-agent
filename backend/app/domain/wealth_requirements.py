@@ -52,7 +52,8 @@ class Horizon(StrictSemantic):
 
 class Patch(StrictSemantic):
     field: Literal['investment_budget', 'declared_assets', 'reserve_requirement', 'horizon',
-                   'spending_purpose', 'preferences', 'excluded_categories', 'advice_only']
+                   'spending_purpose', 'investment_goal', 'liquidity_requirement',
+                   'preferences', 'excluded_categories', 'advice_only']
     op: Literal['set', 'clear', 'mark_unknown', 'skip']
     quote: str = Field(min_length=1, max_length=500)
     # Structured alternatives avoid free-form model dictionaries in executable fields.
@@ -62,16 +63,20 @@ class Patch(StrictSemantic):
     text: str | None = Field(default=None, max_length=200)
     values: list[str] = Field(default_factory=list, max_length=12)
     flag: bool | None = None
+    goal: Literal['reduce_volatility','growth','balanced','preserve_value'] | None = None
+    liquidity: Literal['immediate','few_business_days','flexible'] | None = None
+    max_business_days: int | None = Field(default=None,ge=0,le=30)
 
     @model_validator(mode='after')
     def valid(self):
         if self.op != 'set':
-            if any(v is not None for v in (self.budget, self.horizon, self.amount_fen, self.text, self.flag)) or self.values:
+            if any(v is not None for v in (self.budget, self.horizon, self.amount_fen, self.text, self.flag,self.goal,self.liquidity,self.max_business_days)) or self.values:
                 raise ValueError('non-set patch cannot carry a value')
             return self
         required = {'investment_budget': self.budget, 'horizon': self.horizon,
                     'declared_assets': self.amount_fen, 'reserve_requirement': self.amount_fen,
-                    'spending_purpose': self.text, 'advice_only': self.flag}
+                    'spending_purpose': self.text, 'advice_only': self.flag,
+                    'investment_goal':self.goal,'liquidity_requirement':self.liquidity}
         if self.field in required and required[self.field] is None:
             raise ValueError('patch value missing')
         if self.field == 'excluded_categories' and any(v not in {'cash','bond','mixed','equity','index'} for v in self.values):
@@ -90,6 +95,7 @@ class SemanticFrame(StrictSemantic):
     intents: list[SemanticIntent] = Field(default_factory=list, max_length=8)
     patches: list[Patch] = Field(default_factory=list, max_length=16)
     ambiguities: list[str] = Field(default_factory=list, max_length=4)
+    clarification_field: Literal['investment_budget','investment_goal','horizon','liquidity_requirement'] | None = None
 
 
 def horizon_days(horizon: dict, business_date: str) -> int | None:
@@ -154,6 +160,10 @@ def apply_frame(state: dict | None, frame: SemanticFrame, *, message: str, messa
                 item['value'] = patch.values
             elif patch.field == 'advice_only':
                 item['value'] = patch.flag
+            elif patch.field == 'investment_goal':
+                item['value'] = patch.goal
+            elif patch.field == 'liquidity_requirement':
+                item['value'] = {'mode':patch.liquidity,'max_business_days':patch.max_business_days}
             else:
                 item['value'] = patch.text
             if patch.field == 'spending_purpose' and patch.text == 'none':

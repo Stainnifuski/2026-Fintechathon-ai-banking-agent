@@ -346,7 +346,14 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         data['pending']=slots
         budget_note=(f"已查询银行事实：账户{account['account_id']}可用现金¥{account['available_fen']/100:.2f}，这是可投入上限。" if account else '')
         response['budget_source']=slots.get('budget_source','user_specified')
-        missing=[key for key in ('budget_fen','horizon_days') if key not in slots]
+        fields=data.get('requirements',{}).get('fields',{})
+        # Specific expenses are optional; goals/horizon drive suitability and liquidity.
+        missing=[key for key in ('budget_fen',) if key not in slots]
+        if intent.semantic and 'investment_goal' not in fields and not slots.get('need'):
+            missing.append('investment_goal')
+        if 'horizon_days' not in slots and 'horizon' not in fields:missing.append('horizon_days')
+        if fields.get('investment_goal',{}).get('value') in {'reduce_volatility','preserve_value'} and slots.get('horizon_days',9999)<=30 and 'liquidity_requirement' not in fields:
+            missing.append('liquidity_requirement')
         if missing==['budget_fen'] and account and (slots.get('suggest_budget') or slots.get('budget_range')):
             ceiling=max(0,account['available_fen']-(slots.get('reserve_fen') or 0))
             bounds=slots.get('budget_range')
@@ -360,13 +367,47 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             return response
         if missing:
             key=missing[0]
+            proposed=intent.semantic.clarification_field if intent.semantic else None
+            proposed={'investment_budget':'budget_fen','horizon':'horizon_days'}.get(proposed,proposed)
+            if proposed in missing:key=proposed
             question={'budget_fen':'您愿意投入多少？可以给金额、比例、范围，或让我先建议。',
-                'horizon_days':'这笔钱需要随时可用、半年后使用，还是目前不确定？'}[key]
+                'investment_goal':'这笔钱您更希望尽量减少波动、争取增长，还是兼顾两者？',
+                'horizon_days':'您大约可以让这笔钱持续投资多久？可以回答随时需要、半年后使用或不确定。',
+                'liquidity_requirement':'如果临时需要用钱，您希望立即到账，还是可以等待几个工作日？'}[key]
             data['last_question']={'field':'investment_budget' if key=='budget_fen' else 'horizon','text':question}
+            if key in {'investment_goal','liquidity_requirement'}:data['last_question']['field']=key
             response['message']=budget_note+question
+            if data.get('requirements'):
+                from ..orchestration.wealth_requirement_task import record
+                task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                    account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'))
+                data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
+                response['task']=task
+        elif ('horizon_days' not in slots or any(fields.get(key,{}).get('state') in {'unknown','skipped','unmentioned'}
+                for key in ('investment_goal','horizon','liquidity_requirement'))):
+            # Unknown/declined conditions produce explicitly conditional research, not executable orders.
+            from ...domain.wealth_recommendation import conditional_research
+            suitable=await require_suitability(db,user_id,1,allow_cash_only=True);await db.rollback()
+            recommendation=conditional_research({'products':products,'constraints':fields,'capacity':suitable['capacity_level'],
+                'horizon_days':slots.get('horizon_days'),'excluded':excluded,'as_of':facts['business_at'],
+                'available_cash_fen':account['available_fen'] if account else None,
+                'data_versions':{p['product_id']:p['version'] for p in products}})
+            rows=[next(p for p in products if p['product_id']==item['product_id']) for item in recommendation['items']]
+            data['candidates']=[p['product_id'] for p in rows];card_list(data,'products',data['candidates'],response)
+            data.pop('last_question',None)
+            response.update(kind='products',products=rows,conditional=True,
+                recommendation= recommendation,
+                message='部分目标、期限或到账要求尚未确定：以下仅为条件候选资料，不生成可执行配置。请结合产品持有期及到账规则判断；可以随时补充条件，不会循环追问。')
+            from ..orchestration.wealth_requirement_task import record
+            task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'),
+                waiting_reason=None,result=recommendation)
+            response['task']=task;data['planning_task_id']=None
         elif account:
             request=PlanInput(account_id=account['account_id'],budget_fen=slots['budget_fen'],reserve_fen=slots.get('reserve_fen'),horizon_days=slots['horizon_days'],excluded_products=excluded,need=slots.get('need'),constraint_states=slots.get('constraint_states',{})).model_dump()
             request['budget_source']=slots.get('budget_source','user_specified')
+            request['requirement_task_id']=data.get('planning_task_id')
+            request['requirement_version']=data.get('requirements',{}).get('version')
             previous=data.get('active_plan')
             if previous: request['version']=previous['version']
             if data.get('active_task') and not previous:
@@ -392,14 +433,14 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     return response
 
 
-async def message(db,user_id,bank,text,session_id,version,client_message_id):
-    mode=os.getenv('WEALTH_NLU_MODE','offline')
-    if mode not in {'offline','model'}: raise ValueError('WEALTH_NLU_MODE_INVALID')
+async def message(db,user_id,bank,text,session_id,version,client_message_id,*,parsed_intent: Intent | None=None):
+    mode='typed' if parsed_intent is not None else os.getenv('WEALTH_NLU_MODE','offline')
+    if mode not in {'offline','model','typed'}: raise ValueError('WEALTH_NLU_MODE_INVALID')
     # Never send credentials or bypass requests to a model. Known fund codes remain valid references.
     if re.search(r'密码|验证码|TOTP|口令|sk-[A-Za-z0-9]|绕过|忽略.*(?:规则|风控|授权)|代答|替我.*评估|提高.*等级',text,re.I):
         return {'mode':mode,'kind':'refusal','message':'请使用可信组件；对话不接收凭据，不代答评估、不绕过授权。'}
     key=user_id+':'+client_message_id
-    digest=fingerprint([text,session_id,version])
+    digest=fingerprint([text,session_id,version,parsed_intent.model_dump() if parsed_intent else None])
     existing=await db.get(WealthChatRequestORM,key)
     if existing:
         if existing.digest!=digest: raise WealthPolicyError('消息编号对应不同内容','IDEMPOTENCY_CONFLICT',409)
@@ -466,6 +507,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id):
                 'main_task':data.get('active_task'),'card_lists':data.get('card_lists',[])[-4:],
                 'pending_orders':[{'operation_id':o['operation_id'],'status':o['status'],'product_id':o['product_id']} for o in facts['orders'][-8:]]}
             intent,evidence=await understand(text,context)
+        elif parsed_intent is not None:
+            intent=parsed_intent;evidence={'provider':'validated-typed-input','live':False}
         else: intent=offline(text)
         response=await action(db,user_id,bank,text,intent,data,products,facts,contexts,mode)
         response.update(model_evidence=evidence,intent=intent.model_dump(),client_message_id=client_message_id)

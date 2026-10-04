@@ -73,6 +73,12 @@ async def understand(text: str,context: dict) -> tuple[Intent,dict]:
     “先别买，只给建议”advice_only.flag=true，可继续研究/生成建议，不新增银行订单；如果只是暂停已有明确交易才pause。
     semantic.intents列有序动作并relation independent/sequential/conditional，最多8项；先研究再规划research+plan sequential；先赎回再投入到账一半redeem+plan conditional。房租转账external由上层负责，不产生转账执行工具。
     legacy budget_fen/reserve_fen/horizon_days对上述规划patch留null避免双重来源；need仅旧偏好兼容。新规划请求不能继承无关单笔申购作为依赖。'''
+    instruction += '''投资目标、可投资期限、到账要求与具体支出用途分别记录：
+    investment_goal.goal:尽量少波动=reduce_volatility，争取增长=growth，兼顾两者=balanced，保值=preserve_value（不是保本承诺/风险评估）。
+    liquidity_requirement.liquidity:立即到账=immediate，可等几个工作日=few_business_days，灵活=flexible；只有用户明确工作日数才max_business_days。
+    一句话“兼顾增长和波动，半年后用，临时用钱可以等三工作日”同时set目标、六个月期限、few_business_days且max_business_days=3，不相互覆盖。
+    只说稳健可以解释目标reduce_volatility；不能自动填期限或到账要求。“不确定”“你帮我建议”“暂不提供”针对last_question所问field分别mark_unknown/mark_unknown/skip，不循环询问、不擅自给默认值。产品查询/比较没有这些前置问题。'''
+    instruction += '以上表达只是示例，按自然语言和上下文泛化处理同义、隐含信息、否定、更正和复合需求，不进行关键词匹配。clarification_field仅在下一步确实需要的条件未明确时选择，按歧义影响决定而非固定问序。用户已说明的信息不重复问；不要因具体支出用途缺失追问。'
     result,evidence=await request([{'role':'system','content':instruction},{'role':'user','content':json.dumps({'message':text,'context':context},ensure_ascii=False)}],Intent.model_json_schema(),1800)
     intent=Intent.model_validate(result)
     if intent.semantic is None: raise ValueError('MODEL_SCHEMA_INVALID')
