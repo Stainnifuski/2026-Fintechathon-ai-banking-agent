@@ -22,6 +22,10 @@ class Budget(StrictSemantic):
 
     @model_validator(mode='after')
     def valid(self):
+        permitted={'fixed':{'amount_fen'},'range':{'min_fen','max_fen'},
+            'proportion':{'ratio','base'},'request_suggestion':set()}[self.mode]
+        if any(getattr(self,key) is not None for key in {'amount_fen','min_fen','max_fen','ratio','base'}-permitted):
+            raise ValueError('budget mode contains contradictory fields')
         if self.mode == 'fixed' and self.amount_fen is None:
             raise ValueError('fixed budget requires amount')
         if self.mode == 'range' and (self.min_fen is None or self.max_fen is None or self.min_fen > self.max_fen):
@@ -188,7 +192,7 @@ def apply_frame(state: dict | None, frame: SemanticFrame, *, message: str, messa
         fields[patch.field] = item
         changes.append(patch.field)
     state.update(fields=fields, session_id=session_id, message_id=message_id,
-                 ambiguities=frame.ambiguities, intents=[i.model_dump() for i in frame.intents],
+                 ambiguities=frame.ambiguities, intents=[i.model_dump() for i in frame.intents] if frame.intents else state.get('intents',[]),
                  version=state['version']+(1 if changes else 0), changed_fields=changes,
                  bank_cash={'available_fen':account['available_fen'], 'account_id':account['account_id'],
                             'as_of':bank_facts['business_at']} if account else None)

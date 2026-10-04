@@ -17,9 +17,10 @@ def receipt_key(user_id,request_id):
 def envelope(task: dict, request_id: str | None=None, cards: dict | None=None) -> dict:
     return {'schema_version':'wealth-subtask-v1','child_task_id':task['task_id'],
         'session_id':task['session_id'],'parent_task_id':task.get('parent_task_id'),'request_id':request_id,
+        'session_version':(cards or {}).get('version'),
         'version':task['version'],'requirement_version':task.get('requirement_version'),
         'status':task['status'],'waiting_reason':task['waiting_reason'],
-        'cards':cards or {},'result':task,'error':None,'code':None}
+        'cards':cards or {},'result':task,'error':None,'code':(cards or {}).get('code')}
 
 
 async def create(db,user_id,bank,request):

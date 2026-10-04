@@ -14,6 +14,9 @@ async def test_external_callback_requires_registered_owned_bank_fact_and_replays
         db.add(TransactionORM(tx_id='rent-paid-event',account_id='A1',operation_id='rent-operation',
             type='transfer_out',amount_fen=100000,counterparty='虚构房东',category='other',note='',
             timestamp=NOW-timedelta(hours=1),status='completed',channel='app'))
+        db.add(TransactionORM(tx_id='future-paid-event',account_id='A1',operation_id='future-rent',
+            type='transfer_out',amount_fen=100000,counterparty='虚构房东',category='other',note='',
+            timestamp=NOW+timedelta(days=1),status='completed',channel='app'))
         await db.commit()
     request={'context_id':'legacy-v1','request_id':uuid4().hex,'parent_task_id':'parent-rent',
         'external_dependencies':['rent_completed'],'raw_text':'投入可用现金的一半，半年后用，兼顾波动和增长',
@@ -32,6 +35,10 @@ async def test_external_callback_requires_registered_owned_bank_fact_and_replays
     assert missing.status_code==409
     forged=await client.post('/api/v1/wealth/subtasks/'+task_id+'/external-completed',json={**callback,'paid':True})
     assert forged.status_code==422
+    future=await client.post('/api/v1/wealth/subtasks/'+task_id+'/external-completed',json={**callback,'event_reference':'future-paid-event'})
+    assert future.status_code==409
+    wrong_parent=await client.post('/api/v1/wealth/subtasks/'+task_id+'/external-completed',json={**callback,'parent_task_id':'unregistered-parent'})
+    assert wrong_parent.status_code==409
     # A completed bank transfer changed actual cash; the callback itself never credits it.
     async with store() as db:
         account=await db.get(AccountORM,'A1');account.balance_fen=1900000;await db.commit()

@@ -21,7 +21,7 @@ async def record(db,user_id,session_id,context_id,account_id,state,facts,prior_i
     else:task.version+=1
     old=(await db.scalars(select(Node).where(Node.task_id==task.task_id))).all()
     for node in old:
-        if node.status in {'READY','WAITING'} and node.kind in {'REQUIRE_INPUT','PLAN','RESEARCH'}:
+        if node.status in {'READY','WAITING'} and node.kind in {'REQUIRE_INPUT','ASSESS','PLAN','RESEARCH'}:
             node.status='CANCELLED'
             node.data={**node.data,'superseded_by_requirement_version':state['version']}
     prefix=task.task_id+f':q{task.version:04}'
@@ -33,6 +33,8 @@ async def record(db,user_id,session_id,context_id,account_id,state,facts,prior_i
         {'node_id':prefix+':plan','kind':'RESEARCH' if result and result.get('conditional') else 'PLAN',
         'depends_on':[prefix+':clarify'],'completion_condition':'VALIDATED_RECOMMENDATION',
         'status':'COMPLETED' if result else 'WAITING','output':result}]
+    if waiting_reason=='ASSESSMENT_REQUIRED':
+        graph[1].update(kind='ASSESS',completion_condition='VALID_PERSONAL_RISK_ASSESSMENT')
     validate_graph([{'node_id':n.node_id,'kind':n.kind,'depends_on':n.depends_on,
         'completion_condition':n.data['completion_condition']} for n in old]+graph)
     for item in graph:

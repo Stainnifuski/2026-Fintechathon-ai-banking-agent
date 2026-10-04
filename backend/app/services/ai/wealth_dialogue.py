@@ -234,13 +234,19 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         response['requirement_card']=state
         if state['ambiguities'] and intent.semantic.ambiguity_kind in {'reference','contradiction'} and intent.intent not in {'products','search','compare','knowledge','assets','status'}:
             data['last_question']={'field':'ambiguity','text':state['ambiguities'][0]}
+            data['awaiting_plan_details']=True
+            from ..orchestration.wealth_requirement_task import record
+            task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                account['account_id'] if account else None,state,facts,data.get('planning_task_id'))
+            data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
+            response['task']=task
             response['message']=state['ambiguities'][0]
             return response
         semantic_actions=[i.action for i in intent.semantic.intents]
         if semantic_actions==['compare']:
             intent=intent.model_copy(update={'intent':'compare'})
         changed=set(state['changed_fields'])
-        if ('plan' in semantic_actions or (data.get('awaiting_plan_details') and changed)) and intent.intent not in {'purchase','redeem','assets','status','pause','resume','handoff','cancel_task'}:
+        if ('plan' in semantic_actions or (data.get('awaiting_plan_details') and changed)) and intent.intent not in {'purchase','redeem','assets','status','products','search','compare','knowledge','pause','resume','handoff','cancel_task'}:
             intent=intent.model_copy(update={'intent':'allocate'})
         # Planning changes never revise an unrelated pending single-product order.
         if intent.intent=='allocate':
@@ -345,6 +351,12 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             (intent.exclude_refs or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))) or (intent.intent=='clarify' and data.get('awaiting_plan_details') and
             (text.strip()=='继续' or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))):
         data['awaiting_plan_details']=True
+        if data.get('requirements',{}).get('fields',{}).get('investment_budget',{}).get('state')=='base_pending':
+            from ..orchestration.wealth_settled_budget import resolve as resolve_proceeds
+            data['requirements']=await resolve_proceeds(db,user_id,bank,
+                (data.get('active_task') or {}).get('task_id'),data['requirements'],facts,account)
+            slots=planning_slots(data['requirements'],slots)
+            response['requirement_card']=data['requirements']
         # 银行可用现金是约束事实，不是本人投入意愿。旧会话自动预算需重新确认。
         if slots.get('budget_source') == 'bank_available_cash' and intent.budget_fen is None:
             slots.pop('budget_fen', None)
@@ -357,7 +369,8 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         response['budget_source']=slots.get('budget_source','user_specified')
         fields=data.get('requirements',{}).get('fields',{})
         # Specific expenses are optional; goals/horizon drive suitability and liquidity.
-        missing=[key for key in ('budget_fen',) if key not in slots]
+        budget_unresolved=fields.get('investment_budget',{}).get('state') in {'unknown','skipped'}
+        missing=[key for key in ('budget_fen',) if key not in slots and not budget_unresolved]
         if intent.semantic and 'investment_goal' not in fields and not slots.get('need'):
             missing.append('investment_goal')
         if 'horizon_days' not in slots and 'horizon' not in fields:missing.append('horizon_days')
@@ -392,7 +405,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
                     account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'))
                 data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
                 response['task']=task
-        elif ('horizon_days' not in slots or any(fields.get(key,{}).get('state') in {'unknown','skipped','unmentioned'}
+        elif (budget_unresolved or fields.get('advice_only',{}).get('value') is True or 'horizon_days' not in slots or any(fields.get(key,{}).get('state') in {'unknown','skipped','unmentioned'}
                 for key in ('investment_goal','horizon','liquidity_requirement'))):
             # Unknown/declined conditions produce explicitly conditional research, not executable orders.
             from ...domain.wealth_recommendation import conditional_research
@@ -413,6 +426,17 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
                 waiting_reason=None,result=recommendation)
             response['task']=task;data['planning_task_id']=None
         elif account:
+            from ..orchestration.wealth_requirement_task import record
+            if any(i.get('action') in {'research','compare'} and i.get('relation')=='sequential'
+                   for i in data.get('requirements',{}).get('intents',[])):
+                suitable=await require_suitability(db,user_id,1,allow_cash_only=True);await db.rollback()
+                from ...domain.wealth_recommendation import conditional_research
+                research=conditional_research({'products':products,'constraints':fields,'capacity':suitable['capacity_level'],
+                    'horizon_days':slots.get('horizon_days'),'excluded':excluded,'as_of':facts['business_at'],
+                    'available_cash_fen':account['available_fen'],'data_versions':{p['product_id']:p['version'] for p in products}})
+                research_task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
+                    account['account_id'],data['requirements'],facts,data.get('planning_task_id'),waiting_reason=None,result=research)
+                data['planning_task_id']=research_task['task_id']
             request=PlanInput(account_id=account['account_id'],budget_fen=slots['budget_fen'],reserve_fen=slots.get('reserve_fen'),horizon_days=slots['horizon_days'],excluded_products=excluded,need=slots.get('need'),constraint_states=slots.get('constraint_states',{})).model_dump()
             request['budget_source']=slots.get('budget_source','user_specified')
             request['requirement_task_id']=data.get('planning_task_id')
@@ -527,6 +551,15 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
         if response['kind']=='assessment_required':
             response['pending']={key:value for key,value in data.get('pending',{}).items()
                 if key in {'budget_fen','reserve_fen','horizon_days','need','excluded_products','budget_source','budget_range'}}
+            if data.get('requirements'):
+                from ..orchestration.wealth_requirement_task import record
+                account=next((a for a in facts['cash'] if a['account_id']==data.get('account_id')),None)
+                if account is None and len(facts['cash'])==1:account=facts['cash'][0]
+                task=await record(db,user_id,sid,data.get('context_id','legacy-v1'),
+                    account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'),
+                    waiting_reason='ASSESSMENT_REQUIRED')
+                data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
+                response['task']=task
         if error.code == 'INSUFFICIENT_AVAILABLE_FUNDS':
             data['pending']={k:v for k,v in (data.get('pending') or {}).items() if k!='budget_fen'}
             data['awaiting_plan_details']=True

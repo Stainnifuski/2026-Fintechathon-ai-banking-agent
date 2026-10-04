@@ -164,7 +164,7 @@ async def test_sell_then_buy_requires_actual_cash_reread_and_fresh_authorization
         for _ in range(4):await tick(db,task['task_id'],api)
         assert api.submissions==1
         buy=command('dag-following-new-buy',amount=10000).model_copy(update={'plan_id':'WPdag-cash','plan_version':1})
-        plan={'plan_id':'WPdag-cash','version':1,'stage':'BUY','request':{'kind':'new_cash','account_id':'A1'},'items':[{'command':buy.model_dump()}]}
+        plan={'plan_id':'WPdag-cash','version':1,'stage':'BUY','request':{'kind':'new_cash','account_id':'A1','parent_task_id':task['task_id']},'items':[{'command':buy.model_dump()}]}
         with pytest.raises(WealthPolicyError):await tasks.register_plan(db,'U1','sell-buy-session','legacy-v1',plan)
         await db.rollback()
         await move(db,13);assert (await bank.settle(db,sell.operation_id))['status']=='PENDING_CASH'
@@ -173,6 +173,16 @@ async def test_sell_then_buy_requires_actual_cash_reread_and_fresh_authorization
         assert next(n for n in state['nodes'] if n['kind']=='REREAD_CASH')['status']!='COMPLETED'
         await move(db,14);assert (await bank.settle(db,sell.operation_id))['status']=='SETTLED'
         for _ in range(3):await tick(db,task['task_id'],api)
+        from backend.app.services.orchestration.wealth_settled_budget import resolve
+        state={'version':1,'fields':{'investment_budget':{'state':'base_pending','quote':'实际到账的一半',
+            'value':{'mode':'proportion','base':'settled_proceeds','ratio':'0.5'}}}}
+        facts=await api.call('POST','/assets',{'subject_user_id':'U1','account_id':'A1'})
+        resolved=await resolve(db,'U1',api,task['task_id'],state,facts,facts['cash'][0])
+        actual=(await api.query('U1',sell.operation_id))['details']['actual']['cash_fen']
+        assert resolved['fields']['investment_budget']['resolved_fen']==actual//2
+        assert resolved['fields']['investment_budget']['quote']=='实际到账的一半'
+        assert resolved['fields']['investment_budget']['base_fen']!=facts['cash'][0]['available_fen']
+        assert (await resolve(db,'U1',api,task['task_id'],resolved,facts,facts['cash'][0]))==resolved
         next_task=await tasks.register_plan(db,'U1','sell-buy-session','legacy-v1',plan)
         assert next_task['task_id']==task['task_id'] and next_task['version']==2
         assert any(n['kind']=='REREAD_CASH' and n['status']=='COMPLETED' for n in next_task['nodes'])

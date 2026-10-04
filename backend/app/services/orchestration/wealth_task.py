@@ -159,7 +159,7 @@ async def revise_command(db, user_id, task_id, expected_version, command):
     nodes=(await db.scalars(select(Node).where(Node.task_id==task_id))).all()
     if task.version!=expected_version or task.control_mode!='AGENT' or task.status in TERMINAL:
         raise WealthPolicyError('任务已变化或不归Agent处理', 'STALE_TASK', 409)
-    submit=next(n for n in nodes if n.kind=='SUBMIT')
+    submit=next(n for n in nodes if n.kind=='SUBMIT' and n.status!='CANCELLED')
     if submit.status in {'RUNNING','COMPLETED','UNKNOWN'}:
         raise WealthPolicyError('原笔已提交或结果未知，先按原号核对，不能直接改单', 'RECONCILIATION_REQUIRED', 409)
     old=submit.operation_id
@@ -169,11 +169,22 @@ async def revise_command(db, user_id, task_id, expected_version, command):
         {'version':task.version,'operation_id':old,'command':submit.data['command']}]}
     task.account_id=command.account_id; task.version+=1; task.status='PAUSED' if was_paused else 'WAITING'; task.waiting_reason='PERSONAL_CONFIRMATION'
     for node in nodes:
-        if node.kind!='READ_FACTS': node.status='READY'
-        node.lease_version=None; node.lease_until=None
-        node.data={**node.data,'operation_ref':command.operation_id,'output':None}
-        if node.kind=='SUBMIT':
-            node.operation_id=command.operation_id; node.data={**node.data,'command':command.model_dump()}
+        if node.status not in {'COMPLETED','CANCELLED'}:
+            node.status='CANCELLED'
+            node.data={**node.data,'superseded_by_task_version':task.version}
+    prefix=task_id+f':v{task.version:04}'
+    previous=[]
+    sequence=['READ_FACTS','CONFIRM','VERIFY','SUBMIT','SETTLEMENT']
+    if task.data.get('goal')=='sell_then_buy':sequence+=['REREAD_CASH','BUY_PLAN']
+    else:sequence+=['RESULT']
+    for index,kind in enumerate(sequence):
+        node_id=f'{prefix}:{index:02}'
+        db.add(Node(node_id=node_id,task_id=task_id,kind=kind,depends_on=previous,
+            status='COMPLETED' if kind=='READ_FACTS' else 'READY',attempts=0,
+            operation_id=command.operation_id if kind=='SUBMIT' else None,
+            data={'completion_condition':'BANK_SETTLED' if kind=='SETTLEMENT' else 'TRUSTED_FACT_OR_USER_ACTION',
+                  'operation_ref':command.operation_id,'command':command.model_dump() if kind=='SUBMIT' else None}))
+        previous=[node_id]
     await db.commit()
     return await view(db,task)
 
@@ -188,6 +199,11 @@ async def register_plan(db, user_id, session_id, context_id, plan):
     if task is None:
         task=next((t for t in candidates if t.task_id==plan['request'].get('requirement_task_id')
             and t.data.get('goal')=='wealth_planning'),None)
+    if task is None and plan['request'].get('requirement_task_id'):
+        requested=await owned(db,user_id,plan['request']['requirement_task_id'])
+        if (requested.session_id==session_id and requested.context_id==context_id and
+                requested.data.get('read_only') and requested.status=='COMPLETED' and not requested.data.get('plan_id')):
+            task=requested
     if task is None:
         task=next((t for t in candidates if t.data.get('goal')=='sell_then_buy' and not t.data.get('plan_id')
             and t.task_id==plan['request'].get('parent_task_id')),None)
@@ -225,10 +241,14 @@ async def register_plan(db, user_id, session_id, context_id, plan):
         'requirement_version':plan['request'].get('requirement_version')}
     task.status='PAUSED' if was_paused else 'WAITING';task.waiting_reason='PERSONAL_CONFIRMATION'
     prefix=task.task_id+f':v{task.version:04}'
-    graph=[{'node_id':prefix+':00','kind':'READ_FACTS','depends_on':[buy_gate.node_id] if continuation else [], 'completion_condition':'CURRENT_BANK_FACTS'}]
+    research_dependencies=[n.node_id for n in previous_nodes if n.kind=='RESEARCH' and n.status=='COMPLETED']
+    graph=[{'node_id':prefix+':00','kind':'READ_FACTS','depends_on':[buy_gate.node_id] if continuation else research_dependencies, 'completion_condition':'CURRENT_BANK_FACTS'}]
+    graph.append({'node_id':prefix+':plan','kind':'PLAN','depends_on':[prefix+':00'],
+        'completion_condition':'VALIDATED_RECOMMENDATION','input':plan['request'],
+        'output':{'plan_id':plan['plan_id'],'version':plan['version'],'configuration':plan.get('configuration')}})
     settles=[]
     for index,item in enumerate(plan['items']):
-        previous=graph[0]['node_id']
+        previous=prefix+':plan'
         for step,kind in enumerate(['CONFIRM','VERIFY','SUBMIT','SETTLEMENT']):
             nid=f'{prefix}:{index+1:02}:{step:02}'
             graph.append({'node_id':nid,'kind':kind,'depends_on':[previous],
@@ -244,7 +264,7 @@ async def register_plan(db, user_id, session_id, context_id, plan):
         'completion_condition':n.data['completion_condition']} for n in previous_nodes]+graph)
     for row in graph:
         db.add(Node(node_id=row['node_id'],task_id=task.task_id,kind=row['kind'],depends_on=row['depends_on'],
-            status='COMPLETED' if row['kind']=='READ_FACTS' else 'READY',attempts=0,
+            status='COMPLETED' if row['kind'] in {'READ_FACTS','PLAN'} else 'READY',attempts=0,
             operation_id=row.get('operation_ref') if row['kind']=='SUBMIT' else None,
             data={k:v for k,v in row.items() if k not in {'node_id','kind','depends_on'}}))
     await db.commit()

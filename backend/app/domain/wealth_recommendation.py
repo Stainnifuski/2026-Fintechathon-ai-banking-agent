@@ -41,12 +41,20 @@ class DeterministicRuleProvider:
             data_versions=deepcopy(inputs.get('data_versions',{})),
             warnings=['模拟规则配置，非最优解或收益预测'],
             summary=['按风险、费用和流动性规则筛选产品。','未分配预算保留为现金，交易仍需本人确认和模拟授权。'])
+        constraints=inputs.get('constraints',{})
+        goal=constraints.get('investment_goal',{}).get('value')
+        goal_text={'reduce_volatility':'偏向减少波动','preserve_value':'以保值为目标，但不承诺保本','balanced':'兼顾波动与增长','growth':'争取增长，可能承受亏损'}.get(goal,'目标未明确')
+        liquidity=constraints.get('liquidity_requirement',{}).get('value',{})
+        liquidity_text={'immediate':'仅选择符合模拟快赎与无持有期规则的产品；仍受服务窗口和每日限额约束',
+            'few_business_days':'按明确的到账等待要求筛选','flexible':'可接受产品规定的到账等待'}.get(liquidity.get('mode'),'到账偏好未指定，逐项显示产品规则')
+        result['summary']=[f"{goal_text}；按正式风险评估及{parameters['horizon_days']}天可投资期限筛选。",
+            liquidity_text+'。','预算尾款留为现金，交易仍需本人确认及模拟授权。']
         for item in result['items']:
             product=next(p for p in inputs['products'] if p['product_id']==item['product_id'])
             item.update(reason_codes=['RISK_MATCH','LIQUIDITY_MATCH','COST_PRIORITY'],
                 evidence={'product_id':product['product_id'],'product_version':product['version'],
                     'nav_date':product.get('nav_date'),'calendar_version':product['rules']['calendar_version']},
-                reason='符合风险及期限约束，优先考虑费用与流动性。')
+                reason=f'{goal_text}，符合已明确风险及期限约束，按费用与流动性规则选择。')
         return result
 
 
@@ -89,7 +97,9 @@ def conditional_research(inputs: dict, provider: RecommendationProvider | None =
     provider=provider or get_provider()
     result=provider.research(deepcopy(inputs))
     eligible={p['product_id']:p for p in research_eligible(inputs)}
-    if result.get('schema_version')!='wealth-recommendation-v1' or result.get('provider_id')!=provider.provider_id or result.get('conditional') is not True or result.get('as_of')!=inputs['as_of']:
+    if (result.get('schema_version')!='wealth-recommendation-v1' or result.get('provider_id')!=provider.provider_id
+        or result.get('provider_version')!=provider.provider_version or result.get('data_versions')!=inputs.get('data_versions',{})
+        or result.get('constraints')!=inputs['constraints'] or result.get('conditional') is not True or result.get('as_of')!=inputs['as_of']):
         raise ValueError('RECOMMENDATION_OUTPUT_INVALID')
     seen=set()
     for item in result.get('items',[]):
