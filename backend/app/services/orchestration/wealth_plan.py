@@ -118,6 +118,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     effective_reserve=min(budget,max(0,max(reserve or 0,goal_reserve)-outside_budget))
     category_values = {}
     def allocation(products, **parameters):
+        parameters['full_investment']=request.get('full_investment',False)
         versions={p['product_id']:{'product_version':p['version'],
             'dataset_key':p.get('dataset_key'),'calendar_version':p['rules']['calendar_version'],
             'nav_date':p.get('nav_date')} for p in products}

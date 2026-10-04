@@ -130,6 +130,7 @@ class PlanInput(StrictRequest):
     excluded_products: list[str] = Field(default_factory=list, max_length=60)
     need: Literal['cash','balanced','growth'] | None = None
     constraint_states: dict = Field(default_factory=dict)
+    full_investment: bool = False
 
 
 class PlanVersion(StrictRequest):

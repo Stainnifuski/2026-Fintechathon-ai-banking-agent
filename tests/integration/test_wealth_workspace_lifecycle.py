@@ -22,34 +22,39 @@ async def facts(db):
 
 
 @pytest.mark.asyncio
-async def test_window_patch_dirty_close_expiry_and_financial_isolation(store,http_store):
+async def test_window_natural_edit_close_expiry_and_financial_isolation(store,http_store,monkeypatch):
+    from backend.app.services.ai import wealth_dialogue
+    from backend.app.services.ai.wealth_model import Intent
+    from backend.app.domain.wealth_requirements import SemanticFrame
     client,_,_=http_store
+    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    async def parsed(text,context):
+        amount=100000 if text=='我要投资1000元' else 200000
+        return Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
+            {'field':'investment_budget','op':'set','quote':text,'budget':{'mode':'fixed','amount_fen':amount}}]})),{'live':False,'provider':'deterministic-semantic-fixture'}
+    monkeypatch.setattr(wealth_dialogue,'understand',parsed)
     async with store() as db:await assess(db);before=await facts(db)
     session=(await client.post('/api/v1/wealth/sessions',json={})).json()
-    semantic={'patches':[
-        {'field':'investment_budget','op':'set','quote':'表格金额','budget':{'mode':'proportion','ratio':'0.5','base':'available_cash'}},
-        {'field':'horizon','op':'set','quote':'表格期限','horizon':{'unit':'months','count':6,'text':'半年后用'}},
-        {'field':'investment_goal','op':'set','quote':'表格目标','goal':'balanced'}]}
     base='/api/v1/wealth/sessions/'+session['session_id']
-    reply=await client.post(base+'/requirements',json={'version':session['version'],'client_message_id':uuid4().hex,'semantic':semantic})
-    assert reply.status_code==200,reply.text
-    reply=reply.json();plan=reply['plan'];assert plan['request']['budget_fen']==1000000
+    async def send(text,version):
+        result=await client.post('/api/v1/wealth/messages',json={'message':text,'session_id':session['session_id'],'version':version,'client_message_id':uuid4().hex})
+        assert result.status_code==200,result.text
+        return result.json()
+    reply=await send('我要投资1000元',session['version'])
+    assert reply['kind']=='plan',reply
+    plan=reply['plan'];assert sum(i['command']['amount_fen'] for i in plan['items'])==100000
     assert 'spending_purpose' not in reply['requirement_card']['fields']
+    assert 'horizon' not in reply['requirement_card']['fields']
     preview=await client.post('/api/v1/wealth/plans/'+plan['plan_id']+'/preview',json={'version':plan['version']})
     assert preview.status_code==200,preview.text
-    assert (await client.post(base+'/dirty',json={})).status_code==200
+    updated=await send('把投资金额改为2000元',reply['version'])
+    assert updated['kind']=='plan',updated
+    assert updated['plan']['plan_id']==plan['plan_id'] and updated['plan']['version']==plan['version']+1
+    assert sum(i['command']['amount_fen'] for i in updated['plan']['items'])==200000
     assert (await client.post('/api/v1/wealth/plans/'+plan['plan_id']+'/preview',json={'version':plan['version']})).status_code==409
     async with store() as db:
         assert all(a.status=='EXPIRED' for a in await db.scalars(select(Authorization)))
         assert await facts(db)==before
-    # Typed edits don't call a model, update the same state and preserve other fields.
-    semantic={'patches':[{'field':'investment_budget','op':'set','quote':'修改金额','budget':{'mode':'fixed','amount_fen':800000}}]}
-    updated=await client.post(base+'/requirements',json={'version':reply['version'],'client_message_id':uuid4().hex,'semantic':semantic})
-    assert updated.status_code==200,updated.text
-    updated=updated.json();assert updated['plan']['request']['budget_fen']==800000
-    assert updated['requirement_card']['fields']['horizon']['resolved_days']>180
-    invalid={'patches':[{'field':'investment_budget','op':'set','quote':'负数','budget':{'mode':'fixed','amount_fen':-1}}]}
-    assert (await client.post(base+'/requirements',json={'version':updated['version'],'client_message_id':uuid4().hex,'semantic':invalid})).status_code==422
     fresh=(await client.post('/api/v1/wealth/sessions',json={})).json()
     assert fresh['session_id']!=session['session_id']
     assert (await client.get(base)).status_code==404
@@ -149,3 +154,39 @@ async def test_unknown_submission_is_not_deleted_or_resubmitted(store,http_store
         await tick(db,task['task_id'],local)
         assert await facts(db)==before
         assert (await db.get(Node,node.node_id,populate_existing=True)).status=='UNKNOWN'
+
+
+@pytest.mark.asyncio
+async def test_amount_only_assessment_resume_and_repeatable_selection(store,http_store,monkeypatch):
+    from backend.app.services.ai import wealth_dialogue
+    from backend.app.services.ai.wealth_model import Intent
+    from backend.app.domain.wealth_requirements import SemanticFrame
+    client,_,_=http_store
+    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    async def parsed(text,context):
+        frame={} if text=='继续' else {'patches':[{'field':'investment_budget','op':'set','quote':text,
+            'budget':{'mode':'fixed','amount_fen':100000}}]}
+        return Intent(intent='allocate',semantic=SemanticFrame.model_validate(frame)),{'live':False,'provider':'deterministic-semantic-fixture'}
+    monkeypatch.setattr(wealth_dialogue,'understand',parsed)
+    session=(await client.post('/api/v1/wealth/sessions',json={})).json()
+    async def send(text,session):
+        result=await client.post('/api/v1/wealth/messages',json={'message':text,'client_message_id':uuid4().hex,**session})
+        assert result.status_code==200,result.text
+        reply=result.json();session.update(session_id=reply['session_id'],version=reply['version'])
+        return reply
+    waiting=await send('想拿一千块做投资',session)
+    assert waiting['kind']=='assessment_required',waiting
+    async with store() as db:await assess(db)
+    planned=await send('继续',session);assert planned['kind']=='plan',planned
+    expected=[(i['command']['product_id'],i['command']['amount_fen']) for i in planned['plan']['items']]
+    fresh=(await client.post('/api/v1/wealth/sessions',json={})).json()
+    repeated=await send('想拿一千块做投资',fresh)
+    assert repeated['kind']=='plan'
+    assert [(i['command']['product_id'],i['command']['amount_fen']) for i in repeated['plan']['items']]==expected
+    await client.post('/api/v1/wealth/sessions/'+fresh['session_id']+'/close',json={})
+    integrated=await client.post('/api/v1/wealth/subtasks',json={'context_id':'legacy-v1',
+        'request_id':uuid4().hex,'raw_text':'安排1000元投资','parsed_intent':{'intent':'allocate','semantic':{'patches':[
+            {'field':'investment_budget','op':'set','quote':'1000元','budget':{'mode':'fixed','amount_fen':100000}}]}}})
+    assert integrated.status_code==200,integrated.text
+    assert integrated.json()['cards']['kind']=='plan'
+    assert sum(i['command']['amount_fen'] for i in integrated.json()['cards']['plan']['items'])==100000

@@ -15,7 +15,6 @@ from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalCo
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
 from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
 from pydantic import Field
-from ..domain.wealth_requirements import SemanticFrame
 
 
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
@@ -78,12 +77,6 @@ async def continue_current(session_id:str,request:ContinueTask,user:dict=Depends
         'requirement_card':task.data.get('requirements')}
 
 
-class RequirementEdit(StrictRequest):
-    version:int=Field(ge=1,strict=True)
-    client_message_id:str=Field(min_length=8,max_length=64)
-    semantic:SemanticFrame
-
-
 class WindowPreview(StrictRequest):
     authorization_id:str=Field(min_length=1,max_length=64)
 
@@ -95,35 +88,17 @@ async def link_window_preview(session_id:str,request:WindowPreview,user:dict=Dep
     row=await db.get(WealthConversationORM,session_id)
     if not row or row.user_id!=user['user_id'] or row.data.get('closed'):raise HTTPException(409,detail={'code':'SESSION_CLOSED'})
     auth=await policy.owned_authorization(db,user['user_id'],request.authorization_id)
+    command=InvestmentCommand.model_validate(auth.command)
+    if command.direction=='redeem' and not command.plan_id:
+        from ..services.orchestration import wealth_task
+        from ..models.wealth import WealthTaskNodeORM,WealthTaskORM
+        linked=await db.scalar(select(WealthTaskNodeORM).join(WealthTaskORM,
+            WealthTaskORM.task_id==WealthTaskNodeORM.task_id).where(
+                WealthTaskORM.user_id==user['user_id'],WealthTaskNodeORM.operation_id==command.operation_id))
+        if linked is None:
+            await wealth_task.create_command(db,user['user_id'],session_id,row.data.get('context_id','legacy-v1'),command,holding_redemption=True)
     row.data={**row.data,'preview_ids':list(dict.fromkeys([*row.data.get('preview_ids',[]),auth.authorization_id]))}
     await db.commit();return {'linked':True}
-
-
-@router.post('/sessions/{session_id}/requirements')
-async def edit_requirements(session_id:str,request:RequirementEdit,user:dict=Depends(get_current_user),
-        db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
-    from ..services.ai.wealth_dialogue import message as respond
-    from ..services.ai.wealth_model import Intent
-    text='；'.join(p.quote for p in request.semantic.patches) or '更新建议'
-    try:return await respond(db,user['user_id'],bank,text,session_id,request.version,
-        request.client_message_id,parsed_intent=Intent(intent='allocate',semantic=request.semantic))
-    except (BankApiError,policy.WealthPolicyError,ValueError) as error:
-        await db.rollback()
-        if isinstance(error,ValueError):raise HTTPException(422,detail={'code':'INVALID_REQUIREMENTS','message':str(error)})
-        fail(error)
-
-
-@router.post('/sessions/{session_id}/dirty')
-async def dirty_requirements(session_id:str,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
-    from ..models.wealth import WealthConversationORM,WealthPlanORM
-    await policy.lock_profile(db,user['user_id'])
-    row=await db.get(WealthConversationORM,session_id,populate_existing=True)
-    if not row or row.user_id!=user['user_id'] or row.data.get('closed'):
-        raise HTTPException(409,detail={'code':'SESSION_CLOSED','message':'请开始新对话'})
-    from ..services.orchestration.wealth_lifecycle import invalidate
-    await invalidate(db,user['user_id'],row.data)
-    return {'dirty':True}
-
 
 
 def fail(error: BankApiError | policy.WealthPolicyError) -> None:

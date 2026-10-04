@@ -44,12 +44,14 @@ async def view(db, task):
             'operation_id':n.operation_id, 'attempts':n.attempts, **n.data} for n in nodes]}
 
 
-async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None):
+async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None, holding_redemption=False):
     await lock_profile(db, user_id)
     pending = (await db.scalars(select(Task).where(Task.user_id == user_id,
         Task.context_id == context_id, Task.status.not_in(TERMINAL)))).all()
     active = next((t for t in pending if not t.data.get('read_only')),None)
-    if active:
+    if holding_redemption and (command.direction!='redeem' or sell_then_buy):
+        raise WealthPolicyError('持仓入口仅支持独立赎回','INVALID_COMMAND',422)
+    if active and not holding_redemption:
         raise WealthPolicyError('已有进行中的交易任务，请先选择继续、暂停或取消未提交任务', 'ACTIVE_TASK_SELECTION_REQUIRED', 409)
     key = 'WT'+uuid4().hex
     task = Task(task_id=key, user_id=user_id, session_id=session_id, context_id=context_id,

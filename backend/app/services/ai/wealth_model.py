@@ -20,6 +20,7 @@ class Intent(BaseModel):
     budget_max_fen: int|None=Field(default=None,ge=0,le=2000000000)
     suggest_budget: bool=False
     sell_then_buy: bool=False
+    additional_investment: bool=False
     reserve_fen: int|None=Field(default=None,ge=0,le=2000000000)
     horizon_days: int|None=Field(default=None,ge=1,le=3650)
     need: Literal['cash','balanced','growth']|None=None
@@ -78,6 +79,7 @@ async def understand(text: str,context: dict) -> tuple[Intent,dict]:
     liquidity_requirement.liquidity:立即到账=immediate，可等几个工作日=few_business_days，灵活=flexible；只有用户明确工作日数才max_business_days。
     一句话“兼顾增长和波动，半年后用，临时用钱可以等三工作日”同时set目标、六个月期限、few_business_days且max_business_days=3，不相互覆盖。
     只说稳健可以解释目标reduce_volatility；不能自动填期限或到账要求。“不确定”“你帮我建议”“暂不提供”针对last_question所问field分别mark_unknown/mark_unknown/skip，不循环询问、不擅自给默认值。产品查询/比较没有这些前置问题。'''
+    instruction += '当前网页采用金额优先推荐：明确投资总金额但未指定单个产品时用allocate或modify并提取investment_budget，不要求模型主动补问期限、目标、用途或留存，也不填缺失值。既有评估和筛选规则由服务端读取。若requires_additional_investment_confirmation为true，仅当用户明确表示另外增加一笔投资时additional_investment=true；修改已提交交易金额不是另投，口头同意不能授权交易。'
     instruction += '''以上表达只是示例，不是穷举规则或固定关键词。结合当前自然语言、双向上下文和最后问题泛化解释同义、隐含信息、否定、更正及复合需求。
     若last_question正在询问某个需求字段，当前回答语义是没想好、拿不准、请你帮忙建议或暂时不回答，必须对该field输出mark_unknown或skip及本轮原文quote。不能遗漏patch并把它标成missing_condition继续追问。同一句要求“带条件的选择”应记录该真实未知状态并保留plan动作。
     ambiguities只描述有多种解释的真实歧义。ambiguity_kind=reference是多所指或基数不明，contradiction是本轮不能唯一消解的冲突；只是尚未提供目标/期限用missing_condition，已明确不知道或跳过不是歧义，用none和空列表。服务端负责必要条件检查与条件候选。
