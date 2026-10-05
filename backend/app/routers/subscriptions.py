@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..middleware.auth import get_current_user
 from ..schemas.subscriptions import (
-    SubscriptionAction,
+    SubscriptionCancelAction,
+    SubscriptionCancellationPreview,
     SubscriptionChargeAction,
     SubscriptionChargeResult,
     SubscriptionView,
@@ -17,6 +18,8 @@ from ..services.bank import (
     list_subscriptions,
     simulate_subscription_charge,
 )
+
+from ..services.bank.subscription_service import preview_subscription_cancellation
 
 router = APIRouter(prefix="/api/v1/subscriptions", tags=["subscriptions"], responses=BANK_ERROR_RESPONSES)
 
@@ -38,10 +41,19 @@ async def list_user_subscriptions(
     ]
 
 
+@router.post("/{subscription_id}/cancel-preview", response_model=SubscriptionCancellationPreview)
+async def preview_cancel(subscription_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        return await preview_subscription_cancellation(
+            subscription_id=subscription_id, user_id=current_user["user_id"])
+    except BankError as error:
+        _raise_bank_error(error)
+
+
 @router.post("/{subscription_id}/cancel", response_model=SubscriptionView)
 async def cancel_user_subscription(
     subscription_id: str,
-    request: SubscriptionAction,
+    request: SubscriptionCancelAction,
     current_user: dict = Depends(get_current_user),
 ) -> SubscriptionView:
     try:
@@ -50,6 +62,7 @@ async def cancel_user_subscription(
                 subscription_id=subscription_id,
                 user_id=current_user["user_id"],
                 state_version=request.state_version,
+                confirmation_token=request.confirmation_token,
             )
         )
     except BankError as error:

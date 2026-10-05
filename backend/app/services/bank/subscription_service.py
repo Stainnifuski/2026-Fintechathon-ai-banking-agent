@@ -1,8 +1,14 @@
 """模拟银行订阅查询、取消与演示扣费。"""
 
 import calendar
-from datetime import datetime, timezone
+import hashlib
+import hmac
+import json
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+
+from jose import JWTError, jwt
+from ...middleware import auth
 
 from sqlalchemy import select, update
 
@@ -59,8 +65,65 @@ async def list_subscriptions(*, user_id: str) -> list[dict]:
     return [_view(subscription, account) for subscription, account in rows]
 
 
+def _confirmation_key() -> bytes:
+    # Separate signing domain: confirmation tokens are never login JWTs.
+    return hmac.new(auth.JWT_SECRET.encode(), b"subscription-cancel-v1", hashlib.sha256).digest()
+
+
+def _cancellation_digest(subscription: SubscriptionORM) -> str:
+    facts = {
+        "subscription_id": subscription.subscription_id,
+        "debit_account_id": subscription.debit_account_id,
+        "merchant_name": subscription.merchant_name,
+        "amount_fen": subscription.amount_fen,
+        "currency": subscription.currency,
+        "billing_cycle": subscription.billing_cycle,
+        "next_charge_at": as_utc(subscription.next_charge_at, legacy_utc=True).isoformat(),
+    }
+    return hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()
+
+
+async def preview_subscription_cancellation(*, subscription_id: str, user_id: str) -> dict:
+    """Read-only confirmation card; only the trusted UI retains its token."""
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(select(SubscriptionORM, AccountORM)
+            .join(AccountORM, AccountORM.account_id == SubscriptionORM.debit_account_id)
+            .where(SubscriptionORM.subscription_id == subscription_id,
+                   SubscriptionORM.user_id == user_id))).one_or_none()
+        if row is None:
+            raise BankError("订阅不存在", "SUBSCRIPTION_NOT_FOUND", 404)
+        subscription, account = row
+        if subscription.status != ACTIVE:
+            raise BankError("当前订阅状态不能取消", "SUBSCRIPTION_NOT_ACTIVE", 409)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        token = jwt.encode({"purpose": "subscription_cancel", "user_id": user_id,
+            "subscription_id": subscription_id, "state_version": subscription.state_version,
+            "digest": _cancellation_digest(subscription), "exp": expires_at},
+            _confirmation_key(), algorithm="HS256")
+        return {"subscription": _view(subscription, account), "confirmation_token": token,
+            "expires_at": expires_at,
+            "message": "确认后停止后续模拟扣费，历史流水保留；不代表取消真实商户合同。"}
+
+
+def _validate_cancellation_confirmation(token: str | None, subscription: SubscriptionORM,
+                                        user_id: str, state_version: int) -> None:
+    if not token:
+        raise BankError("请先展示取消详情并由本人确认", "CONFIRMATION_REQUIRED", 409)
+    try:
+        claims = jwt.decode(token, _confirmation_key(), algorithms=["HS256"],
+                            options={"require_exp": True})
+    except JWTError as error:
+        raise BankError("取消确认已失效，请重新查看并确认", "CONFIRMATION_INVALID", 409) from error
+    if (claims.get("purpose") != "subscription_cancel" or claims.get("user_id") != user_id
+        or claims.get("subscription_id") != subscription.subscription_id
+        or claims.get("state_version") != state_version
+        or claims.get("digest") != _cancellation_digest(subscription)):
+        raise BankError("取消确认与当前订阅不匹配，请重新确认", "CONFIRMATION_INVALID", 409)
+
+
 async def cancel_subscription(
-    *, subscription_id: str, user_id: str, state_version: int
+    *, subscription_id: str, user_id: str, state_version: int,
+    confirmation_token: str | None = None,
 ) -> dict:
     async with AsyncSessionLocal() as session:
         if session.get_bind().dialect.name == "sqlite":
@@ -80,6 +143,8 @@ async def cancel_subscription(
         ).scalar_one_or_none()
         if subscription is None:
             raise BankError("订阅不存在", "SUBSCRIPTION_NOT_FOUND", 404)
+
+        _validate_cancellation_confirmation(confirmation_token, subscription, user_id, state_version)
 
         if subscription.status == CANCELLED:
             account = await session.get(AccountORM, subscription.debit_account_id)

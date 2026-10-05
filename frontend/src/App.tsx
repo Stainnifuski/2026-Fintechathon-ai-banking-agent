@@ -33,6 +33,7 @@ function App() {
   const [subscriptions, setSubscriptions] = useState<bank.Subscription[]>([]);
   const [pendingSubscription, setPendingSubscription] = useState<bank.Subscription | null>(null);
   const [pendingChargeSubscription, setPendingChargeSubscription] = useState<bank.Subscription | null>(null);
+  const [subscriptionCancellationToken, setSubscriptionCancellationToken] = useState('');
   const [subscriptionChargeId, setSubscriptionChargeId] = useState('');
   const [fromAccount, setFromAccount] = useState('');
   const [toUserId, setToUserId] = useState('');
@@ -276,12 +277,12 @@ function App() {
   };
 
   const confirmSubscriptionCancellation = async () => {
-    if (!pendingSubscription || isActing) return;
+    if (!pendingSubscription || !subscriptionCancellationToken || isActing) return;
     setIsActing(true); setStatus('');
     try {
-      const updated = await bank.cancelSubscription(pendingSubscription);
+      const updated = await bank.cancelSubscription(pendingSubscription, subscriptionCancellationToken);
       setSubscriptions(items => items.map(item => item.subscription_id === updated.subscription_id ? updated : item));
-      setPendingSubscription(null);
+      setPendingSubscription(null); setSubscriptionCancellationToken('');
       setStatus(`已取消 ${updated.merchant_name} 订阅，后续不会再自动扣费`);
     } catch (error) { setStatus(message(error)); }
     finally { setIsActing(false); }
@@ -408,7 +409,7 @@ function App() {
 
   const logout = () => {
     localStorage.removeItem('token'); localStorage.removeItem('bank-user');
-    setUser(null); setAccounts([]); setRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setPendingChargeSubscription(null); setSubscriptionChargeId('');
+    setUser(null); setAccounts([]); setRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setSubscriptionCancellationToken(''); setPendingChargeSubscription(null); setSubscriptionChargeId('');
     setChat([]); setActiveTask(null); setConversation(null); setRetryChat(null); setStatus('');
     setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId(''); setScheduledAt('');
     setRecipientMode('name'); setRecipientPhone(''); setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone('');
@@ -559,9 +560,18 @@ function App() {
       <h2>订阅管理</h2>
       {subscriptions.length === 0 ? <p className="hint">暂未识别到订阅扣费</p> : <ul className="history">{subscriptions.map(subscription => {
         const active = subscription.status === 'ACTIVE';
-        return <li key={subscription.subscription_id}><span><strong>{subscription.merchant_name}</strong><small>{subscription.debit_account_label} · 每月 ¥{subscription.amount.toFixed(2)}</small><small>{active ? `下次扣费：${beijingTime(subscription.next_charge_at)}` : `已于 ${subscription.cancelled_at ? beijingTime(subscription.cancelled_at) : '-'} 取消`}</small>{subscription.source_transaction_id && <small>识别依据：历史流水 {subscription.source_transaction_id}</small>}</span><div className="subscription-action"><strong className={active ? 'in' : 'hint'}>{active ? '生效中' : '已取消'}</strong>{active ? <><button disabled={isActing} onClick={() => { setPendingSubscription(null); setPendingChargeSubscription(subscription); setSubscriptionChargeId(newId()); }}>模拟扣费</button><button className="secondary" disabled={isActing} onClick={() => { setPendingChargeSubscription(null); setSubscriptionChargeId(''); setPendingSubscription(subscription); }}>取消订阅</button></> : <small>不会继续扣费</small>}</div></li>;
+        return <li key={subscription.subscription_id}><span><strong>{subscription.merchant_name}</strong><small>{subscription.debit_account_label} · 每月 ¥{subscription.amount.toFixed(2)}</small><small>{active ? `下次扣费：${beijingTime(subscription.next_charge_at)}` : `已于 ${subscription.cancelled_at ? beijingTime(subscription.cancelled_at) : '-'} 取消`}</small>{subscription.source_transaction_id && <small>识别依据：历史流水 {subscription.source_transaction_id}</small>}</span><div className="subscription-action"><strong className={active ? 'in' : 'hint'}>{active ? '生效中' : '已取消'}</strong>{active ? <><button disabled={isActing} onClick={() => { setPendingSubscription(null); setPendingChargeSubscription(subscription); setSubscriptionChargeId(newId()); }}>模拟扣费</button><button className="secondary" disabled={isActing} onClick={async () => {
+          setIsActing(true); setPendingSubscription(null); setSubscriptionCancellationToken('');
+          setPendingChargeSubscription(null); setSubscriptionChargeId('');
+          try {
+            const preview = await bank.previewSubscriptionCancellation(subscription);
+            setPendingSubscription(preview.subscription);
+            setSubscriptionCancellationToken(preview.confirmation_token);
+          } catch (error) { setStatus(message(error)); }
+          finally { setIsActing(false); }
+        }}>取消订阅</button></> : <small>不会继续扣费</small>}</div></li>;
       })}</ul>}
-      {pendingSubscription && <div className="subscription-confirm"><p><strong>确认取消 {pendingSubscription.merchant_name}？</strong></p><p className="hint">确认后将停止后续模拟自动扣费，历史扣费流水不会删除。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => setPendingSubscription(null)}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCancellation}>{isActing ? '正在取消…' : '确认取消'}</button></div></div>}
+      {pendingSubscription && <div className="subscription-confirm"><p><strong>确认取消 {pendingSubscription.merchant_name}？</strong></p><p>扣费账户：{pendingSubscription.debit_account_label} · 每月 ¥{pendingSubscription.amount.toFixed(2)}<br />下次扣费：{beijingTime(pendingSubscription.next_charge_at)}</p><p className="hint">确认后将停止后续模拟自动扣费，历史扣费流水不会删除。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingSubscription(null); setSubscriptionCancellationToken(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCancellation}>{isActing ? '正在取消…' : '确认取消'}</button></div></div>}
       {pendingChargeSubscription && <div className="subscription-confirm"><p><strong>模拟扣除 {pendingChargeSubscription.merchant_name} ¥{pendingChargeSubscription.amount.toFixed(2)}？</strong></p><p className="hint">确认后将真实减少演示账户余额、生成订阅流水，并把下次扣费日推进一个月。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingChargeSubscription(null); setSubscriptionChargeId(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCharge}>{isActing ? '正在扣费…' : '确认模拟扣费'}</button></div></div>}
     </section></>}
     </>}

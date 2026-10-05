@@ -65,9 +65,15 @@ export const lookupPhoneRecipients = (phone: string) =>
 export const history = () => apiClient.get<Transaction[]>('/transactions/history').then(r => r.data);
 export const paymentRequests = () => apiClient.get<PaymentRequest[]>('/payment-requests').then(r => r.data);
 export const listSubscriptions = () => apiClient.get<Subscription[]>('/subscriptions').then(r => r.data);
-export const cancelSubscription = (subscription: Subscription) =>
+export interface SubscriptionCancellationPreview {
+  subscription: Subscription; confirmation_token: string; expires_at: string; message: string;
+}
+export const previewSubscriptionCancellation = (subscription: Subscription) =>
+  apiClient.post<SubscriptionCancellationPreview>(`/subscriptions/${subscription.subscription_id}/cancel-preview`).then(r => r.data);
+export const cancelSubscription = (subscription: Subscription, confirmationToken: string) =>
   apiClient.post<Subscription>(`/subscriptions/${subscription.subscription_id}/cancel`, {
     state_version: subscription.state_version,
+    confirmation_token: confirmationToken,
   }).then(r => r.data);
 export const simulateSubscriptionCharge = (subscription: Subscription, idempotencyKey: string) =>
   apiClient.post<SubscriptionChargeResult>(`/subscriptions/${subscription.subscription_id}/simulate-charge`, {

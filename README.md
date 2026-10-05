@@ -62,6 +62,7 @@ docker compose up --build
 | 需要了解 | 文档 |
 |---|---|
 | 启动、部署、环境 | [运行指南](运行指南.md)、[模型配置](docs/setup/model_configuration.md) |
+| 定时转账与订阅接入 | [现有功能保护](docs/contracts/定时转账与订阅_Agent接入.md)、[本次验证](docs/validation/scheduled_subscription_guards_20261005.md) |
 | 转账对话与接口 | [对话契约](docs/contracts/转账任务状态机_API_v0.1.md)、[AI使用与交付](docs/即时转账AI_使用与交付.md) |
 | 4号模拟银行 | [手机号/备注边界](docs/bank/手机号转账与风险边界.md)、[银行接口交接](docs/bank/接口与数据库交接_v0.5.md) |
 | 账单分析 | [接口与口径](docs/contracts/账单分析_API_v1.md) |
