@@ -44,12 +44,14 @@ async def view(db, task):
             'operation_id':n.operation_id, 'attempts':n.attempts, **n.data} for n in nodes]}
 
 
-async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None):
+async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None, holding_redemption=False):
     await lock_profile(db, user_id)
     pending = (await db.scalars(select(Task).where(Task.user_id == user_id,
         Task.context_id == context_id, Task.status.not_in(TERMINAL)))).all()
     active = next((t for t in pending if not t.data.get('read_only')),None)
-    if active:
+    if holding_redemption and (command.direction!='redeem' or sell_then_buy):
+        raise WealthPolicyError('持仓入口仅支持独立赎回','INVALID_COMMAND',422)
+    if active and not holding_redemption:
         raise WealthPolicyError('已有进行中的交易任务，请先选择继续、暂停或取消未提交任务', 'ACTIVE_TASK_SELECTION_REQUIRED', 409)
     key = 'WT'+uuid4().hex
     task = Task(task_id=key, user_id=user_id, session_id=session_id, context_id=context_id,
@@ -238,6 +240,7 @@ async def register_plan(db, user_id, session_id, context_id, plan):
             account_id=plan['request']['account_id'],version=1,status='WAITING',control_mode='AGENT',data={})
         db.add(task);await db.flush()
     task.data={**task.data,'goal':task.data.get('goal',plan['request']['kind']),
+        'session_closed':False,
         'plan_id':plan['plan_id'],'plan_version':plan['version'],'stage':plan['stage'],
         'requirements':{'fields':plan['request'].get('constraint_states',{}),'version':plan['request'].get('requirement_version')},
         'requirement_version':plan['request'].get('requirement_version')}
@@ -298,7 +301,7 @@ async def require_write_control(db, user_id, command, authorization=None):
         submit = next((n for n in nodes if n.operation_id==command.operation_id), None)
         if not submit:continue
         linked=True
-        if task.control_mode != 'AGENT' or task.status == 'PAUSED' or task.data.get('stop_new_submissions'):
+        if task.control_mode != 'AGENT' or task.status == 'PAUSED' or task.data.get('stop_new_submissions') or task.data.get('session_closed'):
             raise WealthPolicyError('任务暂停或人工接管中，禁止新银行写入', 'TASK_WRITE_BLOCKED', 409)
         # 最终银行授权已核验后，允许同步可信确认/验证节点；不能凭模型文本推进。
         if authorization:

@@ -106,6 +106,8 @@ async def claim(db,user_id,client_id,digest):
 
 
 async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
+    if data.get('window_session') and intent.intent=='redeem':
+        return {'mode':mode,'kind':'clarification','message':'请在持仓表选择产品、赎回份额和普通赎回或快赎方式，再本人确认与模拟授权。聊天不生成赎回交易。'}
     semantic_fields={p.field for p in intent.semantic.patches} if intent.semantic else set()
     if intent.intent in {'modify','allocate'} and semantic_fields and intent.amount_fen is None:
         intent=intent.model_copy(update={'product_refs':[]})
@@ -371,10 +373,11 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
         # Specific expenses are optional; goals/horizon drive suitability and liquidity.
         budget_unresolved=fields.get('investment_budget',{}).get('state') in {'unknown','skipped'}
         missing=[key for key in ('budget_fen',) if key not in slots and not budget_unresolved]
-        if intent.semantic and 'investment_goal' not in fields and not slots.get('need'):
+        amount_first=bool('budget_fen' in slots and not budget_unresolved)
+        if not amount_first and intent.semantic and 'investment_goal' not in fields and not slots.get('need'):
             missing.append('investment_goal')
-        if 'horizon_days' not in slots and 'horizon' not in fields:missing.append('horizon_days')
-        if fields.get('investment_goal',{}).get('value') in {'reduce_volatility','preserve_value'} and slots.get('horizon_days',9999)<=30 and 'liquidity_requirement' not in fields:
+        if not amount_first and 'horizon_days' not in slots and 'horizon' not in fields:missing.append('horizon_days')
+        if not amount_first and fields.get('investment_goal',{}).get('value') in {'reduce_volatility','preserve_value'} and slots.get('horizon_days',9999)<=30 and 'liquidity_requirement' not in fields:
             missing.append('liquidity_requirement')
         if missing==['budget_fen'] and account and (slots.get('suggest_budget') or slots.get('budget_range')):
             ceiling=max(0,account['available_fen']-(slots.get('reserve_fen') or 0))
@@ -405,8 +408,8 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
                     account['account_id'] if account else None,data['requirements'],facts,data.get('planning_task_id'))
                 data['planning_task_id']=task['task_id'];data['active_task']={'task_id':task['task_id'],'version':task['version']}
                 response['task']=task
-        elif (budget_unresolved or fields.get('advice_only',{}).get('value') is True or 'horizon_days' not in slots or any(fields.get(key,{}).get('state') in {'unknown','skipped','unmentioned'}
-                for key in ('investment_goal','horizon','liquidity_requirement'))):
+        elif (budget_unresolved or fields.get('advice_only',{}).get('value') is True or (not amount_first and ('horizon_days' not in slots or any(fields.get(key,{}).get('state') in {'unknown','skipped','unmentioned'}
+                for key in ('investment_goal','horizon','liquidity_requirement'))))):
             # Unknown/declined conditions produce explicitly conditional research, not executable orders.
             from ...domain.wealth_recommendation import conditional_research
             suitable=await require_suitability(db,user_id,1,allow_cash_only=True);await db.rollback()
@@ -437,7 +440,8 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
                 research_task=await record(db,user_id,data['_session_id'],data.get('context_id','legacy-v1'),
                     account['account_id'],data['requirements'],facts,data.get('planning_task_id'),waiting_reason=None,result=research)
                 data['planning_task_id']=research_task['task_id']
-            request=PlanInput(account_id=account['account_id'],budget_fen=slots['budget_fen'],reserve_fen=slots.get('reserve_fen'),horizon_days=slots['horizon_days'],excluded_products=excluded,need=slots.get('need'),constraint_states=slots.get('constraint_states',{})).model_dump()
+            request=PlanInput(account_id=account['account_id'],budget_fen=slots['budget_fen'],reserve_fen=slots.get('reserve_fen'),horizon_days=slots.get('horizon_days',365),excluded_products=excluded,need=slots.get('need'),constraint_states=slots.get('constraint_states',{}),full_investment=amount_first).model_dump()
+            request['horizon_policy']='user_specified' if 'horizon_days' in slots else 'screening_window_365_not_user_answer'
             request['budget_source']=slots.get('budget_source','user_specified')
             request['requirement_task_id']=data.get('planning_task_id')
             request['requirement_version']=data.get('requirements',{}).get('version')
@@ -482,6 +486,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
         await db.delete(existing); await db.commit()
     session=await db.get(WealthConversationORM,session_id) if session_id else None
     if session_id and (session is None or session.user_id!=user_id): raise WealthPolicyError('会话不存在','NOT_FOUND',404)
+    if session and session.data.get('closed'):
+        raise WealthPolicyError('当前窗口已关闭，请开始新对话','SESSION_CLOSED',409)
     if session and session.data.get('legacy_read_only'):
         raise WealthPolicyError('历史来源归档只读，请使用当前会话','ARCHIVED_HISTORY',409)
     if session and session.version!=version: raise WealthPolicyError('会话已更新，请刷新','STALE_PLAN',409)
@@ -533,7 +539,7 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
                             'direction':item['command']['direction'],'amount_fen':item['command']['amount_fen'],
                             'units':item['command']['units']} for i,item in enumerate(current_plan.data['items'],1)]}
                 await db.rollback()
-            context={'awaiting_plan_details':data.get('awaiting_plan_details',False),'holding_cards':data.get('holding_cards',[]),'research_candidates':data.get('research_candidate_names',[]),'pending':data.get('pending',{}),'candidates':[{'id':p['product_id'],'name':p['name']} for pid in data.get('candidates',[]) for p in products if p['product_id']==pid],
+            context={'requires_additional_investment_confirmation':data.get('additional_investment_pending',False),'awaiting_plan_details':data.get('awaiting_plan_details',False),'holding_cards':data.get('holding_cards',[]),'research_candidates':data.get('research_candidate_names',[]),'pending':data.get('pending',{}),'candidates':[{'id':p['product_id'],'name':p['name']} for pid in data.get('candidates',[]) for p in products if p['product_id']==pid],
                 'products':[{'id':p['product_id'],'name':p['name']} for p in products], 'active':{'direction':data['active_command']['direction'],'product_id':data['active_command']['product_id'],'amount_fen':data['active_command']['amount_fen']} if data.get('active_command') else None,
                 'accounts':[f'账户{i}' for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
                 'available_cash_fen':[{'account_ref':f'账户{i}','available_fen':a['available_fen']} for i,a in enumerate([a for a in facts['cash'] if a['account_type']!='credit'],1)],
@@ -546,7 +552,28 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
         elif parsed_intent is not None:
             intent=parsed_intent;evidence={'provider':'validated-typed-input','live':False}
         else: intent=offline(text)
-        response=await action(db,user_id,bank,text,intent,data,products,facts,contexts,mode)
+        # Model latency must not revive a window that was closed meanwhile.
+        current_window=await db.get(WealthConversationORM,sid,populate_existing=True)
+        if current_window and current_window.data.get('closed'):
+            raise WealthPolicyError('当前窗口已关闭，本轮不再恢复','SESSION_CLOSED',409)
+        submitted=False
+        if data.get('window_session') and data.get('active_plan'):
+            from ...models.wealth import WealthPlanORM
+            prior_plan=await db.get(WealthPlanORM,data['active_plan']['plan_id'])
+            submitted=bool(prior_plan and (prior_plan.status in {'EXECUTING','WAITING_SETTLEMENT','COMPLETED'} or any(
+                i['status'] in {'ACCEPTED','PENDING_PRICING','PENDING_CASH','SETTLED','SUBMITTING','UNKNOWN'} for i in prior_plan.data['items'])))
+        budget_change=bool((intent.semantic and any(p.field=='investment_budget' for p in intent.semantic.patches)) or intent.budget_fen is not None)
+        if submitted and (budget_change or (data.get('additional_investment_pending') and intent.additional_investment)) and not intent.additional_investment:
+            data['additional_investment_pending']=True
+            response={'mode':mode,'kind':'clarification','code':'ADDITIONAL_INVESTMENT_CONFIRMATION',
+                'message':'原交易已提交，金额、持仓和授权保持不变。您是要另外增加一笔投资吗？请明确另投金额。'}
+        else:
+            if submitted and intent.additional_investment:
+                data.update(active_plan=None,active_command=None,active_task=None,planning_task_id=None,requirements=None,pending={},additional_investment_pending=False)
+            if intent.semantic and intent.semantic.patches:
+                from ..orchestration.wealth_lifecycle import invalidate
+                await invalidate(db,user_id,data)
+            response=await action(db,user_id,bank,text,intent,data,products,facts,contexts,mode)
         response.update(model_evidence=evidence,intent=intent.model_dump(),client_message_id=client_message_id)
     except WealthPolicyError as error:
         await db.rollback(); response={'mode':mode,'kind':'assessment_required' if 'ASSESSMENT' in error.code else 'clarification','code':error.code,'message':error.message}
@@ -581,6 +608,9 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
                 evidence['invalid_fields']=[{'path':list(e['loc']),'type':e['type']} for e in error.errors()]
     await lock_profile(db,user_id)
     session=await db.get(WealthConversationORM,sid,with_for_update=True,populate_existing=True)
+    if session and session.data.get('closed'):
+        await db.rollback()
+        raise WealthPolicyError('当前窗口已关闭，本轮不再恢复','SESSION_CLOSED',409)
     if session and session.version!=version:
         await db.rollback()
         raise WealthPolicyError('处理期间会话发生变化，请刷新','STALE_PLAN',409)

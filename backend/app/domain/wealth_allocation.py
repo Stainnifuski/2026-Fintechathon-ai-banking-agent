@@ -45,7 +45,7 @@ def liquidity_days(product: dict) -> int:
 
 def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
              capacity: int, horizon_days: int, excluded: list[str], purchase_allowed: bool = True,
-             exposure_fen: dict[str, int] | None = None, max_items: int = 3) -> dict:
+             exposure_fen: dict[str, int] | None = None, max_items: int = 3, full_investment: bool = False) -> dict:
     """费用包含在每笔总支出，最多5笔，保留未分配尾款不强制花光。"""
     if type(budget_fen) is not int or type(reserve_fen) is not int or not 0 <= reserve_fen <= budget_fen:
         raise ValueError("现金保留不能超过本次预算")
@@ -82,8 +82,27 @@ def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
                 used_families.add(family)
             if left <= 0:
                 break
+    if full_investment:
+        # Complete stated investment within existing risk, family and amount limits.
+        remaining=investable-sum(row['amount_fen'] for row in rows)
+        for row in rows:
+            product=next(p for p in eligible if p['product_id']==row['product_id'])
+            extra=min(remaining,max(0,min(cap,product['rules']['max_amount_fen'])-row['amount_fen']))
+            row['amount_fen']+=extra;remaining-=extra
+        for product in eligible:
+            family=product.get('fund_family_id') or product['product_id']
+            if remaining<=0 or len(rows)>=max_items:break
+            if family in used_families:continue
+            amount=min(remaining,cap,product['rules']['max_amount_fen'])
+            if amount<product['rules']['min_amount_fen']:continue
+            rows.append({'product_id':product['product_id'],'product_name':product['name'],
+                'product_version':product['version'],'disclosure_version':product['disclosure']['version'],
+                'category':product['category'],'amount_fen':amount,'fund_family_id':family,
+                'reason':'匹配正式风险评估；按费用与流动性规则完成本次投入，保留原产品限额。'})
+            used_families.add(family);remaining-=amount
     spent = sum(row["amount_fen"] for row in rows)
     return {"rule_version": RULE_VERSION, "budget_fen": budget_fen, "reserve_fen": reserve_fen,
         "investment_fen": spent, "retained_cash_fen": budget_fen-spent, "items": rows,
         "unallocated_fen": investable-spent, "eligible_product_ids": [p["product_id"] for p in eligible],
+        "unallocated_reason": ('受产品最低金额、最高限额、家族集中度、候选数量或必要现金留存限制，未能全部分配' if full_investment and spent<budget_fen else None),
         "notice": "比赛虚构配置研究，非真实投资建议；不保证收益，可选择全部保留现金"}
