@@ -1,5 +1,6 @@
 ## v1.2兼容扩展（优先于下文v1固定8条/有限理解描述）
 
+> 2026-10-05授权更新：本模块已接入三号统一TOTP／短信校验，旧点击模拟授权及开关移除。授权使用、接口和迁移以[统一验证说明](simulated_authorization.md)为准；历史测试记录不代表当前授权行为。
 GET products返回当前资金上下文，legacy仍8条、新上下文60条。POST research接受dataset_key/query/category/max_risk/horizon_days/page/page_size(≤60)/product_ids(1–3)/period(1m/3m/1y/since)；未知字段拒绝，未知风险不能冒充已评级。返回items/metrics/history/analysis/as_of/datasets/macros，真实产品仅研究规则缺项明示。
 
 GET contexts仅列本人上下文；POST contexts/select需要context_id/version。切换清候选/草稿和旧授权，不复制资金；已受理订单保留原账户。GET assets新增concentration/historical_hypothesis，缺完整现金流时不提供实际回报率。
@@ -8,12 +9,12 @@ POST messages新增client_message_id（≤64字符串）以及session_id/version
 
 新增错误：DATASET_MISMATCH、DATA_STALE、RULE_VERSION_CHANGED、RULES_INCOMPLETE、IDEMPOTENCY_CONFLICT、STALE_PLAN、ACCOUNT_CONTEXT_UNSUPPORTED。内部research/catalog/contexts接口仍要求X-Internal-Token和可信subject；公开层主体只由JWT确定。
 
-渠道接入：APP/IM可发送同一messages请求，保存session/version/client_message_id；展示cards，确认/模拟授权回跳带JWT的网页，不把聊天“好的”映射execute。原订单号查询结果直接来自银行。当前未完成独立APP/IM端到端验收，不能将网页当作渠道证明。
+渠道接入：APP/IM可发送同一messages请求，保存session/version/client_message_id；展示cards，确认/验证码验证回跳带JWT的网页，不把聊天“好的”映射execute。原订单号查询结果直接来自银行。当前未完成独立APP/IM端到端验收，不能将网页当作渠道证明。
 
 
 # 当前授权策略修订
 
-2026-10-01：理财默认点击模拟授权，普通演示库可用；本文旧TOTP/独立库描述仅作兼容历史。路由和状态名不变，现行语义与后续3号接口对接以[模拟授权说明](simulated_authorization.md)为准。
+2026-10-05：理财已接入统一TOTP／短信验证，删除旧点击授权接口；详见[统一验证说明](simulated_authorization.md)。
 
 # 理财计算、状态与API契约 v1
 
@@ -88,14 +89,14 @@ GET products；POST assets/precheck/verify/orders/orders/batch；POST orders/{op
 
 ## 整份确认与演示验证增量API（2026-10-01）
 
-- GET /verification-mode：mode=TOTP或SIMULATED_CLICK、simulated、replacement_required；服务器按显式开关决定，默认SIMULATED_CLICK，不限制库名；额外返回permission_level、authorization_method、provider_version和integration_target。
+- GET /verification-mode：mode=UNIFIED_MFA，methods、sms_simulated和统一提供者版本；旧点击授权开关不再生效。
 - POST /plans/{id}/preview {version}：当前采用后新版本全部待确认项，返回items（逐笔Preview）。没有交易项时无需确认。
 - POST /plans/{id}/confirm {version,items:[{authorization_id,digest,disclosure_version,accepted:true}]}：必须精确包含整份方案的全部项，不允许遗漏、重复或异参。先银行预检，所有逐笔确认在同一事务提交；任一失败全部回滚。
-- POST /plans/{id}/verify/demo {version}：只从可信按钮调用，银行逐笔写模拟证据。随后原execute接口原子批量申购或按既有卖出暂停规则执行。
-- POST /previews/{id}/verify/demo {}：单笔演示；原verify {proof}继续为真实TOTP验证。
-- 内部GET /verification-mode、POST /verify/demo {subject_user_id,authorization_ids}：仍须内部凭据。模拟开关默认开启，不检查数据库名；显式关闭后未受理模拟授权不能执行，返回SIMULATED_VERIFICATION_DENIED。模拟接口不进入AI工具白名单。
+- POST /plans/{id}/verify {version,proof,method,challenge_id?}：一次统一第二因素校验，逐笔写当前完整方案绑定证据。短信reference_id取整份preview返回verification_reference_id。
+- POST /previews/{id}/verify {proof,method,challenge_id?}：单笔统一验证，method默认totp，短信reference_id为authorization_id。
+- 内部GET /verification-mode、POST /verify、POST /verify/batch：要求内部凭据；批量重新核对本人、版本和完整集合。全部旧verify/demo已删除，历史未受理点击证明拒绝执行。
 
-schema版本2新增wealth_verifications而不改旧账本。method/provider_version/simulated/replacement_required/verified_at记录验证提供者；orders.details.verification与audit标识来源。模拟不称为真实MFA成功。历史TOTP授权兼容保留，不能把模拟证据改为真实。后续统一高风险模拟授权衔接见simulated_authorization.md，不要求新增真实认证输入。
+schema版本2新增wealth_verifications而不改旧账本。method/provider_version/simulated/replacement_required/verified_at记录验证提供者；orders.details.verification与audit标识来源。模拟不称为真实MFA成功。历史TOTP授权兼容保留，不能把模拟证据改为真实。当前统一TOTP／短信验证及版本6约束迁移见simulated_authorization.md；验证码不得进入聊天。
 
 
 ## 最新全量基金补充

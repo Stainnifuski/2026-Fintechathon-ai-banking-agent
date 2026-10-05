@@ -1,25 +1,30 @@
-# 理财模拟授权与3号统一接口衔接
+# 理财统一高风险验证（2026-10-05）
 
-2026-10-01团队确认：本比赛项目展示操作风险分级与本人授权，不开发真实指纹、人脸、短信或支付密码输入。本次只调整理财模块，不改其他成员的公共授权实现。
+本文保留原路径以兼容文档链接，覆盖此前“点击模拟授权”的现行使用约定；历史验收报告按其记录日期保留，不代表当前行为。
 
-## 当前执行策略
+## 使用与边界
 
-普通演示数据库默认启用点击模拟授权；WEALTH_DEMO_VERIFICATION_ENABLED默认true，旧.env显式false需修改并重启。false仅保留历史TOTP兼容路径，不是下一版功能目标。数据库名称不再参与模拟授权判断。安全主体隔离、内部token、管理员时钟隔离、适当性、授权有效期、参数版本绑定和资金幂等全部保留。
+理财申购、普通赎回和快赎均为红色操作：先登录并本人确认披露，再选择TOTP／短信完成验证码校验。查询仍为绿色；风险问卷本人确认不替代交易验证。前端复用SecondFactor组件，服务端复用三号 `verify_second_factor()`；短信默认mock，仅模拟发送，真实发送通道尚未接入。没有支付密码点击替身、人脸或指纹验证。
 
-申购/赎回及组合子单均为RED：先预览与本人披露确认，再点击“通过支付密码形式授权（模拟）”。无需输入六位密码。不能由聊天“确认”或LLM工具代替按钮请求。组合一次操作仍为每笔订单记录独立授权。
+当前方案点“一键申购全部”，统一预览和本人确认，输入一次验证码后整份提交，各子单仍保留独立操作号、披露摘要和验证证据。赎回在持仓表选择份额/方式，确认后同样验证。错误验证不成交；在途份额不显示为可赎。验证成功但提交失败时保留原号恢复提交入口，不重复签发操作。
 
-当前适配点：backend/app/integrations/wealth_verification.py；服务端返回permission_level=red、authorization_method=simulated_payment_password、provider_version=demo-click-v2。沿用现有verify/demo路由与SIMULATED_CLICK数据枚举，避免迁移历史账本。AWAITING_MFA是兼容状态名，模拟模式下表示等待模拟授权，不表示已做MFA。
+## 接口
 
-证据继续记录simulated=true、replacement_required=true，后者现在表示需对接统一授权提供者，不表示承诺接入真实验证。订单与审计保留模拟属性；旧demo-click-v1/TOTP历史不得重写。
+- 公共短信：POST `/api/v1/auth/sms/send`，`purpose=wealth`，`reference_id` 为单笔authorization_id或整份preview返回的verification_reference_id；不得使用plan_id代替集合摘要。
+- GET `/api/v1/auth/sms/dev-inbox`：仅本人模拟通道收件箱；短信默认5分钟、60秒重发冷却，每小时10条，5次错误锁定，具体可配置。
+- 单笔：POST `/api/v1/wealth/previews/{authorization_id}/verify`，`{proof,method:totp|sms,challenge_id?}`，省略method仍兼容旧TOTP调用。
+- 整份：POST `/api/v1/wealth/plans/{plan_id}/verify`，上述字段加当前`version`。一次校验完整方案，不能遗漏或重复子单。
+- 银行内部 `/verify`、`/verify/batch` 要求内部令牌；再次核对本人、有效期、当前方案版本、完整操作集合、任务控制及确认状态。
+- `/verification-mode` 返回UNIFIED_MFA及可用方式。原单笔/整份及内部 `/verify/demo` 路由均删除，返回404；旧开关WEALTH_DEMO_VERIFICATION_ENABLED不再生效。
 
-## 与比赛风险等级的对应
+方案短信reference由完整授权ID和参数摘要生成；金额/版本变化产生新操作和新reference，不能沿用旧挑战。验证码仅提交验证入口，不进入聊天/DeepSeek。数据库存短信HMAC、逐笔方法和证据，不保存验证码明文；默认模拟收件箱是演示例外，生产需关闭。
 
-比赛原文：绿色查询自动执行、黄色用户确认、红色强验证。本项目的红色点击是强验证交互的模拟替身，不满足真实MFA的技术含义；比赛是否接受该替身须以组委会口径为准，不声明豁免。
+## 数据库与升级
 
-团队讨论的低/中/高“指纹等/短信/支付密码”可作为3号未来模拟授权窗口的视觉区分；不是全国银行统一标准，也不是认证强度排序。本次没有实现三档全项目统一弹窗。绿色只读不新增拦截；黄色展示操作详情；理财写入保持红色。产品风险R1—R5不决定操作授权降级。
+结构版本6扩展wealth_verifications.method约束以允许SMS，TOTP和历史SIMULATED_CLICK行完整保留。SQLite在写事务中复制校验数量后重建叶表；PostgreSQL仅替换方法CHECK；重复升级无变化。升级前停止写入、做一致性备份；普通启动或wealth_migration按现有方式执行，不清库或重置资金。
 
-## 后续对接3号（契约建议，公共接口尚未实现）
+新的SMS/TOTP证据provider_version=unified-mfa-v1；SMS mock记录simulated=true、replacement_required=false，表示发送通道模拟，已经执行公共验证码校验，不代表真实运营商认证。TOTP记录simulated=false。历史SIMULATED_CLICK未受理授权一律拒绝，用户需重新生成方案/操作并确认验证；已经受理的订单仍按原操作号返回事实、照常结算，不追溯撤销或重写历史证据。
 
-理财调用适配器时传已认证主体、RED、operation_id、authorization_id、参数摘要、计划/披露版本及expires_at；等级由服务端决定。公共服务返回绑定本次操作的授权引用、提供者版本、模拟方法、时间和模拟标记。银行在受理前重新校验主体、摘要、有效期、当前版本及可消费状态。
+## 限制
 
-统一服务上线后仅替换该适配点及可信页面调用，不重写资金与订单逻辑。公共服务不可用时拒绝新授权，不静默自动通过。旧的未受理授权重新预览确认；历史证据保持原始来源。统一服务也可继续模拟，不要求接入真实密码或生物信息。公共名称与路由由3号最终确定，勿凭本文件虚构已可调用接口。
+沿用三号公共验证码服务的配置和保障；本次不是生产级安全审计，未新增真实短信供应商。Agent不能签发证明或读取模拟收件箱来代替本人验证。仅显式管理员可处置场景的种子脚本使用mock短信准备虚构夹具，其确认与验证仍标明合成场景，不是用户操作证据。

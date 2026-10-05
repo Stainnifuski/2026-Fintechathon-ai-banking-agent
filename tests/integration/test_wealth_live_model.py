@@ -1,3 +1,4 @@
+from tests.integration.wealth_mfa_helpers import sms_verify
 """Opt-in real DeepSeek calls, isolated databases; never counted as offline success."""
 import os
 import json
@@ -185,7 +186,7 @@ async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,
         view=(await client.post('/api/v1/wealth/previews',json=changed['command'])).json()
         aid=view['authorization_id']
         confirmed=await client.post(f'/api/v1/wealth/previews/{aid}/confirm',json={'digest':view['digest'],'disclosure_version':1,'accepted':True}); assert confirmed.status_code==200,confirmed.text
-        verified=await client.post(f'/api/v1/wealth/previews/{aid}/verify/demo'); assert verified.status_code==200,verified.text
+        verified=await sms_verify(client,f'/api/v1/wealth/previews/{aid}'); assert verified.status_code==200,verified.text
         accepted=await client.post(f'/api/v1/wealth/previews/{aid}/execute'); assert accepted.status_code==200,accepted.text
         status=await send('刚才那笔成功了吗？')
         assert status['kind']=='order' and status['order']['status']=='ACCEPTED',status
@@ -206,7 +207,7 @@ async def test_real_deepseek_continuous_dialogue_and_citations(store,http_store,
         rv=redeem_view.json();rid=rv['authorization_id']
         assert (await client.post(f'/api/v1/wealth/previews/{rid}/confirm',json={
             'digest':rv['digest'],'disclosure_version':rv['command']['disclosure_version'],'accepted':True})).status_code==200
-        assert (await client.post(f'/api/v1/wealth/previews/{rid}/verify/demo')).status_code==200
+        assert (await sms_verify(client,f'/api/v1/wealth/previews/{rid}')).status_code==200
         redemption=await client.post(f'/api/v1/wealth/previews/{rid}/execute')
         assert redemption.status_code==200 and redemption.json()['status']=='ACCEPTED',redemption.text
         async with store() as db:

@@ -1,3 +1,4 @@
+from tests.integration.wealth_mfa_helpers import sms_verify
 """两只快赎合同/绑定与立即到账：独立双库金融关系核对。"""
 from datetime import datetime
 from decimal import Decimal
@@ -65,7 +66,6 @@ async def test_new_cash_products_keep_standard_redemption_settlement(store,pid):
 @pytest.mark.asyncio
 async def test_quick_http_lost_response_requires_new_buy_confirmation(store, http_store, monkeypatch):
     """真实银行HTTP路由成交后丢响应：原号恢复且到账后买入不能沿用赎回授权。"""
-    monkeypatch.delenv('WEALTH_DEMO_VERIFICATION_ENABLED', raising=False)
     client, local, _ = http_store
     async with store() as db:
         payload={'schema_version':1,'dataset_id':'mixed-preload-v12','dataset_version':'quick-http',
@@ -92,7 +92,7 @@ async def test_quick_http_lost_response_requires_new_buy_confirmation(store, htt
         assert unconfirmed.json()['detail']['code']==('PLAN_EXECUTION_REQUIRED' if command.plan_id else 'AUTHORIZATION_REQUIRED')
         assert (await client.post(base+'/confirm',json={'digest':view['digest'],
             'disclosure_version':1,'accepted':True})).status_code==200
-        assert (await client.post(base+'/verify/demo',json={})).status_code==200
+        assert (await sms_verify(client,base)).status_code==200
         return view,base
     sell=InvestmentCommand(operation_id='http-quick-lost-sell',direction='redeem',account_id=buy.account_id,
         product_id='B017',product_version=1,disclosure_version=1,units='1000.0000',command_version=2,redemption_mode='quick')

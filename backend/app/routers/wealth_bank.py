@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database.connection import get_db, DATABASE_URL
 from ..domain.wealth import CALENDAR_VERSION
 from ..integrations.wealth_authorization import WealthPolicyError
-from ..schemas.wealth import StrictRequest, InvestmentCommand, InternalInvestmentSubmission
+from ..schemas.wealth import StrictRequest, InvestmentCommand, InternalInvestmentSubmission, StrongVerification, PlanVerification
 from ..services.bank import wealth_service as bank
 from ..services.bank.transfer_service import BankError
 from .bank_operations import require_internal_token
@@ -40,19 +40,9 @@ class ExternalEvidence(Subject):
 
 @router.post('/external-evidence')
 async def external_evidence(request:ExternalEvidence,db:AsyncSession=Depends(get_db)):
-    from ..models import AccountORM,TransactionORM
-    from ..domain.time import as_utc,utc_iso
-    account=await db.get(AccountORM,request.account_id)
-    event=await db.get(TransactionORM,request.event_reference)
-    if (account is None or account.user_id!=request.subject_user_id or event is None
-        or event.account_id!=account.account_id or event.type!='transfer_out' or event.status!='completed'):
-        fail(BankError('未找到当前本人账户的已完成转账事实','EXTERNAL_EVIDENCE_INVALID',409))
-    now=await bank.business_now(db,account.account_id)
-    if as_utc(event.timestamp,legacy_utc=True)>now:
-        fail(BankError('未来流水不能用于完成外部依赖','EXTERNAL_EVIDENCE_INVALID',409))
-    return {'event_reference':event.tx_id,'account_id':account.account_id,'type':event.type,
-        'status':'completed','occurred_at':utc_iso(as_utc(event.timestamp,legacy_utc=True)),
-        'operation_id':event.operation_id,'source':'bank_ledger'}
+    try:
+        return await bank.external_evidence(db,request.subject_user_id,request.account_id,request.event_reference)
+    except BankError as error:fail(error)
 
 
 @router.post('/product-detail')
@@ -133,17 +123,17 @@ class AssetSubject(Subject):
     account_id: str | None = Field(default=None, max_length=32)
 
 
-class Verify(Subject):
+class Verify(Subject, StrongVerification):
     authorization_id: str = Field(max_length=64)
-    proof: str = Field(pattern=r"^\d{6}$")
 
 
 class Batch(Subject):
     submissions: list[InternalInvestmentSubmission] = Field(min_length=1, max_length=5)
 
 
-class DemoVerify(Subject):
+class VerifyBatch(Subject, PlanVerification):
     authorization_ids: list[str] = Field(min_length=1, max_length=5)
+    plan_id: str = Field(max_length=64)
 
 
 class Advance(StrictRequest):
@@ -318,7 +308,8 @@ async def precheck(request: Precheck, db: AsyncSession = Depends(get_db)) -> dic
 async def verify(request: Verify, db: AsyncSession = Depends(get_db)) -> dict:
     """锁住本人验证码时间步，与逐笔强验证事实同事务提交。"""
     try:
-        return await bank.verify_authorization(db, request.subject_user_id, request.authorization_id, request.proof)
+        return await bank.verify_authorization(db, request.subject_user_id, request.authorization_id, request.proof,
+            method=request.method, challenge_id=request.challenge_id)
     except (BankError, WealthPolicyError) as error:
         await db.rollback()
         fail(error)
@@ -330,10 +321,11 @@ async def verification_mode(db: AsyncSession = Depends(get_db)) -> dict:
     return mode(db)
 
 
-@router.post("/verify/demo")
-async def demo_verify(request: DemoVerify, db: AsyncSession = Depends(get_db)) -> dict:
+@router.post("/verify/batch")
+async def batch_verify(request: VerifyBatch, db: AsyncSession = Depends(get_db)) -> dict:
     try:
-        return await bank.demo_verify_authorizations(db, request.subject_user_id, request.authorization_ids)
+        return await bank.verify_authorizations(db, request.subject_user_id, request.authorization_ids, request.proof,
+            method=request.method, challenge_id=request.challenge_id, plan_id=request.plan_id, version=request.version)
     except (BankError, WealthPolicyError) as error:
         await db.rollback()
         fail(error)

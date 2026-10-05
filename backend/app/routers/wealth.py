@@ -11,7 +11,7 @@ from ..integrations.wealth_bank_api import HttpWealthBankApi
 from ..integrations import wealth_authorization as policy
 from ..middleware.auth import get_current_user
 from ..models.wealth import WealthAuthorizationORM, WealthProfileORM
-from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan, PlanConfirmation
+from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan, PlanConfirmation
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
 from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
 from pydantic import Field
@@ -216,14 +216,6 @@ async def verification_mode(user: dict = Depends(get_current_user), bank: HttpWe
         fail(error)
 
 
-@router.post("/previews/{authorization_id}/verify/demo")
-async def demo_verify(authorization_id: str, user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
-    try:
-        return await bank.call("POST", "/verify/demo", {"subject_user_id": user["user_id"], "authorization_ids": [authorization_id]})
-    except BankApiError as error:
-        fail(error)
-
-
 @router.post("/plans/{plan_id}/preview")
 async def preview_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:
@@ -242,10 +234,10 @@ async def confirm_plan(plan_id: str, request: PlanConfirmation, user: dict = Dep
         fail(error)
 
 
-@router.post("/plans/{plan_id}/verify/demo")
-async def demo_verify_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+@router.post("/plans/{plan_id}/verify")
+async def verify_plan(plan_id: str, request: PlanVerification, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:
-        return await wealth_plan.demo_verify_all(db, user["user_id"], plan_id, request.version, bank)
+        return await wealth_plan.verify_all(db, user["user_id"], plan_id, request, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
@@ -369,7 +361,7 @@ async def verify(authorization_id: str, request: StrongVerification, user: dict 
     """验证码只进入可信验证组件和银行，不进入模型消息。"""
     try:
         return await bank.call("POST", "/verify", {"subject_user_id": user["user_id"],
-            "authorization_id": authorization_id, "proof": request.proof})
+            "authorization_id": authorization_id, **request.model_dump()})
     except BankApiError as error:
         fail(error)
 

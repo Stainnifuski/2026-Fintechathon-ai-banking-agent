@@ -1,7 +1,8 @@
 import { beijingTime } from '../../utils/time';
 import { useEffect, useState, useRef } from 'react';
 import * as w from '../../services/wealth';
-import type { Account } from '../../services/bank';
+import type { Account, SecondFactor as Factor } from '../../services/bank';
+import { SecondFactor } from '../SecondFactor';
 import './styles.css';
 import Research from './Research';
 import OperatorPanel from './OperatorPanel';
@@ -49,7 +50,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
   const [plan, setPlan] = useState<w.Plan | null>(null);
   const [preview, setPreview] = useState<w.Preview | null>(null); const [consent, setConsent] = useState(false); const [code, setCode] = useState('');
   const [executions, setExecutions] = useState<{ authorization_id: string; operation_id: string; status: string }[]>([]);
-  const [verificationMode, setVerificationMode] = useState<w.VerificationMode | null>(null);
+  const [factor, setFactor] = useState<Factor | null>({method:'totp'});
   const [groupPreview, setGroupPreview] = useState<w.PlanPreview | null>(null);
   const [groupConsent, setGroupConsent] = useState(false);
   const [groupStage, setGroupStage] = useState<'PREVIEW' | 'CONFIRMED' | 'VERIFIED'>('PREVIEW');
@@ -59,8 +60,8 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
 
   const sessionRef=useRef<{session_id:string;version:number}|null>(null);
   const load=async()=>{
-    const [p,a,r,q,e,mode,t]=await Promise.all([w.get<w.Product[]>('/products'),w.get<w.Assets>('/assets'),w.get<w.Assessment|null>('/assessments/current'),w.get<w.Questionnaire>('/questionnaire'),w.get<typeof executions>('/executions'),w.get<w.VerificationMode>('/verification-mode'),w.get<{items:w.WealthTask[]}>('/tasks')]);
-    setProducts(p);setAssets(a);setAssessment(r);setQuestionnaire(q);setExecutions(e);setVerificationMode(mode);setTasks(t.items);
+    const [p,a,r,q,e,t]=await Promise.all([w.get<w.Product[]>('/products'),w.get<w.Assets>('/assets'),w.get<w.Assessment|null>('/assessments/current'),w.get<w.Questionnaire>('/questionnaire'),w.get<typeof executions>('/executions'),w.get<{items:w.WealthTask[]}>('/tasks')]);
+    setProducts(p);setAssets(a);setAssessment(r);setQuestionnaire(q);setExecutions(e);setTasks(t.items);
   };
   const newConversation=async()=>{
     setHistory([]);setChat(null);setPlan(null);setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);setChatInput('');setSession(null);setRedeeming(null);setDetailProduct(null);setNotice('');
@@ -83,13 +84,13 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
   const showPreview = async (command: w.Command) => {
     const view = await w.post<w.Preview>('/previews', command);
     if(sessionRef.current)await w.post(`/sessions/${sessionRef.current.session_id}/preview-link`,{authorization_id:view.authorization_id});
-    setPreview(view); setConsent(false); setCode('');
+    setPreview(view); setConsent(false); setCode('');setFactor({method:'totp'});
   };
   const previewAdopted = async () => {
     if (!plan) return;
     if (!plan.items.length) { setNotice('方案全部保留现金，无需交易确认。'); return; }
     const views = await w.post<w.PlanPreview>(`/plans/${plan.plan_id}/preview`, { version: plan.version });
-    setGroupPreview(views); setGroupConsent(false); setGroupStage('PREVIEW');
+    setGroupPreview(views); setGroupConsent(false); setGroupStage('PREVIEW');setCode('');setFactor({method:'totp'});
   };
   const send = async (text: string) => {
     if(!sessionRef.current)throw new Error('会话正在初始化');
@@ -117,7 +118,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       {assets?.cash.map(account => <p key={account.account_id}>账户 {account.account_id} · 账面 {w.money(account.balance_fen)} · 占款 {w.money(account.held_fen)} · 可用 {w.money(account.available_fen)}{account.account_type === 'credit' && '（不可投资）'}</p>)}
       <p>在途赎回应收：{assets ? w.money(assets.receivable_fen) : '尚未查询'}（到账前不可用于买入）</p>
     </section>
-    {verificationMode?.simulated && <p className="notice">演示授权：理财申购／赎回属于高风险操作。点击按钮模拟支付密码授权，不采集或验证真实密码、短信码、指纹或人脸。</p>}
+    <p className="notice">理财申购／赎回属于高风险操作，本人确认后须完成验证器或短信验证码验证。默认短信为模拟发送，不连接运营商。</p>
     <details><summary>产品资料与数据工具</summary><Research onChoose={setDetailProduct} onSwitch={async()=>{await newConversation();await load();onActivity();}}/></details>
     {notice && <p role="alert" className="notice">{notice}</p>}
     <div className="wealth-layout"><div>
@@ -139,7 +140,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       </tbody></table></div>{!assets?.lots.length&&!assets?.orders.some(o=>!['SETTLED','CANCELLED','REJECTED'].includes(o.status))&&<p>暂无持仓或在途申请。</p>}
         <button className="secondary" disabled={busy} onClick={()=>act(async()=>{await load();setNotice('已核对未完成执行任务；选择续接只读取进度，不使用旧授权。');})}>查询未完成任务</button>
         {tasks.filter(t=>!['COMPLETED','CANCELLED','PARTIAL_COMPLETED','FAILED'].includes(t.status)).map(t=><article className="wealth-product" key={t.task_id}><p>未完成任务 {t.task_id.slice(-8)} · {statusLabel[t.status]||t.status}</p><button disabled={busy||!session} onClick={()=>act(async()=>{const reply=await w.post<w.ChatReply>(`/sessions/${sessionRef.current!.session_id}/continue`,{task_id:t.task_id});setChat(reply);sessionRef.current={session_id:reply.session_id!,version:reply.version!};setSession(sessionRef.current);setHistory(h=>[...h,{user:'查询并续接未完成任务',reply}]);})}>查询并续接此任务</button></article>)}
-    </div><aside><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与模拟授权。</p>
+    </div><aside><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与TOTP／短信验证。</p>
       {plan && <section aria-label="当前方案"><h3>当前方案 v{plan.version} · {statusLabel[plan.status] || plan.status}</h3>
         <Recommendation plan={plan} products={products} onDetail={setDetailProduct}/>
         <button disabled={busy || plan.status !== 'AWAITING_CONFIRMATION' || !plan.items.length} onClick={() => act(previewAdopted)}>{plan.stage==='SELL'?'统一确认当前减持':'一键申购全部'}</button>
@@ -165,7 +166,19 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       <label className="wealth-check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />本人已阅读本笔披露，理解本金可能亏损、费用和流动性，同意上述订单</label>
       <p>资金账户 {accounts.find(item => item.account_id === preview.command.account_id)?.card_number || preview.command.account_id} · 产品风险 R{preview.product_risk_level} · 操作风险：高风险（RED）</p><p>{preview.suitability ? `本人承受能力 R${preview.suitability.capacity_level}，评估有效至 ${preview.suitability.expires_at.slice(0, 10)}，服务端匹配通过` : '赎回既有持仓不要求重新取得高风险产品申购资格'}</p>
       {preview.authorization_status === 'AWAITING_CONFIRMATION' && <button disabled={busy || !consent} onClick={() => act(async () => { const result = await w.post<{ status: string }>(`/previews/${preview.authorization_id}/confirm`, { digest: preview.digest, disclosure_version: preview.command.disclosure_version, accepted: true }); setPreview({ ...preview, authorization_status: result.status }); })}>确认这笔订单</button>}
-      {preview.authorization_status === 'AWAITING_MFA' && (verificationMode?.simulated ? <><p>高风险授权（模拟支付密码）：无需输入任何密码；点击仅记录本次订单的模拟授权。</p><button disabled={busy} onClick={() => act(async () => { await w.post(`/previews/${preview.authorization_id}/verify/demo`, {}); if (preview.command.plan_id) setPreview({ ...preview, authorization_status: 'VALID' }); else { const fact = await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`, {}); setPreview(null); setNotice(fact.status==='SETTLED'?'赎回成功，余额与持仓已更新。':['ACCEPTED','PENDING_PRICING','PENDING_CASH'].includes(fact.status)?'赎回申请已受理，持仓表展示份额冻结及在途状态。':'赎回未成功：'+(statusLabel[fact.status]||fact.status)); onActivity(); } })}>通过支付密码形式授权（模拟）并提交</button></> : <><label>验证器6位验证码（只进入安全验证）<input inputMode="numeric" autoComplete="off" value={code} maxLength={6} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></label><p className="hint">每笔使用新的验证码；已使用时请等待验证器更新。</p><button disabled={busy || code.length !== 6} onClick={() => act(async () => { const result = await w.post<{ status: string }>(`/previews/${preview.authorization_id}/verify`, { proof: code }); setCode(''); setPreview({ ...preview, authorization_status: result.status }); })}>强验证本笔订单</button></>)}
+      {preview.authorization_status === 'AWAITING_MFA' && <>
+        <SecondFactor key={preview.authorization_id} purpose="wealth" referenceId={preview.authorization_id} factor={factor} onChange={setFactor} disabled={busy}/>
+        <label>6位验证码（仅进入安全验证）<input inputMode="numeric" autoComplete="off" value={code} maxLength={6} onChange={e=>setCode(e.target.value.replace(/\D/g,''))}/></label>
+        <button disabled={busy || !factor || code.length!==6} onClick={()=>act(async()=>{
+          if(!factor)return;
+          const result=await w.post<{status:string}>(`/previews/${preview.authorization_id}/verify`,{proof:code,method:factor.method,challenge_id:factor.method==='sms'?factor.challengeId:undefined});
+          setCode('');setPreview({...preview,authorization_status:result.status});
+          if(!preview.command.plan_id){
+            const fact=await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`,{});
+            setPreview(null);setNotice(fact.status==='SETTLED'?'赎回成功，余额与持仓已更新。':['ACCEPTED','PENDING_PRICING','PENDING_CASH'].includes(fact.status)?'赎回申请已受理，持仓表展示份额冻结及在途状态。':'赎回未成功：'+(statusLabel[fact.status]||fact.status));onActivity();
+          }
+        })}>验证并提交</button>
+      </>}
       {preview.authorization_status === 'VALID' && (preview.command.plan_id ? <p>本笔已验证。关闭后完成其他子单验证，再受理方案。</p> : <button disabled={busy} onClick={() => act(async () => { const fact = await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`, {}); setPreview(null); setNotice(statusLabel[fact.status] || fact.status); onActivity(); })}>受理这笔模拟订单</button>)}
       <button className="secondary" disabled={busy} onClick={() => { setPreview(null); setCode(''); }}>关闭</button></section></div>}
     {groupPreview && !preview && <div className="wealth-modal"><section role="dialog" aria-label="整份方案预览与确认" className="card">
@@ -178,12 +191,22 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
         <RedemptionQuote preview={item}/>
         <p>计价 {item.pricing_date} · 确认 {item.confirm_date} · 到账 {item.cash_date} · 确认有效至 {beijingTime(item.expires_at)}</p>
         <details><summary>查看本笔完整披露 v{item.command.disclosure_version}</summary>{Object.entries(item.disclosure).map(([key, value]) => <p key={key}>{disclosureLabels[key] || key}：{displayDisclosure(value)}</p>)}</details>
-        {!verificationMode?.simulated && groupStage !== 'PREVIEW' && <button disabled={busy} onClick={() => act(() => showPreview(item.command))}>真实验证这笔订单</button>}
       </article>)}
       {groupStage === 'PREVIEW' && <><label className="wealth-check"><input type="checkbox" checked={groupConsent} onChange={e => setGroupConsent(e.target.checked)} />本人已阅读以上所有选中订单及逐笔披露，理解本金亏损、费用和流动性，确认采用整份方案</label>
         <button disabled={busy || !groupConsent} onClick={() => act(async () => { await w.post(`/plans/${groupPreview.plan_id}/confirm`, { version: groupPreview.version, items: groupPreview.items.map(item => ({ authorization_id: item.authorization_id, digest: item.digest, disclosure_version: item.command.disclosure_version, accepted: true })) }); setGroupStage('CONFIRMED'); })}>一次确认整份方案</button></>}
-      {groupStage === 'CONFIRMED' && verificationMode?.simulated && <><p>高风险授权（模拟支付密码）：无需输入密码；本次授权绑定以上全部选中订单，数据库逐笔保留模拟记录。</p><button disabled={busy} onClick={() => act(async () => { await w.post(`/plans/${groupPreview.plan_id}/verify/demo`, { version: groupPreview.version }); setGroupStage('VERIFIED'); const current = await w.post<w.Plan>(`/plans/${groupPreview.plan_id}/execute`, { version: groupPreview.version }); setPlan(current); setGroupPreview(null); setNotice(current.items.every(i=>['ACCEPTED','PENDING_PRICING','PENDING_CASH','SETTLED'].includes(i.status))?'申购成功（申请已受理）；持仓表展示当前份额及在途状态。':'申购未全部成功，请查看当前任务提示。'); onActivity(); })}>通过支付密码形式授权（模拟）并提交方案</button></>}
-      {(groupStage === 'VERIFIED' || (groupStage === 'CONFIRMED' && !verificationMode?.simulated)) && <button disabled={busy} onClick={() => act(async () => { setPlan(await w.post<w.Plan>(`/plans/${groupPreview.plan_id}/execute`, { version: groupPreview.version })); setGroupPreview(null); onActivity(); })}>受理／恢复整份方案（原号核对）</button>}
+      {groupStage === 'CONFIRMED' && <>
+        <SecondFactor key={groupPreview.verification_reference_id} purpose="wealth" referenceId={groupPreview.verification_reference_id} factor={factor} onChange={setFactor} disabled={busy}/>
+        <label>6位验证码（验证整份方案）<input inputMode="numeric" autoComplete="off" value={code} maxLength={6} onChange={e=>setCode(e.target.value.replace(/\D/g,''))}/></label>
+        <button disabled={busy || !factor || code.length!==6} onClick={()=>act(async()=>{
+          if(!factor)return;
+          await w.post(`/plans/${groupPreview.plan_id}/verify`,{version:groupPreview.version,proof:code,method:factor.method,challenge_id:factor.method==='sms'?factor.challengeId:undefined});
+          setCode('');setGroupStage('VERIFIED');
+          const current=await w.post<w.Plan>(`/plans/${groupPreview.plan_id}/execute`,{version:groupPreview.version});setPlan(current);setGroupPreview(null);
+          const label=plan?.stage==='SELL'?'赎回':'申购';
+          setNotice(current.items.every(i=>['ACCEPTED','PENDING_PRICING','PENDING_CASH','SETTLED'].includes(i.status))?`${label}成功（申请已受理）；持仓表展示当前份额及在途状态。`:`${label}未全部成功，请查看当前任务提示。`);onActivity();
+        })}>一次验证并提交整份方案</button>
+      </>}
+      {groupStage==='VERIFIED' && <button disabled={busy} onClick={()=>act(async()=>{setPlan(await w.post<w.Plan>(`/plans/${groupPreview.plan_id}/execute`,{version:groupPreview.version}));setGroupPreview(null);onActivity();})}>恢复提交（沿用原操作号）</button>}
       <button className="secondary" disabled={busy} onClick={() => setGroupPreview(null)}>关闭预览</button>
     </section></div>}
   </section>;

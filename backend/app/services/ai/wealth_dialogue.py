@@ -107,7 +107,7 @@ async def claim(db,user_id,client_id,digest):
 
 async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
     if data.get('window_session') and intent.intent=='redeem':
-        return {'mode':mode,'kind':'clarification','message':'请在持仓表选择产品、赎回份额和普通赎回或快赎方式，再本人确认与模拟授权。聊天不生成赎回交易。'}
+        return {'mode':mode,'kind':'clarification','message':'请在持仓表选择产品、赎回份额和普通赎回或快赎方式，再本人确认与TOTP／短信验证。聊天不生成赎回交易。'}
     semantic_fields={p.field for p in intent.semantic.patches} if intent.semantic else set()
     if intent.intent in {'modify','allocate'} and semantic_fields and intent.amount_fen is None:
         intent=intent.model_copy(update={'product_refs':[]})
@@ -348,7 +348,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             await db.commit()
         data['active_command']=command.model_dump(); data['active_plan']=None
         data['pending']={}; data['awaiting_plan_details']=False
-        response.update(kind='command',command=command.model_dump(),message='已生成新版本待确认模拟订单；金额修改使用新操作号，旧授权不会用于新参数。请在可信卡片本人确认与模拟验证。')
+        response.update(kind='command',command=command.model_dump(),message='已生成新版本待确认模拟订单；金额修改使用新操作号，旧授权不会用于新参数。请在可信卡片本人确认与TOTP／短信验证。')
     elif intent.intent=='allocate' or (intent.intent=='modify' and intent.semantic and intent.semantic.patches) or (intent.intent=='modify' and
             (intent.exclude_refs or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))) or (intent.intent=='clarify' and data.get('awaiting_plan_details') and
             (text.strip()=='继续' or any(getattr(intent,k) is not None for k in ('budget_fen','reserve_fen','horizon_days','need')))):
@@ -464,7 +464,7 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
             data.pop('last_question',None)
             data['candidates']=[i['command']['product_id'] for i in plan['items']]
             card_list(data, 'plan', data['candidates'], response)
-            explanation = ('已保存新版本配置方案，默认最多3笔；保留现金和不足最低金额的尾款不强制投入。统一预览后本人确认和模拟验证。'
+            explanation = ('已保存新版本配置方案，分配金额及未分配原因见当前方案。统一预览后本人确认和TOTP／短信验证。'
                 if plan['items'] else '当前评估、期限及产品规则下未生成交易项；本版本未生成订单，资金保留为现金。可以继续查看产品资料或调整需求。')
             response.update(kind='plan',plan=plan,message=budget_note+explanation)
     return response

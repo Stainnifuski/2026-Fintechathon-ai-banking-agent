@@ -210,10 +210,11 @@ async def validate_bank_authorization(db: AsyncSession, user_id: str, authorizat
     from ..services.orchestration.wealth_task import require_write_control
     row = await owned_authorization(db, user_id, authorization_id)
     from ..models.wealth import WealthVerificationORM
-    from .wealth_verification import demo_verification_enabled
     evidence = await db.get(WealthVerificationORM, authorization_id)
-    if evidence and evidence.simulated and not demo_verification_enabled(db):
-        raise WealthPolicyError("模拟验证授权不能在真实验证模式受理，请重新预览并真实验证", "SIMULATED_VERIFICATION_DENIED", 403)
+    if evidence and evidence.method == "SIMULATED_CLICK":
+        raise WealthPolicyError("历史点击授权已停用，请重新预览并完成统一验证", "SIMULATED_VERIFICATION_DENIED", 403)
+    if evidence is None or evidence.method not in {"TOTP", "SMS"}:
+        raise WealthPolicyError("缺少统一高风险验证证据", "AUTHORIZATION_REQUIRED", 403)
     if (row.status != "VALID" or not row.confirmed_at or not row.verified_at
             or row.operation_id != command.operation_id or row.param_digest != command_digest(command)):
         raise WealthPolicyError("缺少绑定订单的本人确认和强验证", "AUTHORIZATION_REQUIRED", 403)

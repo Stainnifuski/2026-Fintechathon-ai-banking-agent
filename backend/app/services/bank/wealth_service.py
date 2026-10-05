@@ -55,77 +55,77 @@ async def business_now(db: AsyncSession, account_id: str | None = None) -> datet
     return utc_now()
 
 
-async def verify_authorization(db: AsyncSession, user_id: str, authorization_id: str, proof: str) -> dict:
-    """银行验证可信验证码，与逐笔验证证据同事务提交。"""
-    from ...integrations.wealth_authorization import owned_authorization
-    from .data_service import verify_totp_for_operation
+async def verify_authorization(db: AsyncSession, user_id: str, authorization_id: str, proof: str,
+                               *, method: str = "totp", challenge_id: str | None = None) -> dict:
+    result = await verify_authorizations(db, user_id, [authorization_id], proof,
+        method=method, challenge_id=challenge_id)
+    return {**result, "authorization_id": authorization_id}
+
+
+async def verify_authorizations(db: AsyncSession, user_id: str, authorization_ids: list[str], proof: str,
+                                *, method: str = "totp", challenge_id: str | None = None,
+                                plan_id: str | None = None, version: int | None = None) -> dict:
+    """统一第二因素一次验证，逐笔证据同事务写入；方案必须完整且当前。"""
+    from ...integrations import wealth_authorization as policy
+    from ...integrations.wealth_verification import verification_reference
+    from .data_service import verify_second_factor
+    from ...models.audit_log import AuditLogORM
+    if not 1 <= len(authorization_ids) <= 5 or len(set(authorization_ids)) != len(authorization_ids):
+        raise BankError("验证项不能重复或遗漏", "INVALID_PLAN", 422)
+    await policy.lock_profile(db, user_id)
     if db.get_bind().dialect.name == "sqlite":
         await db.execute(update(UserORM).where(UserORM.user_id == user_id)
             .values(totp_last_timestep=UserORM.totp_last_timestep))
     else:
         await db.execute(select(UserORM.user_id).where(UserORM.user_id == user_id).with_for_update())
     await db.get(UserORM, user_id, populate_existing=True)
-    row = await owned_authorization(db, user_id, authorization_id)
-    if row.status != "AWAITING_MFA":
-        raise WealthPolicyError("请先确认本人订单及披露", "CONFIRMATION_REQUIRED")
-    from ...models.audit_log import AuditLogORM
+    rows = [await policy.owned_authorization(db, user_id, aid) for aid in authorization_ids]
+    if plan_id:
+        from ..orchestration.wealth_plan import confirmation_commands
+        commands = await confirmation_commands(db, user_id, plan_id, version)
+        if {r.operation_id for r in rows} != {c.operation_id for c in commands}:
+            raise WealthPolicyError("必须验证整份当前方案", "STALE_PLAN")
+    elif len(rows) != 1:
+        raise WealthPolicyError("批量验证必须绑定方案", "INVALID_PLAN", 422)
+    for row in rows:
+        if row.status != "AWAITING_MFA" or not row.confirmed_at:
+            raise WealthPolicyError("请先本人确认当前订单", "CONFIRMATION_REQUIRED")
     since = datetime.now(timezone.utc)-timedelta(minutes=10)
     failures = await db.scalar(select(func.count()).select_from(AuditLogORM).where(
         AuditLogORM.user_id == user_id, AuditLogORM.action == "investment_verification",
         AuditLogORM.result == "failed", AuditLogORM.timestamp >= since))
     if failures >= 5:
-        raise BankError("验证失败次数过多，请10分钟后重新预览并验证", "VERIFICATION_RATE_LIMITED", 429)
+        raise BankError("验证失败次数过多，请10分钟后重新验证", "VERIFICATION_RATE_LIMITED", 429)
+    reference = verification_reference(rows, grouped=bool(plan_id))
     try:
-        await verify_totp_for_operation(db, user_id, proof)
+        await verify_second_factor(db, user_id, proof, method=method, challenge_id=challenge_id,
+            purpose="wealth", reference_id=reference)
     except BankError as error:
-        if error.code in {"TOTP_INVALID", "TOTP_REPLAY"}:
-            db.add(AuditLogORM(audit_id=f"WVFAIL{uuid4().hex}", session_id=row.operation_id, user_id=user_id,
+        if error.code in {"TOTP_INVALID", "TOTP_REPLAY", "SMS_INVALID"}:
+            db.add(AuditLogORM(audit_id=f"WVFAIL{uuid4().hex}", session_id=rows[0].operation_id, user_id=user_id,
                 intent="wealth_verification", action="investment_verification", permission_level="red",
-                user_confirmed=True, mfa_method="totp", result="failed",
-                params={"authorization_id": authorization_id, "code": error.code},
+                user_confirmed=True, mfa_method=method, result="failed",
+                params={"authorization_ids": authorization_ids, "code": error.code},
                 decision_chain=["personal_confirmation_checked", "strong_verification_denied", "no_credential_stored"]))
             await db.commit()
         raise
-    row.status = "VALID"
-    row.verified_at = datetime.now(timezone.utc)
-    db.add(WealthVerificationORM(authorization_id=row.authorization_id, method="TOTP",
-        provider_version="totp-v1", simulated=False, replacement_required=False, verified_at=row.verified_at))
-    record_bank_event(db, event_key=row.authorization_id, subject_user_id=row.user_id,
-        action="investment_verification", result="success", facts={"authorization_id": row.authorization_id,
-            "operation_id": row.operation_id, "digest": row.param_digest},
-        decision_chain=["personal_confirmation_checked", "totp_replay_prevented", "bound_authorization_verified"])
-    await db.commit()
-    return {"authorization_id": row.authorization_id, "status": row.status}
-
-
-async def demo_verify_authorizations(db: AsyncSession, user_id: str, authorization_ids: list[str]) -> dict:
-    """显式虚构演示点击；原子记录逐笔模拟证据，绝不声称TOTP成功。"""
-    from ...integrations.wealth_authorization import owned_authorization, lock_profile
-    from ...integrations.wealth_verification import demo_verification_enabled, verification_mode
-    if not demo_verification_enabled(db):
-        raise BankError("理财模拟授权已由服务端停用", "DEMO_VERIFICATION_DISABLED", 403)
-    if not 1 <= len(authorization_ids) <= 5 or len(set(authorization_ids)) != len(authorization_ids):
-        raise BankError("模拟验证每次1至5笔且不能重复", "INVALID_PLAN", 422)
-    await lock_profile(db, user_id)
-    rows = [await owned_authorization(db, user_id, aid) for aid in authorization_ids]
+    from ...security.sms import get_sms_provider
+    simulated = method == "sms" and get_sms_provider().name == "mock"
+    now = datetime.now(timezone.utc)
     for row in rows:
-        if row.status not in {"AWAITING_MFA", "VALID"} or not row.confirmed_at:
-            raise WealthPolicyError("请先本人确认所有订单", "CONFIRMATION_REQUIRED")
-        if row.status == "VALID" and await db.get(WealthVerificationORM, row.authorization_id) is None:
-            raise WealthPolicyError("旧验证记录不转换为模拟验证", "AUTHORIZATION_REQUIRED")
-    for row in rows:
-        if row.status == "VALID":
-            continue
-        row.status, row.verified_at = "VALID", datetime.now(timezone.utc)
-        db.add(WealthVerificationORM(authorization_id=row.authorization_id, method="SIMULATED_CLICK",
-            provider_version="demo-click-v2", simulated=True, replacement_required=True, verified_at=row.verified_at))
-        record_bank_event(db, event_key=row.authorization_id, subject_user_id=user_id,
-            action="investment_demo_verification", result="simulated", facts={
-                "authorization_id": row.authorization_id, "operation_id": row.operation_id,
-                "digest": row.param_digest, **verification_mode(db)},
-            decision_chain=["simulation_application", "personal_confirmation_checked", "simulated_click_only", "unified_authorization_adapter_pending"])
+        from ..orchestration.wealth_task import require_write_control
+        row.status, row.verified_at = "VALID", now
+        await require_write_control(db, user_id, InvestmentCommand.model_validate(row.command), row)
+        db.add(WealthVerificationORM(authorization_id=row.authorization_id, method=method.upper(),
+            provider_version="unified-mfa-v1", simulated=simulated, replacement_required=False, verified_at=now))
+        db.add(AuditLogORM(audit_id=hashlib.sha256(f"investment_verification:{row.authorization_id}".encode()).hexdigest(),
+            session_id=row.operation_id, user_id=user_id, intent="wealth_verification", permission_level="red",
+            action="investment_verification", result="success", user_confirmed=True, mfa_method=method,
+            params={"authorization_id":row.authorization_id,"operation_id":row.operation_id,
+                "digest":row.param_digest,"reference_id":reference,"simulated_delivery":simulated},
+            decision_chain=["personal_confirmation_checked","unified_second_factor_verified","bound_authorization_verified"]))
     await db.commit()
-    return {"status": "VALID", "authorization_ids": authorization_ids, **verification_mode(db)}
+    return {"status": "VALID", "authorization_ids": authorization_ids}
 
 
 async def advance_clock(db: AsyncSession, business_at: datetime, user_id: str | None = None, context_id: str | None = None) -> dict:
@@ -662,3 +662,20 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
         "scope": "disposable_simulation" if context else "ordinary",
         "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
 
+
+
+async def external_evidence(db, user_id, account_id, event_reference):
+    """银行包内读取外部依赖账务事实，HTTP层不访问账本ORM。"""
+    from ...models import AccountORM,TransactionORM
+    from ...domain.time import as_utc,utc_iso
+    account=await db.get(AccountORM,account_id)
+    event=await db.get(TransactionORM,event_reference)
+    if (account is None or account.user_id!=user_id or event is None
+        or event.account_id!=account.account_id or event.type!='transfer_out' or event.status!='completed'):
+        raise BankError('未找到当前本人账户的已完成转账事实','EXTERNAL_EVIDENCE_INVALID',409)
+    now=await business_now(db,account.account_id)
+    if as_utc(event.timestamp,legacy_utc=True)>now:
+        raise BankError('未来流水不能用于完成外部依赖','EXTERNAL_EVIDENCE_INVALID',409)
+    return {'event_reference':event.tx_id,'account_id':account.account_id,'type':event.type,
+        'status':'completed','occurred_at':utc_iso(as_utc(event.timestamp,legacy_utc=True)),
+        'operation_id':event.operation_id,'source':'bank_ledger'}

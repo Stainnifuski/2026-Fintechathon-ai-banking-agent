@@ -101,10 +101,10 @@ class WealthAuthorizationORM(Base):
 
 
 class WealthVerificationORM(Base):
-    """逐笔验证证据；模拟点击必须显式标记，禁止作为真实强验证凭据。"""
+    """逐笔统一验证证据；历史点击记录保留但禁止用于新受理。"""
     __tablename__ = "wealth_verifications"
     authorization_id: Mapped[str] = mapped_column(ForeignKey("wealth_authorizations.authorization_id"), primary_key=True)
-    method: Mapped[str] = mapped_column(String(32), CheckConstraint("method IN ('TOTP','SIMULATED_CLICK')"), nullable=False)
+    method: Mapped[str] = mapped_column(String(32), CheckConstraint("method IN ('TOTP','SMS','SIMULATED_CLICK')", name="wealth_verification_method"), nullable=False)
     provider_version: Mapped[str] = mapped_column(String(32), nullable=False)
     simulated: Mapped[bool] = mapped_column(Boolean, nullable=False)
     replacement_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
