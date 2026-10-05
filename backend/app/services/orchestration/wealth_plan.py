@@ -50,8 +50,10 @@ async def preview_all(db: AsyncSession, user_id: str, plan_id: str, version: int
         auth = await policy.new_preview_authorization(db, user_id, command)
         items.append({**view, "command": command.model_dump(), "authorization_id": auth.authorization_id,
             "authorization_status": auth.status, "digest": auth.param_digest, "expires_at": policy.aware(auth.expires_at).isoformat()})
+    from ...integrations.wealth_verification import verification_reference
+    reference = verification_reference([await policy.owned_authorization(db,user_id,i["authorization_id"]) for i in items], grouped=True)
     await db.commit()
-    return {"plan_id": plan_id, "version": version, "items": items}
+    return {"plan_id": plan_id, "version": version, "items": items, "verification_reference_id": reference}
 
 
 async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: PlanConfirmation, bank: HttpWealthBankApi) -> dict:
@@ -73,10 +75,10 @@ async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: Pla
     return {"plan_id": plan_id, "version": request.version, "status": "AWAITING_MFA"}
 
 
-async def demo_verify_all(db: AsyncSession, user_id: str, plan_id: str, version: int, bank: HttpWealthBankApi) -> dict:
-    """仅发给受控银行演示提供者，不能由聊天触发。"""
+async def verify_all(db: AsyncSession, user_id: str, plan_id: str, request, bank: HttpWealthBankApi) -> dict:
+    """一次统一第二因素验证当前方案，银行再次核对完整集合。"""
     from ...integrations import wealth_authorization as policy
-    commands = await confirmation_commands(db, user_id, plan_id, version)
+    commands = await confirmation_commands(db, user_id, plan_id, request.version)
     ids = []
     for command in commands:
         row = (await db.scalars(select(WealthAuthorizationORM).where(WealthAuthorizationORM.operation_id == command.operation_id))).one_or_none()
@@ -85,7 +87,8 @@ async def demo_verify_all(db: AsyncSession, user_id: str, plan_id: str, version:
         row = await policy.owned_authorization(db, user_id, row.authorization_id)
         ids.append(row.authorization_id)
     await db.rollback()
-    return await bank.call("POST", "/verify/demo", {"subject_user_id": user_id, "authorization_ids": ids})
+    return await bank.call("POST", "/verify/batch", {"subject_user_id": user_id, "authorization_ids": ids,
+        "plan_id": plan_id, **request.model_dump()})
 
 
 def plan_view(row: WealthPlanORM) -> dict:

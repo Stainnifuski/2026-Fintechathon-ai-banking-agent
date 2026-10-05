@@ -1,20 +1,21 @@
-"""理财模拟授权适配点；后续对接3号统一高风险授权，历史证据保持原样。"""
-
-import os
+"""理财复用3号统一第二因素；历史点击验证不再签发或受理。"""
+import hashlib
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def demo_verification_enabled(db: AsyncSession) -> bool:
-    """普通演示库默认启用；显式false可停用，数据库名不决定授权方式。"""
-    return os.getenv("WEALTH_DEMO_VERIFICATION_ENABLED", "true").lower() == "true"
+def verification_reference(rows, *, grouped=False) -> str:
+    """短信绑定当前完整授权集合与摘要；改金额/版本不能复用旧挑战。"""
+    if not grouped:
+        return rows[0].authorization_id
+    payload=sorted((r.authorization_id,r.param_digest) for r in rows)
+    return "WGROUP"+hashlib.sha256(json.dumps(payload,separators=(",",":" )).encode()).hexdigest()[:56]
 
 
 def verification_mode(db: AsyncSession) -> dict:
-    """只返回服务端策略；前端不能指定风险级别或签发授权证据。"""
-    demo = demo_verification_enabled(db)
-    return {"mode": "SIMULATED_CLICK" if demo else "TOTP", "simulated": demo,
-            "replacement_required": demo,
-            "provider_version": "demo-click-v2" if demo else "totp-v1",
-            "permission_level": "red", "authorization_method": "simulated_payment_password" if demo else "totp",
-            "integration_target": "project_unified_high_risk_authorization",
-            "notice": "演示仅记录本人点击授权，不采集或验证支付密码、短信码、生物识别。"}
+    from ..security.sms import sms_enabled, get_sms_provider
+    return {"mode":"UNIFIED_MFA", "simulated":False, "replacement_required":False,
+        "provider_version":"unified-mfa-v1", "permission_level":"red",
+        "authorization_method":"totp_or_sms", "methods":["totp","sms"] if sms_enabled() else ["totp"],
+        "sms_simulated":sms_enabled() and get_sms_provider().name=="mock",
+        "notice":"本人确认后使用验证器或短信验证码；默认短信为模拟发送，需校验验证码。"}

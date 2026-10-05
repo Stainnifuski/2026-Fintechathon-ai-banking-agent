@@ -11,7 +11,33 @@ from ...models import Base
 from ...models.wealth import WealthSchemaVersionORM
 from .wealth_catalog import seed_catalog
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
+
+
+async def upgrade_verification_methods(session: AsyncSession) -> None:
+    """扩展验证方法约束；保留历史证据全部字段，不修改订单或资金。"""
+    connection = await session.connection()
+    checks = await connection.run_sync(lambda conn: inspect(conn).get_check_constraints('wealth_verifications'))
+    old = [c for c in checks if 'method' in c['sqltext'].lower() and "'SMS'" not in c['sqltext'].upper()]
+    if not old:
+        return
+    if session.get_bind().dialect.name == 'postgresql':
+        quote = connection.dialect.identifier_preparer.quote
+        for constraint in old:
+            await session.execute(text('ALTER TABLE wealth_verifications DROP CONSTRAINT '+quote(constraint['name'])))
+        await session.execute(text("ALTER TABLE wealth_verifications ADD CONSTRAINT wealth_verification_method CHECK (method IN ('TOTP','SMS','SIMULATED_CLICK'))"))
+    else:
+        # No tables reference this leaf table. DDL stays in the same write transaction.
+        count = await session.scalar(text('SELECT COUNT(*) FROM wealth_verifications'))
+        await session.execute(text('''CREATE TABLE wealth_verifications_mfa_upgrade (
+            authorization_id VARCHAR(64) PRIMARY KEY REFERENCES wealth_authorizations(authorization_id),
+            method VARCHAR(32) NOT NULL CHECK (method IN ('TOTP','SMS','SIMULATED_CLICK')),
+            provider_version VARCHAR(32) NOT NULL, simulated BOOLEAN NOT NULL,
+            replacement_required BOOLEAN NOT NULL, verified_at DATETIME NOT NULL)'''))
+        await session.execute(text('INSERT INTO wealth_verifications_mfa_upgrade SELECT * FROM wealth_verifications'))
+        assert await session.scalar(text('SELECT COUNT(*) FROM wealth_verifications_mfa_upgrade')) == count
+        await session.execute(text('DROP TABLE wealth_verifications'))
+        await session.execute(text('ALTER TABLE wealth_verifications_mfa_upgrade RENAME TO wealth_verifications'))
 
 
 async def upgrade(session: AsyncSession) -> None:
@@ -23,11 +49,12 @@ async def upgrade(session: AsyncSession) -> None:
         .on_conflict_do_nothing(index_elements=["schema_id"]))
     row = (await session.scalars(select(WealthSchemaVersionORM).where(
         WealthSchemaVersionORM.schema_id == "wealth").with_for_update())).one()
-    if row.version not in {1, 2, 3, 4, SCHEMA_VERSION}:
+    if row.version not in {1, 2, 3, 4, 5, SCHEMA_VERSION}:
         raise ValueError("理财结构版本不兼容，不能静默降级")
     await session.execute(update(WealthSchemaVersionORM).where(WealthSchemaVersionORM.schema_id == "wealth")
         .values(version=SCHEMA_VERSION))
     connection = await session.connection()
+    await upgrade_verification_methods(session)
     nav_columns = await connection.run_sync(lambda conn: inspect(conn).get_columns('wealth_navs'))
     if not any(column['name']=='available_at' for column in nav_columns):
         kind = 'TIMESTAMP WITH TIME ZONE' if session.get_bind().dialect.name=='postgresql' else 'DATETIME'

@@ -1,3 +1,4 @@
+from tests.integration.wealth_mfa_helpers import sms_verify
 """Latest 2026-10-04 scope: amount first, one confirmation, holdings redemption.
 
 Opt in WEALTH_WORKSPACE_LIVE=1 and select sqlite for one real two-turn model flow.
@@ -23,7 +24,6 @@ async def test_fixed_workspace_mainline(store,http_store,monkeypatch):
     client,_,_=http_store
     live=os.getenv('WEALTH_WORKSPACE_LIVE')=='1'
     monkeypatch.setenv('WEALTH_NLU_MODE','model')
-    monkeypatch.setenv('WEALTH_DEMO_VERIFICATION_ENABLED','true')
     if not live:
         async def understand(text,context):
             amount=100000 if text=='我要投资1000元' else 200000
@@ -72,7 +72,7 @@ async def test_fixed_workspace_mainline(store,http_store,monkeypatch):
         confirmed=await client.post(base+'/confirm',json={**payload,'items':[{'authorization_id':v['authorization_id'],
             'digest':v['digest'],'disclosure_version':v['command']['disclosure_version'],'accepted':True} for v in views['items']]})
         assert confirmed.status_code==200,confirmed.text
-        assert (await client.post(base+'/verify/demo',json=payload)).status_code==200
+        assert (await sms_verify(client,base,version=payload['version'],reference=views['verification_reference_id'])).status_code==200
         executed=await client.post(base+'/execute',json=payload);assert executed.status_code==200,executed.text
         assert all(i['status'] in {'ACCEPTED','PENDING_PRICING','PENDING_CASH','SETTLED'} for i in executed.json()['items'])
         assets=(await client.get('/api/v1/wealth/assets')).json()
@@ -97,7 +97,7 @@ async def test_fixed_workspace_mainline(store,http_store,monkeypatch):
             linked=await client.post('/api/v1/wealth/sessions/'+session['session_id']+'/preview-link',json={'authorization_id':view['authorization_id']})
             assert linked.status_code==200,linked.text
             assert (await client.post(path+'/confirm',json={'digest':view['digest'],'disclosure_version':1,'accepted':True})).status_code==200
-            assert (await client.post(path+'/verify/demo',json={})).status_code==200
+            assert (await sms_verify(client,path)).status_code==200
             response=await client.post(path+'/execute',json={});assert response.status_code==200,response.text
             return response.json()
         ordinary=await redeem('standard');assert ordinary['status']=='ACCEPTED'

@@ -36,7 +36,16 @@ async def initialize_all(db) -> list[dict]:
             await bank.precheck(db,uid,cmd)
             auth=await policy.new_preview_authorization(db,uid,cmd); aid=auth.authorization_id; digest=auth.param_digest; await db.commit()
             await policy.record_confirmation(db,uid,aid,PersonalConfirmation(digest=digest,disclosure_version=1,accepted=True))
-            await bank.demo_verify_authorizations(db,uid,[aid])
+            # Only disposable administrator scenarios read the mock inbox, never ordinary users/Agent.
+            import re
+            from ...security.sms import get_sms_provider, MockSmsProvider
+            from .data_service import send_sms_challenge
+            provider=get_sms_provider()
+            if not isinstance(provider,MockSmsProvider):
+                raise ValueError("场景初始化只支持显式模拟短信通道")
+            challenge=await send_sms_challenge(db,uid,'wealth',aid)
+            proof=re.search(r'验证码 (\d{6})',provider.messages_for(user.phone if user else f'1399000{i:04}',1)[0].content).group(1)
+            await bank.verify_authorization(db,uid,aid,proof,method='sms',challenge_id=challenge['challenge_id'])
             return (await bank.accept_many(db,uid,[(cmd,aid)]))[0]
         if fixture.get('accepted') or fixture.get('seed_holding'):
             if fixture.get('locked'): context.data={**context.data,'business_at':'2026-09-30T14:00:00+08:00'}; await db.commit()

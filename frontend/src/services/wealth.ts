@@ -42,8 +42,8 @@ export interface Preview { authorization_id: string; authorization_status: strin
   estimated_nav: string | null; estimated_nav_date: string | null; pricing_date: string; confirm_date: string; cash_date: string; expires_at: string }
 export interface PlanRequest { kind: 'new_cash' | 'adjustment'; account_id: string; version: number; budget_fen: number;
   reserve_fen: number | null; horizon_days: number; excluded_products: string[]; budget_source?: 'bank_available_cash' | 'user_specified' }
-export interface VerificationMode { mode: 'SIMULATED_CLICK' | 'TOTP'; simulated: boolean; replacement_required: boolean }
-export interface PlanPreview { plan_id: string; version: number; items: Preview[] }
+export interface VerificationMode { mode: 'UNIFIED_MFA'; methods: ('totp' | 'sms')[]; sms_simulated: boolean; simulated: boolean; replacement_required: boolean }
+export interface PlanPreview { verification_reference_id: string; plan_id: string; version: number; items: Preview[] }
 export interface Plan { plan_id: string; version: number; status: string; stage: string; next_action?: string; request: PlanRequest;
   history?: { version: number; stage: string; items: { command: Command; status: string; bank_result?: Order }[] }[];
   diagnostic?: { note: string; goal_shortfall_fen: number; allocation: { category: string; current_fen: number; target_percent: number; target_fen: number; difference_fen: number }[] };

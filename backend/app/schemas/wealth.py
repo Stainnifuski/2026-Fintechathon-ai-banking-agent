@@ -80,6 +80,12 @@ class PersonalConfirmation(StrictRequest):
 
 class StrongVerification(StrictRequest):
     proof: str = Field(pattern=r"^\d{6}$")
+    method: Literal["totp", "sms"] = "totp"
+    challenge_id: str | None = Field(default=None, max_length=64)
+
+
+class PlanVerification(StrongVerification):
+    version: int = Field(ge=1)
 
 
 class InternalInvestmentSubmission(StrictRequest):

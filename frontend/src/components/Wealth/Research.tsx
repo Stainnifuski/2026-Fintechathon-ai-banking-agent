@@ -19,7 +19,7 @@ export default function Research({ onSwitch, onChoose }: { onSwitch: () => Promi
   const chart = (rows: Product[]) => ({ tooltip: { trigger: 'axis' }, legend: { type: 'scroll', bottom: 0 }, grid: { left: 50, right: 20, top: 20, bottom: 65 }, xAxis: { type: 'time' }, yAxis: { type: 'value', name: '起点=100', scale: true }, dataZoom: [{ type: 'inside' }], series: rows.map(p => ({ name: p.name, type: 'line', showSymbol: false, data: p.history.map(h => [h.date,Number(h.nav) / Number(p.history[0]?.nav || 1) * 100]) })) });
   return <details className="wealth-research"><summary>数据集、产品研究与宏观背景</summary>
     <FundDirectory />
-    <p>真实数据供研究；模拟产品、资金、成交和点击授权均为虚构。切换资金上下文不复制余额，旧预览失效，历史订单保留原账户。</p>
+    <p>真实数据供研究；模拟产品、资金与成交均为虚构；默认短信为模拟发送，交易需要验证码校验。切换资金上下文不复制余额，旧预览失效，历史订单保留原账户。</p>
     <p>{dataset && data?.datasets.find(d => d.dataset_key === dataset)?.mode === 'synthetic' ? '虚构产品与模拟行情' : '真实基金数据｜研究演示｜模拟交易；缺审核规则时仅研究，不可生成订单'}</p>
     <div className="wealth-form"><label>资金上下文<select disabled={busy} value={contexts?.selected || 'legacy-v1'} onChange={e => void switchContext(e.target.value)}>{contexts?.items.map(c => <option key={c.context_id} value={c.context_id}>{c.label} · {c.mode} {c.dataset_key ? `· ${c.dataset_key.split(":")[1]?.slice(0,8)}` : ""}</option>)}</select></label>
       <label>研究数据集<select disabled={busy} value={dataset} onChange={e => { setDataset(e.target.value); setPage(1); setSelected([]); }}><option value="">默认预加载池（可扩展）</option>{data?.datasets.map(d => <option key={d.dataset_key} value={d.dataset_key}>{d.mode} · {d.dataset_key}</option>)}</select></label>
