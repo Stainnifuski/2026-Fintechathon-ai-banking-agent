@@ -37,7 +37,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-前端：<http://localhost:3000>；健康检查：<http://localhost:8000/health>；API：<http://localhost:8000/docs>。本地SQLite、Windows启动及故障排查见[运行指南](运行指南.md)。当前无需Redis。
+前端：<http://localhost:3010> <http://localhost:3000>；健康检查：<http://localhost:8000/health>；API：<http://localhost:8000/docs>。本地SQLite、Windows启动及故障排查见[运行指南](运行指南.md)。当前无需Redis。
 
 演示用户：张三 `13800000001`，密码 `password123`；仅用于虚构演示。升级已有数据库先备份并遵循[理财迁移交接](docs/wealth/handoff.md)，不要删除数据卷或混跑旧扣款代码。
 
