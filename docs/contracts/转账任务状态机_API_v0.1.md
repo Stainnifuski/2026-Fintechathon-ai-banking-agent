@@ -12,7 +12,7 @@
 | GET | `/api/v1/tasks/{task_id}` | 查询持久化任务快照；查询不触发转账 |
 | GET | `/api/v1/tasks/{task_id}/events` | 查询状态事件，可传 `since_event_id` |
 | POST | `/api/v1/tasks/{task_id}/confirm` | 对指定计划版本记录用户同意 |
-| POST | `/api/v1/tasks/{task_id}/verify` | 红色路径使用绑定的 TOTP 验证器证明，失败时保持未执行 |
+| POST | `/api/v1/tasks/{task_id}/verify` | 红色路径使用绑定的 TOTP 或短信验证码，失败时保持未执行 |
 | POST | `/api/v1/tasks/{task_id}/modify` | 受理前修改参数，旧操作变为 `SUPERSEDED` |
 | POST | `/api/v1/tasks/{task_id}/accept` | 原子完成应用受理，然后调度银行提交 |
 | POST | `/api/v1/tasks/{task_id}/cancel` | 设置单调的取消标记；不能撤回已记账结果 |
@@ -27,7 +27,7 @@
 
 一次性定时转账要求 `scheduled_at` 为带时区的未来 ISO 8601 时间。用户确认后任务进入
 `WAITING_EXECUTION`，此时允许修改备注或取消；修改生成新计划并需重新确认。到期扫描器通过现有 `accept_task` 重新校验账户和风险，
-再沿用原 `operation_id` 提交模拟银行。周期转账和自然语言定时创建不在当前范围内。
+再沿用原 `operation_id` 提交模拟银行。周期转账和自然语言定时创建不在当前范围内。受理接口在服务端检查执行时间，提前调用返回409 `SCHEDULE_NOT_DUE`，不会扣款。调度器与受理共用该校验；客户端无法通过HTTP字段更改执行时钟。接入说明见[现有功能保护](定时转账与订阅_Agent接入.md)。
 
 ## 模拟银行内部接口
 

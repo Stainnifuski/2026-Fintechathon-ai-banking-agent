@@ -46,22 +46,26 @@ async def test_list_subscriptions_is_scoped_to_current_user(subscription_store) 
 
 @pytest.mark.asyncio
 async def test_cancel_subscription_updates_state_and_is_idempotent(subscription_store) -> None:
+    preview = await subscription_service.preview_subscription_cancellation(subscription_id="SUB1", user_id="U1")
     cancelled = await subscription_service.cancel_subscription(
-        subscription_id="SUB1", user_id="U1", state_version=1
+        subscription_id="SUB1", user_id="U1", state_version=1,
+        confirmation_token=preview["confirmation_token"]
     )
     assert cancelled["status"] == "CANCELLED"
     assert cancelled["state_version"] == 2
     assert cancelled["cancelled_at"] is not None
 
     duplicate = await subscription_service.cancel_subscription(
-        subscription_id="SUB1", user_id="U1", state_version=1
+        subscription_id="SUB1", user_id="U1", state_version=1,
+        confirmation_token=preview["confirmation_token"]
     )
     assert duplicate["status"] == "CANCELLED"
     assert duplicate["state_version"] == 2
 
     with pytest.raises(BankError) as not_owner:
         await subscription_service.cancel_subscription(
-            subscription_id="SUB1", user_id="U2", state_version=1
+            subscription_id="SUB1", user_id="U2", state_version=1,
+            confirmation_token=preview["confirmation_token"]
         )
     assert not_owner.value.code == "SUBSCRIPTION_NOT_FOUND"
 
@@ -113,8 +117,10 @@ async def test_simulated_charge_updates_balance_history_and_next_date(subscripti
 
 @pytest.mark.asyncio
 async def test_cancelled_subscription_cannot_be_charged(subscription_store) -> None:
+    preview = await subscription_service.preview_subscription_cancellation(subscription_id="SUB1", user_id="U1")
     await subscription_service.cancel_subscription(
-        subscription_id="SUB1", user_id="U1", state_version=1
+        subscription_id="SUB1", user_id="U1", state_version=1,
+        confirmation_token=preview["confirmation_token"]
     )
 
     with pytest.raises(BankError) as cancelled:

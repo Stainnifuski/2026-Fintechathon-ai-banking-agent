@@ -9,6 +9,10 @@ class SubscriptionAction(BaseModel):
     state_version: int = Field(ge=1)
 
 
+class SubscriptionCancelAction(SubscriptionAction):
+    confirmation_token: str = Field(min_length=1, max_length=2048)
+
+
 class SubscriptionChargeAction(SubscriptionAction):
     idempotency_key: str = Field(min_length=8, max_length=64)
 
@@ -27,6 +31,13 @@ class SubscriptionView(BaseModel):
     state_version: int
     source_transaction_id: str | None = None
     cancelled_at: datetime | None = None
+
+
+class SubscriptionCancellationPreview(BaseModel):
+    subscription: SubscriptionView
+    confirmation_token: str
+    expires_at: datetime
+    message: str
 
 
 class SubscriptionChargeResult(BaseModel):

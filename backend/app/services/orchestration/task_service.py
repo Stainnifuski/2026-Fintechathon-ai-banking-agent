@@ -451,6 +451,7 @@ async def accept_task(
     request_id: str,
     state_version: int,
     simulate_response_loss: bool = False,
+    execution_time: datetime | None = None,
 ) -> dict:
     task = await _owned_task(db, task_id, user_id)
     duplicate = await _deduplicated_task_id(db, request_id)
@@ -465,8 +466,21 @@ async def accept_task(
     if operation.status != OperationStatus.READY:
         raise TaskError("操作尚未准备就绪", 409, "OPERATION_NOT_READY")
 
-    await serialize_risk_subject(db, user_id)
     plan = await _current_plan(db, task)
+    scheduled_at = plan.params.get("scheduled_at")
+    if scheduled_at:
+        try:
+            execute_at = datetime.fromisoformat(scheduled_at)
+            if execute_at.tzinfo is None or execute_at.utcoffset() is None:
+                raise ValueError("missing schedule timezone")
+        except (TypeError, ValueError) as error:
+            raise TaskError("定时执行时间无效，请重新规划", 409, "SCHEDULE_TIME_INVALID") from error
+        # execution_time is a trusted scheduler/test clock, never an HTTP field.
+        current_time = execution_time or datetime.now(timezone.utc)
+        if execute_at.astimezone(timezone.utc) > current_time.astimezone(timezone.utc):
+            raise TaskError("尚未到定时执行时间", 409, "SCHEDULE_NOT_DUE")
+
+    await serialize_risk_subject(db, user_id)
     phone_binding = plan.params.get("recipient_phone")
     try:
         bank_validation = await bank.validate_transfer(

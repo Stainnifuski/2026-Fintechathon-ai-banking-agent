@@ -69,6 +69,7 @@ async def execute_due_scheduled_transfers(
                 user_id=task.user_id,
                 request_id=f"scheduled-{task.task_id}",
                 state_version=task.state_version,
+                execution_time=current_time,
             )
             executed += 1
         except TaskError as error:
