@@ -1,5 +1,4 @@
 """Versioned multi-turn orchestration; models have only read/preview capabilities."""
-import os
 import re
 from datetime import datetime,timezone,timedelta
 from decimal import Decimal,ROUND_DOWN
@@ -13,6 +12,7 @@ from ...schemas.wealth import InvestmentCommand,PlanInput
 from ..orchestration import wealth_plan
 from ...domain.wealth_allocation import candidates
 from .wealth_model import Intent,understand,explain
+from .llm import get_mode
 from ...domain.wealth_requirements import apply_frame, planning_slots
 
 
@@ -471,8 +471,8 @@ async def action(db,user_id,bank,text,intent,data,products,facts,contexts,mode):
 
 
 async def message(db,user_id,bank,text,session_id,version,client_message_id,*,parsed_intent: Intent | None=None):
-    mode='typed' if parsed_intent is not None else os.getenv('WEALTH_NLU_MODE','offline')
-    if mode not in {'offline','model','typed'}: raise ValueError('WEALTH_NLU_MODE_INVALID')
+    mode='typed' if parsed_intent is not None else get_mode()
+    if mode not in {'offline','model','typed'}: raise ValueError('MODEL_CONFIGURATION_INVALID')
     # Never send credentials or bypass requests to a model. Known fund codes remain valid references.
     if re.search(r'密码|验证码|TOTP|口令|sk-[A-Za-z0-9]|绕过|忽略.*(?:规则|风控|授权)|代答|替我.*评估|提高.*等级',text,re.I):
         return {'mode':mode,'kind':'refusal','message':'请使用可信组件；对话不接收凭据，不代答评估、不绕过授权。'}

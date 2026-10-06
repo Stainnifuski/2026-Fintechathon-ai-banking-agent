@@ -12,7 +12,7 @@ from backend.app.domain.wealth_task import validate_graph
 
 @pytest.mark.asyncio
 async def test_unknown_goal_is_conditional_no_loop_and_keeps_explicit_horizon(store,http_store,monkeypatch):
-    client,_,_=http_store;monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    client,_,_=http_store;monkeypatch.setenv('LLM_MODE','model')
     async with store() as db:await assess(db)
     replies=[Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
         {'field':'investment_budget','op':'set','quote':'拨一万元','budget':{'mode':'fixed','amount_fen':1000000}},

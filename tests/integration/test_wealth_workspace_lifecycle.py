@@ -27,7 +27,7 @@ async def test_window_natural_edit_close_expiry_and_financial_isolation(store,ht
     from backend.app.services.ai.wealth_model import Intent
     from backend.app.domain.wealth_requirements import SemanticFrame
     client,_,_=http_store
-    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('LLM_MODE','model')
     async def parsed(text,context):
         amount=100000 if text=='我要投资1000元' else 200000
         return Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[
@@ -165,7 +165,7 @@ async def test_amount_only_assessment_resume_and_repeatable_selection(store,http
     from backend.app.services.ai.wealth_model import Intent
     from backend.app.domain.wealth_requirements import SemanticFrame
     client,_,_=http_store
-    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('LLM_MODE','model')
     async def parsed(text,context):
         frame={} if text=='继续' else {'patches':[{'field':'investment_budget','op':'set','quote':text,
             'budget':{'mode':'fixed','amount_fen':100000}}]}

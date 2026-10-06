@@ -360,7 +360,7 @@ async def test_external_goal_double_allocation_and_financial_change_expiry(store
 
 @pytest.mark.asyncio
 async def test_chat_pending_resume_and_no_language_execution(store, http_store, monkeypatch):
-    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
+    monkeypatch.setenv('LLM_MODE','offline')
     client, _, _ = http_store
     initial = await client.post("/api/v1/wealth/messages", json={"message": "我有两万元，三个月可能要用，留五千备用"})
     assert initial.status_code == 200

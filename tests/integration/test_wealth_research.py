@@ -28,7 +28,7 @@ async def test_real_research_context_and_injected_model_cannot_write(store,http_
         assert not (await research.catalog(db,'real-test:v1'))[0]['trade_eligible']
         assert not (await research.initialize(db,'U1',dataset_key='real-test:v1'))['created']
         assert (await db.get(AccountORM,'A1')).balance_fen==2000000
-    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('LLM_MODE','model')
     async def malicious_output(*_):
         return Intent.model_validate({'intent':'execute','subject_user_id':'U2','risk_level':5}),{}
     monkeypatch.setattr(wealth_dialogue,'understand',malicious_output)
@@ -56,7 +56,7 @@ def test_reproducible_correlated_dataset_and_short_history():
 
 @pytest.mark.asyncio
 async def test_budget_range_and_transparent_suggestion_require_user_choice(store,http_store,monkeypatch):
-    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
+    monkeypatch.setenv('LLM_MODE','offline')
     client,_,_=http_store
     async with store() as db:
         created=await research.initialize(db,'U1');await db.commit()
@@ -113,7 +113,7 @@ async def test_immutable_import_cash_context_and_future_visibility(store):
 
 @pytest.mark.asyncio
 async def test_multiturn_preview_replay_knowledge_and_context_invalidation(store,http_store,monkeypatch):
-    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
+    monkeypatch.setenv('LLM_MODE','offline')
     client,_,_=http_store
     async with store() as db:
         created=await research.initialize(db,'U1'); await db.commit()
@@ -230,7 +230,7 @@ async def test_read_only_archives_are_owner_scoped_and_never_resume_commands(sto
 
 @pytest.mark.asyncio
 async def test_four_product_comparison_and_five_requires_choice(store, http_store, monkeypatch):
-    monkeypatch.setenv('WEALTH_NLU_MODE', 'offline')
+    monkeypatch.setenv('LLM_MODE', 'offline')
     client, _, _ = http_store
     async with store() as db:
         ctx = await research.initialize(db, 'U1')
@@ -251,7 +251,7 @@ async def test_four_product_comparison_and_five_requires_choice(store, http_stor
 @pytest.mark.asyncio
 async def test_card_order_snapshots_preserve_plan_and_require_ambiguous_ordinal_choice(store,http_store,monkeypatch):
     from backend.app.models.wealth import WealthConversationORM
-    monkeypatch.setenv('WEALTH_NLU_MODE','offline')
+    monkeypatch.setenv('LLM_MODE','offline')
     client,_,_=http_store
     async with store() as db:
         ctx=await research.initialize(db,'U1'); await db.commit()

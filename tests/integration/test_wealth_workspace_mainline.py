@@ -23,7 +23,7 @@ from backend.app.models.wealth import WealthAuthorizationORM
 async def test_fixed_workspace_mainline(store,http_store,monkeypatch):
     client,_,_=http_store
     live=os.getenv('WEALTH_WORKSPACE_LIVE')=='1'
-    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('LLM_MODE','model')
     if not live:
         async def understand(text,context):
             amount=100000 if text=='我要投资1000元' else 200000
@@ -113,5 +113,5 @@ async def test_fixed_workspace_mainline(store,http_store,monkeypatch):
         async with store() as db:assert await facts(db)==before_refresh
         print('workspace mainline: amount 1000->2000, unified purchase, standard pending and quick settled, fresh window financial unchanged; live='+str(live))
     finally:
-        if live and wealth_model._client:
-            await wealth_model._client.aclose();wealth_model._client=None
+        if live:
+            await wealth_model.llm.aclose()

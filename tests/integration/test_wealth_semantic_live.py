@@ -36,7 +36,7 @@ SCRIPTS={
 @pytest.mark.asyncio
 async def test_live_semantic_script(store,http_store,monkeypatch,script):
     client,_,_=http_store
-    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('LLM_MODE','model')
     async with store() as db:
         await assess(db)
         account=await db.get(AccountORM,'A1');account.balance_fen=1922900
@@ -84,5 +84,4 @@ async def test_live_semantic_script(store,http_store,monkeypatch,script):
         async with store() as db:
             assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==(1 if script=='conditional_sell_buy' else 0)
     finally:
-        if wealth_model._client:
-            await wealth_model._client.aclose();wealth_model._client=None
+        await wealth_model.llm.aclose()

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
@@ -34,6 +34,7 @@ from .routers.calendar import router as calendar_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
 from .services.bank.wealth_worker import settlement_loop
 from .services.orchestration.wealth_task_worker import loop as wealth_task_loop
+from .services.ai.llm import get_mode, get_settings, llm
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,32 +46,37 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期管理：启动时初始化数据库，关闭时释放连接。"""
-    logger.info("正在初始化数据库...")
-    await init_db()
-    logger.info("正在加载种子数据...")
-    await seed_data()
-    logger.info("AI Banking Agent API 启动完成 🚀")
-    scheduler_task = asyncio.create_task(
-        scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()),
-        name="scheduled-transfer-loop",
-    )
-    wealth_task = asyncio.create_task(settlement_loop(AsyncSessionLocal), name="wealth-settlement-loop")
-    wealth_dag_task = asyncio.create_task(wealth_task_loop(AsyncSessionLocal), name='wealth-dag-loop')
+    workers: list[asyncio.Task] = []
     try:
+        mode = get_mode()
+        if mode == "model":
+            settings = get_settings()
+            logger.info("统一 LLM 服务：mode=%s provider=%s model=%s", mode, settings.provider, settings.model)
+        else:
+            logger.info("统一 LLM 服务：mode=offline")
+        logger.info("正在初始化数据库...")
+        await init_db()
+        logger.info("正在加载种子数据...")
+        await seed_data()
+        workers.append(asyncio.create_task(
+            scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()), name="scheduled-transfer-loop"))
+        workers.append(asyncio.create_task(settlement_loop(AsyncSessionLocal), name="wealth-settlement-loop"))
+        workers.append(asyncio.create_task(wealth_task_loop(AsyncSessionLocal), name="wealth-dag-loop"))
+        logger.info("AI Banking Agent API 启动完成 🚀")
         yield
     finally:
-        scheduler_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await scheduler_task
-        wealth_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await wealth_task
-        wealth_dag_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await wealth_dag_task
-    logger.info("正在关闭数据库连接...")
-    await close_db()
-    logger.info("服务已关闭")
+        for task in workers:
+            task.cancel()
+        outcomes = await asyncio.gather(*workers, return_exceptions=True)
+        for task, outcome in zip(workers, outcomes):
+            if isinstance(outcome, Exception):
+                logger.error("后台任务 %s 异常退出：%s", task.get_name(), type(outcome).__name__)
+        try:
+            await llm.aclose()
+        finally:
+            logger.info("正在关闭数据库连接...")
+            await close_db()
+        logger.info("服务已关闭")
 
 
 app = FastAPI(
