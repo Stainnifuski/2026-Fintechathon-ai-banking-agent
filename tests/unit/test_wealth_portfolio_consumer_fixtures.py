@@ -69,3 +69,31 @@ def test_recorded_provider_preserves_inputs_and_rejects_unrecorded_revisions():
         provider.revise({**selection, 'items': [{'target_ratio_total': '0.9'}]})
     with pytest.raises(LookupError):
         provider.plan('F10')
+
+
+def test_f09_groups_preserve_family_and_share_level_contract_fields():
+    data = json.loads((FIXTURES / 'f09.json').read_text(encoding='utf-8'))
+    assert data['fixture_id'] == 'F09' and data['basis_status'] == 'fixture_only'
+    candidate_fields = {'family_id', 'name', 'bucket', 'reason', 'reason_codes', 'evidence', 'share_classes'}
+    share_fields = {'product_id', 'product_version', 'disclosure_version', 'share_class', 'product_risk_level',
+                    'status', 'tradable', 'min_amount_fen', 'fees', 'performance', 'detail_ref', 'data_source', 'data_as_of'}
+    for group in data['groups'] + data['next_groups']:
+        assert group['status'] == 'ok' and group['risk_explanation'] is None
+        assert group['filter'] == {'mode': 'general', 'bucket': group['bucket']}
+        assert len({item['family_id'] for item in group['items']}) == len(group['items'])
+        assert len(group['items']) == (1 if group['bucket'] == 'cash_management' else 3)
+        for candidate in group['items']:
+            assert set(candidate) == candidate_fields
+            assert candidate['bucket'] == group['bucket']
+            for share in candidate['share_classes']:
+                assert set(share) == share_fields
+                assert share['share_class'] in ('A', 'C', None)
+                assert share['product_id'].startswith('fixture-')
+                assert share['product_version'] > 0 and share['disclosure_version'] > 0
+                assert share['data_source'] == 'contract_fixture_only'
+                assert {'purchase_fee_rate', 'sales_service_fee_rate', 'redemption_fee_rules'} <= share['fees'].keys()
+                assert {'one_year', 'latest_day'} == share['performance'].keys()
+                metric = share['performance']['one_year']
+                if metric['status'] == 'insufficient_history':
+                    assert metric['value_percent'] is None
+                    assert metric['start_date'] == '2026-08-01'

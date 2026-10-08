@@ -1,5 +1,12 @@
 import { apiClient } from './api';
 
+// B consumes the shared recording's shape; no competing A portfolio schema.
+// The type-only reference emits no fixture data into customer production bundles.
+type CandidateRecording = typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f09.json');
+export type CandidateGroup = CandidateRecording['groups'][number] | CandidateRecording['risk_group'] | CandidateRecording['unavailable_group'];
+export type ProductCandidate = CandidateGroup['items'][number];
+export type CandidateShare = ProductCandidate['share_classes'][number];
+
 export interface Command {
   operation_id: string; direction: 'purchase' | 'redeem'; product_id: string;
   product_version: number; disclosure_version: number; account_id: string;
