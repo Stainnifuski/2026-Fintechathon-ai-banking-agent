@@ -1,0 +1,62 @@
+{
+  "fixture_id": "F18",
+  "snapshot": {
+    "schema_version": "wealth-asset-snapshot-v1",
+    "snapshot_id": "fixture-f18-snapshot",
+    "context_id": "fixture-f18",
+    "context_epoch": null,
+    "asset_scope_id": "fixture-f18-scope",
+    "account_ids": [
+      "fixture-account-1",
+      "fixture-account-2"
+    ],
+    "total_assets_fen": 1000000,
+    "basis_fen": 1000000,
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "business_at": "2026-10-08T12:00:00+08:00",
+    "basis_kind": "linked_bank_assets",
+    "basis_status": "fixture_only",
+    "valuation_complete": true,
+    "accounts": [
+      {
+        "account_id": "fixture-account-1",
+        "account_type": "savings",
+        "balance_fen": 600000,
+        "held_fen": 100000,
+        "available_fen": 500000
+      },
+      {
+        "account_id": "fixture-account-2",
+        "account_type": "savings",
+        "balance_fen": 200000,
+        "held_fen": 0,
+        "available_fen": 200000
+      }
+    ],
+    "positions": [
+      {
+        "position_key": "fixture-account-1:fixture-P001:1",
+        "account_id": "fixture-account-1",
+        "product_id": "fixture-P001",
+        "product_version": 1,
+        "lot_ids": [
+          "fixture-lot-1"
+        ],
+        "units": "1500.0000",
+        "redeemable_units": "1500.0000",
+        "market_value_fen": 150000,
+        "bucket": "stable",
+        "nav": "1.0000",
+        "nav_date": "2026-10-08"
+      }
+    ],
+    "receivable_fen": 50000,
+    "orders": [],
+    "assessment": null,
+    "data_versions": {
+      "contract": "v0.3",
+      "fixture": "v1"
+    },
+    "missing_fields": []
+  }
+}

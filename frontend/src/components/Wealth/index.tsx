@@ -9,7 +9,7 @@ import OperatorPanel from './OperatorPanel';
 import ProductDetail from './ProductDetail';
 import Recommendation from './Recommendation';
 
-interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string }
+interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string; developmentManual?: boolean }
 type Tab = 'workbench' | 'assets';
 const id = () => `WO${crypto.randomUUID().replace(/-/g, '')}`;
 const statusLabel: Record<string, string> = { ACCEPTED: '已受理／资金或份额占用', PENDING_PRICING: '等待计价',
@@ -33,7 +33,11 @@ function RedemptionQuote({preview}:{preview:w.Preview}) {
     <p>本自然日已支付 {w.money(quote?.daily_used_fen)} · 受理前剩余额度 {w.money(quote?.daily_remaining_fen)}，同轮次所有账户共享。银行受理时重新核验窗口、净值与额度；不自动切换普通赎回。</p></section>;
 }
 
-export default function Wealth({ accounts, revision, onActivity, userId }: Props) {
+export default function Wealth({ accounts, revision, onActivity, userId, developmentManual = false }: Props) {
+  const manual = import.meta.env.DEV && developmentManual;
+  const [purchaseProduct, setPurchaseProduct] = useState('');
+  const [purchaseAccount, setPurchaseAccount] = useState('');
+  const [purchaseAmount, setPurchaseAmount] = useState('');
   const [detailProduct,setDetailProduct]=useState<string|null>(null);
   const [tab, setTab] = useState<Tab>('workbench');
   const [history, setHistory] = useState<{user: string; reply: w.ChatReply}[]>([]);
@@ -109,9 +113,19 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
     if (reply.command && reply.task?.status !== 'PAUSED') await showPreview(reply.command);
   };
   const chosen=products.find(p=>p.product_id===redeeming?.product_id);
+  const selectedPurchase = products.find(product => product.product_id === purchaseProduct);
+  const eligibleAccounts = assets?.cash.filter(account => account.account_type === 'savings') ?? [];
+  const manualHumanControl = tasks.some(task => task.account_id === purchaseAccount && task.control_mode === 'HUMAN' && !['COMPLETED', 'CANCELLED', 'PARTIAL_COMPLETED', 'FAILED'].includes(task.status));
+  const reportOrder = (fact: w.Order) => {
+    const direction = fact.direction === 'purchase' ? '申购' : '赎回';
+    setNotice(fact.status === 'SETTLED' ? `${direction}已结算，余额与持仓已更新。` :
+      ['ACCEPTED', 'PENDING_PRICING', 'PENDING_CASH'].includes(fact.status) ?
+        `${direction}申请已受理；请查看冻结资金或在途状态，实际成交以银行结算为准。` :
+        `${direction}状态：${statusLabel[fact.status] || fact.status}`);
+  };
   return <section className="card wealth" aria-label="理财模拟">
-      <OperatorPanel />
-    <div className="wealth-title"><div><h2>理财模拟</h2><p>比赛模拟环境／模拟资金 · 请仅输入虚构数据 · 本金可能亏损</p></div><button className="secondary" disabled={busy} onClick={() => act(async () => { onActivity(); })}>刷新银行事实</button></div>
+      {!manual && <OperatorPanel />}
+    <div className="wealth-title"><div><h2>{manual ? '手选产品 · 模拟银行联调' : '理财模拟'}</h2><p>比赛模拟环境／模拟资金 · 请仅输入虚构数据 · 本金可能亏损</p></div><button className="secondary" disabled={busy} onClick={() => act(async () => { onActivity(); })}>刷新银行事实</button></div>
     <section aria-label="当前银行事实" className="notice">
       <strong>当前银行事实 · {assets?.scope === 'ordinary' ? '普通账户／现实业务时间' : assets?.scope === 'disposable_simulation' ? '可处置模拟轮次' : '范围待查询'}</strong>
       <p>查询时间（北京时间）：{assets?.as_of ? beijingTime(assets.as_of) : '尚未查询'} · 业务时间：{assets?.business_at ? beijingTime(assets.business_at) : '未知'}</p>
@@ -119,8 +133,31 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
       <p>在途赎回应收：{assets ? w.money(assets.receivable_fen) : '尚未查询'}（到账前不可用于买入）</p>
     </section>
     <p className="notice">理财申购／赎回属于高风险操作，本人确认后须完成验证器或短信验证码验证。默认短信为模拟发送，不连接运营商。</p>
-    <details><summary>产品资料与数据工具</summary><Research onChoose={setDetailProduct} onSwitch={async()=>{await newConversation();await load();onActivity();}}/></details>
+    {!manual && <details><summary>产品资料与数据工具</summary><Research onChoose={setDetailProduct} onSwitch={async()=>{await newConversation();await load();onActivity();}}/></details>}
     {notice && <p role="alert" className="notice">{notice}</p>}
+    {manual && <section className="consumer-manual-form" aria-label="手选模拟产品">
+      <h3>先选产品，再预览订单</h3>
+      <p>这里直接读取现有模拟银行产品，不经过推荐模型。申购金额由你填写，尚未接入整体配置差额。</p>
+      <label>模拟产品<select value={purchaseProduct} onChange={event => setPurchaseProduct(event.target.value)} disabled={busy}>
+        <option value="">请选择现有模拟产品</option>{products.map(product => <option key={product.product_id} value={product.product_id}>{product.name} · R{product.product_risk_level} · {product.product_id}</option>)}
+      </select></label>
+      {selectedPurchase && <p>产品风险 R{selectedPurchase.product_risk_level} · 起购金额 {w.money(selectedPurchase.rules.min_amount_fen)} · 申购费率 {Number(selectedPurchase.rules.purchase_fee_rate) * 100}% <button className="secondary" onClick={() => setDetailProduct(selectedPurchase.product_id)}>查看产品详情</button></p>}
+      <label>付款账户<select value={purchaseAccount} onChange={event => setPurchaseAccount(event.target.value)} disabled={busy}>
+        <option value="">请选择可投资的借记账户</option>{eligibleAccounts.map(account => <option key={account.account_id} value={account.account_id}>{accounts.find(item => item.account_id === account.account_id)?.card_number || account.account_id} · 可用 {w.money(account.available_fen)}</option>)}
+      </select></label>
+      <label>申购金额（元）<input value={purchaseAmount} inputMode="decimal" autoComplete="off" placeholder="例如 1000.00" onChange={event => setPurchaseAmount(event.target.value)} disabled={busy} /></label>
+      <p className="hint">{assessment?.confirmed && assessment.purchase_allowed ? `当前本人评估 R${assessment.capacity_level}，银行会再次校验适配及有效期。` : '请先在下方完成并本人确认风险评估，才能预览申购。'}</p>
+      {manualHumanControl && <p role="alert">该账户存在人工接管中的任务，请通过原接管流程核对与交还。此入口不能替操作员提交。</p>}
+      <button disabled={busy || manualHumanControl || !session || !selectedPurchase || !purchaseAccount || !purchaseAmount || !assessment?.confirmed || !assessment.purchase_allowed} onClick={() => act(async () => {
+        if (!selectedPurchase) return;
+        const amount = w.fen(purchaseAmount);
+        if (amount <= 0) throw new Error('申购金额须大于零');
+        await showPreview({ operation_id: id(), direction: 'purchase', product_id: selectedPurchase.product_id,
+          product_version: selectedPurchase.version, disclosure_version: selectedPurchase.disclosure.version,
+          account_id: purchaseAccount, amount_fen: amount, units: '0.0000' });
+      })}>预览申购订单</button>
+      <p className="hint">预览不占款。阅读披露并本人确认、完成验证后才提交模拟银行。此入口不能自动确认或验证。</p>
+    </section>}
     <div className="wealth-layout"><div>
       <details open={tab==='assets'}><summary>本人风险评估</summary>
         <h3>本人风险评估</h3><p>{assessment ? `模拟承受能力 R${assessment.capacity_level} · ${assessment.confirmed ? '已确认' : '待确认'} · 有效至 ${assessment.expires_at.slice(0, 10)}` : '尚未评估，仍可查看客观产品资料'}</p>
@@ -139,8 +176,8 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
         {assets?.orders.filter(order=>!['SETTLED','CANCELLED','REJECTED'].includes(order.status)).map(order=><tr key={order.operation_id}><td>{products.find(p=>p.product_id===order.version_id.split(':')[0])?.name||order.version_id.split(':')[0]}<small>{order.direction==='purchase'?'申购已提交':'赎回已提交'} · {statusLabel[order.status]||order.status}</small></td><td>{order.direction==='purchase'?'待确认份额':`赎回 ${order.units}`}<small>在途份额不可赎</small></td><td>{order.direction==='purchase'?w.money(order.amount_fen):`到账 ${order.cash_date}`}<small>依产品规则处理</small></td><td>处理中</td></tr>)}
       </tbody></table></div>{!assets?.lots.length&&!assets?.orders.some(o=>!['SETTLED','CANCELLED','REJECTED'].includes(o.status))&&<p>暂无持仓或在途申请。</p>}
         <button className="secondary" disabled={busy} onClick={()=>act(async()=>{await load();setNotice('已核对未完成执行任务；选择续接只读取进度，不使用旧授权。');})}>查询未完成任务</button>
-        {tasks.filter(t=>!['COMPLETED','CANCELLED','PARTIAL_COMPLETED','FAILED'].includes(t.status)).map(t=><article className="wealth-product" key={t.task_id}><p>未完成任务 {t.task_id.slice(-8)} · {statusLabel[t.status]||t.status}</p><button disabled={busy||!session} onClick={()=>act(async()=>{const reply=await w.post<w.ChatReply>(`/sessions/${sessionRef.current!.session_id}/continue`,{task_id:t.task_id});setChat(reply);sessionRef.current={session_id:reply.session_id!,version:reply.version!};setSession(sessionRef.current);setHistory(h=>[...h,{user:'查询并续接未完成任务',reply}]);})}>查询并续接此任务</button></article>)}
-    </div><aside><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与TOTP／短信验证。</p>
+        {tasks.filter(t=>!['COMPLETED','CANCELLED','PARTIAL_COMPLETED','FAILED'].includes(t.status)).map(t=><article className="wealth-product" key={t.task_id}><p>未完成任务 {t.task_id.slice(-8)} · {statusLabel[t.status]||t.status}</p>{manual ? <p className="hint">任务续接与控制请返回原有银行工作台；手选入口不接管旧任务。</p> : <button disabled={busy||!session} onClick={()=>act(async()=>{const reply=await w.post<w.ChatReply>(`/sessions/${sessionRef.current!.session_id}/continue`,{task_id:t.task_id});setChat(reply);sessionRef.current={session_id:reply.session_id!,version:reply.version!};setSession(sessionRef.current);setHistory(h=>[...h,{user:'查询并续接未完成任务',reply}]);})}>查询并续接此任务</button>}</article>)}
+    </div>{!manual && <aside><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与TOTP／短信验证。</p>
       {plan && <section aria-label="当前方案"><h3>当前方案 v{plan.version} · {statusLabel[plan.status] || plan.status}</h3>
         <Recommendation plan={plan} products={products} onDetail={setDetailProduct}/>
         <button disabled={busy || plan.status !== 'AWAITING_CONFIRMATION' || !plan.items.length} onClick={() => act(previewAdopted)}>{plan.stage==='SELL'?'统一确认当前减持':'一键申购全部'}</button>
@@ -158,7 +195,7 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
 
       <label>需求<input value={chatInput} maxLength={500} onChange={e => setChatInput(e.target.value)} /></label><button disabled={busy || !chatInput.trim()} onClick={() => act(() => send(chatInput))}>发送需求</button><button className="secondary" disabled={busy || !session} onClick={() => act(() => send('继续'))}>评估后继续原需求</button>
       {chat?.citations?.map(c => <details key={c.document_id}><summary>{c.title} · {c.source_type} · {c.published_at || '发布时间未核实'}</summary><p>{c.excerpt}</p>{c.source_url && <a href={c.source_url} target="_blank" rel="noreferrer">官方原始来源</a>}<small>版本 {c.version} · 摘要指纹 {c.content_hash.slice(0,12)}</small></details>)}
-      <p className="hint">对话不接收验证码，不会因“好的”而交易；页面确认后仍由银行再次检查。</p></aside></div>
+      <p className="hint">对话不接收验证码，不会因“好的”而交易；页面确认后仍由银行再次检查。</p></aside>}</div>
     {detailProduct && <ProductDetail productId={detailProduct} onClose={()=>setDetailProduct(null)}/>}
     {redeeming && <div className="wealth-modal"><section className="card" role="dialog" aria-label="持仓赎回"><h3>{redeeming.name} · 赎回</h3><label>赎回份额<input value={units} onChange={e=>setUnits(e.target.value)}/></label><label>赎回方式<select value={redemptionMode} onChange={e=>setRedemptionMode(e.target.value as 'standard'|'quick')}><option value="standard">普通赎回</option><option value="quick" disabled={!chosen?.rules.quick_redemption}>快赎（成功后不可撤）</option></select></label><button disabled={busy||!units||!chosen} onClick={()=>act(async()=>{await showPreview({operation_id:id(),direction:'redeem',product_id:redeeming.product_id,product_version:chosen!.version,disclosure_version:chosen!.disclosure.version,account_id:redeeming.account_id,amount_fen:0,units,...(redemptionMode==='quick'?{command_version:2,redemption_mode:'quick'} as const:{})});setRedeeming(null);})}>预览并确认赎回</button><button className="secondary" onClick={()=>setRedeeming(null)}>关闭</button></section></div>}
     {preview && <div className="wealth-modal"><section role="dialog" aria-label="本人订单确认" className="card"><h3>比赛模拟环境／模拟资金 · 本人确认</h3><p>{preview.product_name} · {preview.command.direction === 'purchase' ? `申购总支出 ${w.money(preview.command.amount_fen)}` : `赎回 ${preview.command.units} 份`}</p><p>估算净值 {preview.estimated_nav || '未知'}（{preview.estimated_nav_date || '未知'}）· 估算费用 {w.money(preview.estimate?.fee_fen)} · 估算份额 {preview.estimate?.units || '不适用'} · 估算到账 {w.money(preview.estimate?.cash_fen)}</p><p>计价日 {preview.pricing_date} · 确认日 {preview.confirm_date} · 到账日 {preview.cash_date}</p><details open><summary>产品披露版本 {preview.command.disclosure_version}</summary>{Object.entries(preview.disclosure).map(([key, value]) => <p key={key}>{disclosureLabels[key] || key}：{displayDisclosure(value)}</p>)}</details><p>实际份额/到账以结算为准，预览不保证收益。状态：{preview.authorization_status}，确认有效至 {beijingTime(preview.expires_at)}</p>
@@ -175,11 +212,11 @@ export default function Wealth({ accounts, revision, onActivity, userId }: Props
           setCode('');setPreview({...preview,authorization_status:result.status});
           if(!preview.command.plan_id){
             const fact=await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`,{});
-            setPreview(null);setNotice(fact.status==='SETTLED'?'赎回成功，余额与持仓已更新。':['ACCEPTED','PENDING_PRICING','PENDING_CASH'].includes(fact.status)?'赎回申请已受理，持仓表展示份额冻结及在途状态。':'赎回未成功：'+(statusLabel[fact.status]||fact.status));onActivity();
+            setPreview(null);reportOrder(fact);onActivity();
           }
         })}>验证并提交</button>
       </>}
-      {preview.authorization_status === 'VALID' && (preview.command.plan_id ? <p>本笔已验证。关闭后完成其他子单验证，再受理方案。</p> : <button disabled={busy} onClick={() => act(async () => { const fact = await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`, {}); setPreview(null); setNotice(statusLabel[fact.status] || fact.status); onActivity(); })}>受理这笔模拟订单</button>)}
+      {preview.authorization_status === 'VALID' && (preview.command.plan_id ? <p>本笔已验证。关闭后完成其他子单验证，再受理方案。</p> : <button disabled={busy} onClick={() => act(async () => { const fact = await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`, {}); setPreview(null); reportOrder(fact); onActivity(); })}>受理这笔模拟订单</button>)}
       <button className="secondary" disabled={busy} onClick={() => { setPreview(null); setCode(''); }}>关闭</button></section></div>}
     {groupPreview && !preview && <div className="wealth-modal"><section role="dialog" aria-label="整份方案预览与确认" className="card">
       <h3>当前方案 · v{groupPreview.version}</h3><p>申购总支出 {w.money(groupPreview.items.reduce((sum, item) => sum + item.command.amount_fen, 0))} · 未分配金额 {w.money(plan?.configuration.retained_cash_fen)} · 共 {groupPreview.items.length} 笔</p>

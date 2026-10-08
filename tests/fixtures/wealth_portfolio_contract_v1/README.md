@@ -1,0 +1,13 @@
+# B0 shared consumer fixture seed
+
+Contract: local 00 v0.3 (latest contents supplied on 2026-10-08), sections 6.2/6.4/7. The initial F01 is a complete snapshot/plan envelope for B's read-only development preview. It is a seed for A/B to align, not a declaration that A's production schema has been implemented or agreed through code review. A owns the production portfolio schema, provider and allocation/sliders; B has not created competing production types.
+
+`assessment=null` is deliberate: the example must not create a formal assessment or authorize a customer. Ratios are the contract's F01 example, not an algorithm or production recommendation. No candidates or trade commands are invented. All IDs refer to imaginary fixture objects. The preview never sends these IDs to a bank endpoint.
+
+`f18.json` and `f10.json` are explicit read-only asset-display samples (two accounts/held cash and missing valuation). The asset samples never read or write a customer database. F13 is checked against the existing simulated bank in `tests/integration/test_wealth_portfolio_consumer_baseline.py`, with isolated databases and both the bank-layer authorization fixture and the real HTTP confirm/TOTP chain.
+
+`provider.py` is a test-only replay provider with `snapshot(case)`, `plan(case)`, `recommend(case)` and `revise(selection, case=...)`. It is not installed in the production router. F01 recommendations are deliberately empty; only its recorded no-op selection can be replayed. Unknown revisions or a plan for an unrecorded snapshot raise an error instead of inventing A's algorithm. Extend the recordings with A before implementing B1/B2 consumers.
+
+This seed does not implement F02–F24 or certify B1–B6/J01–J23. Extend the shared fixture directory with A as each contract is implemented; never silently change field meanings. Integration must validate actual provider output as well as sample files.
+
+Development URL: `http://127.0.0.1:3000/?wealth-dev=1` (log in with the existing demo account). Vite development only; the production build excludes the viewer. No extra public API or production bypass switch is added. The separate **手选模拟产品** entry uses the currently authenticated account and existing catalog/assessment/preview/confirm/verify/execute APIs; it does not send fixture IDs to the bank. It can change simulated funds only after the user's existing personal confirmation and MFA. The browser check stops at preview; full submission/cancellation is tested only in the isolated database. Open HUMAN-controlled tasks on the selected account block the manual preview entry; continuation stays in the original task UI.

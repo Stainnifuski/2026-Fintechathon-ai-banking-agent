@@ -6,6 +6,8 @@ import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
 
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 const Wealth = lazy(() => import('./components/Wealth'));
+const PortfolioConsumerPreview = import.meta.env.DEV ? lazy(() => import('./components/Wealth/PortfolioConsumerPreview')) : null;
+const wealthConsumerPreviewEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).get('wealth-dev') === '1';
 const DemoTools = lazy(() => import('./components/Wealth/DemoTools'));
 const CardManagement = lazy(() => import('./components/CardManagement'));
 const ThirdPartyServices = lazy(() => import('./components/ThirdPartyServices'));
@@ -61,7 +63,7 @@ function App() {
   const [isChatting, setIsChatting] = useState(false);
   const [retryChat, setRetryChat] = useState<bank.ChatRequest | null>(null);
   const [appView, setAppView] = useState<'banking' | 'thirdParty'>('banking');
-  const [bankingSection, setBankingSection] = useState<BankingSection>('home');
+  const [bankingSection, setBankingSection] = useState<BankingSection>(wealthConsumerPreviewEnabled ? 'wealth' : 'home');
   const [wealthTestMode, setWealthTestMode] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [highlightedPaymentRequest, setHighlightedPaymentRequest] = useState('');
@@ -495,7 +497,8 @@ function App() {
           </section>
           <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
         </>}
-        {bankingSection === 'wealth' && <><div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
+        {bankingSection === 'wealth' && wealthConsumerPreviewEnabled && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载 B0 开发预览…</section>}><PortfolioConsumerPreview accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
+        {bankingSection === 'wealth' && !wealthConsumerPreviewEnabled && <><div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
         {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>让每一笔变化都有解释。</h1><p>账单分析保持只读，不会通过问答直接修改账户。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} /></Suspense></>}
         {bankingSection === 'transfer' && <><div className="page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账、收款和任务状态集中在一处。</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="grid">
       <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong>{a.available_fen != null && <small>可用 ¥{(a.available_fen / 100).toFixed(2)} · 占款 ¥{((a.held_fen || 0) / 100).toFixed(2)}</small>}<small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
