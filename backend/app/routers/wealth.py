@@ -1,6 +1,6 @@
 """理财可信页面入口；银行事实只通过内部HTTP获取。"""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,8 @@ from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalCo
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
 from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
 from pydantic import Field
+from ..schemas.wealth_selection import PortfolioPrepare
+from ..services.orchestration.wealth_portfolio_source import get_portfolio_source
 
 
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
@@ -23,6 +25,19 @@ router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+@router.post('/portfolio/plans/{portfolio_id}/prepare')
+async def prepare_portfolio(portfolio_id: str, request: PortfolioPrepare, http_request: Request,
+        user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+        bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    from ..services.orchestration.wealth_selection import prepare
+    # Resolve inside the handler to preserve the established domain error shape.
+    try:
+        return await prepare(db, user['user_id'], portfolio_id, request, bank, get_portfolio_source(http_request))
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
 
 
 @router.post('/sessions')

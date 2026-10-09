@@ -7,6 +7,29 @@ export type CandidateGroup = CandidateRecording['groups'][number] | CandidateRec
 export type ProductCandidate = CandidateGroup['items'][number];
 export type CandidateShare = ProductCandidate['share_classes'][number];
 
+// A owns these shapes. Until its canonical types merge, infer the shared F11
+// recording rather than maintaining a second portfolio schema in B.
+type PortfolioRecording = typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f11.json');
+export type PortfolioPlan = PortfolioRecording['plan'];
+export type PortfolioSnapshot = PortfolioRecording['snapshot']
+  | typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f18.json')['snapshot']
+  | typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f10.json')['snapshot'];
+export type PortfolioSelection = Pick<PortfolioPlan, 'portfolio_id' | 'snapshot_id' | 'context_id'> & {
+  expected_version: number;
+  items: Pick<PortfolioPlan['selected_positions'][number], 'product_id' | 'product_version' | 'share_class' | 'target_ratio_total'>[];
+};
+export interface PortfolioAction {
+  product_id: string; product_version: number; disclosure_version: number; account_id: string;
+  bucket: string; name?: string; current_fen: number; target_fen: number; difference_fen: number;
+  direction: 'purchase' | 'redeem'; amount_fen: number; units: string; status: string;
+}
+export interface PreparedPortfolio {
+  portfolio_id: string; portfolio_version: number; execution_plan_id: string | null;
+  execution_plan_version: number | null; actions: PortfolioAction[]; stage: string; execution_plan?: Plan;
+}
+export const revisePortfolio = (selection: PortfolioSelection) => put<PortfolioPlan>(`/portfolio/plans/${selection.portfolio_id}`, selection);
+export const preparePortfolio = (plan: PortfolioPlan) => post<PreparedPortfolio>(`/portfolio/plans/${plan.portfolio_id}/prepare`, { expected_version: plan.version, snapshot_id: plan.snapshot_id });
+
 export interface Command {
   operation_id: string; direction: 'purchase' | 'redeem'; product_id: string;
   product_version: number; disclosure_version: number; account_id: string;

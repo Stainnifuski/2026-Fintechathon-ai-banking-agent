@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.connection import get_db, DATABASE_URL
 from ..domain.wealth import CALENDAR_VERSION
+from ..domain.wealth_limits import MAX_EXECUTION_ITEMS
 from ..integrations.wealth_authorization import WealthPolicyError
 from ..schemas.wealth import StrictRequest, InvestmentCommand, InternalInvestmentSubmission, StrongVerification, PlanVerification
 from ..services.bank import wealth_service as bank
@@ -128,11 +129,11 @@ class Verify(Subject, StrongVerification):
 
 
 class Batch(Subject):
-    submissions: list[InternalInvestmentSubmission] = Field(min_length=1, max_length=5)
+    submissions: list[InternalInvestmentSubmission] = Field(min_length=1, max_length=MAX_EXECUTION_ITEMS)
 
 
 class VerifyBatch(Subject, PlanVerification):
-    authorization_ids: list[str] = Field(min_length=1, max_length=5)
+    authorization_ids: list[str] = Field(min_length=1, max_length=MAX_EXECUTION_ITEMS)
     plan_id: str = Field(max_length=64)
 
 

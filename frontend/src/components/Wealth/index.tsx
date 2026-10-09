@@ -8,6 +8,7 @@ import Research from './Research';
 import OperatorPanel from './OperatorPanel';
 import ProductDetail from './ProductDetail';
 import Recommendation from './Recommendation';
+import { disclosureLabels, displayDisclosure } from './disclosureView';
 
 interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string; developmentManual?: boolean }
 type Tab = 'workbench' | 'assets';
@@ -16,8 +17,6 @@ const statusLabel: Record<string, string> = { ACCEPTED: '已受理／资金或�
   PENDING_CASH: '等待赎回到账', SETTLED: '已结算', CANCELLED: '已撤单', UNKNOWN: '结果未知，须原号核对',
   AWAITING_CONFIRMATION: '等待本人确认', WAITING_SETTLEMENT: '等待结算', COMPLETED: '完成', PAUSED: '已暂停',
   PARTIALLY_COMPLETED: '部分完成', PARTIAL_COMPLETED: '部分完成', WAITING: '等待下一步', RECONCILING: '核对已提交结果', FAILED: '失败，需处理', EXPIRED: '已失效', EXECUTING: '执行中', SUBMITTING: '正在提交' };
-const disclosureLabels: Record<string, string> = { version: '披露版本', nature: '产品性质', manager: '模拟管理机构', seller: '展示与销售角色', risk: '风险说明', fees: '费用', liquidity: '流动性', holding_period_days: '最低持有天数', pricing: '计价规则', settlement: '结算与到账', cancellation: '撤单窗口', limitations: '模拟范围' };
-const displayDisclosure = (value: unknown): string => value == null ? '未提供' : Array.isArray(value) ? value.map(displayDisclosure).join('；') : typeof value === 'object' ? Object.entries(value).map(([key, item]) => `${key}：${displayDisclosure(item)}`).join('；') : String(value);
 const errorText = (error: unknown) => {
   const message = (error as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message;
   return message || (error instanceof Error ? error.message : '请求失败，请保留原操作号核对');

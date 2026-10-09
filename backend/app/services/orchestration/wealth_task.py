@@ -191,7 +191,7 @@ async def revise_command(db, user_id, task_id, expected_version, command):
     return await view(db,task)
 
 
-async def register_plan(db, user_id, session_id, context_id, plan):
+async def register_plan(db, user_id, session_id, context_id, plan, *, commit=True):
     """方案逐笔节点持久化；申购仍由可信整份方案原子执行入口提交。"""
     from sqlalchemy import delete
     await lock_profile(db,user_id)
@@ -217,9 +217,9 @@ async def register_plan(db, user_id, session_id, context_id, plan):
     if task:
         old_nodes=(await db.scalars(select(Node).where(Node.task_id==task.task_id))).all()
         if any(n.kind=='SUBMIT' and n.status in {'RUNNING','UNKNOWN','COMPLETED'} for n in old_nodes):
-            buy_gate=next((n for n in old_nodes if n.kind=='BUY_PLAN'),None)
-            reread=next((n for n in old_nodes if n.kind=='REREAD_CASH'),None)
-            settled=[n for n in old_nodes if n.kind=='SETTLEMENT']
+            buy_gate=next((n for n in old_nodes if n.kind=='BUY_PLAN' and n.status!='CANCELLED'),None)
+            reread=next((n for n in old_nodes if n.kind=='REREAD_CASH' and n.status!='CANCELLED'),None)
+            settled=[n for n in old_nodes if n.kind=='SETTLEMENT' and n.status!='CANCELLED']
             continuation=bool(plan['stage']=='BUY' and buy_gate and reread and reread.status=='COMPLETED'
                 and settled and all(n.status=='COMPLETED' for n in settled))
             if not continuation:
@@ -272,7 +272,10 @@ async def register_plan(db, user_id, session_id, context_id, plan):
             status='COMPLETED' if row['kind'] in {'READ_FACTS','PLAN'} else 'READY',attempts=0,
             operation_id=row.get('operation_ref') if row['kind']=='SUBMIT' else None,
             data={k:v for k,v in row.items() if k not in {'node_id','kind','depends_on'}}))
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return await view(db,task)
 
 

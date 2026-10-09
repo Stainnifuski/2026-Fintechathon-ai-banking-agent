@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain.wealth_allocation import DEVIATION_PERCENT
+from ...domain.wealth_limits import MAX_EXECUTION_ITEMS
 from ...domain.wealth_recommendation import recommend
 from ...integrations.wealth_bank_api import HttpWealthBankApi
 from ...integrations.bank_api import BankApiError, BankResponseUnknown
@@ -159,6 +160,8 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
     await db.rollback()
     await lock_profile(db, user_id)
     row = await owned_plan(db, user_id, plan_id) if plan_id else None
+    if row and row.data.get('portfolio_id'):
+        raise WealthPolicyError('整体目标必须经配置服务修订，不能用旧预算接口覆盖', 'PORTFOLIO_REVISION_REQUIRED', 409)
     linked_task=None
     if row:
         from .wealth_task import require_plan_edit
@@ -187,7 +190,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
         config = allocation(products, budget_fen=budget, reserve_fen=effective_reserve,
             capacity=suitability["capacity_level"], horizon_days=request["horizon_days"],
             excluded=request["excluded_products"], purchase_allowed=suitability["purchase_allowed"],
-            exposure_fen=category_values, max_items=max(0, 5-prior_count))
+            exposure_fen=category_values, max_items=max(0, MAX_EXECUTION_ITEMS-prior_count))
     items = []
     if request["kind"] == "adjustment":
         # 先用新增现金改善配置；预算能投资时不先卖出，避免不必要费用。
@@ -196,7 +199,7 @@ async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, reques
             target = config['target_category_weights']
             current = dict(category_values)
             for lot in facts["lots"]:
-                if len(items) >= 5:
+                if len(items) >= MAX_EXECUTION_ITEMS:
                     break
                 value = lot["market_value_fen"]
                 target_fen = total*target.get(lot["category"], 0)//100
@@ -339,6 +342,8 @@ async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan
     if row.version != request.version or row.status != "AWAITING_CONFIRMATION" or any(
         child["status"] != "AWAITING_CONFIRMATION" for child in row.data["items"]):
         raise WealthPolicyError("仅未受理当前方案可部分采用", "STALE_PLAN")
+    if row.data.get('portfolio_id'):
+        raise WealthPolicyError('整体目标必须经配置服务修订，再重新准备差额', 'PORTFOLIO_REVISION_REQUIRED', 409)
     previous = {child["command"]["operation_id"]: child for child in row.data["items"]}
     if len({item.operation_id for item in request.items}) != len(request.items):
         raise WealthPolicyError("选项不能重复", "INVALID_PLAN", 422)

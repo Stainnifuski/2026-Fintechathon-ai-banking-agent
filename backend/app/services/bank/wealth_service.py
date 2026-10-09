@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain.wealth import CALENDAR_VERSION, TZ, advance_business, pricing_date, purchase, redeem, units
 from ...domain.wealth_command import command_digest
+from ...domain.wealth_limits import MAX_EXECUTION_ITEMS
 from ...integrations.wealth_authorization import (
     WealthPolicyError, aware, require_suitability, validate_bank_authorization,
 )
@@ -70,7 +71,7 @@ async def verify_authorizations(db: AsyncSession, user_id: str, authorization_id
     from ...integrations.wealth_verification import verification_reference
     from .data_service import verify_second_factor
     from ...models.audit_log import AuditLogORM
-    if not 1 <= len(authorization_ids) <= 5 or len(set(authorization_ids)) != len(authorization_ids):
+    if not 1 <= len(authorization_ids) <= MAX_EXECUTION_ITEMS or len(set(authorization_ids)) != len(authorization_ids):
         raise BankError("验证项不能重复或遗漏", "INVALID_PLAN", 422)
     await policy.lock_profile(db, user_id)
     if db.get_bind().dialect.name == "sqlite":
@@ -378,8 +379,8 @@ async def owned_order(db: AsyncSession, user_id: str, operation_id: str) -> Weal
 async def accept_many(db: AsyncSession, user_id: str,
                       submissions: list[tuple[InvestmentCommand, str]]) -> list[dict]:
     """单笔/纯申购组合共用原子受理，占款与消费授权同事务。"""
-    if not 1 <= len(submissions) <= 5 or len({c.operation_id for c, _ in submissions}) != len(submissions):
-        raise BankError("每批1至5笔且操作号不能重复", "INVALID_PLAN", 422)
+    if not 1 <= len(submissions) <= MAX_EXECUTION_ITEMS or len({c.operation_id for c, _ in submissions}) != len(submissions):
+        raise BankError(f"每批1至{MAX_EXECUTION_ITEMS}笔且操作号不能重复", "INVALID_PLAN", 422)
     from ...integrations.wealth_authorization import lock_profile
     await lock_profile(db, user_id)
     await lock_accounts(db, [c.account_id for c, _ in submissions])

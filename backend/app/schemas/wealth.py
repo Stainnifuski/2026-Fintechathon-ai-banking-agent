@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..domain.wealth import units
+from ..domain.wealth_limits import MAX_EXECUTION_ITEMS
 
 
 class StrictRequest(BaseModel):
@@ -174,7 +175,7 @@ class AdoptItem(StrictRequest):
 
 
 class AdoptPlan(PlanVersion):
-    items: list[AdoptItem] = Field(max_length=5)
+    items: list[AdoptItem] = Field(max_length=MAX_EXECUTION_ITEMS)
 
 
 class BoundConfirmation(PersonalConfirmation):
@@ -182,4 +183,4 @@ class BoundConfirmation(PersonalConfirmation):
 
 
 class PlanConfirmation(PlanVersion):
-    items: list[BoundConfirmation] = Field(min_length=1, max_length=5)
+    items: list[BoundConfirmation] = Field(min_length=1, max_length=MAX_EXECUTION_ITEMS)

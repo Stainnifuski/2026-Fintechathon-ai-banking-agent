@@ -5,8 +5,35 @@ import type { CandidateGroup, ProductCandidate } from '../../services/wealth';
 import type { ProductDetailLoader } from './ProductDetail';
 import type { ComparisonLoader } from './ProductComparison';
 import { performanceText } from './productSelection.ts';
+import f11 from '../../../../tests/fixtures/wealth_portfolio_contract_v1/f11.json' with { type: 'json' };
+import type { PortfolioPlan, PortfolioSelection, PreparedPortfolio } from '../../services/wealth';
+import { selectionKey } from './allocationSelection.ts';
+import { emptyProductSelection } from './productSelection.ts';
 
 export const recordedGroups = (): CandidateGroup[] => structuredClone(recording.groups);
+export const recordedF11Plan = (): PortfolioPlan => structuredClone(f11.plan);
+export const recordedF11Snapshot = () => structuredClone(f11.snapshot);
+export function recordedF11Selection() {
+  const state = emptyProductSelection(f11.snapshot.asset_scope_id);
+  for (const item of f11.plan.selected_positions) {
+    const candidate = recording.groups.flatMap<ProductCandidate>(group => group.items).find(c => c.family_id === item.family_id)!;
+    const share = candidate.share_classes.find(s => s.product_id === item.product_id)!;
+    state.items.push({candidate:structuredClone(candidate),share:structuredClone(share)});
+  }
+  return state;
+}
+export async function recordedRevision(selection: PortfolioSelection): Promise<PortfolioPlan> {
+  if (selection.portfolio_id !== f11.plan.portfolio_id || selection.snapshot_id !== f11.plan.snapshot_id || selection.context_id !== f11.plan.context_id) throw new Error('此选择尚无比例修订录制。可加载 F11 七产品样例继续检查。');
+  const requested = selectionKey(selection);
+  const output = requested === selectionKey({items:f11.revision.selected_positions}) ? f11.revision : requested === selectionKey({items:f11.plan.selected_positions}) ? f11.plan : null;
+  if (!output || selection.expected_version > output.version || selection.expected_version < 2) throw new Error('此比例尚未录制，不能冒充配置服务校验成功。可重新加载样例，或将 S1 调为15%、S2调为5%，其余保持不变。');
+  return structuredClone(output);
+}
+export async function recordedPrepare(plan:PortfolioPlan):Promise<PreparedPortfolio> {
+  if (![f11.plan,f11.revision].some(p=>JSON.stringify(p)===JSON.stringify(plan)))throw new Error('未登记的整体版本，不能准备样例差额');
+  return {portfolio_id:plan.portfolio_id,portfolio_version:plan.version,execution_plan_id:null,execution_plan_version:null,stage:'BUY',
+    actions:plan.selected_positions.map(p=>({...p,difference_fen:p.target_fen-p.current_fen,direction:'purchase',amount_fen:p.target_fen-p.current_fen,units:'0.0000',status:'READY'}))};
+}
 const allGroups: CandidateGroup[] = [...recording.groups, ...recording.next_groups];
 const allCandidates = allGroups.flatMap<ProductCandidate>(group => group.items);
 function findProduct(id: string) {
