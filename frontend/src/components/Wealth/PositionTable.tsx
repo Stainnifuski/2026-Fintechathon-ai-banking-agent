@@ -25,13 +25,13 @@ export default function PositionTable({data,loadDetail,onRedeem,onReturns,blocke
       <td><button className="secondary" onClick={()=>setDetail({scope:data.scope_key,key:row.position_key})}>查看持仓详情</button><button disabled={!canRedeem(row)} onClick={()=>onRedeem([row])}>赎回</button>{!canRedeem(row)&&<small>{blockedAccounts.includes(row.account_id)?'人工接管／暂停任务限制':row.disclosure_version==null?'产品版本资料缺失':'当前没有可赎份额'}</small>}</td>
     </tr>)}</tbody></table></div>{!data.rows.length&&<p className="consumer-empty">当前没有已确认持仓。已受理、待计价的申购仍可在订单表查询。</p>}
     <TablePager {...table} label="持仓" total={data.rows.length} selected={table.selected.length} onPage={table.changePage} onSize={table.changeSize} onClear={table.clear}/>
-    {detailRow&&<PositionDetail row={detailRow} loadDetail={loadDetail} onClose={()=>setDetail(null)}/>}
+    {detailRow&&<PositionDetail row={detailRow} loadDetail={loadDetail} onClose={()=>setDetail(null)} onReturns={()=>{setDetail(null);onReturns(detailRow.product_id);}}/>}
   </section>;
 }
-function PositionDetail({row,loadDetail,onClose}:{row:PositionRow;loadDetail?:ProductDetailLoader;onClose:()=>void}){
+function PositionDetail({row,loadDetail,onClose,onReturns}:{row:PositionRow;loadDetail?:ProductDetailLoader;onClose:()=>void;onReturns:()=>void}){
   const [product,setProduct]=useState(false);
   return <><div className="wealth-modal"><section className="card" role="dialog" aria-modal="true" aria-label="持仓事实详情"><button className="secondary" onClick={onClose}>关闭持仓详情</button><h3>{row.product_name} · {row.account_id}</h3>
     <p>{row.product_id} v{row.product_version} · {row.units}份 · 市值 {money(row.market_value_fen)} · 可赎 {row.redeemable_units}份</p><p>净值 {row.nav??'未知'} · {row.nav_date??'无有效日期'} · 成本 {money(row.cost_fen)}</p>
     {row.lots.map(lot=><article key={lot.lot_id}><strong>批次 {lot.lot_id}</strong><p>持有 {lot.units} · 可赎 {lot.redeemable_units} · 锁定 {lot.locked_units} · 占用 {lot.held_units}</p><p>买入确认 {lot.acquired_date??'未知'} · 解锁 {lot.unlock_date??'未知'} · 市值 {money(lot.market_value_fen)} · 成本 {money(lot.cost_fen)}</p></article>)}
-    <button onClick={()=>setProduct(true)}>查看该版本产品资料</button></section></div>{product&&<ProductDetail productId={row.product_id} productVersion={row.product_version} loadDetail={loadDetail} onClose={()=>setProduct(false)}/>}</>;
+    <button onClick={()=>setProduct(true)}>查看该版本产品资料</button><button className="secondary" onClick={onReturns}>查看该份额实际收益</button></section></div>{product&&<ProductDetail productId={row.product_id} productVersion={row.product_version} loadDetail={loadDetail} onClose={()=>setProduct(false)}/>}</>;
 }

@@ -17,6 +17,7 @@ from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictReque
 from pydantic import Field
 from ..schemas.wealth_selection import PortfolioPrepare
 from ..schemas.wealth_assets import AssetSummary
+from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
 from ..services.orchestration.wealth_portfolio_source import get_portfolio_source
 
 
@@ -26,6 +27,15 @@ router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+@router.get('/returns', response_model=WealthReturns)
+async def actual_returns(query: ReturnsQuery = Query(), user: dict = Depends(get_current_user),
+                         bank: HttpWealthBankApi = Depends(get_wealth_bank)):
+    try:
+        return await bank.call('POST', '/returns', {**query.model_dump(mode='json'), 'subject_user_id': user['user_id']})
+    except BankApiError as error:
+        fail(error)
 
 
 @router.post('/portfolio/plans/{portfolio_id}/prepare')

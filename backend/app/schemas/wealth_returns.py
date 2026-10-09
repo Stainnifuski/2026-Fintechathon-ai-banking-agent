@@ -1,4 +1,4 @@
-"""B3d实际收益读取协议；录制样例与银行计算共用，当前尚未注册银行路由。"""
+"""B3d实际收益读取协议；录制样例与银行计算共用。"""
 from datetime import date, datetime
 from typing import Literal
 

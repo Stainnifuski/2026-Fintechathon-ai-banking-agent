@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useMemo,useState} from 'react';
 import * as w from '../../services/wealth';
 import OrderTable,{bankEligibility} from './OrderTable';
 import type {EligibilityLoader} from './OrderTable';
@@ -8,11 +8,23 @@ import type {ProductDetailLoader} from './ProductDetail';
 import SingleTradePreview from './SingleTradePreview';
 import ReturnsView from './ReturnsView';
 import type {ReturnsPreviewSource} from './ReturnsView';
+import type {WealthReturns} from '../../services/wealthReturns';
 
 interface Props {assets:w.Assets;scopeKey:string;panel?:'orders'|'positions'|'both';onActivity:()=>void;blockedAccounts?:string[];
   loadEligibility?:EligibilityLoader;loadDetail?:ProductDetailLoader;fixtureOnly?:boolean;refreshKey?:number;onRedeemSingle?:(row:w.PositionRow)=>void;returnsPreview?:ReturnsPreviewSource}
 const errorText=(e:unknown)=>(e as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??(e instanceof Error?e.message:'操作失败，请保留原号核对');
 export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,blockedAccounts=[],loadEligibility=bankEligibility,loadDetail,fixtureOnly=false,refreshKey=0,onRedeemSingle,returnsPreview}:Props){
+  const businessDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(assets.business_at));
+  const expectedAssetScope=assets.asset_summary?.asset_scope_id;
+  const bankReturns=useMemo<ReturnsPreviewSource>(()=>({actualBank:true,scenarios:[],notice:'仅查询当前授权范围，不产生交易。',
+    defaultDate:businessDate,scenarioNotice:()=> '整体和单产品分别核对；已赎回产品保留在历史贡献中。',
+    load:async query=>{
+      const result=await w.get<WealthReturns>('/returns?'+new URLSearchParams(Object.entries(query).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])).toString());
+      if(!expectedAssetScope||result.asset_scope_id!==expectedAssetScope)throw new Error('授权账户范围已变化，请先刷新登录账户记录，再查看收益。');
+      return result;
+    }
+  }),[scopeKey,businessDate,refreshKey,expectedAssetScope]);
+  const returnsSource=returnsPreview??(!fixtureOnly?bankReturns:undefined);
   const [cancel,setCancel]=useState<{scope:string;rows:{row:w.OrderRow;eligibility:w.CancellationEligibility}[]}|null>(null);
   const [consent,setConsent]=useState(false);const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);
   const [redeem,setRedeem]=useState<{scope:string;keys:string[]}|null>(null);const [inputs,setInputs]=useState<Record<string,string>>({});
@@ -33,8 +45,8 @@ export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,
   return <section aria-label="订单与持仓工作台">
     {notice&&<p role="alert" className="consumer-warning">{notice}</p>}
     <div hidden={panel==='positions'}><OrderTable data={orders} loadEligibility={loadEligibility} loadDetail={loadDetail} onCancel={prepareCancel} blockedAccounts={blockedAccounts} refreshKey={refreshKey}/></div>
-    <div hidden={panel==='orders'||(returns?.scope===scopeKey&&!!returnsPreview)}><PositionTable data={positions} loadDetail={loadDetail} onRedeem={selectRedeem} onReturns={product=>setReturns({scope:scopeKey,product})} blockedAccounts={blockedAccounts}/></div>
-    {returns?.scope===scopeKey&&returnsPreview&&<div hidden={panel==='orders'}><ReturnsView key={`${scopeKey}:${returns.product??'all'}`} source={returnsPreview} initialProduct={returns.product} onClose={()=>setReturns(null)}/></div>}
+    <div hidden={panel==='orders'||(returns?.scope===scopeKey&&!!returnsSource)}><PositionTable data={positions} loadDetail={loadDetail} onRedeem={selectRedeem} onReturns={product=>setReturns({scope:scopeKey,product})} blockedAccounts={blockedAccounts}/></div>
+    {returns?.scope===scopeKey&&returnsSource&&<div hidden={panel==='orders'}><ReturnsView key={`${scopeKey}:${returns.product??'all'}`} source={returnsSource} initialProduct={returns.product} onClose={()=>setReturns(null)}/></div>}
     {cancel?.scope===scopeKey&&<div className="wealth-modal"><section role="dialog" aria-modal="true" aria-label="取消订单资格与确认" className="card"><h3>核对取消订单</h3><p>逐笔取消，结果分别记录。只释放原资金或份额占用，不增加账面余额，不产生退款流水。</p>
       {cancel.rows.map(({row,eligibility})=><article className="table-operation-row" key={row.operation_id}><strong>{row.product_name} · {row.operation_id}</strong><p>{row.direction==='purchase'?w.money(row.amount_fen):`${row.units}份`} · {eligibility.eligibility} · {eligibility.reason}</p><p>{eligibility.consequence}</p></article>)}
       {notice&&<p role="alert">{notice}</p>}
@@ -62,6 +74,5 @@ export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,
       </article>)}<button className="secondary" disabled={busy} onClick={()=>setRedeem(null)}>关闭赎回输入</button>
     </section></div>}
     {preview?.scope===scopeKey&&<SingleTradePreview key={preview.data.authorization_id} preview={preview.data} onClose={()=>setPreview(null)} onActivity={()=>{setRedeem(null);onActivity();}}/>}
-    {returns?.scope===scopeKey&&!returnsPreview&&<div className="wealth-modal"><section role="dialog" aria-modal="true" aria-label="实际收益接入说明" className="card"><h3>{returns.product?`${returns.product} · 单产品实际收益`:'整体实际收益'}</h3><p>收益视图已在独立开发预览提供契约样例；登录账户的真实历史收益计算将在 B3d 后续接入，包含已赎回部分，并提供日／月／年／累计和日期切换。当前浮动收益与产品净值涨跌不能替代此结果。</p><button className="secondary" onClick={()=>setReturns(null)}>关闭收益说明</button></section></div>}
   </section>;
 }

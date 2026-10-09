@@ -29,6 +29,22 @@ class Subject(StrictRequest):
     subject_user_id: str = Field(max_length=32)
 
 
+from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
+
+
+class InternalReturns(ReturnsQuery, Subject):
+    pass
+
+
+@router.post('/returns', response_model=WealthReturns)
+async def actual_returns(request: InternalReturns, db: AsyncSession = Depends(get_db)):
+    from ..services.bank.wealth_returns import read
+    try:
+        return await read(db, request.subject_user_id, ReturnsQuery.model_validate(request.model_dump(exclude={'subject_user_id'})))
+    except BankError as error:
+        fail(error)
+
+
 class ProductDetail(Subject):
     product_id: str = Field(min_length=1,max_length=32)
     period: str = Field(default='1y',pattern=r'^(1m|3m|1y)$')
