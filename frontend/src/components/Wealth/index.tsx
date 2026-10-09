@@ -43,9 +43,6 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
   const [tab, setTab] = useState<Tab>('workbench');
   const [history, setHistory] = useState<{user: string; reply: w.ChatReply}[]>([]);
   const [tasks, setTasks] = useState<w.WealthTask[]>([]);
-  const [redeeming,setRedeeming]=useState<{product_id:string;account_id:string;name:string;product_version:number;disclosure_version:number}|null>(null);
-  const [redemptionMode,setRedemptionMode]=useState<'standard'|'quick'>('standard');
-  const [units,setUnits]=useState('');
   const [products, setProducts] = useState<w.Product[]>([]);
   const [assets, setAssets] = useState<w.Assets | null>(null);
   const [assessment, setAssessment] = useState<w.Assessment | null>(null);
@@ -69,12 +66,12 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
     setProducts(p);setAssets(a);setAssessment(r);setQuestionnaire(q);setExecutions(e);setTasks(t.items);
   };
   const newConversation=async()=>{
-    setHistory([]);setChat(null);setPlan(null);setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);setChatInput('');setSession(null);setRedeeming(null);setDetailProduct(null);setNotice('');
+    setHistory([]);setChat(null);setPlan(null);setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);setChatInput('');setSession(null);setDetailProduct(null);setNotice('');
     localStorage.removeItem(`wealth-message-${userId}`);
     const next=await w.post<{session_id:string;version:number}>('/sessions',{});sessionRef.current=next;setSession(next);
   };
   useEffect(()=>{let live=true;let owned:string|undefined;
-    setHistory([]);setChat(null);setPlan(null);setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);setRedeeming(null);setDetailProduct(null);
+    setHistory([]);setChat(null);setPlan(null);setPreview(null);setGroupPreview(null);setConsent(false);setGroupConsent(false);setDetailProduct(null);
     localStorage.removeItem(`wealth-message-${userId}`);
     void w.post<{session_id:string;version:number}>('/sessions',{}).then(next=>{owned=next.session_id;if(live){sessionRef.current=next;setSession(next);}else void w.post(`/sessions/${owned}/close`,{});}).catch(e=>{if(live)setNotice(errorText(e));});
     return ()=>{live=false;const closing=sessionRef.current?.session_id||owned;if(closing)void w.post(`/sessions/${closing}/close`,{}).catch(()=>{});sessionRef.current=null;};
@@ -113,7 +110,6 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
     }
     if (reply.command && reply.task?.status !== 'PAUSED') await showPreview(reply.command);
   };
-  const chosen=products.find(p=>p.product_id===redeeming?.product_id);
   const selectedPurchase = products.find(product => product.product_id === purchaseProduct);
   const eligibleAccounts = assets?.cash.filter(account => account.account_type === 'savings') ?? [];
   const manualHumanControl = tasks.some(task => task.account_id === purchaseAccount && task.control_mode === 'HUMAN' && !['COMPLETED', 'CANCELLED', 'PARTIAL_COMPLETED', 'FAILED'].includes(task.status));
@@ -174,7 +170,7 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
       </details>
       {assets&&<TableWorkbench assets={assets} scopeKey={scopeKey(assets,userId)} refreshKey={revision} onActivity={()=>{onActivity();void load();}}
         blockedAccounts={tasks.filter(t=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(t.status)&&(t.control_mode!=='AGENT'||t.status==='PAUSED')).map(t=>t.account_id)}
-        onRedeemSingle={row=>{setRedeeming({product_id:row.product_id,product_version:row.product_version,disclosure_version:row.disclosure_version!,account_id:row.account_id,name:row.product_name});setUnits('');setRedemptionMode('standard');}}/>}
+        sessionId={session?.session_id}/>}
         <button className="secondary" disabled={busy} onClick={()=>act(async()=>{await load();setNotice('已核对未完成执行任务；选择续接只读取进度，不使用旧授权。');})}>查询未完成任务</button>
         {tasks.filter(t=>!['COMPLETED','CANCELLED','PARTIAL_COMPLETED','FAILED'].includes(t.status)).map(t=><article className="wealth-product" key={t.task_id}><p>未完成任务 {t.task_id.slice(-8)} · {statusLabel[t.status]||t.status}</p>{manual ? <p className="hint">任务续接与控制请返回原有银行工作台；手选入口不接管旧任务。</p> : <button disabled={busy||!session} onClick={()=>act(async()=>{const reply=await w.post<w.ChatReply>(`/sessions/${sessionRef.current!.session_id}/continue`,{task_id:t.task_id});setChat(reply);sessionRef.current={session_id:reply.session_id!,version:reply.version!};setSession(sessionRef.current);setHistory(h=>[...h,{user:'查询并续接未完成任务',reply}]);})}>查询并续接此任务</button>}</article>)}
     </div>{!manual && <aside><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与TOTP／短信验证。</p>
@@ -197,7 +193,6 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
       {chat?.citations?.map(c => <details key={c.document_id}><summary>{c.title} · {c.source_type} · {c.published_at || '发布时间未核实'}</summary><p>{c.excerpt}</p>{c.source_url && <a href={c.source_url} target="_blank" rel="noreferrer">官方原始来源</a>}<small>版本 {c.version} · 摘要指纹 {c.content_hash.slice(0,12)}</small></details>)}
       <p className="hint">对话不接收验证码，不会因“好的”而交易；页面确认后仍由银行再次检查。</p></aside>}</div>
     {detailProduct && <ProductDetail productId={detailProduct} onClose={()=>setDetailProduct(null)}/>}
-    {redeeming && <div className="wealth-modal"><section className="card" role="dialog" aria-label="持仓赎回"><h3>{redeeming.name} · 赎回</h3><label>赎回份额<input value={units} onChange={e=>setUnits(e.target.value)}/></label><label>赎回方式<select value={redemptionMode} onChange={e=>setRedemptionMode(e.target.value as 'standard'|'quick')}><option value="standard">普通赎回</option><option value="quick" disabled={!chosen?.rules.quick_redemption||chosen.version!==redeeming.product_version}>快赎（成功后不可撤）</option></select></label><button disabled={busy||!units} onClick={()=>act(async()=>{await showPreview({operation_id:id(),direction:'redeem',product_id:redeeming.product_id,product_version:redeeming.product_version,disclosure_version:redeeming.disclosure_version,account_id:redeeming.account_id,amount_fen:0,units,...(redemptionMode==='quick'?{command_version:2,redemption_mode:'quick'} as const:{})});setRedeeming(null);})}>预览并确认赎回</button><button className="secondary" onClick={()=>setRedeeming(null)}>关闭</button></section></div>}
     {preview && <div className="wealth-modal"><section role="dialog" aria-label="本人订单确认" className="card"><h3>比赛模拟环境／模拟资金 · 本人确认</h3><p>{preview.product_name} · {preview.command.direction === 'purchase' ? `申购总支出 ${w.money(preview.command.amount_fen)}` : `赎回 ${preview.command.units} 份`}</p><p>估算净值 {preview.estimated_nav || '未知'}（{preview.estimated_nav_date || '未知'}）· 估算费用 {w.money(preview.estimate?.fee_fen)} · 估算份额 {preview.estimate?.units || '不适用'} · 估算到账 {w.money(preview.estimate?.cash_fen)}</p><p>计价日 {preview.pricing_date} · 确认日 {preview.confirm_date} · 到账日 {preview.cash_date}</p><details open><summary>产品披露版本 {preview.command.disclosure_version}</summary>{Object.entries(preview.disclosure).map(([key, value]) => <p key={key}>{disclosureLabels[key] || key}：{displayDisclosure(value)}</p>)}</details><p>实际份额/到账以结算为准，预览不保证收益。状态：{preview.authorization_status}，确认有效至 {beijingTime(preview.expires_at)}</p>
       <RedemptionQuote preview={preview}/>
       <label className="wealth-check"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />本人已阅读本笔披露，理解本金可能亏损、费用和流动性，同意上述订单</label>

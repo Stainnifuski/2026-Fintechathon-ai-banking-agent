@@ -5,14 +5,17 @@ import {SecondFactor} from '../SecondFactor';
 import {beijingTime} from '../../utils/time';
 import {disclosureLabels,displayDisclosure} from './disclosureView';
 
-/** Bank preview/confirm/verify/execute, also usable by B4's future value input. */
-export default function SingleTradePreview({preview:initial,onClose,onActivity}:{preview:w.Preview;onClose:()=>void;onActivity:()=>void}){
+/** Bank preview/confirm/verify/execute shared by the three B4 input modes. */
+export default function SingleTradePreview({preview:initial,onClose,onActivity,redemption}:{preview:w.Preview;onClose:()=>void;onActivity:()=>void;redemption?:{holding_ratio:string;estimated_market_value_fen:number;notice:string}}){
   const [preview,setPreview]=useState(initial);const [consent,setConsent]=useState(false);
   const [factor,setFactor]=useState<Factor|null>({method:'totp'});const [code,setCode]=useState('');
   const [busy,setBusy]=useState(false);const [notice,setNotice]=useState('');const [done,setDone]=useState(false);
   const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(error){setNotice((error as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??'请求失败，请保留原操作号核对');}finally{setBusy(false);}};
   const execute=async()=>{const result=await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`,{});setDone(true);setCode('');setNotice(`原操作号 ${result.operation_id} · ${result.status}；已刷新资金和订单，受理不等于结算。`);onActivity();};
   return <div className="wealth-modal"><section className="card" role="dialog" aria-modal="true" aria-label="持仓赎回本人确认"><h3>{preview.product_name} · 赎回 {preview.command.units}份</h3>
+    {redemption&&<><p>拟赎回市值 {w.money(redemption.estimated_market_value_fen)} · 占本只总持仓 {(Number(redemption.holding_ratio)*100).toFixed(4)}%</p><p>{redemption.notice}</p></>}
+    {preview.command.redemption_mode==='quick'&&<p>快速赎回：成功后立即到账且不可撤销，受理时银行重新核对净值、合同窗口及每日额度；失败不会自动改为普通赎回。</p>}
+    {preview.command.redemption_mode==='quick'&&<section aria-label="快赎银行绑定报价"><p>本次绑定到账 {w.money(preview.command.quoted_cash_fen)} · 净值可用时间 {preview.estimate?.nav_available_at?beijingTime(preview.estimate?.nav_available_at):'未知，需重新预览'}</p><p>北京时间窗口 {preview.estimate?.contract?`${preview.estimate?.contract.start}—${preview.estimate?.contract.end}（结束不含端点）`:'待银行核验'}；{preview.estimate?.contract?.window==='trading_day'?'仅模拟交易日':'自然日，维护窗口除外'}。</p><p>本自然日已支付 {w.money(preview.estimate?.daily_used_fen)} · 受理前剩余额度 {w.money(preview.estimate?.daily_remaining_fen)}，同轮次所有账户共享。</p></section>}
     <p>账户 {preview.command.account_id} · 产品 v{preview.command.product_version} · 原操作号 {preview.command.operation_id}</p><p>估算净值 {preview.estimated_nav??'未知'}（{preview.estimated_nav_date??'未知'}）· 费用 {w.money(preview.estimate?.fee_fen)} · 估算到账 {w.money(preview.estimate?.cash_fen)}</p>
     <p>计价 {preview.pricing_date} · 确认 {preview.confirm_date} · 到账 {preview.cash_date} · 有效至 {beijingTime(preview.expires_at)}</p><p>预览不占用份额，实际到账以成交净值和扣费结果为准。</p>
     <details><summary>产品披露 v{preview.command.disclosure_version}</summary>{Object.entries(preview.disclosure).map(([key,value])=><p key={key}>{disclosureLabels[key]??key}：{displayDisclosure(value)}</p>)}</details>

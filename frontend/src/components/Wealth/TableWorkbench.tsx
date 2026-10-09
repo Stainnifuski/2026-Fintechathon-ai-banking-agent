@@ -3,17 +3,17 @@ import * as w from '../../services/wealth';
 import OrderTable,{bankEligibility} from './OrderTable';
 import type {EligibilityLoader} from './OrderTable';
 import PositionTable from './PositionTable';
-import {orderTableData,positionTableData,scaledUnits} from './tableData';
+import {orderTableData,positionTableData} from './tableData';
 import type {ProductDetailLoader} from './ProductDetail';
-import SingleTradePreview from './SingleTradePreview';
+import RedemptionDialog from './RedemptionDialog';
 import ReturnsView from './ReturnsView';
 import type {ReturnsPreviewSource} from './ReturnsView';
 import type {WealthReturns} from '../../services/wealthReturns';
 
 interface Props {assets:w.Assets;scopeKey:string;panel?:'orders'|'positions'|'both';onActivity:()=>void;blockedAccounts?:string[];
-  loadEligibility?:EligibilityLoader;loadDetail?:ProductDetailLoader;fixtureOnly?:boolean;refreshKey?:number;onRedeemSingle?:(row:w.PositionRow)=>void;returnsPreview?:ReturnsPreviewSource}
+  loadEligibility?:EligibilityLoader;loadDetail?:ProductDetailLoader;fixtureOnly?:boolean;refreshKey?:number;sessionId?:string;returnsPreview?:ReturnsPreviewSource}
 const errorText=(e:unknown)=>(e as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??(e instanceof Error?e.message:'操作失败，请保留原号核对');
-export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,blockedAccounts=[],loadEligibility=bankEligibility,loadDetail,fixtureOnly=false,refreshKey=0,onRedeemSingle,returnsPreview}:Props){
+export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,blockedAccounts=[],loadEligibility=bankEligibility,loadDetail,fixtureOnly=false,refreshKey=0,sessionId,returnsPreview}:Props){
   const businessDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(assets.business_at));
   const expectedAssetScope=assets.asset_summary?.asset_scope_id;
   const bankReturns=useMemo<ReturnsPreviewSource>(()=>({actualBank:true,scenarios:[],notice:'仅查询当前授权范围，不产生交易。',
@@ -27,8 +27,7 @@ export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,
   const returnsSource=returnsPreview??(!fixtureOnly?bankReturns:undefined);
   const [cancel,setCancel]=useState<{scope:string;rows:{row:w.OrderRow;eligibility:w.CancellationEligibility}[]}|null>(null);
   const [consent,setConsent]=useState(false);const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);
-  const [redeem,setRedeem]=useState<{scope:string;keys:string[]}|null>(null);const [inputs,setInputs]=useState<Record<string,string>>({});
-  const [preview,setPreview]=useState<{scope:string;data:w.Preview}|null>(null);
+  const [redeem,setRedeem]=useState<{scope:string;keys:string[]}|null>(null);
   const [returns,setReturns]=useState<{scope:string;product?:string}|null>(null);
   const orders=orderTableData(assets,scopeKey),positions=positionTableData(assets,scopeKey);
   const currentRedeem=redeem?.scope===scopeKey?positions.rows.filter(row=>redeem.keys.includes(row.position_key)):[];
@@ -39,8 +38,7 @@ export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,
     setCancel({scope:scopeKey,rows:views});
   });
   const selectRedeem=(rows:w.PositionRow[])=>{
-    if(rows.length===1&&onRedeemSingle){onRedeemSingle(rows[0]);return;}
-    setRedeem({scope:scopeKey,keys:rows.map(row=>row.position_key)});setInputs({});setNotice('');
+    setRedeem({scope:scopeKey,keys:rows.map(row=>row.position_key)});setNotice('');
   };
   return <section aria-label="订单与持仓工作台">
     {notice&&<p role="alert" className="consumer-warning">{notice}</p>}
@@ -61,18 +59,6 @@ export default function TableWorkbench({assets,scopeKey,panel='both',onActivity,
       })}>确认取消允许撤销的订单</button></>}
       <button className="secondary" disabled={busy} onClick={()=>setCancel(null)}>关闭取消核对</button>
     </section></div>}
-    {!!currentRedeem.length&&<div className="wealth-modal"><section role="dialog" aria-modal="true" aria-label="已选持仓赎回输入" className="card"><h3>填写赎回份额</h3><p>每只产品分别填写，不自动均摊；可赎上限不等于全部持仓。按市值输入将在 B4 接入。</p>
-      {notice&&<p role="alert">{notice}</p>}
-      {currentRedeem.map(row=><article className="table-operation-row" key={row.position_key}><strong>{row.product_name} · {row.account_id} · v{row.product_version}</strong><p>持有 {row.units}份 · 可赎 {row.redeemable_units}份 · 锁定 {row.locked_units} · 占用 {row.held_units}</p>
-        <label>本只赎回份额<input aria-label={`${row.position_key}赎回份额`} inputMode="decimal" value={inputs[row.position_key]??''} onChange={e=>setInputs(s=>({...s,[row.position_key]:e.target.value}))}/></label>
-        <button disabled={busy||!inputs[row.position_key]||scaledUnits(row.redeemable_units)===0n||blockedAccounts.includes(row.account_id)||row.disclosure_version==null} onClick={()=>void act(async()=>{
-          const count=scaledUnits(inputs[row.position_key]);if(count<=0n||count>scaledUnits(row.redeemable_units))throw new Error('份额须为正且不超过本只可赎数量；不会自动缩小');
-          if(fixtureOnly){setNotice('F23份额输入有效，仅用于交互核对；样例不会调用银行预览或生成订单。');return;}
-          const result=await w.post<w.Preview>('/previews',{operation_id:'WO'+crypto.randomUUID().replace(/-/g,''),direction:'redeem',product_id:row.product_id,product_version:row.product_version,disclosure_version:row.disclosure_version,account_id:row.account_id,amount_fen:0,units:inputs[row.position_key]});
-          setPreview({scope:scopeKey,data:result});
-        })}>预览本只普通赎回</button>
-      </article>)}<button className="secondary" disabled={busy} onClick={()=>setRedeem(null)}>关闭赎回输入</button>
-    </section></div>}
-    {preview?.scope===scopeKey&&<SingleTradePreview key={preview.data.authorization_id} preview={preview.data} onClose={()=>setPreview(null)} onActivity={()=>{setRedeem(null);onActivity();}}/>}
+    {!!currentRedeem.length&&<RedemptionDialog key={`${scopeKey}:${sessionId??'standalone'}`} rows={currentRedeem} contextId={assets.context_id??'legacy-v1'} fixtureOnly={fixtureOnly} sessionId={sessionId} blockedAccounts={blockedAccounts} onClose={()=>setRedeem(null)} onActivity={onActivity}/>}
   </section>;
 }

@@ -18,6 +18,7 @@ from pydantic import Field
 from ..schemas.wealth_selection import PortfolioPrepare
 from ..schemas.wealth_assets import AssetSummary
 from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
+from ..schemas.wealth_redemption import RedemptionRequest
 from ..services.orchestration.wealth_portfolio_source import get_portfolio_source
 
 
@@ -27,6 +28,24 @@ router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+@router.post('/redemptions/preview')
+async def redemption_preview(request: RedemptionRequest,user:dict=Depends(get_current_user),
+        db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from uuid import uuid4
+    try:
+        converted=await bank.call('POST','/redemptions/preview',{
+            **request.model_dump(mode='json'),'subject_user_id':user['user_id'],'operation_id':'WO'+uuid4().hex})
+        view=converted['preview']
+        row=await policy.new_preview_authorization(db,user['user_id'],InvestmentCommand.model_validate(view['command']))
+        await db.commit()
+        converted['preview']={**view,'authorization_id':row.authorization_id,'authorization_status':row.status,
+                              'expires_at':policy.aware(row.expires_at).isoformat()}
+        return converted
+    except (BankApiError,policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
 
 
 @router.get('/returns', response_model=WealthReturns)

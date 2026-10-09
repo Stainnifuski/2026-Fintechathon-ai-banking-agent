@@ -36,6 +36,23 @@ class InternalReturns(ReturnsQuery, Subject):
     pass
 
 
+from ..schemas.wealth_redemption import RedemptionRequest
+
+
+class InternalRedemption(RedemptionRequest, Subject):
+    operation_id: str = Field(min_length=8,max_length=64,pattern=r'^[a-zA-Z0-9_-]+$')
+
+
+@router.post('/redemptions/preview')
+async def redemption_preview(request: InternalRedemption, db: AsyncSession = Depends(get_db)):
+    from ..services.bank.wealth_redemption import convert
+    try:
+        return await convert(db,request.subject_user_id,RedemptionRequest.model_validate(
+            request.model_dump(exclude={'subject_user_id','operation_id'})),request.operation_id)
+    except BankError as error:
+        fail(error)
+
+
 @router.post('/returns', response_model=WealthReturns)
 async def actual_returns(request: InternalReturns, db: AsyncSession = Depends(get_db)):
     from ..services.bank.wealth_returns import read
