@@ -16,11 +16,12 @@ export class AssetSummaryStore {
   private publish(state:AssetSummaryState){this.state=state;for(const notify of this.listeners)notify();}
   setOwner(owner:string|null){if(owner!==this.state.owner){this.generation++;this.pending=null;this.publish(empty(owner));}}
   invalidate(){this.generation++;this.pending=null;this.publish(empty(this.state.owner));}
-  refresh(owner:string):Promise<void>{
+  refresh(owner:string,{background=false}:{background?:boolean}={}):Promise<void>{
     this.setOwner(owner);
     if(this.pending)return this.pending;
     const generation=++this.generation;
-    this.publish({...this.state,loading:true,error:''});
+    // 定时回读已有资产时保持展示稳定；首次读取和主动刷新仍提示加载。
+    if(!background||!this.state.data)this.publish({...this.state,loading:true,error:''});
     const request=this.read().then(data=>{
       if(generation===this.generation)this.publish({owner,data,loading:false,error:''});
     }).catch((error:unknown)=>{

@@ -1,7 +1,7 @@
 .asset-summary-card { min-width: 0; margin-bottom: 22px; }
 .asset-summary-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .asset-summary-heading h2 { margin: 0; font-size: 17px; }
-.asset-summary-heading button { font-size: 12px; padding: 7px 10px; }
+.asset-summary-heading button { font-size: 12px; padding: 7px 10px; min-width: 100px; }
 .asset-summary-card .asset-summary-total { display: block; font-size: clamp(28px,3vw,40px); letter-spacing: -.03em; margin: 8px 0; }
 .asset-summary-card p { font-size: 12px; line-height: 1.7; color: #667085; }
 .asset-summary-source { margin-bottom: 18px; }

@@ -7,9 +7,9 @@ interface Props {data:AssetSummary|null;loading?:boolean;error?:string;onRefresh
 export default function AssetSummaryCard({data,loading=false,error='',onRefresh,variant='page',label='总资产'}:Props){
   return <section className={`asset-summary-card ${variant==='hero'?'safe-card':variant==='fixture'?'consumer-card':'card'} asset-summary-${variant}`} aria-label={variant==='fixture'?'示例资产概况':'银行总资产'}
       data-asset-scope-id={data?.asset_scope_id} data-snapshot-id={data?.snapshot_id}>
-    <div className="asset-summary-heading"><h2>{label}</h2>{onRefresh&&<button className="secondary" disabled={loading} onClick={onRefresh}>刷新总资产</button>}</div>
+    <div className="asset-summary-heading"><h2>{label}</h2>{onRefresh&&<button className="secondary" disabled={loading} onClick={onRefresh}>{loading&&data?'正在更新…':'刷新总资产'}</button>}</div>
     <strong className="asset-summary-total">{summaryTotal(data,error)}</strong>
-    {loading&&<p role="status">{data?'正在更新，下方为上次查询结果…':'正在读取银行资产…'}</p>}
+    {loading&&!data&&<p role="status">正在读取银行资产…</p>}
     {error&&<p role="alert">{error}</p>}
     {data&&<><p className="asset-summary-source">{variant==='fixture'?'虚构契约样例，与登录账户资金无关':`当前授权范围 · ${data.account_ids.length}个借记账户 · 模拟银行事实`}</p>
       <dl className="asset-summary-metrics">

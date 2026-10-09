@@ -43,6 +43,27 @@ test('failed reads clear the stale value, explain expiration and recover on retr
   assert.equal(summaryTotal(store.getSnapshot().data,store.getSnapshot().error),'暂无法查询');
   await store.refresh('U1');assert.equal(store.getSnapshot().error,'');assert.equal(store.getSnapshot().data,cases.F18);
 });
+test('background polling keeps settled content stable, then publishes fresh facts',async()=>{
+  const next=deferred<AssetSummary>();let calls=0;
+  const store=new AssetSummaryStore(()=>++calls===1?Promise.resolve(cases.F01):next.promise);
+  await store.refresh('U1');const before=store.getSnapshot();let updates=0;
+  const unsubscribe=store.subscribe(()=>updates++);
+  const poll=store.refresh('U1',{background:true});
+  assert.equal(store.getSnapshot(),before);assert.equal(updates,0);
+  assert.equal(store.getSnapshot().loading,false);
+  next.resolve(cases.F18);await poll;unsubscribe();
+  assert.equal(updates,1);assert.equal(store.getSnapshot().data,cases.F18);
+});
+test('background reads still report first load and failures; manual refresh signals progress',async()=>{
+  const first=deferred<AssetSummary>(),failed=deferred<AssetSummary>(),manual=deferred<AssetSummary>();let calls=0;
+  const store=new AssetSummaryStore(()=>[first,failed,manual][calls++].promise);
+  const initial=store.refresh('U1',{background:true});assert.equal(store.getSnapshot().loading,true);
+  first.resolve(cases.F18);await initial;
+  const poll=store.refresh('U1',{background:true});failed.reject(new Error('offline'));await poll;
+  assert.equal(store.getSnapshot().data,null);assert.match(store.getSnapshot().error,/查询失败/);
+  const retry=store.refresh('U1');assert.equal(store.getSnapshot().loading,true);
+  manual.resolve(cases.F18);await retry;
+});
 test('F10 displays missing valuation without turning known cash into the total',()=>{
   assert.equal(summaryTotal(cases.F10),'暂无法完整估值');
   assert.equal(summaryMoney(cases.F10.positions_market_value_fen),'缺少估值');
