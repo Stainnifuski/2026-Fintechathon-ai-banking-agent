@@ -1,4 +1,6 @@
-# Shared portfolio consumer recordings (B0–B3a)
+# Shared portfolio consumer recordings (B0–B3b)
+
+B3b adds `asset_summary_cases.json`, canonical B-owned AssetSummary recordings for F01/F11/F18/F10. Scope/snapshot IDs and values match the corresponding A snapshot fixtures; incomplete F10 retains null positions/total. JSON Schema: `docs/wealth/asset_summary_v1.schema.json`; bank reader and integration handoff: `docs/wealth/manual_flow_b3b.md`. These recordings are development-only and never sent to bank transaction endpoints.
 
 Contract: local 00 v0.3 (latest contents supplied on 2026-10-08), sections 6.2/6.4/7. The initial F01 is a complete snapshot/plan envelope for B's read-only development preview. It is a seed for A/B to align, not a declaration that A's production schema has been implemented or agreed through code review. A owns the production portfolio schema, provider and allocation/sliders; B has not created competing production types.
 

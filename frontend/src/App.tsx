@@ -1,6 +1,8 @@
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 import BeijingClock from './components/BeijingClock';
+import AssetSummaryCard from './components/AssetSummary';
+import {useAssetSummary} from './components/AssetSummary/useAssetSummary';
 import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
 
@@ -78,6 +80,8 @@ function App() {
   const [enrollData, setEnrollData] = useState<bank.TotpEnroll | null>(null);
   const [enrollCode, setEnrollCode] = useState('');
   const payerSelectorRef = useRef<HTMLDetailsElement>(null);
+  const assetSummary=useAssetSummary(user&&!['U007','U008'].includes(user.user_id)?user.user_id:null,bankRevision,
+    appView==='banking'&&['home','wealth'].includes(bankingSection)?bankingSection:null);
 
   const message = (error: unknown) => {
     const detail = (error as { response?: { data?: { detail?: string | { message?: string; capability?: string } } } })?.response?.data?.detail;
@@ -439,9 +443,7 @@ function App() {
     ? requestAmountNumber
     : requestAmountNumber * requestPayerIds.length;
   const cashAccounts = accounts.filter(account => account.account_type === 'savings');
-  const totalBalance = cashAccounts.reduce((sum, account) => sum + account.balance, 0);
   const availableBalance = cashAccounts.reduce((sum, account) => sum + ((account.available_fen ?? Math.round(account.balance * 100)) / 100), 0);
-  const heldBalance = cashAccounts.reduce((sum, account) => sum + ((account.held_fen || 0) / 100), 0);
   const activeSubscriptions = subscriptions.filter(subscription => subscription.status === 'ACTIVE');
   const pendingRequests = paymentRequests.filter(request => ['PENDING', 'ACCEPTED'].includes(request.status)).length;
   const recentSpend = transactions.slice(0, 8).filter(transaction => ['transfer_out', 'purchase', 'subscription', 'investment_purchase'].includes(transaction.type)).reduce((sum, transaction) => sum + transaction.amount, 0);
@@ -480,7 +482,7 @@ function App() {
         {bankingSection === 'home' && <>
           <section className="dashboard-hero">
             <div><p className="eyebrow">YOUR MONEY, IN VIEW</p><h1>{user.name}，今天的财务状态很清晰。</h1><p>先看重点，再决定下一步。NOVA 会读取你有权查看的模拟银行事实，但敏感操作仍由你本人确认。</p><div className="hero-actions"><button onClick={() => setAgentOpen(true)}>✦ 和 NOVA 对话</button><button className="glass-button" onClick={() => openSection('transfer')}>发起转账</button></div></div>
-            <div className="safe-card"><span>当前可用资金</span><strong>¥{availableBalance.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong><small>总账面 ¥{totalBalance.toLocaleString('zh-CN',{minimumFractionDigits:2})} · 占款 ¥{heldBalance.toFixed(2)}</small><div className="safe-line"><i style={{width:`${Math.max(8,Math.min(100,totalBalance ? availableBalance/totalBalance*100 : 0))}%`}} /></div><p>基于当前账户事实，不包含未来收入。</p></div>
+            <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} variant="hero" />
           </section>
           <section className="metric-grid">
             <article><span>近期支出</span><strong>¥{recentSpend.toLocaleString('zh-CN',{minimumFractionDigits:2})}</strong><small>最近 8 笔流水中的支出</small></article>
@@ -497,7 +499,8 @@ function App() {
           </section>
           <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
         </>}
-        {bankingSection === 'wealth' && wealthConsumerPreviewEnabled && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载 B0 开发预览…</section>}><PortfolioConsumerPreview accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
+        {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
+        {bankingSection === 'wealth' && wealthConsumerPreviewEnabled && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
         {bankingSection === 'wealth' && !wealthConsumerPreviewEnabled && <><div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
         {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>让每一笔变化都有解释。</h1><p>账单分析保持只读，不会通过问答直接修改账户。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} /></Suspense></>}
         {bankingSection === 'transfer' && <><div className="page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账、收款和任务状态集中在一处。</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="grid">

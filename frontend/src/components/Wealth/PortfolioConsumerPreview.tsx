@@ -2,6 +2,9 @@ import { useState } from 'react';
 import fixture from '../../../../tests/fixtures/wealth_portfolio_contract_v1/f01.json';
 import multiAccountFixture from '../../../../tests/fixtures/wealth_portfolio_contract_v1/f18.json';
 import missingValuationFixture from '../../../../tests/fixtures/wealth_portfolio_contract_v1/f10.json';
+import AssetSummaryCard from '../AssetSummary';
+import summaryCases from '../../../../tests/fixtures/wealth_portfolio_contract_v1/asset_summary_cases.json';
+import type {AssetSummary} from '../../services/wealth';
 import { money } from '../../services/wealth';
 import type { Account } from '../../services/bank';
 import Wealth from './index';
@@ -34,8 +37,6 @@ export default function PortfolioConsumerPreview(props: Props) {
   const tablePanel=panel==='orders'||panel==='positions';
   const snapshot = scenario === 'F01' ? fixture.snapshot : scenario === 'F11' ? recordedF11Snapshot() : scenario === 'F18' ? multiAccountFixture.snapshot : missingValuationFixture.snapshot;
   const missing = !snapshot.valuation_complete;
-  const available = snapshot.accounts.reduce((sum, account) => sum + account.available_fen, 0);
-  const currentCash = snapshot.accounts.reduce((sum, account) => sum + account.balance_fen, 0);
   const selection = selectionForScope(productSelection, snapshot.asset_scope_id);
   const changeSelection = (next: ProductSelectionState) => { setProductSelection(next); setReviewing(false); };
   const changeScenario = (next: typeof scenario) => {
@@ -46,15 +47,11 @@ export default function PortfolioConsumerPreview(props: Props) {
   const loadSeven = () => {setScenario('F11');setGroups(recordedGroups());setProductSelection(recordedF11Selection());setPanel('products');setReviewEpoch(value=>value+1);setReviewing(true);};
 
   return <section className="consumer-preview" aria-label="理财手动流程开发预览">
-    <div className="consumer-fixture-banner"><strong>B3a · 独立开发预览</strong><span>{panel === 'manual'||tablePanel&&tableSource==='bank' ? '当前入口使用登录账户的模拟银行记录；交易仍须本人确认与验证。' : '当前数字与候选为虚构契约样例，与登录账户资金无关；样例不产生订单。'}</span><a href="/">返回原有银行工作台</a></div>
+    <div className="consumer-fixture-banner"><strong>B3b · 独立开发预览</strong><span>{panel === 'manual'||tablePanel&&tableSource==='bank' ? '当前入口使用登录账户的模拟银行记录；交易仍须本人确认与验证。' : '当前数字与候选为虚构契约样例，与登录账户资金无关；样例不产生订单。'}</span><a href="/">返回原有银行工作台</a></div>
     <header className="consumer-heading"><p className="eyebrow">理财 · 手动操作流程</p><h1>先看清资产，再决定怎么安排。</h1><p>资产、当前方案和操作入口保持可见。每一步完成后，再明确进入下一步。</p></header>
     <div className="consumer-columns">
       <main>
-        {panel !== 'manual' && !tablePanel && <section className="consumer-card" aria-label="示例资产概况"><div className="consumer-card-head"><h2>资产概况</h2><span className="consumer-tag">契约样例 · {scenario}</span></div>
-          <div className="consumer-total"><small>示例模拟总资产</small><strong>{missing ? '暂无法完整估值' : money(snapshot.total_assets_fen)}</strong><span>{missing ? '持仓市值缺失，不能把可见现金冒充总资产。' : '含现金、持仓和赎回应收；冻结资金不重复计入。'}</span></div>
-          <dl className="consumer-metrics"><div><dt>可用现金</dt><dd>{money(available)}</dd></div><div><dt>冻结资金</dt><dd>{money(currentCash - available)}</dd></div><div><dt>持仓市值</dt><dd>{missing ? '缺少估值' : money(snapshot.positions.reduce((sum, position) => sum + (position.market_value_fen ?? 0), 0))}</dd></div><div><dt>赎回应收</dt><dd>{money(snapshot.receivable_fen)}</dd></div></dl>
-          <p className="consumer-note">{scenario === 'F01'||scenario==='F11' ? '一个虚构账户，现金 ¥10,000，无持仓。' : '两个虚构账户，现金分别 ¥6,000 / ¥2,000，其中冻结 ¥1,000。'} 样例时点：2026-10-08 12:00（北京时间）。</p>
-        </section>}
+        {panel !== 'manual' && !tablePanel && <AssetSummaryCard variant="fixture" label={`示例总资产 · ${scenario}`} data={summaryCases[scenario] as AssetSummary}/>}
         <section className="consumer-card" aria-label="操作入口"><h2>你想先做什么？</h2><div className="consumer-entry-grid">
           <button aria-pressed={panel === 'plan'} onClick={() => setPanel('plan')}><strong>理财规划</strong><span>查看整体配置样例</span></button>
           <button aria-pressed={panel === 'products'} onClick={() => setPanel('products')}><strong>产品推荐</strong><span>候选多选、A/C 切换和比较</span></button>

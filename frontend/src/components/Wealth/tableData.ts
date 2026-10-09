@@ -8,7 +8,7 @@ export function scaledUnits(value: string): bigint {
 }
 const unitsText=(value:bigint)=>`${value/10000n}.${String(value%10000n).padStart(4,'0')}`;
 export function scopeKey(assets:Assets,userId:string):string {
-  return JSON.stringify([userId,assets.context_id??'legacy-v1',assets.cash.map(a=>a.account_id).sort()]);
+  return JSON.stringify([userId,assets.asset_summary?.asset_scope_id??assets.context_id??'legacy-v1',assets.asset_summary?.account_ids??assets.cash.map(a=>a.account_id).sort()]);
 }
 export function orderTableData(assets:Assets,scope:string):OrderTableData {
   return {object_type:'orders',scope_key:scope,rows:assets.orders.map(order=>{
@@ -25,7 +25,8 @@ export function positionTableData(assets:Assets,scope:string):PositionTableData 
     const key=`${lot.account_id}:${lot.product_id}:${lot.product_version}`;
     grouped.set(key,[...(grouped.get(key)??[]),lot]);
   }
-  const basis=assets.valuation_complete===true&&Number.isSafeInteger(assets.bank_assets_fen)&&assets.bank_assets_fen>0?assets.bank_assets_fen:null;
+  const total=assets.asset_summary?assets.asset_summary.total_assets_fen:assets.valuation_complete===true?assets.bank_assets_fen:null;
+  const basis=total!=null&&Number.isSafeInteger(total)&&total>0?total:null;
   const rows:PositionRow[]=Array.from(grouped.entries()).map(([position_key,lots])=>{
     const first=lots[0];const value=sumKnown(lots.map(l=>l.market_value_fen));
     const sameNav=lots.every(l=>l.nav===first.nav&&l.nav_date===first.nav_date);

@@ -16,6 +16,7 @@ from ..services.orchestration import wealth_plan, wealth_profile, wealth_executi
 from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
 from pydantic import Field
 from ..schemas.wealth_selection import PortfolioPrepare
+from ..schemas.wealth_assets import AssetSummary
 from ..services.orchestration.wealth_portfolio_source import get_portfolio_source
 
 
@@ -319,6 +320,13 @@ async def confirm_assessment(assessment_id: str, user: dict = Depends(get_curren
     except policy.WealthPolicyError as error:
         await db.rollback()
         fail(error)
+
+
+@router.get('/asset-summary', response_model=AssetSummary)
+async def asset_summary(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)):
+    """Current authorized debit scope; no caller-supplied identity or payment card."""
+    try: return await bank.call('POST', '/asset-summary', {'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
 
 
 @router.get("/assets")

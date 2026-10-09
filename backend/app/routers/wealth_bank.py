@@ -289,7 +289,16 @@ async def products(db: AsyncSession = Depends(get_db)) -> list[dict]:
 @router.post("/assets")
 async def assets(request: AssetSubject, db: AsyncSession = Depends(get_db)) -> dict:
     """内部本人银行资产事实。"""
+    from ..services.bank.wealth_asset_summary import begin_read
+    await begin_read(db)
     return await bank.assets(db, request.subject_user_id, request.account_id)
+
+
+@router.post('/asset-summary')
+async def asset_summary(request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
+    from ..services.bank.wealth_asset_summary import read
+    try: return await read(db, request.subject_user_id)
+    except BankError as error: fail(error)
 
 
 @router.post("/catalog")

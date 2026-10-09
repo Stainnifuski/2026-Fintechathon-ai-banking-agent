@@ -55,6 +55,7 @@ export interface Order {
     actual_nav?: string; actual?: { units?: string; fee_fen: number; cash_fen?: number; realized_pnl_fen?: number } };
 }
 export interface Assets {
+  asset_summary?: AssetSummary;
   concentration?: { families_fen: Record<string,number>; categories_fen: Record<string,number>; overconcentrated_families: string[]; notice: string };
   historical_hypothesis?: { metrics: { return: string | null; max_drawdown: string | null; volatility: string | null } | null; notice: string; unavailable_reason?: string } | null;
   cash: { account_id: string; account_type: string; balance_fen: number; held_fen: number; available_fen: number }[];
@@ -65,6 +66,12 @@ export interface Assets {
     nav?: string | null; acquired_date?: string; unlock_date?: string; daily_metric?: DailyMetric }[];
   orders: Order[]; receivable_fen: number; realized_pnl_fen: number; bank_assets_fen: number; business_at: string;
   as_of?: string; context_id?: string; scope?: 'ordinary' | 'disposable_simulation'; valuation_complete?: boolean;
+}
+export interface AssetSummary {
+  schema_version:'wealth-asset-summary-v1';asset_scope_id:string;account_ids:string[];snapshot_id:string;
+  as_of:string;business_at:string;cash_balance_fen:number;held_fen:number;available_cash_fen:number;
+  positions_market_value_fen:number|null;redemption_receivable_fen:number;total_assets_fen:number|null;
+  valuation_complete:boolean;missing_fields:string[];data_source:string;
 }
 export interface DailyMetric { status: 'ok' | 'unavailable' | 'not_applicable'; label: string; value_percent: string | null;
   date: string | null; previous_date: string | null; reason: string | null; source: string }

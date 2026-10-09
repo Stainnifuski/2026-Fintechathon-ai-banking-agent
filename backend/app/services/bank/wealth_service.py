@@ -658,7 +658,7 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
     order_rows = [order_view(row) for row in orders]
     from .wealth_table_facts import enrich
     await enrich(db, lots, order_rows, now)
-    return {"cash": cash, "lots": lots, "orders": order_rows,
+    facts = {"cash": cash, "lots": lots, "orders": order_rows,
         'concentration':concentration_view,'historical_hypothesis':hypothesis,'actual_return_unavailable_reason':'NO_VERIFIED_COMPLETE_CASHFLOW_RETURN_SERIES',
         "receivable_fen": receivable, "realized_pnl_fen": realized,
         "bank_assets_fen": sum(a["balance_fen"] for a in cash if a["account_type"] != "credit") + receivable
@@ -668,6 +668,10 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
         "context_id": context.context_id if context else "legacy-v1",
         "scope": "disposable_simulation" if context else "ordinary",
         "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
+    if account_id is None:
+        from .wealth_asset_summary import build
+        facts['asset_summary'] = build(user_id, facts)
+    return facts
 
 
 
