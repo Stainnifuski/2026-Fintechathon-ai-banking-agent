@@ -18,8 +18,10 @@ from .transfer_service import BankError
 
 TZ = ZoneInfo("Asia/Shanghai")
 CONSUMPTION = ("purchase", "subscription")
-INCOMING = ("salary", "transfer_in", "refund", "investment_redemption")
-OUTGOING = (*CONSUMPTION, "transfer_out", "investment_purchase")
+INCOMING = ("salary", "transfer_in", "refund")
+OUTGOING = (*CONSUMPTION, "transfer_out")
+# Bank-issued business types, not customer notes or purchase/category guesses.
+EXCLUDED_WEALTH_TYPES = ("investment_purchase", "investment_redemption")
 LABELS = {"dining": "餐饮", "shopping": "购物", "transport": "交通",
           "entertainment": "娱乐", "subscription": "订阅", "other": "其他"}
 
@@ -89,7 +91,8 @@ async def scope(db: AsyncSession, user_id: str, query: BillQuery):
         AccountORM.user_id == user_id, AccountORM.account_id.not_in(select(WealthContextORM.account_id))))).all())
     if query.account_id and query.account_id not in accounts:
         raise BankError("账户不存在或无权访问", "ACCOUNT_NOT_FOUND", 404)
-    predicates = [Tx.account_id.in_([query.account_id] if query.account_id else accounts), Tx.status == "completed"]
+    predicates = [Tx.account_id.in_([query.account_id] if query.account_id else accounts),
+                  Tx.status == "completed", Tx.type.not_in(EXCLUDED_WEALTH_TYPES)]
     if not query.account_id:
         predicates.append(not_(and_(Tx.type.in_(("transfer_in", "transfer_out")), Tx.counterparty.in_(accounts))))
     # Category filters deliberately select consumption only; refunds lack an original-tx link.
@@ -136,7 +139,7 @@ async def aggregate(db, predicates, start, end, period):
             categories[cat][0] += amount
             categories[cat][1] += count
             trend[day_key] += amount
-        elif kind in INCOMING or kind in ("transfer_out", "investment_purchase"):
+        elif kind in INCOMING or kind == "transfer_out":
             totals[kind + "_fen"] += amount
     totals["net_inflow_fen"] = totals["inflow_fen"] - totals["outflow_fen"]
     totals["net_consumption_fen"] = totals["consumption_fen"] - totals["refund_fen"]
@@ -192,6 +195,7 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
         points.append(dict(date=key, consumption_fen=trend[key]))
         cursor = cursor + timedelta(days=1) if query.period == "month" else shifted(cursor, months=1)
     notices = ["仅统计已完成交易；消费含购买和订阅，转账单列。",
+               "理财申购和赎回不计入本报告的金额、笔数、异常及明细；实际记录保留在资金流水。",
                "退款按到账期单列；未关联原消费，因此不抵扣分类金额。",
                "全部账户汇总排除可确认的本人账户互转；单账户保留转入转出。",
                "所有金额为人民币；历史无时区时间按 UTC 解释，北京时间划分账期。"]
@@ -202,7 +206,7 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
     change = current["consumption_fen"] - previous["consumption_fen"]
     change_pct = percent(current["consumption_fen"], previous["consumption_fen"])
     report = [f"{b['query']['date']} {'月度' if query.period == 'month' else '年度'}账单：已完成 {current['count']} 笔，消费原额 {money(current['consumption_fen'])}，退款 {money(current['refund_fen'])}，净消费 {money(current['net_consumption_fen'])}。",
-              f"资金流入 {money(current['inflow_fen'])}，流出 {money(current['outflow_fen'])}，净流入 {money(current['net_inflow_fen'])}。"]
+              f"报告内资金流入 {money(current['inflow_fen'])}，流出 {money(current['outflow_fen'])}，净流入 {money(current['net_inflow_fen'])}；不含理财申购和赎回，实际记录保留在资金流水。"]
     comparison = "上期同期" if b["partial"] else "完整上期"
     report.append(f"与{comparison}相比，消费变化 {money(change)}" + (f"（{change_pct:+.2f}%）。" if change_pct is not None else "；上期消费为零，不计算增长率。"))
     if current["consumption_fen"]:
@@ -213,7 +217,7 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
         top = increased[0]
         report.append(f"增加最多的类别是{top['label']}，比上期多 {money(top['change_fen'])}；这说明支出构成变化，不代表已知购买原因。")
     report.append(f"发现 {len(anomalies)} 条待核对提示，具体依据见下方明细。" if anomalies else "本期未触发已配置的异常规则；这不代表所有交易均无异常。")
-    return dict(**b, totals=current, previous_totals=previous, change_fen=change, change_percent=change_pct,
+    return dict(**b, excluded_transaction_types=list(EXCLUDED_WEALTH_TYPES), totals=current, previous_totals=previous, change_fen=change, change_percent=change_pct,
                 categories=categories, trend=points, anomalies=anomalies, report=report, notices=notices)
 
 

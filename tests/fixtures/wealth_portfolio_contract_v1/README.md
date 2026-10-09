@@ -1,4 +1,6 @@
-# Shared portfolio consumer recordings (B0–B3b)
+# Shared portfolio consumer recordings (B0–B3c)
+
+B3c adds `f19.json`: completed consumption 20000 fen, investment purchase 100000 fen, investment redemption 110000 fen. The isolated bank/API test retains all three cashflows while the bill report includes only consumption; see `docs/wealth/manual_flow_b3c.md`. This is a test ledger fixture, never loaded into the running customer database or an A recommendation provider.
 
 B3b adds `asset_summary_cases.json`, canonical B-owned AssetSummary recordings for F01/F11/F18/F10. Scope/snapshot IDs and values match the corresponding A snapshot fixtures; incomplete F10 retains null positions/total. JSON Schema: `docs/wealth/asset_summary_v1.schema.json`; bank reader and integration handoff: `docs/wealth/manual_flow_b3b.md`. These recordings are development-only and never sent to bank transaction endpoints.
 

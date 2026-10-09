@@ -20,7 +20,7 @@ const errorText = (error: unknown) => {
   return detail?.message || '账单加载失败，请重试。';
 };
 
-export default function BillAnalysis({ accounts, revision }: { accounts: Account[]; revision: number }) {
+export default function BillAnalysis({ accounts, revision, onViewCashflows }: { accounts: Account[]; revision: number; onViewCashflows?: () => void }) {
   const [draft, setDraft] = useState<bills.BillQuery>(initialQuery);
   const applied = useRef<bills.BillQuery>(initialQuery());
   const [result, setResult] = useState<bills.BillAnalysis | null>(null);
@@ -29,7 +29,7 @@ export default function BillAnalysis({ accounts, revision }: { accounts: Account
   const [question, setQuestion] = useState('');
   const [reply, setReply] = useState('');
   const [mode, setMode] = useState('');
-  const [detailFilter, setDetailFilter] = useState<{ category?: string; tx_ids?: string; label: string }>({ label: '全部已完成流水' });
+  const [detailFilter, setDetailFilter] = useState<{ category?: string; tx_ids?: string; label: string }>({ label: '报告内已完成明细' });
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<bills.BillPage | null>(null);
   const [detailError, setDetailError] = useState('');
@@ -40,7 +40,7 @@ export default function BillAnalysis({ accounts, revision }: { accounts: Account
   const accept = (data: bills.BillAnalysis) => {
     applied.current = data.query;
     setDraft(data.query); setResult(data); setPage(1);
-    setDetailFilter({ label: data.query.category ? `${labels[data.query.category]}消费` : '全部已完成流水' });
+    setDetailFilter({ label: data.query.category ? `${labels[data.query.category]}消费` : '报告内已完成明细' });
   };
   const load = async (query: bills.BillQuery) => {
     const id = ++sequence.current;
@@ -79,13 +79,14 @@ export default function BillAnalysis({ accounts, revision }: { accounts: Account
     } catch (e) { if (id === sequence.current) setError(errorText(e)); }
     finally { if (id === sequence.current) setBusy(false); }
   };
-  const drill = (category?: string, tx_ids?: string, label = '全部已完成流水') => {
+  const drill = (category?: string, tx_ids?: string, label = '报告内已完成明细') => {
     setPage(1); setDetailFilter({ category, tx_ids, label });
     document.getElementById('bill-transactions')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
 
   return <section className="card bills" aria-labelledby="bill-title">
     <div className="bill-heading"><div><p className="bill-eyebrow">YOUR MONEY, IN VIEW</p><h2 id="bill-title">账单分析</h2><p className="hint">看清消费去向，核对每一笔变化。金额单位：人民币。</p></div><span className="bill-badge">只读分析</span></div>
+    <p className="hint">本报告不计入理财申购和赎回的金额、笔数及明细。{onViewCashflows && <button type="button" className="text-button" onClick={onViewCashflows}>查看资金流水</button>}</p>
     <form className="bill-filters" onSubmit={e => { e.preventDefault(); void load(draft); }}>
       <label>报告类型<select value={draft.period} onChange={e => { const period = e.target.value as 'month' | 'year'; setDraft({ ...draft, period, date: period === 'year' ? draft.date.slice(0, 4) : `${draft.date.slice(0, 4)}-${currentMonth().slice(5)}` }); }}><option value="month">月度账单</option><option value="year">年度账单</option></select></label>
       <label>{draft.period === 'month' ? '月份' : '年份'}<input aria-label="账单时间" required type={draft.period === 'month' ? 'month' : 'number'} min={draft.period === 'month' ? '2000-01' : '2000'} max={draft.period === 'month' ? currentMonth() : currentMonth().slice(0, 4)} value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} /></label>
@@ -100,18 +101,18 @@ export default function BillAnalysis({ accounts, revision }: { accounts: Account
     {result && !busy && <>
       <div className="bill-period"><strong>{result.query.date} · {result.query.period === 'month' ? '月度' : '年度'}报告{result.query.category && ` · ${labels[result.query.category]}消费`}</strong><span>{result.query.account_id || '全部账户'} · {result.partial ? '本期尚未结束，与上期同期比较' : '完整账期'}</span><small>北京时间：{dateTime(result.start)} 至 {dateTime(result.end_exclusive)}（不含终点）</small></div>
       <div className="bill-metrics">{[
-        ['消费原额', result.totals.consumption_fen], ['资金流入', result.totals.inflow_fen],
-        ['资金流出', result.totals.outflow_fen], ['净流入', result.totals.net_inflow_fen],
+        ['消费原额', result.totals.consumption_fen], ['报告流入', result.totals.inflow_fen],
+        ['报告流出', result.totals.outflow_fen], ['报告净流入', result.totals.net_inflow_fen],
       ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{money(Number(value))}</strong></div>)}</div>
       <div className="bill-submetrics"><span>退款 {money(result.totals.refund_fen)}</span><span>净消费 {money(result.totals.net_consumption_fen)}</span><span>转入 {money(result.totals.transfer_in_fen)}</span><span>转出 {money(result.totals.transfer_out_fen)}</span><span>已完成 {result.totals.count} 笔</span></div>
       <p className="bill-comparison">消费较上期变化 <strong>{money(result.change_fen)}</strong> · {result.change_percent === null ? '上期为零，不计算增长率' : `${result.change_percent > 0 ? '+' : ''}${result.change_percent.toFixed(2)}%`}<small>对比范围：{dateTime(result.previous_start)} 至 {dateTime(result.previous_end_exclusive)}（不含终点）</small></p>
-      {result.totals.count === 0 && <p className="bill-empty">这个范围内暂无已完成流水。可以切换月份或账户查看。</p>}
+      {result.totals.count === 0 && <p className="bill-empty">这个范围内暂无纳入报告的已完成交易。可以切换月份或账户查看。</p>}
       <div className="bill-charts"><div><h3>消费去向</h3>{result.totals.consumption_fen ? <ReactECharts echarts={echarts} style={{ height: 250 }} option={{ aria: { enabled: true, description: `消费分类：${result.categories.map(c => `${c.label}${money(c.amount_fen)}`).join('，')}。点击分类可查看流水。` }, tooltip: { trigger: 'item', valueFormatter: (v: number) => money(v) }, series: [{ type: 'pie', radius: ['43%', '68%'], label: { formatter: '{b}\n{d}%' }, data: result.categories.filter(c => c.amount_fen > 0).map(c => ({ name: c.label, value: c.amount_fen, category: c.category })) }], color: ['#1769e0', '#159a8c', '#e8a346', '#815ac0', '#dd7184', '#899bb6'] }} onEvents={{ click: (params: { data: { category: string }; name: string }) => drill(params.data.category, undefined, `${params.name}消费`) }} /> : <p className="bill-empty">暂无消费数据</p>}</div>
         <div><h3>{result.query.period === 'month' ? '每日' : '每月'}消费趋势</h3><ReactECharts echarts={echarts} style={{ height: 250 }} option={{ aria: { enabled: true, description: `消费趋势，金额单位人民币元：${result.trend.map(p => `${p.date} ${money(p.consumption_fen)}`).join('，')}` }, tooltip: { trigger: 'axis', valueFormatter: (v: number) => money(v) }, grid: { left: 65, right: 15, bottom: 35, top: 25 }, xAxis: { type: 'category', data: result.trend.map(p => p.date.slice(5)) }, yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `¥${v / 100}` } }, series: [{ name: '消费原额', type: 'line', data: result.trend.map(p => p.consumption_fen), itemStyle: { color: '#1769e0' }, areaStyle: { color: '#e8f1ff' }, showSymbol: result.trend.length < 15 }] }} /></div></div>
       <div className="bill-category-list">{result.categories.map(c => <button className="secondary" key={c.category} onClick={() => drill(c.category, undefined, `${c.label}消费`)}>{c.label} · {money(c.amount_fen)} · {c.share_percent}% · {c.count} 笔</button>)}</div>
       <div className="bill-report"><h3>账单总结</h3>{result.report.map(line => <p key={line}>{line}</p>)}</div>
       <div className="bill-alerts"><h3>待核对提示 <span>{result.anomalies.length}</span></h3>{result.anomalies.length === 0 ? <p className="hint">未触发当前规则。历史不足及统计限制见下方说明。</p> : result.anomalies.map((item, index) => <article key={`${item.kind}-${index}`}><div><strong>{item.title}</strong><p>{item.reason}</p></div><button className="secondary" onClick={() => drill(item.category || undefined, item.tx_ids.join(',') || undefined, item.title)}>查看依据</button></article>)}</div>
-      <div id="bill-transactions"><div className="bill-heading"><h3>{detailFilter.label}</h3><button className="secondary" onClick={() => drill(undefined, undefined, result.query.category ? `${labels[result.query.category]}消费` : '全部已完成流水')}>重置明细筛选</button></div>
+      <div id="bill-transactions"><div className="bill-heading"><h3>{detailFilter.label}</h3><button className="secondary" onClick={() => drill(undefined, undefined, result.query.category ? `${labels[result.query.category]}消费` : '报告内已完成明细')}>重置明细筛选</button></div>
         {detailBusy && <p role="status">正在加载流水…</p>}{detailError && <p role="alert" className="error">{detailError} <button onClick={() => setDetailRetry(n => n + 1)}>重试</button></p>}
         {rows && <><div className="bill-table"><table><thead><tr><th>时间 / 流水号</th><th>交易对手 / 备注</th><th>类型 / 账户</th><th>金额</th></tr></thead><tbody>{rows.items.map(tx => <tr key={tx.tx_id}><td>{dateTime(tx.timestamp)}<small>{tx.tx_id}</small></td><td>{tx.counterparty}<small>{tx.note || '无备注'}</small></td><td>{types[tx.type] || tx.type}<small>{tx.account_id}</small></td><td>{['purchase', 'subscription', 'transfer_out'].includes(tx.type) ? '−' : ['salary', 'refund', 'transfer_in'].includes(tx.type) ? '+' : ''}{money(tx.amount_fen)}</td></tr>)}</tbody></table></div>{!rows.total && <p className="bill-empty">暂无符合筛选条件的流水</p>}<div className="bill-pagination"><span>共 {rows.total} 笔 · 第 {rows.page} / {Math.max(1, Math.ceil(rows.total / rows.page_size))} 页</span><button className="secondary" disabled={page <= 1 || detailBusy} onClick={() => setPage(n => n - 1)}>上一页</button><button className="secondary" disabled={page * rows.page_size >= rows.total || detailBusy} onClick={() => setPage(n => n + 1)}>下一页</button></div></>}
       </div>

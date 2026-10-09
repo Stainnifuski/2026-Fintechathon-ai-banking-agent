@@ -18,14 +18,15 @@ QUERY = BillQuery(date="2026-09")
 
 
 @pytest.mark.asyncio
-async def test_investment_cashflows_are_not_consumption(db):
+async def test_investment_cashflows_are_excluded_from_report(db):
     db.add_all([tx("wealth-out", 100000, "investment_purchase", category="investment"),
                 tx("wealth-in", 99000, "investment_redemption", category="investment")])
     await db.commit()
     result = await analyze(db, "U1", QUERY, now=NOW)
     assert result["totals"]["consumption_fen"] == 0
-    assert result["totals"]["outflow_fen"] == 100000
-    assert result["totals"]["inflow_fen"] == 99000
+    assert result["totals"]["outflow_fen"] == 0
+    assert result["totals"]["inflow_fen"] == 0
+    assert result["totals"]["count"] == 0
     assert result["totals"]["unknown_count"] == 0
 
 
