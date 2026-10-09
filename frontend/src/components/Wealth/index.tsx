@@ -10,6 +10,7 @@ import ProductDetail from './ProductDetail';
 import Recommendation from './Recommendation';
 import { disclosureLabels, displayDisclosure } from './disclosureView';
 import TableWorkbench from './TableWorkbench';
+import StructuredActionPanel from './StructuredActionPanel';
 import { scopeKey } from './tableData';
 
 interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string; developmentManual?: boolean }
@@ -173,7 +174,7 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
         sessionId={session?.session_id}/>}
         <button className="secondary" disabled={busy} onClick={()=>act(async()=>{await load();setNotice('已核对未完成执行任务；选择续接只读取进度，不使用旧授权。');})}>查询未完成任务</button>
         {tasks.filter(t=>!['COMPLETED','CANCELLED','PARTIAL_COMPLETED','FAILED'].includes(t.status)).map(t=><article className="wealth-product" key={t.task_id}><p>未完成任务 {t.task_id.slice(-8)} · {statusLabel[t.status]||t.status}</p>{manual ? <p className="hint">任务续接与控制请返回原有银行工作台；手选入口不接管旧任务。</p> : <button disabled={busy||!session} onClick={()=>act(async()=>{const reply=await w.post<w.ChatReply>(`/sessions/${sessionRef.current!.session_id}/continue`,{task_id:t.task_id});setChat(reply);sessionRef.current={session_id:reply.session_id!,version:reply.version!};setSession(sessionRef.current);setHistory(h=>[...h,{user:'查询并续接未完成任务',reply}]);})}>查询并续接此任务</button>}</article>)}
-    </div>{!manual && <aside><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与TOTP／短信验证。</p>
+    </div>{!manual && <aside><details><summary>直接选择操作（无需聊天）</summary><StructuredActionPanel key={userId} userId={userId} revision={revision} onActivity={onActivity}/></details><h3>理财对话工作台</h3><button className="secondary" disabled={busy} onClick={()=>act(newConversation)}>新对话</button><p className="hint">对话模式：{chat?.mode === 'model' ? '真实模型理解' : chat?.mode === 'offline' ? '离线规则（有限表达）' : '随首次回复显示'}。先说您的需求，助手会查询银行事实；交易仍需本人确认与TOTP／短信验证。</p>
       {plan && <section aria-label="当前方案"><h3>当前方案 v{plan.version} · {statusLabel[plan.status] || plan.status}</h3>
         <Recommendation plan={plan} products={products} onDetail={setDetailProduct}/>
         <button disabled={busy || plan.status !== 'AWAITING_CONFIRMATION' || !plan.items.length} onClick={() => act(previewAdopted)}>{plan.stage==='SELL'?'统一确认当前减持':'一键申购全部'}</button>

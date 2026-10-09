@@ -19,6 +19,7 @@ from ..schemas.wealth_selection import PortfolioPrepare
 from ..schemas.wealth_assets import AssetSummary
 from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
 from ..schemas.wealth_redemption import RedemptionRequest
+from ..schemas.wealth_action import WealthActionV1, WealthActionResultV1
 from ..services.orchestration.wealth_portfolio_source import get_portfolio_source
 
 
@@ -28,6 +29,20 @@ router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+@router.post('/actions', response_model=WealthActionResultV1)
+async def structured_action(request: WealthActionV1, http_request: Request,
+        user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+        bank: HttpWealthBankApi = Depends(get_wealth_bank)):
+    from ..services.orchestration.wealth_actions import dispatch
+    try:
+        return await dispatch(db,user['user_id'],bank,request,
+            getattr(http_request.app.state,'wealth_action_handlers',None),
+            getattr(http_request.app.state,'wealth_portfolio_source',None))
+    except (BankApiError,policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
 
 
 @router.post('/redemptions/preview')

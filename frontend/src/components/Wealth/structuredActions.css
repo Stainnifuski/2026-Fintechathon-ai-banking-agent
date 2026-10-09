@@ -1,0 +1,13 @@
+
+.structured-actions fieldset {border:1px solid #e7e9f0;border-radius:12px;padding:16px;margin:18px 0;}
+.structured-actions legend {font-weight:650;padding:0 8px;}
+.structured-actions label {display:block;margin:10px 0;}
+.structured-actions select,.structured-actions input:not([type="checkbox"]) {display:block;width:100%;padding:10px;border:1px solid #ccd5e7;border-radius:8px;}
+.structured-actions button {margin:4px;}
+.structured-actions table {width:100%;text-align:left;border-collapse:collapse;}
+.structured-actions th,.structured-actions td {padding:12px;border-bottom:1px solid #e7e9f0;}
+
+.structured-actions .consumer-entry-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.structured-actions .consumer-entry-grid button {text-align:left;padding:14px;border:1px solid #e7e9f0;border-radius:8px;background:#fafbfe;color:#344054;}
+.structured-actions .consumer-note {font-size:12px;color:#667085;}
+.structured-actions .returns-table-scroll {overflow-x:auto;}
