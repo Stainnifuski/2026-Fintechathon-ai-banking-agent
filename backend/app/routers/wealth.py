@@ -1,6 +1,6 @@
 """理财可信页面入口；银行事实只通过内部HTTP获取。"""
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,9 +123,9 @@ def fail(error: BankApiError | policy.WealthPolicyError) -> None:
 
 
 @router.get('/products/{product_id}/detail')
-async def product_detail(product_id:str,period:str='1y',user:dict=Depends(get_current_user),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+async def product_detail(product_id:str,period:str='1y',product_version:int|None=Query(default=None,ge=1),user:dict=Depends(get_current_user),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
     if period not in {'1m','3m','1y'}:raise HTTPException(422,detail={'code':'INVALID_CHART_RANGE'})
-    try:return await bank.call('POST','/product-detail',{'subject_user_id':user['user_id'],'product_id':product_id,'period':period})
+    try:return await bank.call('POST','/product-detail',{'subject_user_id':user['user_id'],'product_id':product_id,'period':period,'product_version':product_version})
     except BankApiError as error:fail(error)
 
 
@@ -421,6 +421,12 @@ async def cancel(operation_id: str, request: PersonalConfirmation, user: dict = 
                  bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     """撤单也需明确确认并核对当前订单摘要。"""
     try:
+        facts = await bank.assets(user['user_id'])
+        scoped_order = next((row for row in facts['orders'] if row['operation_id']==operation_id), None)
+        if scoped_order is None:
+            raise policy.WealthPolicyError('订单不属于当前资产范围','ACCOUNT_CONTEXT_MISMATCH',409)
+        if scoped_order.get('disclosure_version') != request.disclosure_version:
+            raise policy.WealthPolicyError('订单披露版本不一致，请重新核对','STALE_PLAN',409)
         current = await bank.query(user["user_id"], operation_id)
         if current["digest"] != request.digest:
             raise policy.WealthPolicyError("订单已变化", "STALE_PLAN")

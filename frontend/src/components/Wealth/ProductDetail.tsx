@@ -8,13 +8,13 @@ export interface ProductDetailData {
   chart:{points:{date:string;nav:string}[];window_start:string|null;window_end:string|null;notice:string;quality_flags:string[];
     metrics:Record<string,{value_percent:string|null;reason:string|null}>}|null;
 }
-export type ProductDetailLoader = (productId: string, period: string) => Promise<ProductDetailData>;
-const bankDetail: ProductDetailLoader = (productId, period) => w.get<ProductDetailData>(`/products/${encodeURIComponent(productId)}/detail?period=${period}`);
-export default function ProductDetail({productId,onClose,loadDetail=bankDetail}:{productId:string;onClose:()=>void;loadDetail?:ProductDetailLoader}) {
+export type ProductDetailLoader = (productId: string, period: string, productVersion?:number) => Promise<ProductDetailData>;
+const bankDetail: ProductDetailLoader = (productId, period, version) => w.get<ProductDetailData>(`/products/${encodeURIComponent(productId)}/detail?period=${period}${version?`&product_version=${version}`:''}`);
+export default function ProductDetail({productId,productVersion,onClose,loadDetail=bankDetail}:{productId:string;productVersion?:number;onClose:()=>void;loadDetail?:ProductDetailLoader}) {
   const [period,setPeriod]=useState('1y');const [detail,setDetail]=useState<ProductDetailData|null>(null);const [error,setError]=useState('');const [hover,setHover]=useState(0);
   useEffect(()=>{let active=true;setDetail(null);setError('');
-    loadDetail(productId,period).then(value=>{if(active){setDetail(value);setHover(Math.max(0,(value.chart?.points.length||1)-1));}})
-      .catch(()=>{if(active)setError('暂时无法读取详情，请关闭后重试。');});return()=>{active=false;};},[productId,period,loadDetail]);
+    loadDetail(productId,period,productVersion).then(value=>{if(active){setDetail(value);setHover(Math.max(0,(value.chart?.points.length||1)-1));}})
+      .catch(()=>{if(active)setError('暂时无法读取该版本详情，请关闭后重试。');});return()=>{active=false;};},[productId,productVersion,period,loadDetail]);
   const points=detail?.chart?.points||[];const values=points.map(p=>Number(p.nav));const min=Math.min(...values),max=Math.max(...values),delta=max-min||.01;
   const xy=(index:number)=>[20+(points.length===1?280:index/Math.max(1,points.length-1)*560),200-(values[index]-min)/delta*170];
   const selectPoint=(event:React.PointerEvent<SVGSVGElement>)=>{const rect=event.currentTarget.getBoundingClientRect();setHover(Math.max(0,Math.min(points.length-1,Math.round(((event.clientX-rect.left)/rect.width*600-20)/560*(points.length-1)))));};

@@ -32,6 +32,7 @@ class Subject(StrictRequest):
 class ProductDetail(Subject):
     product_id: str = Field(min_length=1,max_length=32)
     period: str = Field(default='1y',pattern=r'^(1m|3m|1y)$')
+    product_version: int | None = Field(default=None,ge=1,strict=True)
 
 
 class ExternalEvidence(Subject):
@@ -49,7 +50,7 @@ async def external_evidence(request:ExternalEvidence,db:AsyncSession=Depends(get
 @router.post('/product-detail')
 async def product_detail(request:ProductDetail,db:AsyncSession=Depends(get_db)):
     from ..services.bank.wealth_product_detail import detail
-    try:return await detail(db,request.subject_user_id,request.product_id,request.period)
+    try:return await detail(db,request.subject_user_id,request.product_id,request.period,request.product_version)
     except BankError as error:fail(error)
 
 

@@ -9,7 +9,7 @@ from . import wealth_service as bank,wealth_research as research
 from .transfer_service import BankError
 
 
-async def detail(db,user_id,product_id,period='1y'):
+async def detail(db,user_id,product_id,period='1y',product_version=None):
     context=await research.selected(db,user_id)
     now=await bank.business_now(db,context.account_id if context else None)
     if context:
@@ -17,6 +17,8 @@ async def detail(db,user_id,product_id,period='1y'):
             WealthResearchProductORM.product_id==product_id))
         if row is None:raise BankError('产品不在当前研究范围','PRODUCT_NOT_FOUND',404)
         metadata=row.data;history=row.history
+        if product_version is not None and metadata.get('product_version') != product_version:
+            raise BankError('当前数据集未提供该产品版本资料','RULE_VERSION_CHANGED',409)
         rules=metadata.get('rules',{});simulated=metadata.get('source')!='akshare'
         calendar=rules.get('calendar_version','cn-trading-2021-2027-v1')
         if metadata.get('money_yield') and not history:
@@ -28,7 +30,13 @@ async def detail(db,user_id,product_id,period='1y'):
     else:
         products=await bank.products(db,user_id);metadata=next((p for p in products if p['product_id']==product_id),None)
         if metadata is None:raise BankError('产品不存在','PRODUCT_NOT_FOUND',404)
-        version=metadata['version'];rules=metadata['rules'];calendar=rules['calendar_version'];simulated=True;data_version='legacy-v1'
+        version=metadata['version'] if product_version is None else product_version
+        if version != metadata['version']:
+            bound=await db.get(WealthProductVersionORM,f'{product_id}:{version}')
+            if bound is None or bound.rules.get('dataset_id'):
+                raise BankError('产品版本不在当前范围','PRODUCT_NOT_FOUND',404)
+            metadata={**metadata,'name':bound.name,'category':bound.category,'product_risk_level':bound.risk_level,'rules':bound.rules}
+        rules=metadata['rules'];calendar=rules['calendar_version'];simulated=True;data_version='legacy-v1'
         rows=(await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id==f'{product_id}:{version}').order_by(WealthNavORM.nav_date))).all()
         history=[{'date':p.nav_date.isoformat(),'nav':p.price,'available_at':utc_iso(bank.nav_available_at(p))} for p in rows]
     result=chart(history,as_of=now,period=period,calendar_version=calendar,data_version=data_version,simulated=simulated)

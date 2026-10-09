@@ -1,0 +1,908 @@
+{
+  "fixture_id": "F23",
+  "notice": "虚构双表交互录制，不能产生银行订单或冒充实际收益",
+  "assets": {
+    "cash": [
+      {
+        "account_id": "fixture-table-A1",
+        "account_type": "savings",
+        "balance_fen": 600000,
+        "held_fen": 100000,
+        "available_fen": 500000
+      },
+      {
+        "account_id": "fixture-table-A2",
+        "account_type": "savings",
+        "balance_fen": 200000,
+        "held_fen": 0,
+        "available_fen": 200000
+      }
+    ],
+    "lots": [
+      {
+        "lot_id": "fixture-table-lot-0",
+        "product_id": "fixture-CASH-P",
+        "product_name": "样例活钱产品",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-CASH-P:1",
+        "share_class": null,
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "not_applicable",
+          "label": "最新净值涨跌",
+          "value_percent": null,
+          "date": "2026-10-08",
+          "previous_date": null,
+          "reason": "货币类收益率不是单位净值涨跌",
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-1",
+        "product_id": "fixture-S1-A",
+        "product_name": "样例青禾债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-S1-A:1",
+        "share_class": "A",
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-2",
+        "product_id": "fixture-S2-C",
+        "product_name": "样例清岚债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-S2-C:1",
+        "share_class": "C",
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "0.0000",
+        "locked_units": "100.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-30"
+      },
+      {
+        "lot_id": "fixture-table-lot-3",
+        "product_id": "fixture-S3-C",
+        "product_name": "样例远山债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-S3-C:1",
+        "share_class": "C",
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-4",
+        "product_id": "fixture-G1-A",
+        "product_name": "样例星河混合",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-G1-A:1",
+        "share_class": "A",
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-5",
+        "product_id": "fixture-G2-A",
+        "product_name": "样例云帆权益",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-G2-A:1",
+        "share_class": "A",
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-6",
+        "product_id": "fixture-G3-A",
+        "product_name": "样例光合指数",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-G3-A:1",
+        "share_class": "A",
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-extra",
+        "product_id": "fixture-S1-A",
+        "product_name": "样例青禾债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-S1-A:1",
+        "share_class": "A",
+        "account_id": "fixture-table-A1",
+        "units": "0.8766",
+        "redeemable_units": "0.8766",
+        "locked_units": "0.0000",
+        "held_units": "0.0000",
+        "cost_fen": 89,
+        "market_value_fen": 89,
+        "unrealized_pnl_fen": 0,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-other-account",
+        "product_id": "fixture-S1-A",
+        "product_name": "样例青禾债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "version_id": "fixture-S1-A:1",
+        "share_class": "A",
+        "account_id": "fixture-table-A2",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      },
+      {
+        "lot_id": "fixture-table-lot-v2",
+        "product_id": "fixture-S1-A",
+        "product_name": "样例青禾债券",
+        "product_version": 2,
+        "disclosure_version": 2,
+        "version_id": "fixture-S1-A:2",
+        "share_class": "A",
+        "account_id": "fixture-table-A1",
+        "units": "100.1234",
+        "redeemable_units": "80.0000",
+        "locked_units": "20.1234",
+        "held_units": "0.0000",
+        "cost_fen": 10000,
+        "market_value_fen": 10123,
+        "unrealized_pnl_fen": 123,
+        "nav": "1.0111",
+        "nav_date": "2026-10-08",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "acquired_date": "2026-09-30",
+        "unlock_date": "2026-10-01"
+      }
+    ],
+    "orders": [
+      {
+        "operation_id": "fixture-table-order-00",
+        "account_id": "fixture-table-A1",
+        "version_id": "fixture-CASH-P:1",
+        "product_id": "fixture-CASH-P",
+        "product_name": "样例活钱产品",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": null,
+        "direction": "redeem",
+        "amount_fen": 0,
+        "units": "10.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+        "status": "ACCEPTED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:00:00+08:00",
+        "daily_metric": {
+          "status": "not_applicable",
+          "label": "最新净值涨跌",
+          "value_percent": null,
+          "date": "2026-10-08",
+          "previous_date": null,
+          "reason": "货币类收益率不是单位净值涨跌",
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-01",
+        "account_id": "fixture-table-A2",
+        "version_id": "fixture-S1-A:1",
+        "product_id": "fixture-S1-A",
+        "product_name": "样例青禾债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "direction": "purchase",
+        "amount_fen": 10000,
+        "units": "0.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000001",
+        "status": "SETTLED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:01:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-02",
+        "account_id": "fixture-table-A1",
+        "version_id": "fixture-S2-C:1",
+        "product_id": "fixture-S2-C",
+        "product_name": "样例清岚债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "direction": "redeem",
+        "amount_fen": 0,
+        "units": "10.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000002",
+        "status": "PENDING_CASH",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:02:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-03",
+        "account_id": "fixture-table-A2",
+        "version_id": "fixture-S3-C:1",
+        "product_id": "fixture-S3-C",
+        "product_name": "样例远山债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "direction": "redeem",
+        "amount_fen": 0,
+        "units": "10.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000003",
+        "status": "CANCELLED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:03:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-04",
+        "account_id": "fixture-table-A1",
+        "version_id": "fixture-G1-A:1",
+        "product_id": "fixture-G1-A",
+        "product_name": "样例星河混合",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "direction": "purchase",
+        "amount_fen": 10000,
+        "units": "0.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000004",
+        "status": "ACCEPTED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:04:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-05",
+        "account_id": "fixture-table-A2",
+        "version_id": "fixture-G2-A:1",
+        "product_id": "fixture-G2-A",
+        "product_name": "样例云帆权益",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "direction": "purchase",
+        "amount_fen": 10000,
+        "units": "0.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000005",
+        "status": "SETTLED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:05:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-06",
+        "account_id": "fixture-table-A1",
+        "version_id": "fixture-G3-A:1",
+        "product_id": "fixture-G3-A",
+        "product_name": "样例光合指数",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "direction": "redeem",
+        "amount_fen": 0,
+        "units": "10.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000006",
+        "status": "PENDING_CASH",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:06:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-07",
+        "account_id": "fixture-table-A2",
+        "version_id": "fixture-CASH-P:1",
+        "product_id": "fixture-CASH-P",
+        "product_name": "样例活钱产品",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": null,
+        "direction": "purchase",
+        "amount_fen": 10000,
+        "units": "0.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000007",
+        "status": "CANCELLED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:07:00+08:00",
+        "daily_metric": {
+          "status": "not_applicable",
+          "label": "最新净值涨跌",
+          "value_percent": null,
+          "date": "2026-10-08",
+          "previous_date": null,
+          "reason": "货币类收益率不是单位净值涨跌",
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-08",
+        "account_id": "fixture-table-A1",
+        "version_id": "fixture-S1-A:1",
+        "product_id": "fixture-S1-A",
+        "product_name": "样例青禾债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "direction": "purchase",
+        "amount_fen": 10000,
+        "units": "0.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000008",
+        "status": "ACCEPTED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:08:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-09",
+        "account_id": "fixture-table-A2",
+        "version_id": "fixture-S2-C:1",
+        "product_id": "fixture-S2-C",
+        "product_name": "样例清岚债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "direction": "redeem",
+        "amount_fen": 0,
+        "units": "10.0000",
+        "digest": "0000000000000000000000000000000000000000000000000000000000000009",
+        "status": "SETTLED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:09:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-10",
+        "account_id": "fixture-table-A1",
+        "version_id": "fixture-S3-C:1",
+        "product_id": "fixture-S3-C",
+        "product_name": "样例远山债券",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "direction": "redeem",
+        "amount_fen": 0,
+        "units": "10.0000",
+        "digest": "000000000000000000000000000000000000000000000000000000000000000a",
+        "status": "PENDING_CASH",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:10:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      },
+      {
+        "operation_id": "fixture-table-order-11",
+        "account_id": "fixture-table-A2",
+        "version_id": "fixture-G1-A:1",
+        "product_id": "fixture-G1-A",
+        "product_name": "样例星河混合",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "direction": "purchase",
+        "amount_fen": 10000,
+        "units": "0.0000",
+        "digest": "000000000000000000000000000000000000000000000000000000000000000b",
+        "status": "CANCELLED",
+        "pricing_date": "2026-10-12",
+        "confirm_date": "2026-10-13",
+        "cash_date": "2026-10-15",
+        "accepted_at": "2026-10-09T10:11:00+08:00",
+        "daily_metric": {
+          "status": "ok",
+          "label": "最新净值涨跌",
+          "value_percent": "0.5000",
+          "date": "2026-10-08",
+          "previous_date": "2026-09-30",
+          "reason": null,
+          "source": "contract_fixture_only"
+        },
+        "details": {
+          "waiting_reason": null
+        }
+      }
+    ],
+    "receivable_fen": 50000,
+    "realized_pnl_fen": 0,
+    "bank_assets_fen": 941196,
+    "valuation_complete": true,
+    "business_at": "2026-10-09T12:00:00+08:00",
+    "as_of": "2026-10-09T12:00:00+08:00",
+    "context_id": "fixture-f23",
+    "scope": "disposable_simulation"
+  },
+  "cancellation_eligibility": [
+    {
+      "operation_id": "fixture-table-order-00",
+      "eligibility": "ALLOWED",
+      "reason": "样例：截止前可全额撤单",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "version_id": "fixture-CASH-P:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-01",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000001",
+      "version_id": "fixture-S1-A:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-02",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000002",
+      "version_id": "fixture-S2-C:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-03",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000003",
+      "version_id": "fixture-S3-C:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-04",
+      "eligibility": "ALLOWED",
+      "reason": "样例：截止前可全额撤单",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000004",
+      "version_id": "fixture-G1-A:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-05",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000005",
+      "version_id": "fixture-G2-A:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-06",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000006",
+      "version_id": "fixture-G3-A:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-07",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000007",
+      "version_id": "fixture-CASH-P:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-08",
+      "eligibility": "UNKNOWN",
+      "reason": "样例：合同资料不足",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000008",
+      "version_id": "fixture-S1-A:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-09",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "0000000000000000000000000000000000000000000000000000000000000009",
+      "version_id": "fixture-S2-C:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-10",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "000000000000000000000000000000000000000000000000000000000000000a",
+      "version_id": "fixture-S3-C:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    },
+    {
+      "operation_id": "fixture-table-order-11",
+      "eligibility": "DENIED",
+      "reason": "样例：当前状态不可撤",
+      "order_digest": "000000000000000000000000000000000000000000000000000000000000000b",
+      "version_id": "fixture-G1-A:1",
+      "deadline": "2026-10-12T15:00:00+08:00",
+      "consequence": "释放原占用，不增加余额"
+    }
+  ],
+  "product_observations": [
+    {
+      "product_id": "fixture-S1-A",
+      "product_version": 1,
+      "points": [
+        {
+          "date": "2026-09-30",
+          "nav": "1.00606965"
+        },
+        {
+          "date": "2026-10-08",
+          "nav": "1.0111"
+        }
+      ],
+      "value_percent": "0.5000"
+    },
+    {
+      "product_id": "fixture-S2-C",
+      "product_version": 1,
+      "points": [
+        {
+          "date": "2026-09-30",
+          "nav": "1.00606965"
+        },
+        {
+          "date": "2026-10-08",
+          "nav": "1.0111"
+        }
+      ],
+      "value_percent": "0.5000"
+    },
+    {
+      "product_id": "fixture-S3-C",
+      "product_version": 1,
+      "points": [
+        {
+          "date": "2026-09-30",
+          "nav": "1.00606965"
+        },
+        {
+          "date": "2026-10-08",
+          "nav": "1.0111"
+        }
+      ],
+      "value_percent": "0.5000"
+    },
+    {
+      "product_id": "fixture-G1-A",
+      "product_version": 1,
+      "points": [
+        {
+          "date": "2026-09-30",
+          "nav": "1.00606965"
+        },
+        {
+          "date": "2026-10-08",
+          "nav": "1.0111"
+        }
+      ],
+      "value_percent": "0.5000"
+    },
+    {
+      "product_id": "fixture-G2-A",
+      "product_version": 1,
+      "points": [
+        {
+          "date": "2026-09-30",
+          "nav": "1.00606965"
+        },
+        {
+          "date": "2026-10-08",
+          "nav": "1.0111"
+        }
+      ],
+      "value_percent": "0.5000"
+    },
+    {
+      "product_id": "fixture-G3-A",
+      "product_version": 1,
+      "points": [
+        {
+          "date": "2026-09-30",
+          "nav": "1.00606965"
+        },
+        {
+          "date": "2026-10-08",
+          "nav": "1.0111"
+        }
+      ],
+      "value_percent": "0.5000"
+    }
+  ]
+}

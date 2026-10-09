@@ -48,6 +48,8 @@ export interface Product {
 export interface Order {
   operation_id: string; account_id: string; version_id: string; direction: string;
   amount_fen: number; units: string; digest: string; status: string; pricing_date: string;
+  accepted_at?: string; product_id?: string; product_name?: string; product_version?: number;
+  disclosure_version?: number; share_class?: string | null; daily_metric?: DailyMetric;
   confirm_date: string; cash_date: string; details: { waiting_reason?: string | null;
     verification?: { method: string; simulated: boolean; replacement_required: boolean };
     actual_nav?: string; actual?: { units?: string; fee_fen: number; cash_fen?: number; realized_pnl_fen?: number } };
@@ -58,10 +60,23 @@ export interface Assets {
   cash: { account_id: string; account_type: string; balance_fen: number; held_fen: number; available_fen: number }[];
   lots: { lot_id: string; product_id: string; product_name: string; account_id: string;
     units: string; redeemable_units: string; locked_units: string; held_units: string;
-    cost_fen: number; market_value_fen: number | null; unrealized_pnl_fen: number | null; nav_date: string | null }[];
+    cost_fen: number; market_value_fen: number | null; unrealized_pnl_fen: number | null; nav_date: string | null;
+    version_id?: string; product_version?: number; disclosure_version?: number; share_class?: string | null;
+    nav?: string | null; acquired_date?: string; unlock_date?: string; daily_metric?: DailyMetric }[];
   orders: Order[]; receivable_fen: number; realized_pnl_fen: number; bank_assets_fen: number; business_at: string;
-  as_of?: string; context_id?: string; scope?: 'ordinary' | 'disposable_simulation';
+  as_of?: string; context_id?: string; scope?: 'ordinary' | 'disposable_simulation'; valuation_complete?: boolean;
 }
+export interface DailyMetric { status: 'ok' | 'unavailable' | 'not_applicable'; label: string; value_percent: string | null;
+  date: string | null; previous_date: string | null; reason: string | null; source: string }
+export interface CancellationEligibility { operation_id: string; eligibility: 'ALLOWED' | 'DENIED' | 'UNKNOWN'; reason: string;
+  order_digest: string; version_id: string; deadline: string | null; consequence: string }
+export interface OrderRow extends Order { object_type: 'orders'; product_id: string; product_version: number; product_name: string }
+export interface PositionRow { object_type: 'positions'; position_key: string; account_id: string; product_id: string; product_version: number;
+  product_name: string; disclosure_version: number | null; share_class: string | null; lot_ids: string[]; lots: Assets['lots'];
+  units: string; redeemable_units: string; held_units: string; locked_units: string; market_value_fen: number | null;
+  unrealized_pnl_fen: number | null; cost_fen: number; total_ratio: string | null; nav: string | null; nav_date: string | null; daily_metric: DailyMetric | null }
+export interface OrderTableData { object_type: 'orders'; scope_key: string; rows: OrderRow[] }
+export interface PositionTableData { object_type: 'positions'; scope_key: string; rows: PositionRow[] }
 export interface Assessment { assessment_id: string; capacity_level: number; purchase_allowed: boolean; confirmed: boolean; expires_at: string }
 export interface Questionnaire { version: string; profile_version: number; questions: { id: string; title: string; options: string[] }[] }
 export interface Preview { authorization_id: string; authorization_status: string; command: Command; digest: string;

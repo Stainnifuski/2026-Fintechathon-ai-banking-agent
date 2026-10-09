@@ -6,7 +6,7 @@ from decimal import Decimal
 import hashlib
 from uuid import uuid4
 
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain.wealth import CALENDAR_VERSION, TZ, advance_business, pricing_date, purchase, redeem, units
@@ -481,8 +481,11 @@ async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
     from ...models.wealth import WealthTaskORM
     await lock_profile(db, user_id)
     initial = await owned_order(db, user_id, operation_id)
+    current_facts = await assets(db, user_id)
+    if not any(row['operation_id']==operation_id for row in current_facts['orders']):
+        raise BankError('订单不属于当前资产范围','ACCOUNT_CONTEXT_MISMATCH',409)
     controlled = await db.scalar(select(WealthTaskORM.task_id).where(WealthTaskORM.user_id==user_id,
-        WealthTaskORM.account_id==initial.account_id,WealthTaskORM.control_mode!='AGENT',
+        WealthTaskORM.account_id==initial.account_id,or_(WealthTaskORM.control_mode!='AGENT',WealthTaskORM.status=='PAUSED'),
         WealthTaskORM.status.not_in({'COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'})))
     if controlled:
         raise BankError('人工接管期间禁止通过旧入口撤单', 'TASK_WRITE_BLOCKED', 409)
@@ -652,7 +655,10 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
         weights={}
         for lot in lots: weights[lot['product_id']]=weights.get(lot['product_id'],0)+lot['market_value_fen']
         hypothesis=hypothetical_portfolio(await catalog(db,context.dataset_key),weights,now.astimezone(TZ).date().isoformat())
-    return {"cash": cash, "lots": lots, "orders": [order_view(row) for row in orders],
+    order_rows = [order_view(row) for row in orders]
+    from .wealth_table_facts import enrich
+    await enrich(db, lots, order_rows, now)
+    return {"cash": cash, "lots": lots, "orders": order_rows,
         'concentration':concentration_view,'historical_hypothesis':hypothesis,'actual_return_unavailable_reason':'NO_VERIFIED_COMPLETE_CASHFLOW_RETURN_SERIES',
         "receivable_fen": receivable, "realized_pnl_fen": realized,
         "bank_assets_fen": sum(a["balance_fen"] for a in cash if a["account_type"] != "credit") + receivable
