@@ -1,0 +1,31 @@
+{
+  "data_source":"contract_fixture_only",
+  "notice":"收益界面专用虚构录制，不是登录账户收益，不与F23双表金额联动，不产生交易；真实账务重建尚待接入。",
+  "as_of":"2026-10-09T12:00:00+08:00",
+  "coverage_start":"2026-10-07",
+  "dates":["2026-10-07","2026-10-08","2026-10-09"],
+  "scenarios":[
+    {"id":"F23","label":"F23 · 整体与具体份额贡献","notice":"七只产品及一只已赎回产品。各份额贡献独立录制，累计含已赎回收益；只覆盖10月7日至9日。",
+      "products":[
+        {"product_id":"fixture-CASH-P","product_name":"样例活钱产品","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]},
+        {"product_id":"fixture-S1-A","product_name":"样例青禾债券 · A类","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]},
+        {"product_id":"fixture-S2-C","product_name":"样例清岚债券 · C类","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]},
+        {"product_id":"fixture-S3-C","product_name":"样例远山债券 · C类","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]},
+        {"product_id":"fixture-G1-A","product_name":"样例星河混合 · A类","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]},
+        {"product_id":"fixture-G2-A","product_name":"样例云帆权益 · A类","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]},
+        {"product_id":"fixture-G3-A","product_name":"样例光合指数 · A类","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]},
+        {"product_id":"fixture-closed-C","product_name":"样例已赎回基金 · C类","pnl":[0,250,0],"realized":[0,250,250],"unrealized":[0,0,0],"fees":[0,0,0]}
+      ]},
+    {"id":"F20","label":"F20 · 追加本金不算收益","notice":"期初投资价值100000分，10月8日投入50000分，期末150000分，无费用：利润0。这里录制预期结果，并非真实银行计算验收。",
+      "products":[{"product_id":"fixture-S1-A","product_name":"样例青禾债券 · A类","pnl":[0,0,0],"realized":[0,0,0],"unrealized":[0,0,0],"fees":[0,0,0]}]},
+    {"id":"F21","label":"F21 · 赎回应收与到账","notice":"10月7日从持仓100000分转为已定价应收110000分，利润10000分；10月8日到账不新增利润，累计仍10000分。已赎回贡献保留。",
+      "products":[{"product_id":"fixture-S3-C","product_name":"样例远山债券 · C类（已赎回）","pnl":[10000,0,0],"realized":[10000,10000,10000],"unrealized":[0,0,0],"fees":[0,0,0]}]},
+    {"id":"F22","label":"F22 · 已计费用不重复扣","notice":"10月7日申购费300分已反映在实际投入与市值中；净值也已含持续费用。三日净利润合计800分，费用明细不再从收益扣除。",
+      "products":[{"product_id":"fixture-G1-A","product_name":"样例星河混合 · A类","pnl":[-300,1000,100],"realized":[0,0,0],"unrealized":[-300,700,800],"fees":[300,0,0]}]},
+    {"id":"F24","label":"F24 · 缺估值／成本","notice":"一只产品中间日缺估值且缺历史成本；对应点为null、累计无法完整计算，不填假零。其他产品的已知贡献仍可查看。",
+      "products":[
+        {"product_id":"fixture-S2-C","product_name":"样例清岚债券 · C类","pnl":[null,null,null],"realized":[null,null,null],"unrealized":[null,null,null],"fees":[0,null,0]},
+        {"product_id":"fixture-G1-A","product_name":"样例星河混合 · A类","pnl":[0,123,0],"realized":[0,0,0],"unrealized":[0,123,123],"fees":[0,0,0]}
+      ]}
+  ]
+}

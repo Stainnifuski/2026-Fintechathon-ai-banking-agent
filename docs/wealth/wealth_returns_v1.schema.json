@@ -1,0 +1,347 @@
+{
+  "$defs": {
+    "ProductReturn": {
+      "additionalProperties": false,
+      "properties": {
+        "product_id": {
+          "title": "Product Id",
+          "type": "string"
+        },
+        "product_name": {
+          "title": "Product Name",
+          "type": "string"
+        },
+        "period_pnl_fen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Period Pnl Fen"
+        },
+        "cumulative_pnl_fen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cumulative Pnl Fen"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "product_id",
+        "product_name",
+        "period_pnl_fen",
+        "cumulative_pnl_fen",
+        "status"
+      ],
+      "title": "ProductReturn",
+      "type": "object"
+    },
+    "ReturnPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "pnl_fen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pnl Fen"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "period_start",
+        "period_end",
+        "pnl_fen",
+        "status"
+      ],
+      "title": "ReturnPoint",
+      "type": "object"
+    },
+    "ReturnSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "period_pnl_fen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Period Pnl Fen"
+        },
+        "cumulative_pnl_fen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cumulative Pnl Fen"
+        },
+        "realized_pnl_fen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Realized Pnl Fen"
+        },
+        "unrealized_pnl_fen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unrealized Pnl Fen"
+        },
+        "fees_fen": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fees Fen"
+        }
+      },
+      "required": [
+        "period_pnl_fen",
+        "cumulative_pnl_fen",
+        "realized_pnl_fen",
+        "unrealized_pnl_fen",
+        "fees_fen"
+      ],
+      "title": "ReturnSummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "wealth-returns-v1",
+      "default": "wealth-returns-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "asset_scope_id": {
+      "title": "Asset Scope Id",
+      "type": "string"
+    },
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "all",
+        "product"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "product_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Product Id"
+    },
+    "period": {
+      "enum": [
+        "day",
+        "month",
+        "year",
+        "cumulative"
+      ],
+      "title": "Period",
+      "type": "string"
+    },
+    "start_date": {
+      "format": "date",
+      "title": "Start Date",
+      "type": "string"
+    },
+    "end_date": {
+      "format": "date",
+      "title": "End Date",
+      "type": "string"
+    },
+    "as_of": {
+      "format": "date-time",
+      "title": "As Of",
+      "type": "string"
+    },
+    "timezone": {
+      "const": "Asia/Shanghai",
+      "default": "Asia/Shanghai",
+      "title": "Timezone",
+      "type": "string"
+    },
+    "coverage_start": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Coverage Start"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial",
+        "unavailable"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "missing_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Fields",
+      "type": "array"
+    },
+    "summary": {
+      "$ref": "#/$defs/ReturnSummary"
+    },
+    "points": {
+      "items": {
+        "$ref": "#/$defs/ReturnPoint"
+      },
+      "title": "Points",
+      "type": "array"
+    },
+    "products": {
+      "items": {
+        "$ref": "#/$defs/ProductReturn"
+      },
+      "title": "Products",
+      "type": "array"
+    },
+    "data_source": {
+      "title": "Data Source",
+      "type": "string"
+    },
+    "valuation_as_of": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Valuation As Of"
+    },
+    "formula_version": {
+      "title": "Formula Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset_scope_id",
+    "snapshot_id",
+    "scope",
+    "product_id",
+    "period",
+    "start_date",
+    "end_date",
+    "as_of",
+    "coverage_start",
+    "status",
+    "missing_fields",
+    "summary",
+    "points",
+    "products",
+    "data_source",
+    "valuation_as_of",
+    "formula_version"
+  ],
+  "title": "WealthReturns",
+  "type": "object"
+}

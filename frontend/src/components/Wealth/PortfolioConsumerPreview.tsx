@@ -16,11 +16,15 @@ import AllocationReview from './AllocationReview';
 import TableWorkbench from './TableWorkbench';
 import LiveTablePanel from './LiveTablePanel';
 import {recordedTableAssets,recordedTableEligibility,recordedTableDetail} from './FixtureTableProvider';
+import {recordedReturns,returnsScenarios,returnsPreviewNotice,returnsScenarioNotice} from './FixtureReturnsProvider';
+import type {ReturnsPreviewSource} from './ReturnsView';
 import './consumerPreview.css';
 
 const bucketLabels: Record<string, string> = { cash_management: '活钱', stable: '稳健', growth: '进取' };
 const stages = ['读取资产与评估', '查看配置与候选', '选择产品与比例', '核对差额与预览', '本人确认与验证', '订单与持仓'];
 const percent = (ratio: string) => (Number(ratio) * 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+
+const returnsPreview:ReturnsPreviewSource={load:async(query,scenario)=>recordedReturns(query,scenario),scenarios:returnsScenarios,notice:returnsPreviewNotice,scenarioNotice:returnsScenarioNotice,defaultDate:'2026-10-09'};
 
 interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string }
 
@@ -47,7 +51,7 @@ export default function PortfolioConsumerPreview(props: Props) {
   const loadSeven = () => {setScenario('F11');setGroups(recordedGroups());setProductSelection(recordedF11Selection());setPanel('products');setReviewEpoch(value=>value+1);setReviewing(true);};
 
   return <section className="consumer-preview" aria-label="理财手动流程开发预览">
-    <div className="consumer-fixture-banner"><strong>B3b · 独立开发预览</strong><span>{panel === 'manual'||tablePanel&&tableSource==='bank' ? '当前入口使用登录账户的模拟银行记录；交易仍须本人确认与验证。' : '当前数字与候选为虚构契约样例，与登录账户资金无关；样例不产生订单。'}</span><a href="/">返回原有银行工作台</a></div>
+    <div className="consumer-fixture-banner"><strong>B3d · 独立开发预览</strong><span>{panel === 'manual'||tablePanel&&tableSource==='bank' ? '当前入口使用登录账户的模拟银行记录；交易仍须本人确认与验证。' : '当前数字与候选为虚构契约样例，与登录账户资金无关；样例不产生订单。'}</span><a href="/">返回原有银行工作台</a></div>
     <header className="consumer-heading"><p className="eyebrow">理财 · 手动操作流程</p><h1>先看清资产，再决定怎么安排。</h1><p>资产、当前方案和操作入口保持可见。每一步完成后，再明确进入下一步。</p></header>
     <div className="consumer-columns">
       <main>
@@ -70,12 +74,12 @@ export default function PortfolioConsumerPreview(props: Props) {
           </> : <><h2>订单与持仓查询</h2><div className="table-source-controls"><button className="secondary" aria-pressed={tableSource==='fixture'} onClick={()=>setTableSource('fixture')}>查看 F23 双表样例</button><button className="secondary" aria-pressed={tableSource==='bank'} onClick={()=>setTableSource('bank')}>查询登录账户模拟银行</button></div><p>{tableSource==='fixture'?'F23：12笔虚构订单、9行聚合持仓，用于分页、多选、详情和操作入口核对；不会调用银行交易。':'以下记录属于当前登录账户；无记录是正常状态，不会为演示创建订单。'}</p></>}
         </section>
         <section className="consumer-card" hidden={!tablePanel}>
-          <div hidden={tableSource!=='fixture'}><TableWorkbench assets={tableAssets} scopeKey={`fixture-f23:${snapshot.asset_scope_id}`} panel={panel==='positions'?'positions':'orders'} onActivity={()=>{}} loadEligibility={recordedTableEligibility} loadDetail={recordedTableDetail} fixtureOnly/></div>
+          <div hidden={tableSource!=='fixture'}><TableWorkbench assets={tableAssets} scopeKey={`fixture-f23:${snapshot.asset_scope_id}`} panel={panel==='positions'?'positions':'orders'} onActivity={()=>{}} loadEligibility={recordedTableEligibility} loadDetail={recordedTableDetail} fixtureOnly returnsPreview={returnsPreview}/></div>
           {tableSource==='bank'&&<LiveTablePanel userId={props.userId} revision={props.revision} onActivity={props.onActivity} panel={panel==='positions'?'positions':'orders'} active={tablePanel}/>}
         </section>
         {reviewing && <section className="consumer-card" hidden={panel!=='products'}><AllocationReview key={`${snapshot.asset_scope_id}:${reviewEpoch}:${selection.items.map(i=>i.share.product_id).join(',')}`} plan={scenario==='F11'?recordedF11Plan():fixture.plan} snapshot={snapshot} selection={selection} onRevise={recordedRevision} onPrepare={recordedPrepare} fixtureOnly /></section>}
       </main>
-      <aside className="consumer-sidebar"><section className="consumer-card"><h2>当前步骤</h2><ol className="consumer-steps">{stages.map((label, i) => <li key={label}><span>{i + 1}</span><div><strong>{label}</strong><small>{i === 0 ? 'B0：只读样例已可展示' : i === 1 ? 'B1：候选与份额选择已接入' : i === 2 ? `已选 ${selection.items.length} 个家族；B2 可编辑比例` : i===3 ? 'B2：差额与执行适配已接入' : i===4 ? '七笔授权已通过隔离银行测试；样例不下单' : 'B3a：独立双表已接入；收益与市值赎回待后续阶段'}</small></div></li>)}</ol></section>
+      <aside className="consumer-sidebar"><section className="consumer-card"><h2>当前步骤</h2><ol className="consumer-steps">{stages.map((label, i) => <li key={label}><span>{i + 1}</span><div><strong>{label}</strong><small>{i === 0 ? 'B0：只读样例已可展示' : i === 1 ? 'B1：候选与份额选择已接入' : i === 2 ? `已选 ${selection.items.length} 个家族；B2 可编辑比例` : i===3 ? 'B2：差额与执行适配已接入' : i===4 ? '七笔授权已通过隔离银行测试；样例不下单' : 'B3：双表、总资产、账单边界已接入；收益样例可试用，真实计算待接入'}</small></div></li>)}</ol></section>
         <section className="consumer-card"><h2>资料与操作说明</h2><p>正式操作仍需本人风险评估、本人确认和验证码。这里没有代你评估或授权。</p><p>订单“已受理”不等于“已结算”。预览不冻结，受理才占用，撤单释放原占用。</p>{panel === 'manual' ? <p className="consumer-note">当前使用现有模拟银行产品和本人评估。手选产品不经过 LLM；下单金额不来自虚构样例。</p> : <><label htmlFor="consumer-scenario">检查不同资产场景</label><select id="consumer-scenario" value={scenario} onChange={event => changeScenario(event.target.value as typeof scenario)}><option value="F01">F01 · 空持仓整体配置</option><option value="F11">F11 · 七产品整体目标</option><option value="F18">F18 · 两账户、冻结与应收</option><option value="F10">F10 · 持仓估值缺失</option></select><p className="consumer-note">切换资产范围会清空产品选择；样例不向后端发送交易或模型请求。</p></>}</section>
       </aside>
     </div>
