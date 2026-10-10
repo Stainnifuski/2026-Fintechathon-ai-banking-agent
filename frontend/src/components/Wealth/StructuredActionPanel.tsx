@@ -15,6 +15,10 @@ import {WealthActionSession} from '../../services/wealthActionSession';
 import type {WealthReturns} from '../../services/wealthReturns';
 import {returnStatus,returnMoney} from '../../services/wealthReturns';
 import {beijingTime} from '../../utils/time';
+import ProductPicker from './ProductPicker';
+import {emptyProductSelection} from './productSelection';
+import type {ProductSelectionState} from './productSelection';
+import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup} from '../../services/wealthCandidates';
 import './structuredActions.css';
 type ResultSlot='planning'|'records'|'returns'|'product'|'redemption'|'cancellation'|'comparison';
 const resultSlot=(action:ActionName):ResultSlot=>action==='list_orders'||action==='list_positions'?'records':action==='show_wealth_returns'?'returns':action==='show_product_detail'?'product':action==='preview_redemption'?'redemption':action==='preview_order_cancellation'?'cancellation':action==='compare_products'?'comparison':'planning';
@@ -23,6 +27,8 @@ interface Page {rows:(w.OrderRow|w.PositionRow)[];page:number;pages:number;total
 interface Converted {preview:w.Preview;resolved_units:string;holding_ratio:string;estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;notice:string}
 export default function StructuredActionPanel({userId,revision,onActivity}:{userId:string;revision:number;onActivity:()=>void}){
   const [facts,setFacts]=useState<{owner:string;assets:w.Assets;products:w.Product[];tasks:w.WealthTask[]}|null>(null);
+  const [candidateGroups,setCandidateGroups]=useState<w.CandidateGroup[]>([]);
+  const [candidateSelection,setCandidateSelection]=useState<ProductSelectionState>(emptyProductSelection(''));
   const [results,setResults]=useState<Partial<Record<ResultSlot,ActionResult>>>({});
   const [pending,setPending]=useState<ResultSlot|null>(null);const [reading,setReading]=useState(true);const [reload,setReload]=useState(0);const busy=pending!==null||reading;
   const [cancelView,setCancelView]=useState<CancellationRow[]|null>(null);const [rowView,setRowView]=useState<w.OrderRow|w.PositionRow|null>(null);const [activityNotice,setActivityNotice]=useState('');
@@ -44,7 +50,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   },[selected,inputMode,value,revision,reload]);
   useEffect(()=>{let active=true;setReading(true);setCancelView(null);setRowView(null);setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<w.Product[]>('/products'),w.get<{items:w.WealthTask[]}>('/tasks')]).then(([assets,products,tasks])=>{
     if(!active)return;
-    if(scope.current!==assets.context_id){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setSelected({type:'positions',ids:[]});setTarget('');setConfirm(null);recordRows.current.clear();}
+    if(scope.current!==assets.context_id){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setSelected({type:'positions',ids:[]});setTarget('');setConfirm(null);recordRows.current.clear();setCandidateGroups([]);setCandidateSelection(emptyProductSelection(assets.context_id??'legacy-v1'));}
     client.current.setContext(assets.context_id??'legacy-v1');
     setFacts({owner:userId,assets,products,tasks:tasks.items});setDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(assets.business_at)));
   }).catch(()=>{if(active){client.current.setContext(null);setDetailView(null);setCompareView(false);setFacts(null);setError('登录账户资料读取失败，请重新登录或刷新。');}}).finally(()=>{if(active)setReading(false);});return()=>{active=false;};},[userId,revision,reload]);
@@ -59,9 +65,14 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     const requestNumber=++latestRequest.current;setPending(slot);setActionErrors(current=>({...current,[slot]:''}));
     try{const response=await client.current.request(action,params,selection);
       if(scope.current!==(ready.assets.context_id??'legacy-v1'))return;
+      if(action==='recommend_products'&&response.status==='ok'){
+        const group=readCandidateGroup(response.data);assertCurrentCandidates(group,ready.products);
+        if(!sameCandidateFilter(group.filter,params.filter))throw new Error('推荐结果与当前筛选条件不一致，请重新查询。');
+        setCandidateGroups(previous=>params.cursor?replaceCandidateGroup(previous,group):[group]);
+      }
       if(response.status==='ok'&&(action==='list_orders'||action==='list_positions'))for(const row of (response.data as Page).rows)recordRows.current.set(row.object_type==='orders'?(row as w.OrderRow).operation_id:(row as w.PositionRow).position_key,row);
       setResults(previous=>({...previous,[slot]:response}));return response;
-    }catch(reason){if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??'操作失败，请刷新并核对原请求。');}finally{if(requestNumber===latestRequest.current)setPending(null);}
+    }catch(reason){if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??(reason instanceof Error?reason.message:'操作失败，请刷新并核对原请求。'));}finally{if(requestNumber===latestRequest.current)setPending(null);}
   },[ready,reading]);
   const loadDetail=useCallback<ProductDetailLoader>(async(id,period,version)=>{
     const response=await run('show_product_detail',{product_id:id,product_version:version,period},version?{object_type:'products',ids:[`${id}:${version}`]}:undefined);
@@ -118,6 +129,9 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       {mode==='category'&&<label>产品类别<select value={category} onChange={e=>setCategory(e.target.value)}><option value="quick_redeem">可快速赎回</option><option value="bank_wealth">银行理财</option><option value="money_fund">货币基金</option><option value="bond_fund">债券基金</option><option value="mixed_fund">混合基金</option><option value="equity_fund">权益基金</option></select></label>}
       {mode==='theme'&&<label>产品主题<select value={theme} onChange={e=>setTheme(e.target.value)}><option value="high_dividend">高股息/红利</option></select></label>}
       <button className="secondary" onClick={()=>recommend({mode,...(mode==='category'?{category}:mode==='theme'?{theme_key:theme}:{})})}>按条件推荐</button>{renderResult('planning')}
+      {candidateGroups.length>0&&ready&&<><ProductPicker groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={setCandidateSelection} busy={busy}
+        onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:ids})}
+        loadDetail={loadDetail} loadComparison={loadComparison}/><p className="consumer-note">勾选与换批只保留待校验产品，不会生成订单。整体方案创建、比例修订与交易预览的统一接入尚待完成；已有流程仍可从原入口试用。</p></>}
     </fieldset>
     <fieldset disabled={busy||!ready}><legend>订单与持仓</legend><label>每页行数<select value={pageSize} onChange={e=>setPageSize(Number(e.target.value))}><option value={5}>5行</option><option value={10}>10行</option><option value={20}>20行</option></select></label><button onClick={()=>list('orders')}>查询我的订单</button><button onClick={()=>list('positions')}>查询我的持仓</button>{renderResult('records')}</fieldset>
     <fieldset disabled={busy||!ready}><legend>理财收益</legend>

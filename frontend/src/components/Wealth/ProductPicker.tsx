@@ -17,13 +17,13 @@ interface Props {
   groups: CandidateGroup[]; scopeKey: string; selection: ProductSelectionState;
   onSelectionChange: (selection: ProductSelectionState) => void;
   onRefreshGroup: (group: CandidateGroup, selectedFamilyIds: string[]) => void;
-  onContinue: (selection: ProductSelectionState) => void;
+  onContinue?: (selection: ProductSelectionState) => void;
   loadDetail?: ProductDetailLoader; loadComparison?: ComparisonLoader;
   busy?: boolean; error?: string;
 }
 export default function ProductPicker({ groups, scopeKey, selection, onSelectionChange, onRefreshGroup, onContinue, loadDetail, loadComparison, busy = false, error }: Props) {
   const state = selectionForScope(selection, scopeKey);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<{id:string;version:number} | null>(null);
   const [comparing, setComparing] = useState(false);
   useEffect(() => { setDetailId(null); setComparing(false); }, [scopeKey]);
   return <section className="product-picker" aria-label="产品选择">
@@ -47,7 +47,7 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
               <p className="picker-fees">起购 {money(share.min_amount_fen)} · 申购 {feeRate(share.fees.purchase_fee_rate)} · 销售服务 {feeRate(share.fees.sales_service_fee_rate)}</p>
               <p className="consumer-note">赎回费：{share.fees.redemption_fee_rules || '规则未提供'}</p>
               {candidate.share_classes.some(item => item.share_class === 'A' || item.share_class === 'C') && <details className="picker-class-note"><summary>A/C 费用说明</summary><p>{classExplanation}</p></details>}
-              <div className="picker-actions"><button className="secondary" onClick={() => setDetailId(share.product_id)}>查看{candidate.name}详情</button>{validShares(candidate).filter(item => item.product_id !== share.product_id && item.share_class != null).map(item => <button className="secondary" key={item.product_id} disabled={busy} onClick={() => onSelectionChange(changeShare(state, candidate, item.product_id))}>{item.share_class === 'C' ? '切换C类' : '切回A类'}</button>)}</div>
+              <div className="picker-actions"><button className="secondary" disabled={busy} onClick={() => setDetailId({id:share.product_id,version:share.product_version})}>查看{candidate.name}详情</button>{validShares(candidate).filter(item => item.product_id !== share.product_id && item.share_class != null).map(item => <button className="secondary" key={item.product_id} disabled={busy} onClick={() => onSelectionChange(changeShare(state, candidate, item.product_id))}>{item.share_class === 'C' ? '切换C类' : '切回A类'}</button>)}</div>
             </>}
           </article>;
         })}</div>}
@@ -55,9 +55,9 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
     })}
     <section className="picker-selection" aria-label="已选产品"><div className="consumer-card-head"><h3>已选产品 · 换批后保留</h3><button className="secondary" disabled={state.items.length < 2} onClick={() => setComparing(true)}>比较已选产品</button></div>
       {!state.items.length ? <p>勾选产品后会显示在这里；无需先打开详情或比较。</p> : <ul>{state.items.map(({ candidate, share }) => <li key={candidate.family_id}><span><strong>{candidate.name}{share.share_class ? ` · ${share.share_class}类` : ''}</strong><small>{bucketNames[candidate.bucket]} · {share.product_id} · v{share.product_version}</small></span><button className="secondary" onClick={() => onSelectionChange(toggleProduct(state, candidate))}>移除{candidate.name}</button></li>)}</ul>}
-      <button disabled={busy || !state.items.length} onClick={() => onContinue(state)}>继续核对所选产品</button>
+      {onContinue && <button disabled={busy || !state.items.length} onClick={() => onContinue(state)}>继续核对所选产品</button>}
     </section>
-    {detailId && <ProductDetail productId={detailId} onClose={() => setDetailId(null)} loadDetail={loadDetail} />}
+    {detailId && <ProductDetail productId={detailId.id} productVersion={detailId.version} onClose={() => setDetailId(null)} loadDetail={loadDetail} />}
     {comparing && <ProductComparison products={state.items.map(item => ({ product_id: item.share.product_id, name: `${item.candidate.name}${item.share.share_class ? ' · '+item.share.share_class+'类' : ''}` }))} onClose={() => setComparing(false)} loadComparison={loadComparison} />}
   </section>;
 }
