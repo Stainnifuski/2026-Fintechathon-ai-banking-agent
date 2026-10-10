@@ -22,6 +22,22 @@ def _validate_messages(messages: list[dict[str, Any]]) -> None:
         raise LLMError("MODEL_REQUEST_INVALID")
 
 
+def _validate_tool_calls(calls: Any, code: str) -> None:
+    if not isinstance(calls, list) or not 1 <= len(calls) <= 4:
+        raise LLMError(code)
+    ids = set()
+    for call in calls:
+        if not isinstance(call, dict):
+            raise LLMError(code)
+        function = call.get("function")
+        if (call.get("type") != "function" or not isinstance(call.get("id"), str)
+                or not call["id"] or call["id"] in ids or not isinstance(function, dict)
+                or not isinstance(function.get("name"), str)
+                or not isinstance(function.get("arguments"), str)):
+            raise LLMError(code)
+        ids.add(call["id"])
+
+
 @dataclass(frozen=True)
 class LLMResult(Generic[T]):
     data: T
@@ -89,11 +105,29 @@ class LLMService:
     async def _generate(
         self, messages: list[dict[str, Any]], *, structured: bool,
         max_tokens: int | None, temperature: float | None,
-    ) -> LLMResult[str]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> LLMResult[Any]:
         if get_mode() == "offline":
             raise LLMError("MODEL_DISABLED")
         settings = get_settings()
-        _validate_messages(messages)
+        if tools is None:
+            _validate_messages(messages)
+        else:
+            if (not isinstance(messages, list) or not messages
+                    or not isinstance(tools, list) or not tools
+                    or any(not isinstance(m, dict) for m in messages)
+                    or any(not isinstance(t, dict) or t.get("type") != "function"
+                           or not isinstance(t.get("function"), dict) for t in tools)):
+                raise LLMError("MODEL_REQUEST_INVALID")
+            for message in messages:
+                role = message.get("role")
+                if role == "tool":
+                    if not isinstance(message.get("content"), str) or not message.get("tool_call_id"):
+                        raise LLMError("MODEL_REQUEST_INVALID")
+                elif role == "assistant" and message.get("tool_calls"):
+                    _validate_tool_calls(message["tool_calls"], "MODEL_REQUEST_INVALID")
+                else:
+                    _validate_messages([message])
         if (max_tokens is not None and (type(max_tokens) is not int or max_tokens < 1)
                 or temperature is not None and (type(temperature) not in {int, float}
                                                 or not 0 <= temperature <= 2)):
@@ -103,6 +137,9 @@ class LLMService:
             "temperature": settings.temperature if temperature is None else temperature,
             "max_tokens": settings.max_tokens if max_tokens is None else min(max_tokens, settings.max_tokens),
         }
+        if tools is not None:
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
         if structured:
             body["response_format"] = {"type": "json_object"}
         if settings.provider == "deepseek":
@@ -124,11 +161,22 @@ class LLMService:
                 raise LLMError("MODEL_HTTP_" + str(response.status_code))
             payload = response.json()
             choice = payload["choices"][0]
-            if choice.get("finish_reason") not in {None, "stop"}:
+            if choice.get("finish_reason") not in ({None, "stop", "tool_calls"} if tools is not None else {None, "stop"}):
                 raise LLMError("MODEL_OUTPUT_INCOMPLETE")
-            content = choice["message"]["content"]
-            if not isinstance(content, str) or not content.strip():
+            message = choice["message"]
+            content = message.get("content")
+            calls = message.get("tool_calls") if tools is not None else None
+            if tools is not None and choice.get("finish_reason") == "tool_calls" and not calls:
                 raise LLMError("MODEL_RESPONSE_INVALID")
+            if calls:
+                _validate_tool_calls(calls, "MODEL_RESPONSE_INVALID")
+                if content is not None and not isinstance(content, str):
+                    raise LLMError("MODEL_RESPONSE_INVALID")
+            elif not isinstance(content, str) or not content.strip():
+                raise LLMError("MODEL_RESPONSE_INVALID")
+            data = {"role": "assistant", "content": content}
+            if calls:
+                data["tool_calls"] = calls
             # 仅保留数值 token 统计，避免服务商扩展字段泄露输入或凭据。
             usage = payload.get("usage")
             if not isinstance(usage, dict):
@@ -136,7 +184,7 @@ class LLMService:
             usage = {key: value for key, value in usage.items()
                      if key in {"prompt_tokens", "completion_tokens", "total_tokens"}
                      and type(value) is int and value >= 0}
-            return LLMResult(content, {"provider": settings.provider, "model": settings.model,
+            return LLMResult(data if tools is not None else content, {"provider": settings.provider, "model": settings.model,
                                        "usage": usage, "live": True})
         except LLMError:
             raise
@@ -150,6 +198,14 @@ class LLMService:
             self._active -= 1
             if self._active == 0:
                 idle.set()
+
+    async def generate_with_tools(
+        self, *, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+        max_tokens: int = 800,
+    ) -> LLMResult[dict[str, Any]]:
+        """返回 assistant 消息，保留原生 tool_calls 供 Agent 回传。"""
+        return await self._generate(messages, structured=False, tools=tools,
+                                    max_tokens=max_tokens, temperature=0)
 
     async def generate_text(
         self, *, messages: list[dict[str, Any]], max_tokens: int | None = None,

@@ -1,6 +1,6 @@
 # 统一 LLM 配置与开发接口
 
-转账理解、账单问答、理财多轮理解及知识解释共用 `backend/app/services/ai/llm/`。业务模块不再自行读取密钥、设置服务地址或发模型 HTTP 请求。
+NOVA工具调用、转账理解、账单问答、理财多轮理解及知识解释共用 `backend/app/services/ai/llm/`。业务模块不再自行读取密钥、设置服务地址或发模型 HTTP 请求。
 
 ## 用户配置
 
@@ -88,6 +88,10 @@ text = result.data
 上述示例位于异步函数内。业务模块通过 `get_mode()` 判断是否走自己的离线实现。`result.evidence` 仅包含 provider、model、白名单整数 token 统计和 live 标记，不保存输入、凭据或服务商原始响应。Agent 的源码导入入口沿用现有 backend 包；Docker 后端内使用 `app.services.ai.llm` 或相对导入，避免重复导入两套客户端。
 
 统一接口负责通信、并发、总超时、JSON 解析和结构校验；业务仍负责提示词、最小必要上下文、金额原文、产品引用及事实一致性校验。转账不发送银行凭据、余额或历史流水；账单报告仍由服务端统计；理财保留原有最小上下文和来源校验。
+
+## NOVA 原生工具调用
+
+`llm.generate_with_tools(messages=messages, tools=tools)` 返回 assistant 消息字典（content、可选 tool_calls），支持工具调用响应和 role=tool 结果回传。新接口沿用统一连接池与配置，不改变 generate_text / generate_structured 的调用契约。模型服务需支持兼容 Chat Completions 的原生工具调用；不支持时返回模型错误。NOVA 的工具执行白名单、循环上限和会话行为见 [时间查询契约](../contracts/NOVA时间查询_API_v0.1.md)。
 
 ## 错误及验证
 

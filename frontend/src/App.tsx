@@ -1,6 +1,7 @@
 import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 import BeijingClock from './components/BeijingClock';
+import NovaChat from './components/NovaChat';
 import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
 
@@ -578,7 +579,7 @@ function App() {
         </div>
       </div>
     </div>
-    {agentOpen && <div className="agent-scrim" onClick={() => setAgentOpen(false)}><aside className="agent-drawer" onClick={event => event.stopPropagation()}><div className="agent-head"><span className="agent-orb">✦</span><div><strong>NOVA</strong><small>跨场景助手 · 视觉原型</small></div><button className="icon-button" onClick={() => setAgentOpen(false)}>×</button></div><div className="agent-body"><p className="agent-greeting">你好，{user.name}。你想先了解资金状况，还是完成一件事？</p><div className="agent-suggestion"><span>可用资金</span><strong>¥{availableBalance.toLocaleString('zh-CN',{minimumFractionDigits:2})}</strong><small>来自当前模拟银行事实</small></div><p className="hint">当前统一入口只负责导航到已有工作台，不伪装成已经完成的跨场景 Agent。</p><button className="agent-prompt" onClick={() => {openSection('transfer');setAgentOpen(false)}}>给联系人转账或发起收款 <span>→</span></button><button className="agent-prompt" onClick={() => {openSection('insights');setAgentOpen(false)}}>解释最近的消费变化 <span>→</span></button><button className="agent-prompt" onClick={() => {openSection('wealth');setAgentOpen(false)}}>规划一笔可用资金 <span>→</span></button></div><div className="agent-compose"><input disabled placeholder="统一对话能力将在后续接入"/><button disabled>↑</button></div></aside></div>}
+    <NovaChat key={user.user_id} name={user.name} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => {openSection(section); setAgentOpen(false)}} />
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>
