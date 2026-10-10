@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as w from '../../services/wealth';
 import type { ProductSelectionState } from './productSelection';
 import { collectPortfolioSelection, selectionKey } from './allocationSelection';
@@ -14,13 +14,16 @@ interface Props {
   onPrepare?: (plan:w.PortfolioPlan) => Promise<w.PreparedPortfolio>;
   onActivity?: () => void;
   fixtureOnly?: boolean;
+  draftPercentages?:Record<string,string>;
+  onPercentagesChange?:(values:Record<string,string>)=>void;
 }
 
 /** Same controlled consumer view can be mounted in customer or handoff panels. */
-export default function AllocationReview({plan:initial,snapshot,selection,onRevise=w.revisePortfolio,onPrepare=w.preparePortfolio,onActivity=()=>{},fixtureOnly=false}:Props) {
+export default function AllocationReview({plan:initial,snapshot,selection,onRevise=w.revisePortfolio,onPrepare=w.preparePortfolio,onActivity=()=>{},fixtureOnly=false,draftPercentages,onPercentagesChange}:Props) {
   const [plan,setPlan]=useState(initial);
-  const [percentages,setPercentages]=useState<Record<string,string>>(()=>Object.fromEntries(selection.items.map(({share})=>[
+  const [localPercentages,setPercentages]=useState<Record<string,string>>(()=>Object.fromEntries(selection.items.map(({share})=>[
     share.product_id,percentage(initial.selected_positions.find(p=>p.product_id===share.product_id)?.target_ratio_total ?? '0')])));
+  const percentages=draftPercentages??localPercentages;
   const [validatedKey,setValidatedKey]=useState<string|null>(null);
   const [prepared,setPrepared]=useState<w.PreparedPortfolio|null>(null);
   const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('');
@@ -28,7 +31,8 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
   try { draft=collectPortfolioSelection(plan,selection,percentages); } catch { /* Explain invalid input when submitted. */ }
   const clean=!!draft && validatedKey===selectionKey(draft);
   const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(e){setNotice(errorMessage(e));}finally{setBusy(false);}};
-  const change=(id:string,value:string)=>{setPercentages(current=>({...current,[id]:value}));setPrepared(null);setValidatedKey(null);};
+  useEffect(()=>{setPrepared(null);setValidatedKey(null);},[draftPercentages]);
+  const change=(id:string,value:string)=>{const next={...percentages,[id]:value};setPercentages(next);onPercentagesChange?.(next);setPrepared(null);setValidatedKey(null);};
   return <section className="allocation-review" aria-label="整体配置核对">
     <div className="consumer-card-head"><h2>核对整体配置</h2><span>整体目标 v{plan.version}</span></div>
     <p>以全部资产 {w.money(snapshot.basis_fen)} 为分母。下方比例表示占全部资产的份额；已有持仓、保留现金和应收也必须计入。</p>

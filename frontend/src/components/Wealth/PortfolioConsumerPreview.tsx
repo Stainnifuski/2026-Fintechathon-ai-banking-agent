@@ -27,7 +27,7 @@ const percent = (ratio: string) => (Number(ratio) * 100).toLocaleString('zh-CN',
 
 const returnsPreview:ReturnsPreviewSource={load:async(query,scenario)=>recordedReturns(query,scenario),scenarios:returnsScenarios,notice:returnsPreviewNotice,scenarioNotice:returnsScenarioNotice,defaultDate:'2026-10-09'};
 
-interface Props { accounts: Account[]; revision: number; onActivity: () => void; userId: string }
+interface Props { onReturn?:()=>void; accounts: Account[]; revision: number; onActivity: () => void; userId: string }
 
 /** B0样例消费与银行联调入口；样例本身不能生成银行命令。 */
 export default function PortfolioConsumerPreview(props: Props) {
@@ -52,7 +52,7 @@ export default function PortfolioConsumerPreview(props: Props) {
   const loadSeven = () => {setScenario('F11');setGroups(recordedGroups());setProductSelection(recordedF11Selection());setPanel('products');setReviewEpoch(value=>value+1);setReviewing(true);};
 
   return <section className="consumer-preview" aria-label="理财手动流程开发预览">
-    <div className="consumer-fixture-banner"><strong>B5 · 统一操作入口预览</strong><span>{panel === 'manual'||panel==='actions'||tablePanel&&tableSource==='bank' ? '当前入口使用登录账户的模拟银行记录；交易仍须本人确认与验证。' : '当前数字与候选为虚构契约样例，与登录账户资金无关；样例不产生订单。'}</span><a href="/">返回原有银行工作台</a></div>
+    <div className="consumer-fixture-banner"><strong>B5 · 统一操作入口预览</strong><span>{panel === 'manual'||panel==='actions'||tablePanel&&tableSource==='bank' ? '当前入口使用登录账户的模拟银行记录；交易仍须本人确认与验证。' : '当前数字与候选为虚构契约样例，与登录账户资金无关；样例不产生订单。'}</span>{props.onReturn?<button className="secondary" onClick={props.onReturn}>返回原有银行工作台（保留输入）</button>:<a href="/">返回原有银行工作台</a>}</div>
     <header className="consumer-heading"><p className="eyebrow">理财 · 手动操作流程</p><h1>先看清资产，再决定怎么安排。</h1><p>资产、当前方案和操作入口保持可见。每一步完成后，再明确进入下一步。</p></header>
     <div className="consumer-columns">
       <main>

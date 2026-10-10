@@ -16,12 +16,12 @@ import type {WealthReturns} from '../../services/wealthReturns';
 import {returnStatus,returnMoney} from '../../services/wealthReturns';
 import {beijingTime} from '../../utils/time';
 import ProductPicker from './ProductPicker';
-import {emptyProductSelection} from './productSelection';
-import type {ProductSelectionState} from './productSelection';
 import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup} from '../../services/wealthCandidates';
 import {readPortfolioPlan,planProductSelection} from '../../services/wealthPortfolioReview';
 import StructuredPortfolioReview from './StructuredPortfolioReview';
 import './structuredActions.css';
+import {manualDrafts,draftScope} from '../../services/wealthManualDraft';
+import {useManualDraft} from './useManualDraft';
 type ResultSlot='planning'|'records'|'returns'|'product'|'redemption'|'cancellation'|'comparison';
 const resultSlot=(action:ActionName):ResultSlot=>action==='list_orders'||action==='list_positions'?'records':action==='show_wealth_returns'?'returns':action==='show_product_detail'?'product':action==='preview_redemption'?'redemption':action==='preview_order_cancellation'?'cancellation':action==='compare_products'?'comparison':'planning';
 const resultTitles:Record<ResultSlot,string>={planning:'规划与推荐结果',records:'订单 / 持仓查询结果',returns:'收益查询结果',product:'产品资料查询结果',redemption:'赎回核对结果',cancellation:'撤单资格核对结果',comparison:'产品比较结果'};
@@ -29,9 +29,13 @@ interface Page {rows:(w.OrderRow|w.PositionRow)[];page:number;pages:number;total
 interface Converted {preview:w.Preview;resolved_units:string;holding_ratio:string;estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;notice:string}
 export default function StructuredActionPanel({userId,revision,onActivity}:{userId:string;revision:number;onActivity:()=>void}){
   const [facts,setFacts]=useState<{owner:string;assets:w.Assets;products:w.Product[];tasks:w.WealthTask[]}|null>(null);
-  const [candidateGroups,setCandidateGroups]=useState<w.CandidateGroup[]>([]);
-  const [candidateSelection,setCandidateSelection]=useState<ProductSelectionState>(emptyProductSelection(''));
-  const [portfolio,setPortfolio]=useState<w.PortfolioPlan|null>(null);
+  const ready=facts?.owner===userId?facts:null;
+  const contextId=ready?.assets.context_id??'legacy-v1';
+  const shared=useManualDraft(ready?draftScope(userId,contextId,ready.assets.cash.map(a=>a.account_id)):null,contextId);
+  const [candidateGroups,setCandidateGroups]=shared('candidateGroups');
+  const [candidateSelection,setCandidateSelection]=shared('candidateSelection');
+  const [portfolio,setPortfolio]=shared('portfolio');
+  const [ratios,setRatios]=shared('ratios');
   const [reviewing,setReviewing]=useState(false);
   const [results,setResults]=useState<Partial<Record<ResultSlot,ActionResult>>>({});
   const [pending,setPending]=useState<ResultSlot|null>(null);const [reading,setReading]=useState(true);const [reload,setReload]=useState(0);const busy=pending!==null||reading;
@@ -43,10 +47,10 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   const client=useRef(new WealthActionSession(sendAction));const latestRequest=useRef(0);
   useEffect(()=>()=>client.current.setContext(null),[]);
   const [detailView,setDetailView]=useState<{id:string;version:number}|null>(null);const [compareView,setCompareView]=useState(false);
-  const [mode,setMode]=useState('general');const [category,setCategory]=useState('bond_fund');const [theme,setTheme]=useState('high_dividend');
-  const [pageSize,setPageSize]=useState(5);const [selected,setSelected]=useState<{type:'orders'|'positions';ids:string[]}>({type:'positions',ids:[]});
-  const [inputMode,setInputMode]=useState('market_value');const [value,setValue]=useState('');const [target,setTarget]=useState('');
-  const [confirm,setConfirm]=useState<Converted|null>(null);const [period,setPeriod]=useState('day');const [date,setDate]=useState('');
+  const [mode,setMode]=shared('mode');const [category,setCategory]=shared('category');const [theme,setTheme]=shared('theme');
+  const [pageSize,setPageSize]=shared('pageSize');const [selected,setSelected]=shared('selected');
+  const [inputMode,setInputMode]=shared('inputMode');const [value,setValue]=shared('value');const [target,setTarget]=shared('target');
+  const [confirm,setConfirm]=useState<Converted|null>(null);const [period,setPeriod]=shared('period');const [date,setDate]=shared('date');
   useEffect(()=>{
     // A previous preview must not remain actionable after changing its inputs or bank facts.
     setResults(current=>{const next={...current};delete next.redemption;delete next.cancellation;return next;});
@@ -54,13 +58,20 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   },[selected,inputMode,value,revision,reload]);
   useEffect(()=>{let active=true;setReading(true);setCancelView(null);setRowView(null);setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<w.Product[]>('/products'),w.get<{items:w.WealthTask[]}>('/tasks')]).then(([assets,products,tasks])=>{
     if(!active)return;
-    if(scope.current!==assets.context_id){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setSelected({type:'positions',ids:[]});setTarget('');setConfirm(null);recordRows.current.clear();setCandidateGroups([]);setPortfolio(null);setCandidateSelection(emptyProductSelection(assets.context_id??'legacy-v1'));}
+    manualDrafts.bind(draftScope(userId,assets.context_id??'legacy-v1',assets.cash.map(a=>a.account_id)),assets.context_id??'legacy-v1');
+    if(scope.current!==assets.context_id){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setConfirm(null);recordRows.current.clear();setReviewing(false);}
     client.current.setContext(assets.context_id??'legacy-v1');
-    setFacts({owner:userId,assets,products,tasks:tasks.items});setDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(assets.business_at)));
+    setFacts({owner:userId,assets,products,tasks:tasks.items});
   }).catch(()=>{if(active){client.current.setContext(null);setDetailView(null);setCompareView(false);setFacts(null);setError('登录账户资料读取失败，请重新登录或刷新。');}}).finally(()=>{if(active)setReading(false);});return()=>{active=false;};},[userId,revision,reload]);
-  const ready=facts?.owner===userId?facts:null;
   const blockedAccounts=ready?.tasks.filter(t=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(t.status)&&(t.control_mode!=='AGENT'||t.status==='PAUSED')).map(t=>t.account_id)??[];
   scope.current=ready?.assets.context_id??null;
+  const controlKey=JSON.stringify(ready?.tasks.map(t=>[t.task_id,t.version,t.status,t.control_mode,t.owner_id]).sort()??[]);
+  useEffect(()=>{
+    ++latestRequest.current;setPending(null);setConfirm(null);setCancelView(null);setReviewing(false);
+    setResults(current=>{const next={...current};delete next.redemption;delete next.cancellation;return next;});
+    client.current.setContext(null);if(ready)client.current.setContext(contextId);
+  },[controlKey,contextId]);
+  useEffect(()=>{if(ready&&!date)setDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready.assets.business_at)));},[ready,date,setDate]);
   const run=useCallback(async(action:ActionName,params:Record<string,unknown>,selection?:ActionRequest['selection_context'])=>{
     if(!ready||reading)return;
     const slot=resultSlot(action);
@@ -68,7 +79,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     if(action==='show_wealth_returns'&&typeof params.anchor_date==='string'&&params.anchor_date>latestDate){fail(slot,'未来还没有发生，不能查询未来收益。');return;}
     const requestNumber=++latestRequest.current;setPending(slot);setActionErrors(current=>({...current,[slot]:''}));
     try{const response=await client.current.request(action,params,selection);
-      if(scope.current!==(ready.assets.context_id??'legacy-v1'))return;
+      if(requestNumber!==latestRequest.current||scope.current!==(ready.assets.context_id??'legacy-v1'))return;
       if(action==='plan_portfolio'&&response.status==='ok'){
         const plan=readPortfolioPlan(response.data,ready.assets.context_id??'legacy-v1');
         for(const group of plan.candidate_groups)assertCurrentCandidates(group,ready.products);
@@ -129,7 +140,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       {cancellation&&<><p>此处先核对资格，继续取消仍需本人明确确认。</p>{cancellation.items.map(x=><article key={x.operation_id}><strong>{x.operation_id} · {x.eligibility}</strong><p>{x.reason}</p><p>{x.consequence}</p></article>)}<button disabled={busy||!cancellation.items.some(x=>x.eligibility==='ALLOWED')} onClick={()=>{const views:CancellationRow[]=[];for(const eligibility of cancellation.items){const row=recordRows.current.get(eligibility.operation_id);if(!row||row.object_type!=='orders'||row.digest!==eligibility.order_digest){fail('cancellation','订单资料或版本已变化，请重新查询订单并核对资格。');return;}views.push({row,eligibility});}setCancelView(views);}}>继续核对并本人确认取消</button></>}
     </>}</section>;
   };
-  return <section aria-label="统一手动操作" className="structured-actions"><h2>直接选择要做的事</h2><p>这里使用登录账户的模拟银行资料。按钮直接传递操作参数，不需要输入聊天指令。</p>
+  return <section aria-label="统一手动操作" className="structured-actions"><h2>直接选择要做的事</h2><p>这里使用登录账户的模拟银行资料。按钮直接传递操作参数，不需要输入聊天指令。</p><p className="consumer-note">未提交的选择与输入在两个手动入口间共享；切换入口后需重新查询、校验和预览。暂停或交还任务不会自动提交草稿。退出登录或切换资金范围后清除。</p>
     {!ready&&<p>正在读取本人资料…</p>}{error&&<p role="alert">{error}</p>}{activityNotice&&<p role="status" className="consumer-warning">{activityNotice}</p>}<button className="secondary" disabled={busy} onClick={()=>{setResults({});recordRows.current.clear();setSelected({type:'positions',ids:[]});setReload(n=>n+1);}}>刷新账户记录与操作状态</button>{reading&&ready&&<p role="status">正在刷新账户及人工控制状态…</p>}{blockedAccounts.length>0&&<p className="consumer-warning">账户 {Array.from(new Set(blockedAccounts)).join('、')} 存在人工接管或暂停任务。资料可继续查询；相关交易仍受银行权限检查。</p>}
     <fieldset disabled={busy||!ready}><legend>规划与推荐</legend><div className="consumer-entry-grid">
       <button onClick={()=>void run('plan_portfolio',{})}>理财规划</button><button onClick={()=>recommend({mode:'general'})}>产品推荐</button>
@@ -142,7 +153,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       {candidateGroups.length>0&&ready&&<><ProductPicker groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={next=>{setCandidateSelection(next);setReviewing(false);}} busy={busy}
         onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:ids})}
         loadDetail={loadDetail} loadComparison={loadComparison} onContinue={()=>{if(!portfolio)void run('plan_portfolio',{});else setReviewing(true);}}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。尚无整体方案时，继续操作会先请求配置服务创建方案。</p></>}
-      {portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.version}:${revision}:${reload}`} plan={portfolio} selection={candidateSelection} onActivity={onActivity}
+      {portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.version}:${revision}:${reload}:${controlKey}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={onActivity}
         onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)});if(result?.status!=='ok')throw new Error(result?.message??'比例校验未完成，请重新核对。');return readPortfolioPlan(result.data,portfolio.context_id);}}
         onPrepare={async plan=>{const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id});if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}
     </fieldset>
