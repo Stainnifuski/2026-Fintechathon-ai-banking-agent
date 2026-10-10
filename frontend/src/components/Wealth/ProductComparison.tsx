@@ -12,11 +12,15 @@ export type ComparisonLoader = (ids: string[]) => Promise<ProductComparisonRow[]
 const rate = (value: string | null) => value == null ? '未提供' : `${(Number(value) * 100).toLocaleString('zh-CN', { maximumFractionDigits: 4 })}%`;
 const bankComparison: ComparisonLoader = async ids => {
   const rows = await get<Product[]>(`/compare?product_ids=${encodeURIComponent(ids.join(','))}`);
+  return comparisonRows(rows);
+};
+
+export function comparisonRows(rows:Product[]):ProductComparisonRow[]{
   return rows.map(row => ({ product_id: row.product_id, name: row.name, share_class: null, product_version: row.version,
     product_risk_level: row.product_risk_level, min_amount_fen: row.rules.min_amount_fen,
     purchase_fee_rate: row.rules.purchase_fee_rate, sales_service_fee_rate: null, redemption_fee_rules: row.disclosure.fees,
     performance_label: '近一年业绩', performance_value: '此接口未提供，详见产品资料', performance_dates: '日期未提供' }));
-};
+}
 
 export default function ProductComparison({ products, onClose, loadComparison = bankComparison }: {
   products: { product_id: string; name: string }[]; onClose: () => void; loadComparison?: ComparisonLoader;
@@ -35,7 +39,7 @@ export default function ProductComparison({ products, onClose, loadComparison = 
   return <div className="wealth-modal"><section role="dialog" aria-modal="true" aria-label="产品比较" className="card picker-comparison">
     <div className="consumer-card-head"><h2>比较具体份额</h2><button className="secondary" onClick={onClose}>关闭比较</button></div>
     <p>请选择 2—4 只。比较和详情均可选，不影响已选产品，也不是继续操作的前置条件。</p>
-    <div className="picker-compare-options">{products.map(product => <label key={product.product_id}><input type="checkbox" checked={ids.includes(product.product_id)} disabled={!ids.includes(product.product_id) && ids.length >= 4} onChange={event => setIds(event.target.checked ? [...ids, product.product_id] : ids.filter(id => id !== product.product_id))} />{product.name}</label>)}</div>
+    <div className="picker-compare-options">{products.map(product => <label key={product.product_id}><input type="checkbox" checked={ids.includes(product.product_id)} disabled={!ids.includes(product.product_id) && ids.length >= 4} onChange={event => {const checked=event.target.checked;setIds(current=>checked?(current.includes(product.product_id)||current.length>=4?current:[...current,product.product_id]):current.filter(id=>id!==product.product_id));}} />{product.name}</label>)}</div>
     {ids.length < 2 && <p>请至少选择两只产品。</p>}{busy && <p role="status">正在读取比较资料…</p>}{error && <p role="alert">{error}</p>}
     {!!rows.length && <div className="wealth-table"><table aria-label="所选产品比较"><thead><tr><th>产品／份额</th><th>风险／起购</th><th>费率</th><th>历史指标及日期</th></tr></thead><tbody>{rows.map(row => <tr key={row.product_id}>
       <td>{row.name}<small>{row.share_class ? `${row.share_class}类 · ` : ''}{row.product_id} · v{row.product_version}</small></td>

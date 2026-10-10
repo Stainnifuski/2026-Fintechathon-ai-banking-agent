@@ -1,16 +1,20 @@
-import {useEffect,useState,useRef} from 'react';
+import {useEffect,useState,useRef,useCallback} from 'react';
 import * as w from '../../services/wealth';
 import {sendAction} from '../../services/wealthActions';
 import type {ActionName,ActionResult,ActionRequest} from '../../services/wealthActions';
 import SingleTradePreview from './SingleTradePreview';
-import type {ProductDetailData} from './ProductDetail';
+import ProductDetail from './ProductDetail';
+import type {ProductDetailData,ProductDetailLoader} from './ProductDetail';
+import ProductComparison,{comparisonRows} from './ProductComparison';
+import type {ComparisonLoader} from './ProductComparison';
+import {WealthActionSession} from '../../services/wealthActionSession';
 import type {WealthReturns} from '../../services/wealthReturns';
 import {returnStatus,returnMoney} from '../../services/wealthReturns';
 import {beijingTime} from '../../utils/time';
 import './structuredActions.css';
-type ResultSlot='planning'|'records'|'returns'|'product'|'redemption'|'cancellation';
-const resultSlot=(action:ActionName):ResultSlot=>action==='list_orders'||action==='list_positions'?'records':action==='show_wealth_returns'?'returns':action==='show_product_detail'?'product':action==='preview_redemption'?'redemption':action==='preview_order_cancellation'?'cancellation':'planning';
-const resultTitles:Record<ResultSlot,string>={planning:'规划与推荐结果',records:'订单 / 持仓查询结果',returns:'收益查询结果',product:'产品资料查询结果',redemption:'赎回核对结果',cancellation:'撤单资格核对结果'};
+type ResultSlot='planning'|'records'|'returns'|'product'|'redemption'|'cancellation'|'comparison';
+const resultSlot=(action:ActionName):ResultSlot=>action==='list_orders'||action==='list_positions'?'records':action==='show_wealth_returns'?'returns':action==='show_product_detail'?'product':action==='preview_redemption'?'redemption':action==='preview_order_cancellation'?'cancellation':action==='compare_products'?'comparison':'planning';
+const resultTitles:Record<ResultSlot,string>={planning:'规划与推荐结果',records:'订单 / 持仓查询结果',returns:'收益查询结果',product:'产品资料查询结果',redemption:'赎回核对结果',cancellation:'撤单资格核对结果',comparison:'产品比较结果'};
 interface Page {rows:(w.OrderRow|w.PositionRow)[];page:number;pages:number;total:number;object_type:'orders'|'positions'}
 interface Converted {preview:w.Preview;resolved_units:string;holding_ratio:string;estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;notice:string}
 export default function StructuredActionPanel({userId,revision,onActivity}:{userId:string;revision:number;onActivity:()=>void}){
@@ -20,7 +24,9 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   const [actionErrors,setActionErrors]=useState<Partial<Record<ResultSlot,string>>>({});const [error,setError]=useState('');
   const fail=(slot:ResultSlot,message:string)=>setActionErrors(current=>({...current,[slot]:message}));
   const scope=useRef<string|null>(null);
-  const session=useRef<{context:string;session_id:string;version:number}|null>(null);
+  const client=useRef(new WealthActionSession(sendAction));const latestRequest=useRef(0);
+  useEffect(()=>()=>client.current.setContext(null),[]);
+  const [detailView,setDetailView]=useState<{id:string;version:number}|null>(null);const [compareView,setCompareView]=useState(false);
   const [mode,setMode]=useState('general');const [category,setCategory]=useState('bond_fund');const [theme,setTheme]=useState('high_dividend');
   const [pageSize,setPageSize]=useState(5);const [selected,setSelected]=useState<{type:'orders'|'positions';ids:string[]}>({type:'positions',ids:[]});
   const [inputMode,setInputMode]=useState('market_value');const [value,setValue]=useState('');const [target,setTarget]=useState('');
@@ -32,23 +38,35 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   },[selected,inputMode,value,revision]);
   useEffect(()=>{let active=true;setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<w.Product[]>('/products')]).then(([assets,products])=>{
     if(!active)return;
-    if(session.current?.context!==assets.context_id){session.current=null;setResults({});setActionErrors({});setSelected({type:'positions',ids:[]});setTarget('');setConfirm(null);}
+    if(scope.current!==assets.context_id){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setSelected({type:'positions',ids:[]});setTarget('');setConfirm(null);}
+    client.current.setContext(assets.context_id??'legacy-v1');
     setFacts({owner:userId,assets,products});setDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(assets.business_at)));
-  }).catch(()=>{if(active){setFacts(null);setError('登录账户资料读取失败，请重新登录或刷新。');}});return()=>{active=false;};},[userId,revision]);
+  }).catch(()=>{if(active){client.current.setContext(null);setDetailView(null);setCompareView(false);setFacts(null);setError('登录账户资料读取失败，请重新登录或刷新。');}});return()=>{active=false;};},[userId,revision]);
   const ready=facts?.owner===userId?facts:null;
   scope.current=ready?.assets.context_id??null;
-  const run=async(action:ActionName,params:Record<string,unknown>,selection?:ActionRequest['selection_context'])=>{
-    if(!ready||busy)return;
+  const run=useCallback(async(action:ActionName,params:Record<string,unknown>,selection?:ActionRequest['selection_context'])=>{
+    if(!ready)return;
     const slot=resultSlot(action);
     const latestDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready.assets.business_at));
     if(action==='show_wealth_returns'&&typeof params.anchor_date==='string'&&params.anchor_date>latestDate){fail(slot,'未来还没有发生，不能查询未来收益。');return;}
-    setPending(slot);setActionErrors(current=>({...current,[slot]:''}));
-    try{const current=session.current;const response=await sendAction({schema_version:'wealth-action-v1',request_id:'WA'+crypto.randomUUID().replace(/-/g,''),context_id:ready.assets.context_id??'legacy-v1',
-      ...(current?{session_id:current.session_id,expected_session_version:current.version}:{}),...(selection?{selection_context:selection}:{}),action,params});
+    const requestNumber=++latestRequest.current;setPending(slot);setActionErrors(current=>({...current,[slot]:''}));
+    try{const response=await client.current.request(action,params,selection);
       if(scope.current!==(ready.assets.context_id??'legacy-v1'))return;
-      session.current={context:response.context_id,session_id:response.session_id,version:response.session_version};setResults(previous=>({...previous,[slot]:response}));
-    }catch(reason){if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??'操作失败，请刷新并核对原请求。');}finally{setPending(null);}
-  };
+      setResults(previous=>({...previous,[slot]:response}));return response;
+    }catch(reason){if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??'操作失败，请刷新并核对原请求。');}finally{if(requestNumber===latestRequest.current)setPending(null);}
+  },[ready]);
+  const loadDetail=useCallback<ProductDetailLoader>(async(id,period,version)=>{
+    const response=await run('show_product_detail',{product_id:id,product_version:version,period},version?{object_type:'products',ids:[`${id}:${version}`]}:undefined);
+    if(response?.status!=='ok')throw new Error(response?.message??'详情查询失败');
+    return response.data as ProductDetailData;
+  },[run]);
+  const loadComparison=useCallback<ComparisonLoader>(async ids=>{
+    const refs=ids.map(id=>ready?.products.find(p=>p.product_id===id)).filter((p):p is w.Product=>!!p);
+    if(refs.length!==ids.length)throw new Error('产品范围已变化');
+    const response=await run('compare_products',{product_ids:ids},{object_type:'products',ids:refs.map(p=>`${p.product_id}:${p.version}`)});
+    if(response?.status!=='ok')throw new Error(response?.message??'比较查询失败');
+    return comparisonRows(response.data as w.Product[]);
+  },[run,ready]);
   const recommend=(filter:Record<string,string>)=>void run('recommend_products',{filter});
   const list=(type:'orders'|'positions',page=1)=>{if(selected.type!==type)setSelected({type,ids:[]});void run(type==='orders'?'list_orders':'list_positions',{page,page_size:pageSize});};
   const redeem=()=>{
@@ -67,6 +85,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     const result=results[slot];
     if(!result&&pending!==slot&&!actionErrors[slot])return null;
     const page=result?.status==='ok'&&(result.action==='list_orders'||result.action==='list_positions')?result.data as Page:null;
+    const compared=result?.status==='ok'&&result.action==='compare_products'?result.data as w.Product[]:null;
     const converted=result?.status==='ok'&&result.action==='preview_redemption'?result.data as Converted:null;
     const detail=result?.status==='ok'&&result.action==='show_product_detail'?result.data as ProductDetailData:null;
     const cancellation=result?.status==='ok'&&result.action==='preview_order_cancellation'?result.data as {items:{operation_id:string;eligibility:string;reason:string;consequence:string}[]}:null;
@@ -76,7 +95,8 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       {page&&<><p>共{page.total}行 · 第{page.page}/{page.pages}页</p><div className="returns-table-scroll"><table><thead><tr><th>选择</th><th>产品</th><th>账户</th><th>状态/持有份额</th></tr></thead><tbody>{page.rows.map(row=>{const key=page.object_type==='orders'?(row as w.OrderRow).operation_id:(row as w.PositionRow).position_key;return <tr key={key}><td><input type="checkbox" aria-label={`选择${key}`} checked={selected.type===page.object_type&&selected.ids.includes(key)} onChange={e=>setSelected(current=>({type:page.object_type,ids:e.target.checked?Array.from(new Set([...(current.type===page.object_type?current.ids:[]),key])):current.ids.filter(x=>x!==key)}))}/></td><td>{row.product_name}</td><td>{row.account_id}</td><td>{page.object_type==='orders'?(row as w.OrderRow).status:`${(row as w.PositionRow).units}份（可赎${(row as w.PositionRow).redeemable_units}）`}</td></tr>;})}</tbody></table></div>{page.rows.length===0&&<p>当前授权范围内暂无{page.object_type==='orders'?'订单':'持仓'}记录。</p>}<button className="secondary" disabled={busy||page.page<=1} onClick={()=>list(page.object_type,page.page-1)}>上一页</button><button className="secondary" disabled={busy||page.page>=page.pages} onClick={()=>list(page.object_type,page.page+1)}>下一页</button><button className="secondary" onClick={()=>setSelected({type:page.object_type,ids:[]})}>清空选择</button></>}
       {returnData&&<><p>{returnData.start_date===returnData.end_date?`${returnData.start_date} · 当日收益`:`${returnData.start_date} 至 ${returnData.end_date}`}</p><p>{returnStatus[returnData.status]}</p><dl className="action-summary">{[['所选期间收益',returnData.summary.period_pnl_fen],['累计收益',returnData.summary.cumulative_pnl_fen],['累计已实现',returnData.summary.realized_pnl_fen],['累计未实现',returnData.summary.unrealized_pnl_fen]].map(([label,amount])=><div key={String(label)}><dt>{label}</dt><dd>{returnMoney(amount as number|null)}</dd></div>)}</dl><p>{returnData.missing_fields.join('；')}</p></>}
       {converted&&<><p>赎回{converted.resolved_units}份 · 比例{(Number(converted.holding_ratio)*100).toFixed(4)}% · 市值{w.money(converted.estimated_market_value_fen)}</p><p>预计费用{w.money(converted.estimated_fee_fen)} · 预计到账{w.money(converted.estimated_net_cash_fen)}</p><p>{converted.notice}</p><button onClick={()=>setConfirm(converted)}>继续本人确认与验证</button></>}
-      {detail&&<article><h4>{detail.name} · {detail.product_id}</h4><p>风险等级 {detail.risk_level??'尚未核实'} · 最新净值 {detail.latest_nav?.nav??'缺少资料'}（{detail.latest_nav?.date??'未知'}）</p><p>{detail.chart?.notice??'暂无行情'} · 已读取{detail.chart?.points.length??0}个行情点。完整披露与图表仍可从原产品详情查看。</p><details><summary>起购、持有与到账规则</summary><p>起购 {w.money(detail.rules?.min_amount_fen)} · 持有期 {detail.rules?.holding_days??'未核实'}天 · 普通到账 {detail.rules?.cash_business_days??'未核实'}个营业日</p><p>资料时点（北京时间）：{beijingTime(detail.as_of)}</p></details></article>}
+      {detail&&<article><h4>{detail.name} · {detail.product_id}</h4><p>风险等级 {detail.risk_level??'尚未核实'} · 最新净值 {detail.latest_nav?.nav??'缺少资料'}（{detail.latest_nav?.date??'未知'}）</p><p>{detail.chart?.notice??'暂无行情'} · 已读取{detail.chart?.points.length??0}个行情点。可继续打开下方完整详情查看图表。</p><details><summary>起购、持有与到账规则</summary><p>起购 {w.money(detail.rules?.min_amount_fen)} · 持有期 {detail.rules?.holding_days??'未核实'}天 · 普通到账 {detail.rules?.cash_business_days??'未核实'}个营业日</p><p>资料时点（北京时间）：{beijingTime(detail.as_of)}</p></details><button className="secondary" onClick={()=>{const p=ready?.products.find(p=>p.product_id===detail.product_id);if(p)setDetailView({id:p.product_id,version:p.version});}}>打开完整产品详情</button></article>}
+      {compared&&<><p>已比较{compared.length}只产品：{compared.map(p=>p.name).join('、')}。</p><button className="secondary" onClick={()=>setCompareView(true)}>重新选择并查看比较</button></>}
       {cancellation&&<><p>这里只读资格；实际取消仍从原订单表本人确认。</p>{cancellation.items.map(x=><article key={x.operation_id}><strong>{x.operation_id} · {x.eligibility}</strong><p>{x.reason}</p><p>{x.consequence}</p></article>)}</>}
     </>}</section>;
   };
@@ -96,9 +116,12 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       <label>收益统计<select value={period} onChange={e=>setPeriod(e.target.value)}><option value="day">日</option><option value="month">月</option><option value="year">年</option><option value="cumulative">累计</option></select></label><label>收益日期<input type="date" value={date} max={ready?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready.assets.business_at)):undefined} disabled={period==='cumulative'} onChange={e=>setDate(e.target.value)}/></label><button onClick={()=>void run('show_wealth_returns',{scope:'all',period,...(period==='cumulative'?{}:{anchor_date:date})})}>查询整体收益</button>{renderResult('returns')}</fieldset>
     <fieldset disabled={busy||!ready}><legend>产品资料</legend>
       <label>查看产品<select value={target} onChange={e=>setTarget(e.target.value)}><option value="">请选择产品及版本</option>{ready?.products.map(p=><option key={`${p.product_id}:${p.version}`} value={`${p.product_id}:${p.version}`}>{p.name} · v{p.version}</option>)}</select></label><button className="secondary" onClick={()=>{const p=ready?.products.find(x=>`${x.product_id}:${x.version}`===target);void run('show_product_detail',p?{product_id:p.product_id,product_version:p.version}:{});}}>查看产品资料</button>{renderResult('product')}
+      <button className="secondary" onClick={()=>setCompareView(true)}>选择产品进行比较（2—4只）</button><p className="consumer-note">查看详情和比较是可选操作，不影响原产品选择，也不代表推荐。</p>{renderResult('comparison')}
     </fieldset>
     <fieldset disabled={busy||!ready}><legend>按所选持仓赎回</legend><p>已选{selected.type==='positions'?selected.ids.length:0}只持仓；多选时不会把一笔市值自动套给每只。</p><label>赎回输入方式<select value={inputMode} onChange={e=>setInputMode(e.target.value)}><option value="market_value">持仓市值（元）</option><option value="units">份额</option><option value="holding_ratio">本只持仓比例（%）</option></select></label><label>赎回数量<input inputMode="decimal" value={value} onChange={e=>setValue(e.target.value)}/></label><button onClick={redeem}>核对赎回输入</button>{renderResult('redemption')}</fieldset>
     <fieldset disabled={busy||!ready}><legend>所选订单撤单资格</legend><p>从上方订单查询结果中勾选订单后核对。这里只查资格，不直接撤单。</p><button className="secondary" disabled={selected.type!=='orders'||!selected.ids.length} onClick={()=>void run('preview_order_cancellation',{operation_ids:selected.ids},{object_type:'orders',ids:selected.ids})}>核对已选订单撤单资格</button>{renderResult('cancellation')}</fieldset>
+    {detailView&&<ProductDetail productId={detailView.id} productVersion={detailView.version} loadDetail={loadDetail} onClose={()=>setDetailView(null)}/>}
+    {compareView&&ready&&<ProductComparison products={ready.products} loadComparison={loadComparison} onClose={()=>setCompareView(false)}/>}
     {confirm&&<SingleTradePreview preview={confirm.preview} redemption={confirm} onClose={()=>setConfirm(null)} onActivity={onActivity}/>}
   </section>;
 }
