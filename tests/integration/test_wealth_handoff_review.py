@@ -8,6 +8,43 @@ from backend.app.models.wealth import WealthAuthorizationORM,WealthOrderORM,Weal
 from backend.app.integrations.wealth_authorization import WealthPolicyError
 
 @pytest.mark.asyncio
+async def test_operator_overall_review_uses_prepared_snapshot_and_preserves_personal_authority(store,http_store,monkeypatch):
+    from tests.integration.test_wealth_portfolio_prepare import setup,SEVEN,prepare
+    from backend.app.middleware.auth import get_current_user
+    from backend.app.models.wealth import WealthTaskORM
+    client,local,source,_=await setup(store,http_store,monkeypatch)
+    await source.record(local,SEVEN)
+    response=await prepare(client,source)
+    assert response.status_code==200,response.text
+    execution_id=response.json()['execution_plan_id']
+    async with store() as db:
+        row=await db.scalar(select(WealthTaskORM).where(WealthTaskORM.user_id=='U1'))
+        task_id,version=row.task_id,row.version
+        execution=await db.get(WealthPlanORM,execution_id)
+        original_snapshot=execution.data['portfolio_snapshot']
+    controlled=(await client.post(f'/api/v1/wealth/tasks/{task_id}/handoff',
+        json={'request_id':'allocation-handoff','expected_version':version})).json()
+    monkeypatch.setenv('WEALTH_OPERATOR_USER_IDS','U2')
+    http_store[2].dependency_overrides[get_current_user]=lambda:{'user_id':'U2'}
+    base=f'/api/v1/wealth/operator/tasks/{task_id}'
+    assert (await client.get(base+'/context')).status_code==403
+    claimed=await client.post(base+'/claim',json={'request_id':'allocation-claim','expected_version':controlled['version']})
+    assert claimed.status_code==200,claimed.text
+    review=await client.get(base+'/context')
+    assert review.status_code==200,review.text
+    portfolio=review.json()['portfolio']
+    assert portfolio['snapshot']==original_snapshot
+    assert portfolio['plan']['version']==source.plan['version']
+    assert len(portfolio['plan']['selected_positions'])==7
+    async with store() as db:
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+        assert await db.scalar(select(func.count()).select_from(WealthCashHoldORM))==0
+        execution=await db.get(WealthPlanORM,execution_id)
+        execution.data={**execution.data,'portfolio_snapshot':{**original_snapshot,'account_ids':['foreign']}}
+        await db.commit()
+    assert (await client.get(base+'/context')).status_code==409
+
+@pytest.mark.asyncio
 async def test_task_redemption_repreview_returns_bank_holding_ratio_without_submission(store,http_store):
     from tests.integration.test_wealth_bank import move
     client,_,_=http_store

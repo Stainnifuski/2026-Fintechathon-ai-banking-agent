@@ -186,7 +186,8 @@ async def operator_facts(task_id:str, user:dict=Depends(operator), db:AsyncSessi
 
 
 @router.get('/operator/tasks/{task_id}/context')
-async def operator_context(task_id:str, user:dict=Depends(operator), db:AsyncSession=Depends(get_db)):
+async def operator_context(task_id:str, user:dict=Depends(operator), db:AsyncSession=Depends(get_db),
+        bank:HttpWealthBankApi=Depends(get_wealth_bank)):
     row = await db.get(WealthTaskORM, task_id)
     if not row or row.control_mode != 'HUMAN' or row.owner_id != user['user_id']:
         raise HTTPException(403, detail={'code':'HANDOFF_CONFLICT','message':'只有领取操作员可查看处理上下文'})
@@ -198,10 +199,42 @@ async def operator_context(task_id:str, user:dict=Depends(operator), db:AsyncSes
             or plan.data.get('context_id','legacy-v1') != row.context_id
             or plan.version != row.data.get('plan_version',plan.version)):
         raise HTTPException(409, detail={'code':'CONTEXT_MISMATCH','message':'原方案范围需要核对'})
-    return {'task':await tasks.view(db,row), 'conversation':{'session_id':conversation.session_id,
-        'version':conversation.version,'history':[{'user':turn.get('user',''),'reply':{'message':turn.get('reply',{}).get('message','')}} for turn in conversation.data.get('history',[])]} if conversation else None,
-        'plan':{'plan_id':plan.plan_id,'version':plan.version,'status':plan.status,'data':{'items':[{'command':item['command'],'status':item.get('status','UNKNOWN')} for item in plan.data.get('items',[])]}} if plan else None,
-        'notice':'只读原任务上下文；操作员不能代用户确认或授权'}
+    conversation_view={'session_id':conversation.session_id,'version':conversation.version,
+        'history':[{'user':turn.get('user',''),'reply':{'message':turn.get('reply',{}).get('message','')}}
+            for turn in conversation.data.get('history',[])]} if conversation else None
+    plan_view={'plan_id':plan.plan_id,'version':plan.version,'status':plan.status,
+        'data':{'items':[{'command':item['command'],'status':item.get('status','UNKNOWN')}
+            for item in plan.data.get('items',[])]}} if plan else None
+    portfolio=None
+    if plan and plan.data.get('portfolio_plan') and plan.data.get('portfolio_snapshot'):
+        from copy import deepcopy
+        saved=deepcopy(plan.data['portfolio_plan']);snapshot=deepcopy(plan.data['portfolio_snapshot'])
+        if (saved.get('portfolio_id')!=plan.data.get('portfolio_id')
+                or saved.get('version')!=plan.data.get('portfolio_version')
+                or saved.get('snapshot_id')!=snapshot.get('snapshot_id')
+                or snapshot.get('snapshot_id')!=plan.data.get('portfolio_snapshot_id')
+                or saved.get('context_id')!=row.context_id or snapshot.get('context_id')!=row.context_id
+                or saved.get('asset_scope_id')!=snapshot.get('asset_scope_id')
+                or saved.get('basis_fen')!=snapshot.get('basis_fen')
+                or row.account_id not in snapshot.get('account_ids',[])):
+            raise HTTPException(409,detail={'code':'CONTEXT_MISMATCH','message':'整体方案和原快照引用不一致，请重新核对'})
+        # Historical allocation is explanatory, but every account must still be authorized.
+        facts=await operator_facts(task_id,user,db,bank)
+        if not set(snapshot.get('account_ids',[]))<=set(a['account_id'] for a in facts.get('cash',[])):
+            raise HTTPException(409,detail={'code':'CONTEXT_MISMATCH','message':'整体快照包含当前范围外账户，不能继续展示'})
+        portfolio={'plan':saved,'snapshot':snapshot,
+            'notice':'准备交易时的整体方案和历史快照；仅形成调整建议，交还后须重读当前资料并由本人重新校验'}
+        # operator_facts releases the read transaction and rechecks the task under fresh state.
+        row=await db.get(WealthTaskORM,task_id,populate_existing=True)
+        current_plan=await db.get(WealthPlanORM,plan_view['plan_id'],populate_existing=True)
+        if (not current_plan or current_plan.version!=plan_view['version']
+                or current_plan.user_id!=row.user_id
+                or current_plan.data.get('portfolio_snapshot_id')!=snapshot['snapshot_id']
+                or current_plan.data.get('portfolio_version')!=saved['version']):
+            raise HTTPException(409,detail={'code':'CONTEXT_MISMATCH','message':'读取期间整体方案版本已变化，请重新核对'})
+    return {'task':await tasks.view(db,row), 'conversation':conversation_view,
+        'plan':plan_view,
+        'portfolio':portfolio,'notice':'只读原任务上下文；操作员不能代用户确认或授权'}
 
 
 @router.post('/operator/tasks/{task_id}/{action}')

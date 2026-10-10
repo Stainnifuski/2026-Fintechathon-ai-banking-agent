@@ -1,13 +1,14 @@
 import {useEffect,useRef,useState} from 'react';
 import * as w from '../../services/wealth';
 import {beijingTime} from '../../utils/time';
-import {checkOperatorReview,reviewCommands} from '../../services/wealthOperatorReview';
+import {checkOperatorReview,reviewCommands,operatorPortfolio,portfolioAdjustmentNote} from '../../services/wealthOperatorReview';
 import type {OperatorContext} from '../../services/wealthOperatorReview';
 import CommandReview from './CommandReview';
+import AllocationReview from './AllocationReview';
 
 export default function OperatorPanel({userId,revision,onActivity}:{userId:string;revision:number;onActivity:()=>void}) {
   const [rows,setRows]=useState<w.WealthTask[]|null>(null);
-  const [review,setReview]=useState<{facts:w.Assets;context:OperatorContext}|null>(null);
+  const [review,setReview]=useState<{facts:w.Assets;context:OperatorContext;allocation:ReturnType<typeof operatorPortfolio>}|null>(null);
   const [note,setNote]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const epoch=useRef(0);
   const clear=()=>{setReview(null);setNote('');};
@@ -26,7 +27,8 @@ export default function OperatorPanel({userId,revision,onActivity}:{userId:strin
       if(action==='facts'){
         const [facts,context]=await Promise.all([w.get<w.Assets>(`/operator/tasks/${task.task_id}/facts`),w.get<OperatorContext>(`/operator/tasks/${task.task_id}/context`)]);
         checkOperatorReview(task,userId,facts,context);
-        if(request===epoch.current)setReview({facts,context});
+        const allocation=operatorPortfolio(context,facts);
+        if(request===epoch.current)setReview({facts,context,allocation});
       }else{
         if(action!=='claim'&&(!review||review.context.task.task_id!==task.task_id||review.context.task.version!==task.version||!submittedNote.trim()))throw new Error('请先读取该任务当前资料并填写处理说明。');
         await w.post(`/operator/tasks/${task.task_id}/${action}`,{request_id:crypto.randomUUID(),expected_version:task.version,reason:action==='claim'?'':submittedNote});
@@ -54,6 +56,9 @@ export default function OperatorPanel({userId,revision,onActivity}:{userId:strin
           <h4>原任务对话与方案</h4>
           {review.context.conversation?.history.map((turn,index)=><article key={index}><p>用户：{turn.user}</p><p>助手：{turn.reply.message}</p></article>)}
           {review.context.plan&&<p>方案 v{review.context.plan.version} · {review.context.plan.status}</p>}
+          {review.allocation&&<AllocationReview key={`allocation:${task.task_id}:${task.version}`} {...review.allocation}
+            onPropose={input=>setNote(portfolioAdjustmentNote(review.allocation!.plan,input))}/>}
+          {review.context.plan&&!review.allocation&&<p>该任务没有保存完整整体快照，仅可核对原执行动作；不会临时拼造比例方案。</p>}
           <CommandReview key={`${task.task_id}:${task.version}`} rows={reviewCommands(review.context)} onAdjustment={setNote}/>
           <label>处理说明／待用户事项<textarea rows={4} aria-label={`${task.task_id}处理说明`} value={note} maxLength={1000} disabled={busy} onChange={e=>setNote(e.target.value)}/></label>
           <button disabled={busy||!note.trim()} onClick={()=>{void act(task,'note');}}>保存处理说明</button>

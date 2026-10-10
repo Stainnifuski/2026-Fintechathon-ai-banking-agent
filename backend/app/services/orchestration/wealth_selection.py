@@ -240,7 +240,7 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     goals = list(await db.scalars(select(WealthGoalORM).where(WealthGoalORM.user_id == user_id)))
     row.version, row.status = execution_version, 'AWAITING_CONFIRMATION' if items else 'COMPLETED'
     row.data = {'portfolio_id': portfolio_id, 'portfolio_version': plan['version'], 'portfolio_snapshot_id': snapshot['snapshot_id'],
-        'portfolio_actions': actions, 'portfolio_plan': plan, 'session_id': session_id,
+        'portfolio_actions': actions, 'portfolio_plan': plan, 'portfolio_snapshot': snapshot, 'session_id': session_id,
         'request': {'kind': 'adjustment', 'account_id': active[0]['account_id'] if active else snapshot['account_ids'][0]},
         'stage': stage, 'items': items, 'history': history, 'snapshot': facts,
         'profile_version': profile.version if profile else 1,
