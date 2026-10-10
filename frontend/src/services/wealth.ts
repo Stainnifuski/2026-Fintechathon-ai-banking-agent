@@ -10,7 +10,7 @@ export type CandidateShare = ProductCandidate['share_classes'][number];
 // A owns these shapes. Until its canonical types merge, infer the shared F11
 // recording rather than maintaining a second portfolio schema in B.
 type PortfolioRecording = typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f11.json');
-export type PortfolioPlan = PortfolioRecording['plan'];
+export type PortfolioPlan = Omit<PortfolioRecording['plan'],'candidate_groups'> & {candidate_groups:CandidateGroup[]};
 export type PortfolioSnapshot = PortfolioRecording['snapshot']
   | typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f18.json')['snapshot']
   | typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f10.json')['snapshot'];

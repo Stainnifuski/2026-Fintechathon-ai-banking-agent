@@ -41,7 +41,7 @@ class RecommendParams(StrictRequest):
 class SelectionItem(StrictRequest):
     product_id: str=Field(min_length=1,max_length=120)
     product_version: int=Field(strict=True,ge=1)
-    share_class: str
+    share_class: Literal['A','C']|None
     target_ratio_total: str
     @model_validator(mode='after')
     def ratio(self):

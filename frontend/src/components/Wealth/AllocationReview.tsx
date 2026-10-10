@@ -43,7 +43,7 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
     <button disabled={busy||!selection.items.length} onClick={()=>act(async()=>{
       const input=collectPortfolioSelection(plan,selection,percentages);
       const revised=await onRevise(input);
-      if(revised.portfolio_id!==plan.portfolio_id || revised.snapshot_id!==snapshot.snapshot_id || revised.asset_scope_id!==snapshot.asset_scope_id) throw new Error('配置服务返回了不同范围或快照，请重新读取方案');
+      if(revised.portfolio_id!==plan.portfolio_id || revised.snapshot_id!==snapshot.snapshot_id || revised.asset_scope_id!==snapshot.asset_scope_id || revised.context_id!==plan.context_id || revised.version<plan.version) throw new Error('配置服务返回了旧版本、不同范围或快照，请重新读取方案');
       setPlan(revised);setValidatedKey(selectionKey({items:revised.selected_positions}));setPrepared(null);
       setNotice('已收到配置服务校验结果，请核对板块与目标后再准备差额。');
     })}>校验所选产品与比例</button>

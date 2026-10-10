@@ -84,3 +84,13 @@ prepare复用既有`app.state.wealth_portfolio_source`的owned_plan/snapshot及w
 45项前端测试通过（含4项新候选协议/缺值/版本/换批选择检查和12项原F09交互测试），TypeScript及构建通过，原大chunk警告保留。本轮无后端及银行账务改动，未重复银行集成测试。浏览器只能核对真实服务未接入的blocked反馈及原候选组件回归；真实A返回产品卡的浏览器联调待合并，不能宣称B5/B6完成。
 
 试用：统一手动操作→产品推荐/按条件推荐；目前应显示队友服务尚未接入。原“产品推荐 候选多选、A/C切换和比较”仍可使用录制样例核对交互。后续接PortfolioPlan、revision及prepare，再完成共享人工草稿和B6隔离全流程。
+
+## B5 第六阶段：整体方案、比例修订与prepare统一接入（2026-10-10）
+
+按00第6.4—6.8及02 B03/B04/B05复用已有AllocationReview与PlanExecution。plan_portfolio成功结果显示整体方案，并从A返回的有效候选中恢复明确产品/版本/披露；推荐后已有选择保留，尚无方案时继续选择先请求plan_portfolio。比例校验调用revise_portfolio并提交明确产品SelectionContext；差额准备调用prepare_purchase，仍走原wealth_selection.prepare及原执行计划，未确认不能交易。
+
+补上文档已有GET /portfolio/snapshot，经服务端wealth_portfolio_source读取A规范快照，当前本人context和授权账户集合重验。前端确认snapshot_id/asset_scope_id/context_id/basis与方案绑定后才能核对，未知估值保留；不能用页面现金临时拼快照。方案消费只验证展示结构，A仍负责模型/资格/权重算法。准备时原服务端继续重读方案版本、账务、账户、持仓及金额守恒。share_class按共用契约支持A/C/null，单一产品不虚构A/C。原比例页额外拒绝旧版本/不同context，允许未改比例的同版本录制回放。
+
+验证：54项前端测试、TypeScript及构建通过；新结构化整体链路、actions和原prepare集成11通过，11项未配置PostgreSQL跳过。隔离服务端替身跑通plan→revision→七笔prepare，prepare后无订单/无资金占用；错误快照context拒绝，未安装提供器503。浏览器原F11未改比例核对及七笔差额可用，未调用银行交易。本地后端已重启加载新快照接口，前端HTTP200。真实A方案卡片的浏览器全链路仍待提供器接入；不宣称完整B5/B6完成。
+
+入口：统一手动操作→理财规划（目前真实A未安装，应blocked）；安装提供器后候选多选→继续核对→校验比例→准备差额→原本人确认。当前可从原理财规划→体验七产品整体核对→校验所选产品与比例→核对差额与准备预览做界面回归。后续仍需人工接管共享草稿、偏好滑块/真实A协议联调、B6及03完工交接。
