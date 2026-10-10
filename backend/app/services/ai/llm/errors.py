@@ -2,6 +2,7 @@
 
 
 class LLMError(ValueError):
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, finish_reason: str | None = None) -> None:
         self.code = code
+        self.finish_reason = finish_reason
         super().__init__(code)

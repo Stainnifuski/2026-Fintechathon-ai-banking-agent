@@ -11,6 +11,7 @@ from jose import JWTError, jwt
 from ...middleware import auth
 
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database.connection import AsyncSessionLocal
 from ...domain import fen_to_yuan
@@ -52,16 +53,16 @@ def _view(subscription: SubscriptionORM, account: AccountORM) -> dict:
     }
 
 
-async def list_subscriptions(*, user_id: str) -> list[dict]:
-    async with AsyncSessionLocal() as session:
-        rows = (
-            await session.execute(
-                select(SubscriptionORM, AccountORM)
-                .join(AccountORM, AccountORM.account_id == SubscriptionORM.debit_account_id)
-                .where(SubscriptionORM.user_id == user_id)
-                .order_by(SubscriptionORM.created_at, SubscriptionORM.subscription_id)
-            )
-        ).all()
+async def list_subscriptions(*, user_id: str, session: AsyncSession | None = None) -> list[dict]:
+    if session is None:
+        async with AsyncSessionLocal() as owned_session:
+            return await list_subscriptions(user_id=user_id, session=owned_session)
+    rows = (await session.execute(
+        select(SubscriptionORM, AccountORM)
+        .join(AccountORM, AccountORM.account_id == SubscriptionORM.debit_account_id)
+        .where(SubscriptionORM.user_id == user_id, AccountORM.user_id == user_id)
+        .order_by(SubscriptionORM.created_at, SubscriptionORM.subscription_id)
+    )).all()
     return [_view(subscription, account) for subscription, account in rows]
 
 

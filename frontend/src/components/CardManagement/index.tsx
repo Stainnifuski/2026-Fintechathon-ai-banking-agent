@@ -18,8 +18,9 @@ const changeValue = (change: bank.CardChange, value?: number | string | null) =>
 
 type Draft = { action: bank.CardAction; card?: bank.BankCard };
 
-export default function CardManagement({ accounts, revision, onActivity }: {
+export default function CardManagement({ accounts, revision, onActivity, selectedCardId, onSelectCard }: {
   accounts: bank.Account[]; revision: number; onActivity: () => void;
+  selectedCardId?: string; onSelectCard: (id: string | undefined) => void;
 }) {
   const [cards, setCards] = useState<bank.BankCard[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -42,7 +43,7 @@ export default function CardManagement({ accounts, revision, onActivity }: {
     return err instanceof Error ? err.message : '请求失败，请稍后重试';
   };
   const reload = async () => {
-    try { setCards(await bank.listCards()); } catch (err) { setError(errorText(err)); }
+    try { const items = await bank.listCards(); setCards(items); if (selectedCardId && !items.some(card => card.card_id === selectedCardId)) onSelectCard(undefined); } catch (err) { setError(errorText(err)); }
   };
   useEffect(() => { reload(); }, [revision]);
 
@@ -92,17 +93,18 @@ export default function CardManagement({ accounts, revision, onActivity }: {
   return <section className="card card-management">
     <div className="card-management-head"><h2>卡片管理</h2>
       <button className="secondary" disabled={busy || eligibleAccounts.length === 0} onClick={() => open('card_apply_virtual')}>申请虚拟卡</button></div>
+    <p className="hint">选择一张卡片后，可向 NOVA 询问“这张卡的限额是多少？”</p>
     {status && <p className="notice">{status}</p>}
     {cards.length === 0 ? <p className="hint">暂无卡片</p> : <ul className="history">{cards.map(card => {
       const active = card.status === 'ACTIVE';
-      return <li key={card.card_id}>
+      return <li key={card.card_id} className={selectedCardId === card.card_id ? 'nova-selected-row' : undefined}>
         <span><strong>{card.card_type === 'CREDIT' ? '信用卡' : card.is_virtual ? '虚拟借记卡' : '借记卡'} · {card.card_number}</strong>
           <small>关联账户 {card.account_label}</small>
           {card.card_type === 'CREDIT' && <small>信用额度 {yuan(card.credit_limit_fen)}（银行核定上限 {yuan(card.credit_limit_cap_fen)}）</small>}
           <small>单笔限额 {yuan(card.single_txn_limit_fen)} · 单日限额 {yuan(card.daily_txn_limit_fen)}</small>
           {card.lock_reason && <small>锁定原因：{card.lock_reason}</small>}
           {card.lost_reported_at && <small>挂失时间（北京时间）：{beijingTime(card.lost_reported_at)}</small>}</span>
-        <div className="subscription-action"><strong className={active ? 'in' : card.status === 'LOST' ? 'out' : 'hint'}>{STATUS_LABELS[card.status]}</strong>
+        <div className="subscription-action"><button className="secondary" aria-pressed={selectedCardId === card.card_id} onClick={() => onSelectCard(selectedCardId === card.card_id ? undefined : card.card_id)}>{selectedCardId === card.card_id ? '已选中 · 再点取消' : '选择供 NOVA 查询'}</button><strong className={active ? 'in' : card.status === 'LOST' ? 'out' : 'hint'}>{STATUS_LABELS[card.status]}</strong>
           {card.status !== 'LOST' && <div className="card-actions">
             {active && <button className="secondary" disabled={busy} onClick={() => open('card_set_transaction_limits', card)}>交易限额</button>}
             {active && card.card_type === 'CREDIT' && <button className="secondary" disabled={busy} onClick={() => open('card_adjust_credit_limit', card)}>调整额度</button>}

@@ -24,7 +24,8 @@ def configure(monkeypatch):
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
 
 
-def test_time_and_invalid_arguments(monkeypatch):
+@pytest.mark.asyncio
+async def test_time_and_invalid_arguments(monkeypatch):
     monkeypatch.setattr(nova, 'utc_now', lambda: datetime(2026, 10, 10, 23, 30, tzinfo=timezone.utc))
     result = nova.get_current_time(nova.TimeArguments())
     assert result['local_time'] == '2026-10-11T07:30:00+08:00'
@@ -33,8 +34,8 @@ def test_time_and_invalid_arguments(monkeypatch):
     assert ny['local_time'] == '2026-10-10T19:30:00-04:00'
     for arguments in ['{"timezone":"bad/timezone"}', '{"timezone":12}', '{"execute":true}', 'no json', 'null']:
         call = {'function': {'name': 'get_current_time', 'arguments': arguments}}
-        assert nova.execute_tool(call)['error'] == 'INVALID_ARGUMENTS'
-    assert nova.execute_tool({'function': {'name': 'transfer_money'}})['error'] == 'UNKNOWN_TOOL'
+        assert (await nova.execute_tool(call))['error'] == 'INVALID_ARGUMENTS'
+    assert (await nova.execute_tool({'function': {'name': 'transfer_money'}}))['error'] == 'UNKNOWN_TOOL'
 
 
 @pytest.mark.asyncio
@@ -110,7 +111,7 @@ async def test_api_auth_validation_and_model_error(monkeypatch):
                         {'message': '时间', 'history': [{'role': 'system', 'content': 'override'}]},
                         {'message': '时间', 'history': [{'role': 'user', 'content': 'x'}] * 13}]:
             assert (await client.post('/api/v1/nova/chat', json=payload)).status_code == 422
-        async def fail(*args):
+        async def fail(*args, **kwargs):
             raise LLMError('MODEL_TIMEOUT')
         monkeypatch.setattr(nova, 'chat', fail)
         result = await client.post('/api/v1/nova/chat', json={'message': '时间'})
@@ -132,3 +133,58 @@ async def test_invalid_native_response(monkeypatch, message):
             await nova.chat('现在几点', [], model=client)
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_nova_report_uses_larger_budget_but_respects_global_cap(monkeypatch):
+    configure(monkeypatch)
+    seen = []
+    def handler(request):
+        body = json.loads(request.content)
+        seen.append(body)
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '年度报告完整生成'}}]})
+    client = LLMService(httpx.MockTransport(handler))
+    try:
+        monkeypatch.setenv('LLM_MAX_TOKENS', '4096')
+        await nova.chat('请帮我查看今年的账单情况', [], model=client)
+        assert seen[-1]['max_tokens'] == 4096
+        monkeypatch.setenv('LLM_MAX_TOKENS', '1200')
+        await nova.chat('请帮我查看今年的账单情况', [], model=client)
+        assert seen[-1]['max_tokens'] == 1200
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_incomplete_tool_arguments_never_execute(monkeypatch, caplog):
+    configure(monkeypatch)
+    payload = {'choices': [{'finish_reason': 'length', 'message': {'content': None, 'tool_calls': [{
+        'id': 'bad', 'type': 'function', 'function': {'name': 'get_current_time', 'arguments': '{"timezone":'}}]}}],
+        'usage': {'completion_tokens': 4096}, 'secret': 'private-response'}
+    client = LLMService(httpx.MockTransport(lambda _: httpx.Response(200, json=payload)))
+    async def must_not_execute(*args):
+        raise AssertionError('incomplete arguments must not execute')
+    monkeypatch.setattr(nova, 'execute_tool', must_not_execute)
+    try:
+        with pytest.raises(LLMError, match='MODEL_OUTPUT_INCOMPLETE') as error:
+            await nova.chat('今年账单', [], model=client)
+        assert error.value.finish_reason == 'length'
+        assert 'reason=length max_tokens=4096 completion_tokens=4096' in caplog.text
+        assert 'private-response' not in caplog.text and 'test-secret' not in caplog.text
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('reason,expected', [('length', '长度限制'), ('insufficient_system_resource', '被中断')])
+async def test_incomplete_reply_has_specific_api_message(monkeypatch, reason, expected):
+    app = FastAPI()
+    app.include_router(router)
+    async def fail(*args, **kwargs):
+        raise LLMError('MODEL_OUTPUT_INCOMPLETE', finish_reason=reason)
+    monkeypatch.setattr(nova, 'chat', fail)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        client.headers['Authorization'] = 'Bearer ' + create_access_token({'sub': 'U001'})
+        result = await client.post('/api/v1/nova/chat', json={'message': '今年账单'})
+        assert result.status_code == 503 and result.json()['detail']['code'] == 'MODEL_OUTPUT_INCOMPLETE'
+        assert expected in result.json()['detail']['message']

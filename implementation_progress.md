@@ -1,3 +1,11 @@
+## 2026-10-10 NOVA只读Agent Loop、页面上下文与生活服务查询（本地完成）
+
+已实现模型选择工具→服务端身份与参数校验→执行→结果回传→模型回答的闭环。当前16个只读工具覆盖现实时间、本人账户/账单/流水、卡片/订阅、日历及两家模拟店铺商品/报价/本人订单。账单、卡片、订阅、日历和店铺选择进入页面上下文；店铺付款状态使用同一映射规则的只读投影，不更新订单或银行账务。
+
+前端支持Markdown回答与表格，桌面并排对话、窄屏上下分区，业务页面可继续操作；收起保留、刷新或退出清空。NOVA输出预算升至4096（受全局上限约束），截断提示和安全停止原因日志补齐。资金操作、确认、授权、跨场景总DAG和未注册业务工具不属于本轮交付。
+
+实际测试、真实模型合成数据联调和未验证范围见 [卡片/订阅](docs/validation/nova_cards_subscriptions_20261010.md)、[账户/账单](docs/validation/nova_read_context_20261010.md)、[日历](docs/validation/nova_calendar_20261010.md)、[店铺](docs/validation/nova_shops_20261010.md)、[输出预算](docs/validation/nova_annual_output_20261010.md)、[Markdown](docs/validation/nova_markdown_20261010.md)、[并排面板](docs/validation/nova_docked_panel_20261010.md)。不同阶段测试批次重叠，不累计为全仓验收；新页面未做浏览器自动化/截图验收。未重启运行服务、未新增数据库迁移、未提交或发布远端。使用与部署见 [NOVA使用指南](docs/setup/nova_usage.md)。
+
 ## 2026-10-05 理财统一高风险验证（本地完成）
 
 按用户最新指令替换旧点击授权：复用三号verify_second_factor／SecondFactor，TOTP或短信；单笔申赎和整份方案一次验证，逐笔参数摘要证据。旧verify/demo、点击函数和开关删除；历史证据及已受理订单保留，新受理拒绝旧点击证明。版本6增量迁移、README、契约、安全及演示说明同步。

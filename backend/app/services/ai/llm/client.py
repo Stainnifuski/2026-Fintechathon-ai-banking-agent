@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
@@ -10,6 +11,8 @@ from pydantic import BaseModel, ValidationError
 
 from .config import LLMSettings, get_mode, get_settings
 from .errors import LLMError
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -162,7 +165,13 @@ class LLMService:
             payload = response.json()
             choice = payload["choices"][0]
             if choice.get("finish_reason") not in ({None, "stop", "tool_calls"} if tools is not None else {None, "stop"}):
-                raise LLMError("MODEL_OUTPUT_INCOMPLETE")
+                reason = choice.get("finish_reason")
+                safe_reason = reason if reason in {"length", "content_filter", "insufficient_system_resource", "aborted"} else "unknown"
+                usage = payload.get("usage")
+                completion = usage.get("completion_tokens") if isinstance(usage, dict) else None
+                logger.warning("模型输出未完成：reason=%s max_tokens=%s completion_tokens=%s",
+                               safe_reason, body["max_tokens"], completion if type(completion) is int else None)
+                raise LLMError("MODEL_OUTPUT_INCOMPLETE", finish_reason=safe_reason)
             message = choice["message"]
             content = message.get("content")
             calls = message.get("tool_calls") if tools is not None else None

@@ -57,7 +57,7 @@ async def list_cards(session: AsyncSession, *, user_id: str) -> list[dict]:
     rows = (await session.execute(
         select(CardORM, AccountORM)
         .join(AccountORM, AccountORM.account_id == CardORM.account_id)
-        .where(CardORM.user_id == user_id)
+        .where(CardORM.user_id == user_id, AccountORM.user_id == user_id)
         .order_by(CardORM.created_at, CardORM.card_id)
     )).all()
     return [card_view(card, account) for card, account in rows]

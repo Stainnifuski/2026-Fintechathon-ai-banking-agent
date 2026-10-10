@@ -102,12 +102,13 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .wealth-intro > button { flex: none; }
 .wealth-test-notice { margin-top: 0; }
 .task-focus { margin-bottom: 18px; border-color: #cfd8ff !important; box-shadow: 0 8px 30px #3157e812 !important; }
-.agent-scrim { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: flex-end; background: #10152655; backdrop-filter: blur(4px); }
-.agent-drawer { width: min(430px, 100%); height: 100%; display: flex; flex-direction: column; background: #f8f8fb; box-shadow: -24px 0 70px #10152628; animation: drawer-in .24s ease-out; }
-@keyframes drawer-in { from { transform: translateX(40px); opacity: 0; } }
+.prototype-app.nova-open { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 34vw, 600px); align-items: start; }
+.nova-open .bank-shell { min-width: 0; }
+.agent-panel { position: sticky; top: 0; width: 100%; height: 100dvh; min-width: 0; display: flex; flex-direction: column; background: #f8f8fb; border-left: 1px solid var(--line); }
+.agent-button[aria-expanded="true"] { background: #4355a4; }
 .agent-head { padding: 22px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; background: #fff; border-bottom: 1px solid var(--line); }
 .agent-head > div { display: grid; gap: 2px; }.agent-head small { font-size: 10px; }.agent-orb { width: 40px; height: 40px; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 28% 24%, #bcd8ff, #7059f4 50%, #2f4cd7); border-radius: 50%; box-shadow: 0 8px 22px #624ce54c; }
-.agent-body { flex: 1; overflow-y: auto; padding: 28px 22px; }
+.agent-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 28px 22px; }
 .agent-greeting { margin: 0 0 20px; font-size: 24px; font-weight: 750; line-height: 1.35; letter-spacing: -.025em; }
 .agent-suggestion { margin-bottom: 18px; padding: 20px; color: #fff; background: linear-gradient(145deg, #181e33, #34479e); border-radius: 18px; }
 .agent-suggestion span, .agent-suggestion small { display: block; color: #cdd4f2; }.agent-suggestion strong { display: block; margin: 7px 0; font-size: 30px; }
@@ -130,11 +131,80 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 }
 
 .nova-messages { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
-.nova-message { padding: 12px; border-radius: 12px; background: #f1f5f9; overflow-wrap: anywhere; }
+.nova-message { min-width: 0; padding: 16px; border-radius: 12px; background: #f1f5f9; overflow-wrap: anywhere; }
 .nova-message p { margin: 6px 0; white-space: pre-wrap; }
 .nova-message small { color: #526174; }
 .nova-user { background: #e8f0ff; margin-left: 24px; }
-.nova-assistant { margin-right: 12px; }
+.nova-assistant { margin-right: 0; background: #fff; border: 1px solid #e5e7ed; }
 .nova-message details { margin-top: 8px; font-size: 12px; }
 .nova-error { color: #b42318; }
 .agent-compose input { min-width: 0; }
+
+.nova-markdown { color: #30384d; font-size: 14px; line-height: 1.75; }
+.nova-markdown > :first-child { margin-top: 10px; }
+.nova-markdown > :last-child { margin-bottom: 0; }
+.nova-markdown h1, .nova-markdown h2, .nova-markdown h3, .nova-markdown h4, .nova-markdown h5, .nova-markdown h6 { color: #182238; line-height: 1.45; letter-spacing: 0; }
+.nova-markdown h1 { margin: 18px 0 12px; font-size: 20px; }
+.nova-markdown h2 { margin: 24px 0 10px; padding-top: 14px; border-top: 1px solid #e8edf3; font-size: 16px; }
+.nova-markdown h3, .nova-markdown h4, .nova-markdown h5, .nova-markdown h6 { margin: 18px 0 8px; font-size: 14px; }
+.nova-markdown p { margin: 10px 0; white-space: normal; }
+.nova-markdown strong { font-weight: 700; color: #182238; }
+.nova-markdown ul, .nova-markdown ol { margin: 10px 0; padding-left: 22px; }
+.nova-markdown li { margin: 6px 0; }
+.nova-markdown li > p { margin: 4px 0; }
+.nova-markdown blockquote { margin: 12px 0; padding: 8px 12px; border-left: 3px solid #b5c8ec; background: #f4f7fc; }
+.nova-markdown a { color: #1769e0; text-decoration: underline; }
+.nova-markdown code { padding: 2px 5px; border-radius: 4px; background: #eef2f7; font-size: 12px; }
+.nova-markdown pre { max-width: 100%; overflow-x: auto; padding: 12px; background: #eef2f7; border-radius: 8px; }
+.nova-markdown pre code { padding: 0; white-space: pre; }
+.nova-markdown hr { margin: 18px 0; border: 0; border-top: 1px solid #e5e7ed; }
+.nova-table-scroll { max-width: 100%; margin: 12px 0; overflow-x: auto; border: 1px solid #e5e7ed; border-radius: 8px; }
+.nova-table-scroll:focus-visible { outline: 2px solid #1769e0; outline-offset: 2px; }
+.nova-markdown table { width: 100%; margin: 0; border-collapse: collapse; font-size: 13px; }
+.nova-markdown th, .nova-markdown td { padding: 9px 12px; border-bottom: 1px solid #e8edf3; text-align: left; vertical-align: top; white-space: nowrap; }
+.nova-markdown th { color: #526174; background: #f3f6fa; font-weight: 600; }
+.nova-markdown tr:last-child td { border-bottom: 0; }
+.nova-markdown tbody tr:nth-child(even) { background: #fafbfd; }
+@media (max-width: 640px) {
+  .agent-body { padding: 20px 14px; }
+  .nova-message { padding: 12px; }
+  .nova-markdown h1 { font-size: 18px; }
+  .agent-head .icon-button { display: grid; }
+}
+
+/* NOVA 并排打开时，业务工作台适应剩余宽度。 */
+.nova-open .dashboard-hero { grid-template-columns: minmax(0, 1fr); }
+.nova-open .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+.nova-open .metric-grid, .nova-open .bill-metrics, .nova-open .bill-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.nova-open .bill-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.nova-open .bill-filters button { grid-column: span 2; }
+@media (min-width: 1101px) and (max-width: 1360px) {
+  .nova-open .bank-shell { grid-template-columns: 78px minmax(0, 1fr); }
+  .nova-open .bank-sidebar { padding-inline: 12px; }
+  .nova-open .brand { justify-content: center; padding-inline: 0; }
+  .nova-open .brand > span:last-child, .nova-open .sidebar-foot { display: none; }
+  .nova-open .bank-sidebar nav button { font-size: 0; justify-content: center; padding: 12px; }
+  .nova-open .bank-sidebar nav button span { font-size: 19px; }
+}
+/* 窄屏上下分区，各自滚动，业务区域始终可以操作。 */
+@media (max-width: 1100px) {
+  .prototype-app.nova-open { --nova-pane-height: min(42dvh, 440px); height: 100dvh; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) var(--nova-pane-height); overflow: hidden; }
+  .nova-open .bank-shell { height: 100%; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .nova-open .bank-sidebar { height: calc(100dvh - var(--nova-pane-height)); overflow-y: auto; }
+  .agent-panel { position: static; height: 100%; min-height: 0; border-left: 0; border-top: 1px solid var(--line); }
+  .agent-head { padding: 10px 16px; }
+  .agent-orb { width: 32px; height: 32px; }
+  .agent-body { padding: 14px 16px; }
+  .agent-greeting { font-size: 18px; margin-bottom: 10px; }
+  .agent-compose { padding: 10px 16px; }
+}
+@media (max-width: 640px) {
+  .prototype-app.nova-open { height: calc(100dvh - 68px); }
+  .nova-open .bank-shell { padding-bottom: 0; }
+  .nova-open .bank-sidebar { height: 68px; overflow: visible; }
+  .nova-open .bill-charts { grid-template-columns: minmax(0, 1fr); }
+}
+
+.nova-open .calendar-layout { grid-template-columns: minmax(0, 1fr); }
+
+.history li.nova-selected-row { outline: 2px solid var(--accent, #24786a); outline-offset: -2px; border-radius: 8px; }
