@@ -143,6 +143,29 @@ async def control(db, user_id, task_id, action, body, *, actor_id=None):
                 plan=await db.get(WealthPlanORM,task.data['plan_id'])
                 if plan and plan.user_id==user_id: plan.status='CANCELLED'
         else: raise WealthPolicyError('控制动作不支持', 'INVALID_REQUEST', 422)
+    if action in {'pause', 'handoff', 'claim', 'release'}:
+        # Changing control invalidates only unsubmitted authorization. Keep accepted/unknown
+        # operations and their settlement observation intact; never undo bank accounting.
+        submitted_refs = {n.operation_id for n in nodes if n.kind == 'SUBMIT'
+            and n.status in {'RUNNING', 'COMPLETED', 'UNKNOWN'}}
+        pending_refs = {n.operation_id for n in nodes if n.kind == 'SUBMIT'
+            and n.operation_id and n.operation_id not in submitted_refs}
+        # Bank acceptance can precede the worker's SUBMIT observation. CONSUMED is
+        # the trusted receipt here; don't reset its already-confirmed dependency nodes.
+        consumed_refs = set(await db.scalars(select(Authorization.operation_id).where(
+            Authorization.user_id == user_id, Authorization.operation_id.in_(pending_refs),
+            Authorization.status == 'CONSUMED')))
+        pending_refs -= consumed_refs
+        await db.execute(update(Authorization).where(Authorization.user_id == user_id,
+            Authorization.operation_id.in_(pending_refs),
+            Authorization.status.in_(['AWAITING_CONFIRMATION', 'AWAITING_MFA', 'VALID'])).values(status='EXPIRED'))
+        for node in nodes:
+            if (node.kind in {'CONFIRM', 'VERIFY'} and node.data.get('operation_ref') in pending_refs
+                    and node.status != 'CANCELLED'):
+                node.status = 'READY'
+                node.lease_version = None
+                node.lease_until = None
+
     task.version += 1
     task.data = {**task.data, 'notes':[*task.data.get('notes', []),
         {'actor_id':actor, 'action':action, 'reason':body.get('reason', ''), 'occurred_at':utc_iso(utc_now())}]}

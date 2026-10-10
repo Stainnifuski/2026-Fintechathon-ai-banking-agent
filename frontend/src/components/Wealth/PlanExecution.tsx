@@ -1,3 +1,4 @@
+import CommandReview from './CommandReview';
 import { useState } from 'react';
 import * as w from '../../services/wealth';
 import type { SecondFactor as Factor } from '../../services/bank';
@@ -19,7 +20,7 @@ export default function PlanExecution({plan:initial,onActivity}:Props){
     <h3>银行执行版本 v{plan.version}</h3><p>每笔绑定真实付款账户、具体产品、披露和原操作号；整份方案使用一次本人确认与验证码。</p>
     <button disabled={busy||!plan.items.length||plan.status!=='AWAITING_CONFIRMATION'} onClick={()=>act(async()=>{setPreview(await w.post<w.PlanPreview>(`/plans/${plan.plan_id}/preview`,{version:plan.version}));setConsent(false);setStage('PREVIEW');setCode('');setFactor({method:'totp'});})}>预览整份{plan.stage==='SELL'?'赎回':'申购'}</button>
     <button className="secondary" disabled={busy} onClick={()=>act(async()=>{setPlan(await w.get<w.Plan>(`/plans/${plan.plan_id}/progress`));onActivity();})}>按原号核对进度</button>
-    {plan.items.map(i=><p key={i.command.operation_id}>{i.command.product_id} · {i.command.operation_id} · {i.status}</p>)}
+    <CommandReview rows={plan.items}/>
     {plan.next_action&&<p>{plan.next_action}</p>}
     {preview&&<section aria-label="整份银行预览"><h3>逐笔核对（{preview.items.length}笔）</h3>{preview.items.map(item=><article key={item.authorization_id}>
       <strong>{item.product_name} · {item.command.product_id}</strong><p>账户 {item.command.account_id} · {item.command.direction==='purchase'?`申购 ${w.money(item.command.amount_fen)}`:`赎回 ${item.command.units}份`} · 产品 v{item.command.product_version} · 披露 v{item.command.disclosure_version}</p>

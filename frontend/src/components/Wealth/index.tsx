@@ -122,7 +122,7 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
         `${direction}状态：${statusLabel[fact.status] || fact.status}`);
   };
   return <section className="card wealth" aria-label="理财模拟">
-      {!manual && <OperatorPanel />}
+      {!manual && <OperatorPanel userId={userId} revision={revision} onActivity={onActivity}/>}
     <div className="wealth-title"><div><h2>{manual ? '手选产品 · 模拟银行联调' : '理财模拟'}</h2><p>比赛模拟环境／模拟资金 · 请仅输入虚构数据 · 本金可能亏损</p></div><button className="secondary" disabled={busy} onClick={() => act(async () => { onActivity(); })}>刷新银行事实</button></div>
     <section aria-label="当前银行事实" className="notice">
       <strong>当前银行事实 · {assets?.scope === 'ordinary' ? '普通账户／现实业务时间' : assets?.scope === 'disposable_simulation' ? '可处置模拟轮次' : '范围待查询'}</strong>

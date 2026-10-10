@@ -118,7 +118,7 @@ export interface WealthTask {
   status: string; control_mode: 'AGENT' | 'HANDOFF_PENDING' | 'HUMAN'; owner_id: string | null;
   waiting_reason: string | null; goal: string;
   notes: {action: string; reason: string; occurred_at: string}[];
-  nodes: {node_id: string; kind: string; status: string; depends_on: string[]; operation_id?: string | null}[];
+  nodes: {node_id: string; kind: string; status: string; depends_on: string[]; operation_id?: string | null; command?: Command | null}[];
 }
 export const money = (fen: number | null | undefined) => fen == null ? '未知' : `¥${(fen / 100).toFixed(2)}`;
 export const get = <T,>(path: string) => apiClient.get<T>(`/wealth${path}`).then(r => r.data);

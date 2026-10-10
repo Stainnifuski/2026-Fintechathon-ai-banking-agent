@@ -146,8 +146,11 @@ async def test_cancel_submitted_task_keeps_settlement_observation(store):
         api=DirectBank(restarted)
         for _ in range(3):await tick(restarted,task['task_id'],api)
         result=await tasks.view(restarted,await tasks.owned(restarted,'U1',task['task_id']))
-        assert result['status']=='PARTIAL_COMPLETED'
-        assert next(n for n in result['nodes'] if n['kind']=='SETTLEMENT')['output']['status']=='SETTLED'
+        # The current lifecycle compacts terminal/single-order graphs into original-id receipts.
+        receipt=await tasks.owned(restarted,'U1',task['task_id'])
+        assert result['status']=='COMPLETED' and receipt.data['compacted'] is True
+        assert receipt.data['operation_ids']==[cmd.operation_id]
+        assert (await bank.owned_order(restarted,'U1',cmd.operation_id)).status=='SETTLED'
         assert api.submissions==0
 
 
@@ -226,8 +229,11 @@ async def test_cancelled_sell_blocks_buy_dependency_and_human_direct_cancel(stor
         assert (await bank.cancel(db,'U1',sell.operation_id))['status']=='CANCELLED'
         for _ in range(6):await tick(db,task['task_id'],api)
         state=await tasks.view(db,await tasks.owned(db,'U1',task['task_id']))
-        assert next(node for node in state['nodes'] if node['kind']=='REREAD_CASH')['status']=='CANCELLED'
-        assert next(node for node in state['nodes'] if node['kind']=='BUY_PLAN')['status']=='CANCELLED'
+        # Completed cancellation is compacted; no runnable buy dependency survives.
+        receipt=await tasks.owned(db,'U1',task['task_id'])
+        assert receipt.data['compacted'] is True and receipt.data['operation_ids']==[sell.operation_id]
+        assert state['nodes']==[]
+        assert (await bank.owned_order(db,'U1',sell.operation_id)).status=='CANCELLED'
         assert state['status']=='CANCELLED' and api.submissions==1
         facts=await api.call('POST','/assets',{'subject_user_id':'U1','account_id':'A1'})
         replacement=command('cancelled-sell-following-buy',product='MF001').model_copy(update={'plan_id':'WPcancelled-dependency','plan_version':1})
@@ -291,7 +297,7 @@ async def test_pause_handoff_replay_owner_and_old_bank_write_guard(store, monkey
         assert paused['status']=='PAUSED'
         assert await tasks.control(db,'U1',task['task_id'],'pause',{'request_id':'task-pause-01','expected_version':1})==paused
         with pytest.raises(WealthPolicyError) as error: await bank.accept_many(db,'U1',[(cmd,aid)])
-        assert error.value.code=='TASK_WRITE_BLOCKED'
+        assert error.value.code=='AUTHORIZATION_EXPIRED'
         await db.rollback()
         handoff=await tasks.control(db,'U1',task['task_id'],'handoff',{'request_id':'task-handoff-01','expected_version':2})
         assert handoff['control_mode']=='HANDOFF_PENDING'
@@ -301,7 +307,7 @@ async def test_pause_handoff_replay_owner_and_old_bank_write_guard(store, monkey
             await tasks.control(db,'U1',task['task_id'],'claim',{'request_id':'task-claim-02','expected_version':claimed['version']},actor_id='OP2')
         await db.rollback()
         with pytest.raises(WealthPolicyError) as error: await bank.accept_many(db,'U1',[(cmd,aid)])
-        assert error.value.code=='TASK_WRITE_BLOCKED'
+        assert error.value.code=='AUTHORIZATION_EXPIRED'
         await db.rollback()
         released=await tasks.control(db,'U1',task['task_id'],'release',{'request_id':'task-release-01','expected_version':4},actor_id='OP1')
         assert released['status']=='PAUSED' and released['waiting_reason']=='REVALIDATION_REQUIRED'

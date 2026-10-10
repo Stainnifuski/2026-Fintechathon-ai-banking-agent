@@ -16,6 +16,7 @@ import AllocationReview from './AllocationReview';
 import TableWorkbench from './TableWorkbench';
 import LiveTablePanel from './LiveTablePanel';
 import StructuredActionPanel from './StructuredActionPanel';
+import HandoffReviewPreview from './HandoffReviewPreview';
 import {recordedTableAssets,recordedTableEligibility,recordedTableDetail} from './FixtureTableProvider';
 import {recordedReturns,returnsScenarios,returnsPreviewNotice,returnsScenarioNotice} from './FixtureReturnsProvider';
 import type {ReturnsPreviewSource} from './ReturnsView';
@@ -75,7 +76,7 @@ export default function PortfolioConsumerPreview(props: Props) {
             onContinue={() => setReviewing(true)} loadDetail={recordedDetail} loadComparison={recordedComparison} />
           </> : <><h2>订单与持仓查询</h2><div className="table-source-controls"><button className="secondary" aria-pressed={tableSource==='fixture'} onClick={()=>setTableSource('fixture')}>查看 F23 双表样例</button><button className="secondary" aria-pressed={tableSource==='bank'} onClick={()=>setTableSource('bank')}>查询登录账户模拟银行</button></div><p>{tableSource==='fixture'?'F23：12笔虚构订单、9行聚合持仓，用于分页、多选、详情和操作入口核对；不会调用银行交易。':'以下记录属于当前登录账户；无记录是正常状态，不会为演示创建订单。'}</p></>}
         </section>
-        <section className="consumer-card" hidden={panel!=='actions'}><StructuredActionPanel key={props.userId} {...props}/></section>
+        <section className="consumer-card" hidden={panel!=='actions'}><StructuredActionPanel key={props.userId} {...props}/><HandoffReviewPreview/></section>
         <section className="consumer-card" hidden={!tablePanel}>
           <div hidden={tableSource!=='fixture'}><TableWorkbench assets={tableAssets} scopeKey={`fixture-f23:${snapshot.asset_scope_id}`} panel={panel==='positions'?'positions':'orders'} onActivity={()=>{}} loadEligibility={recordedTableEligibility} loadDetail={recordedTableDetail} fixtureOnly returnsPreview={returnsPreview}/></div>
           {tableSource==='bank'&&<LiveTablePanel userId={props.userId} revision={props.revision} onActivity={props.onActivity} panel={panel==='positions'?'positions':'orders'} active={tablePanel}/>}

@@ -20,6 +20,7 @@ import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCa
 import {readPortfolioPlan,planProductSelection} from '../../services/wealthPortfolioReview';
 import StructuredPortfolioReview from './StructuredPortfolioReview';
 import './structuredActions.css';
+import TaskControlPanel from './TaskControlPanel';
 import {manualDrafts,draftScope} from '../../services/wealthManualDraft';
 import {useManualDraft} from './useManualDraft';
 type ResultSlot='planning'|'records'|'returns'|'product'|'redemption'|'cancellation'|'comparison';
@@ -142,6 +143,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   };
   return <section aria-label="统一手动操作" className="structured-actions"><h2>直接选择要做的事</h2><p>这里使用登录账户的模拟银行资料。按钮直接传递操作参数，不需要输入聊天指令。</p><p className="consumer-note">未提交的选择与输入在两个手动入口间共享；切换入口后需重新查询、校验和预览。暂停或交还任务不会自动提交草稿。退出登录或切换资金范围后清除。</p>
     {!ready&&<p>正在读取本人资料…</p>}{error&&<p role="alert">{error}</p>}{activityNotice&&<p role="status" className="consumer-warning">{activityNotice}</p>}<button className="secondary" disabled={busy} onClick={()=>{setResults({});recordRows.current.clear();setSelected({type:'positions',ids:[]});setReload(n=>n+1);}}>刷新账户记录与操作状态</button>{reading&&ready&&<p role="status">正在刷新账户及人工控制状态…</p>}{blockedAccounts.length>0&&<p className="consumer-warning">账户 {Array.from(new Set(blockedAccounts)).join('、')} 存在人工接管或暂停任务。资料可继续查询；相关交易仍受银行权限检查。</p>}
+    {ready&&<TaskControlPanel key={`${userId}:${contextId}`} tasks={ready.tasks} disabled={busy} onChanged={()=>{setConfirm(null);setCancelView(null);setReviewing(false);setReload(n=>n+1);onActivity();}}/>}
     <fieldset disabled={busy||!ready}><legend>规划与推荐</legend><div className="consumer-entry-grid">
       <button onClick={()=>void run('plan_portfolio',{})}>理财规划</button><button onClick={()=>recommend({mode:'general'})}>产品推荐</button>
       <button onClick={()=>recommend({mode:'category',category:'bond_fund'})}>推荐债券基金</button><button onClick={()=>recommend({mode:'theme',theme_key:'high_dividend'})}>想买高股息产品</button></div>
