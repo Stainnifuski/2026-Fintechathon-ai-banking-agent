@@ -2,6 +2,10 @@ import {useEffect,useState,useRef,useCallback} from 'react';
 import * as w from '../../services/wealth';
 import {sendAction} from '../../services/wealthActions';
 import type {ActionName,ActionResult,ActionRequest} from '../../services/wealthActions';
+import OrderCancellationDialog from './OrderCancellationDialog';
+import type {CancellationRow} from './OrderCancellationDialog';
+import {OrderDetail} from './OrderTable';
+import {PositionDetail} from './PositionTable';
 import SingleTradePreview from './SingleTradePreview';
 import ProductDetail from './ProductDetail';
 import type {ProductDetailData,ProductDetailLoader} from './ProductDetail';
@@ -18,9 +22,11 @@ const resultTitles:Record<ResultSlot,string>={planning:'规划与推荐结果',r
 interface Page {rows:(w.OrderRow|w.PositionRow)[];page:number;pages:number;total:number;object_type:'orders'|'positions'}
 interface Converted {preview:w.Preview;resolved_units:string;holding_ratio:string;estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;notice:string}
 export default function StructuredActionPanel({userId,revision,onActivity}:{userId:string;revision:number;onActivity:()=>void}){
-  const [facts,setFacts]=useState<{owner:string;assets:w.Assets;products:w.Product[]}|null>(null);
+  const [facts,setFacts]=useState<{owner:string;assets:w.Assets;products:w.Product[];tasks:w.WealthTask[]}|null>(null);
   const [results,setResults]=useState<Partial<Record<ResultSlot,ActionResult>>>({});
-  const [pending,setPending]=useState<ResultSlot|null>(null);const busy=pending!==null;
+  const [pending,setPending]=useState<ResultSlot|null>(null);const [reading,setReading]=useState(true);const [reload,setReload]=useState(0);const busy=pending!==null||reading;
+  const [cancelView,setCancelView]=useState<CancellationRow[]|null>(null);const [rowView,setRowView]=useState<w.OrderRow|w.PositionRow|null>(null);const [activityNotice,setActivityNotice]=useState('');
+  const recordRows=useRef(new Map<string,w.OrderRow|w.PositionRow>());
   const [actionErrors,setActionErrors]=useState<Partial<Record<ResultSlot,string>>>({});const [error,setError]=useState('');
   const fail=(slot:ResultSlot,message:string)=>setActionErrors(current=>({...current,[slot]:message}));
   const scope=useRef<string|null>(null);
@@ -34,27 +40,29 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   useEffect(()=>{
     // A previous preview must not remain actionable after changing its inputs or bank facts.
     setResults(current=>{const next={...current};delete next.redemption;delete next.cancellation;return next;});
-    setConfirm(null);
-  },[selected,inputMode,value,revision]);
-  useEffect(()=>{let active=true;setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<w.Product[]>('/products')]).then(([assets,products])=>{
+    setConfirm(null);setCancelView(null);
+  },[selected,inputMode,value,revision,reload]);
+  useEffect(()=>{let active=true;setReading(true);setCancelView(null);setRowView(null);setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<w.Product[]>('/products'),w.get<{items:w.WealthTask[]}>('/tasks')]).then(([assets,products,tasks])=>{
     if(!active)return;
-    if(scope.current!==assets.context_id){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setSelected({type:'positions',ids:[]});setTarget('');setConfirm(null);}
+    if(scope.current!==assets.context_id){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setSelected({type:'positions',ids:[]});setTarget('');setConfirm(null);recordRows.current.clear();}
     client.current.setContext(assets.context_id??'legacy-v1');
-    setFacts({owner:userId,assets,products});setDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(assets.business_at)));
-  }).catch(()=>{if(active){client.current.setContext(null);setDetailView(null);setCompareView(false);setFacts(null);setError('登录账户资料读取失败，请重新登录或刷新。');}});return()=>{active=false;};},[userId,revision]);
+    setFacts({owner:userId,assets,products,tasks:tasks.items});setDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(assets.business_at)));
+  }).catch(()=>{if(active){client.current.setContext(null);setDetailView(null);setCompareView(false);setFacts(null);setError('登录账户资料读取失败，请重新登录或刷新。');}}).finally(()=>{if(active)setReading(false);});return()=>{active=false;};},[userId,revision,reload]);
   const ready=facts?.owner===userId?facts:null;
+  const blockedAccounts=ready?.tasks.filter(t=>!['COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'].includes(t.status)&&(t.control_mode!=='AGENT'||t.status==='PAUSED')).map(t=>t.account_id)??[];
   scope.current=ready?.assets.context_id??null;
   const run=useCallback(async(action:ActionName,params:Record<string,unknown>,selection?:ActionRequest['selection_context'])=>{
-    if(!ready)return;
+    if(!ready||reading)return;
     const slot=resultSlot(action);
     const latestDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready.assets.business_at));
     if(action==='show_wealth_returns'&&typeof params.anchor_date==='string'&&params.anchor_date>latestDate){fail(slot,'未来还没有发生，不能查询未来收益。');return;}
     const requestNumber=++latestRequest.current;setPending(slot);setActionErrors(current=>({...current,[slot]:''}));
     try{const response=await client.current.request(action,params,selection);
       if(scope.current!==(ready.assets.context_id??'legacy-v1'))return;
+      if(response.status==='ok'&&(action==='list_orders'||action==='list_positions'))for(const row of (response.data as Page).rows)recordRows.current.set(row.object_type==='orders'?(row as w.OrderRow).operation_id:(row as w.PositionRow).position_key,row);
       setResults(previous=>({...previous,[slot]:response}));return response;
     }catch(reason){if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??'操作失败，请刷新并核对原请求。');}finally{if(requestNumber===latestRequest.current)setPending(null);}
-  },[ready]);
+  },[ready,reading]);
   const loadDetail=useCallback<ProductDetailLoader>(async(id,period,version)=>{
     const response=await run('show_product_detail',{product_id:id,product_version:version,period},version?{object_type:'products',ids:[`${id}:${version}`]}:undefined);
     if(response?.status!=='ok')throw new Error(response?.message??'详情查询失败');
@@ -88,20 +96,20 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     const compared=result?.status==='ok'&&result.action==='compare_products'?result.data as w.Product[]:null;
     const converted=result?.status==='ok'&&result.action==='preview_redemption'?result.data as Converted:null;
     const detail=result?.status==='ok'&&result.action==='show_product_detail'?result.data as ProductDetailData:null;
-    const cancellation=result?.status==='ok'&&result.action==='preview_order_cancellation'?result.data as {items:{operation_id:string;eligibility:string;reason:string;consequence:string}[]}:null;
+    const cancellation=result?.status==='ok'&&result.action==='preview_order_cancellation'?result.data as {items:w.CancellationEligibility[]}:null;
     const returnData=result?.status==='ok'&&result.action==='show_wealth_returns'?result.data as WealthReturns:null;
     return <section className="action-result" aria-label={resultTitles[slot]} aria-live="polite" aria-busy={pending===slot}><h3>{resultTitles[slot]}</h3>{pending===slot&&<p role="status">正在查询 / 核对…</p>}{actionErrors[slot]&&<p role="alert" className="action-error">{actionErrors[slot]}</p>}{result&&<><p className="action-result-message">{result.message}</p>{(pending===slot||actionErrors[slot])&&<p className="consumer-note">下方保留上次结果，请以本次完成后的反馈为准。</p>}{result.status==='blocked'&&<p className="consumer-note">本次操作未执行；可继续查询本人订单、持仓与收益，操作限制见上述原因。</p>}
       {result.required_fields.map(field=><div key={field.field}><p>{field.reason}</p>{field.options&&field.options.length>0&&<label>补充选择<select defaultValue="" onChange={e=>{if(field.field==='redemption.position_key'){setSelected({type:'positions',ids:[e.target.value]});}else if(field.field==='product_id'){setTarget(e.target.value);}}}><option value="">请选择</option>{field.options.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select></label>}</div>)}
-      {page&&<><p>共{page.total}行 · 第{page.page}/{page.pages}页</p><div className="returns-table-scroll"><table><thead><tr><th>选择</th><th>产品</th><th>账户</th><th>状态/持有份额</th></tr></thead><tbody>{page.rows.map(row=>{const key=page.object_type==='orders'?(row as w.OrderRow).operation_id:(row as w.PositionRow).position_key;return <tr key={key}><td><input type="checkbox" aria-label={`选择${key}`} checked={selected.type===page.object_type&&selected.ids.includes(key)} onChange={e=>setSelected(current=>({type:page.object_type,ids:e.target.checked?Array.from(new Set([...(current.type===page.object_type?current.ids:[]),key])):current.ids.filter(x=>x!==key)}))}/></td><td>{row.product_name}</td><td>{row.account_id}</td><td>{page.object_type==='orders'?(row as w.OrderRow).status:`${(row as w.PositionRow).units}份（可赎${(row as w.PositionRow).redeemable_units}）`}</td></tr>;})}</tbody></table></div>{page.rows.length===0&&<p>当前授权范围内暂无{page.object_type==='orders'?'订单':'持仓'}记录。</p>}<button className="secondary" disabled={busy||page.page<=1} onClick={()=>list(page.object_type,page.page-1)}>上一页</button><button className="secondary" disabled={busy||page.page>=page.pages} onClick={()=>list(page.object_type,page.page+1)}>下一页</button><button className="secondary" onClick={()=>setSelected({type:page.object_type,ids:[]})}>清空选择</button></>}
+      {page&&<><p>共{page.total}行 · 第{page.page}/{page.pages}页</p><div className="returns-table-scroll"><table><thead><tr><th>选择</th><th>产品</th><th>账户</th><th>状态/持有份额</th><th>事实详情</th></tr></thead><tbody>{page.rows.map(row=>{const key=page.object_type==='orders'?(row as w.OrderRow).operation_id:(row as w.PositionRow).position_key;return <tr key={key}><td><input type="checkbox" aria-label={`选择${key}`} checked={selected.type===page.object_type&&selected.ids.includes(key)} onChange={e=>setSelected(current=>({type:page.object_type,ids:e.target.checked?Array.from(new Set([...(current.type===page.object_type?current.ids:[]),key])):current.ids.filter(x=>x!==key)}))}/></td><td>{row.product_name}</td><td>{row.account_id}</td><td>{page.object_type==='orders'?(row as w.OrderRow).status:`${(row as w.PositionRow).units}份（可赎${(row as w.PositionRow).redeemable_units}）`}</td><td><button className="secondary" onClick={()=>setRowView(row)}>{page.object_type==='orders'?'查看订单详情':'查看持仓详情'}</button></td></tr>;})}</tbody></table></div>{page.rows.length===0&&<p>当前授权范围内暂无{page.object_type==='orders'?'订单':'持仓'}记录。</p>}<button className="secondary" disabled={busy||page.page<=1} onClick={()=>list(page.object_type,page.page-1)}>上一页</button><button className="secondary" disabled={busy||page.page>=page.pages} onClick={()=>list(page.object_type,page.page+1)}>下一页</button><button className="secondary" onClick={()=>setSelected({type:page.object_type,ids:[]})}>清空选择</button></>}
       {returnData&&<><p>{returnData.start_date===returnData.end_date?`${returnData.start_date} · 当日收益`:`${returnData.start_date} 至 ${returnData.end_date}`}</p><p>{returnStatus[returnData.status]}</p><dl className="action-summary">{[['所选期间收益',returnData.summary.period_pnl_fen],['累计收益',returnData.summary.cumulative_pnl_fen],['累计已实现',returnData.summary.realized_pnl_fen],['累计未实现',returnData.summary.unrealized_pnl_fen]].map(([label,amount])=><div key={String(label)}><dt>{label}</dt><dd>{returnMoney(amount as number|null)}</dd></div>)}</dl><p>{returnData.missing_fields.join('；')}</p></>}
       {converted&&<><p>赎回{converted.resolved_units}份 · 比例{(Number(converted.holding_ratio)*100).toFixed(4)}% · 市值{w.money(converted.estimated_market_value_fen)}</p><p>预计费用{w.money(converted.estimated_fee_fen)} · 预计到账{w.money(converted.estimated_net_cash_fen)}</p><p>{converted.notice}</p><button onClick={()=>setConfirm(converted)}>继续本人确认与验证</button></>}
       {detail&&<article><h4>{detail.name} · {detail.product_id}</h4><p>风险等级 {detail.risk_level??'尚未核实'} · 最新净值 {detail.latest_nav?.nav??'缺少资料'}（{detail.latest_nav?.date??'未知'}）</p><p>{detail.chart?.notice??'暂无行情'} · 已读取{detail.chart?.points.length??0}个行情点。可继续打开下方完整详情查看图表。</p><details><summary>起购、持有与到账规则</summary><p>起购 {w.money(detail.rules?.min_amount_fen)} · 持有期 {detail.rules?.holding_days??'未核实'}天 · 普通到账 {detail.rules?.cash_business_days??'未核实'}个营业日</p><p>资料时点（北京时间）：{beijingTime(detail.as_of)}</p></details><button className="secondary" onClick={()=>{const p=ready?.products.find(p=>p.product_id===detail.product_id);if(p)setDetailView({id:p.product_id,version:p.version});}}>打开完整产品详情</button></article>}
       {compared&&<><p>已比较{compared.length}只产品：{compared.map(p=>p.name).join('、')}。</p><button className="secondary" onClick={()=>setCompareView(true)}>重新选择并查看比较</button></>}
-      {cancellation&&<><p>这里只读资格；实际取消仍从原订单表本人确认。</p>{cancellation.items.map(x=><article key={x.operation_id}><strong>{x.operation_id} · {x.eligibility}</strong><p>{x.reason}</p><p>{x.consequence}</p></article>)}</>}
+      {cancellation&&<><p>此处先核对资格，继续取消仍需本人明确确认。</p>{cancellation.items.map(x=><article key={x.operation_id}><strong>{x.operation_id} · {x.eligibility}</strong><p>{x.reason}</p><p>{x.consequence}</p></article>)}<button disabled={busy||!cancellation.items.some(x=>x.eligibility==='ALLOWED')} onClick={()=>{const views:CancellationRow[]=[];for(const eligibility of cancellation.items){const row=recordRows.current.get(eligibility.operation_id);if(!row||row.object_type!=='orders'||row.digest!==eligibility.order_digest){fail('cancellation','订单资料或版本已变化，请重新查询订单并核对资格。');return;}views.push({row,eligibility});}setCancelView(views);}}>继续核对并本人确认取消</button></>}
     </>}</section>;
   };
   return <section aria-label="统一手动操作" className="structured-actions"><h2>直接选择要做的事</h2><p>这里使用登录账户的模拟银行资料。按钮直接传递操作参数，不需要输入聊天指令。</p>
-    {!ready&&<p>正在读取本人资料…</p>}{error&&<p role="alert">{error}</p>}
+    {!ready&&<p>正在读取本人资料…</p>}{error&&<p role="alert">{error}</p>}{activityNotice&&<p role="status" className="consumer-warning">{activityNotice}</p>}<button className="secondary" disabled={busy} onClick={()=>{setResults({});recordRows.current.clear();setSelected({type:'positions',ids:[]});setReload(n=>n+1);}}>刷新账户记录与操作状态</button>{reading&&ready&&<p role="status">正在刷新账户及人工控制状态…</p>}{blockedAccounts.length>0&&<p className="consumer-warning">账户 {Array.from(new Set(blockedAccounts)).join('、')} 存在人工接管或暂停任务。资料可继续查询；相关交易仍受银行权限检查。</p>}
     <fieldset disabled={busy||!ready}><legend>规划与推荐</legend><div className="consumer-entry-grid">
       <button onClick={()=>void run('plan_portfolio',{})}>理财规划</button><button onClick={()=>recommend({mode:'general'})}>产品推荐</button>
       <button onClick={()=>recommend({mode:'category',category:'bond_fund'})}>推荐债券基金</button><button onClick={()=>recommend({mode:'theme',theme_key:'high_dividend'})}>想买高股息产品</button></div>
@@ -119,7 +127,10 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       <button className="secondary" onClick={()=>setCompareView(true)}>选择产品进行比较（2—4只）</button><p className="consumer-note">查看详情和比较是可选操作，不影响原产品选择，也不代表推荐。</p>{renderResult('comparison')}
     </fieldset>
     <fieldset disabled={busy||!ready}><legend>按所选持仓赎回</legend><p>已选{selected.type==='positions'?selected.ids.length:0}只持仓；多选时不会把一笔市值自动套给每只。</p><label>赎回输入方式<select value={inputMode} onChange={e=>setInputMode(e.target.value)}><option value="market_value">持仓市值（元）</option><option value="units">份额</option><option value="holding_ratio">本只持仓比例（%）</option></select></label><label>赎回数量<input inputMode="decimal" value={value} onChange={e=>setValue(e.target.value)}/></label><button onClick={redeem}>核对赎回输入</button>{renderResult('redemption')}</fieldset>
-    <fieldset disabled={busy||!ready}><legend>所选订单撤单资格</legend><p>从上方订单查询结果中勾选订单后核对。这里只查资格，不直接撤单。</p><button className="secondary" disabled={selected.type!=='orders'||!selected.ids.length} onClick={()=>void run('preview_order_cancellation',{operation_ids:selected.ids},{object_type:'orders',ids:selected.ids})}>核对已选订单撤单资格</button>{renderResult('cancellation')}</fieldset>
+    <fieldset disabled={busy||!ready}><legend>所选订单撤单资格</legend><p>从上方订单查询结果中勾选订单后核对。核对后可进入本人确认；查询不会自动取消订单。</p><button className="secondary" disabled={selected.type!=='orders'||!selected.ids.length} onClick={()=>void run('preview_order_cancellation',{operation_ids:selected.ids},{object_type:'orders',ids:selected.ids})}>核对已选订单撤单资格</button>{renderResult('cancellation')}</fieldset>
+    {rowView?.object_type==='orders'&&<OrderDetail row={rowView} loadDetail={loadDetail} onClose={()=>setRowView(null)}/>}
+    {rowView?.object_type==='positions'&&<PositionDetail row={rowView} loadDetail={loadDetail} onClose={()=>setRowView(null)} onReturns={()=>{setRowView(null);void run('show_wealth_returns',{scope:'product',product_id:rowView.product_id,period,...(period==='cumulative'?{}:{anchor_date:date})});}}/>}
+    {cancelView&&<OrderCancellationDialog rows={cancelView} blockedAccounts={blockedAccounts} onClose={()=>setCancelView(null)} onComplete={message=>{setCancelView(null);setActivityNotice(message);setSelected({type:'orders',ids:[]});onActivity();setReload(n=>n+1);void run('list_orders',{page:1,page_size:pageSize});}}/>}
     {detailView&&<ProductDetail productId={detailView.id} productVersion={detailView.version} loadDetail={loadDetail} onClose={()=>setDetailView(null)}/>}
     {compareView&&ready&&<ProductComparison products={ready.products} loadComparison={loadComparison} onClose={()=>setCompareView(false)}/>}
     {confirm&&<SingleTradePreview preview={confirm.preview} redemption={confirm} onClose={()=>setConfirm(null)} onActivity={onActivity}/>}

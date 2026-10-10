@@ -41,7 +41,7 @@ export default function OrderTable({data,loadEligibility=bankEligibility,loadDet
     {detail?.scope===data.scope_key&&<OrderDetail row={data.rows.find(row=>row.operation_id===detail.row.operation_id)??detail.row} loadDetail={loadDetail} onClose={()=>setDetail(null)}/>}
   </section>;
 }
-function OrderDetail({row,loadDetail,onClose}:{row:OrderRow;loadDetail?:ProductDetailLoader;onClose:()=>void}){
+export function OrderDetail({row,loadDetail,onClose}:{row:OrderRow;loadDetail?:ProductDetailLoader;onClose:()=>void}){
   const [product,setProduct]=useState(false);
   return <><div className="wealth-modal"><section className="card" role="dialog" aria-modal="true" aria-label="订单事实详情"><button className="secondary" onClick={onClose}>关闭订单详情</button><h3>{row.product_name} · {row.operation_id}</h3>
     <p>账户 {row.account_id} · 产品 {row.product_id} v{row.product_version} · {statusLabels[row.status]??row.status}</p><p>{row.direction==='purchase'?`申请申购 ${money(row.amount_fen)}`:`申请赎回 ${row.units}份`}</p>

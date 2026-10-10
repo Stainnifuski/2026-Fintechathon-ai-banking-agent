@@ -28,7 +28,7 @@ export default function PositionTable({data,loadDetail,onRedeem,onReturns,blocke
     {detailRow&&<PositionDetail row={detailRow} loadDetail={loadDetail} onClose={()=>setDetail(null)} onReturns={()=>{setDetail(null);onReturns(detailRow.product_id);}}/>}
   </section>;
 }
-function PositionDetail({row,loadDetail,onClose,onReturns}:{row:PositionRow;loadDetail?:ProductDetailLoader;onClose:()=>void;onReturns:()=>void}){
+export function PositionDetail({row,loadDetail,onClose,onReturns}:{row:PositionRow;loadDetail?:ProductDetailLoader;onClose:()=>void;onReturns:()=>void}){
   const [product,setProduct]=useState(false);
   return <><div className="wealth-modal"><section className="card" role="dialog" aria-modal="true" aria-label="持仓事实详情"><button className="secondary" onClick={onClose}>关闭持仓详情</button><h3>{row.product_name} · {row.account_id}</h3>
     <p>{row.product_id} v{row.product_version} · {row.units}份 · 市值 {money(row.market_value_fen)} · 可赎 {row.redeemable_units}份</p><p>净值 {row.nav??'未知'} · {row.nav_date??'无有效日期'} · 成本 {money(row.cost_fen)}</p>
