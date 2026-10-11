@@ -6,6 +6,7 @@
 .wealth-layout > * { min-width:0; }
 .wealth aside { padding:20px; background:#f3f6fd; border-radius:16px; order:-1; width:100%; box-sizing:border-box; }
 .wealth-history { max-height:420px; overflow:auto; }
+.wealth { min-width:0; overflow-wrap:anywhere; }
 .wealth-history article { padding:12px; border-bottom:1px solid #dce4f4; overflow-wrap:anywhere; white-space:pre-wrap; }
 .wealth label { display:block; margin-block:12px; }
 .wealth .wealth-check { display:flex; align-items:start; gap:10px; }
@@ -33,3 +34,7 @@
 .wealth-horizontal-track > div.cash { background: #718096; }
 .wealth-allocation-row { padding: 12px 0; border-bottom: 1px solid #e6eaf3; }
 @media(max-width: 480px) { .wealth-metric-grid { grid-template-columns: 1fr; } }
+
+.wealth table[aria-label="银行持仓"] {width:100%;table-layout:fixed;}
+.wealth table[aria-label="银行持仓"] td {overflow-wrap:anywhere;}
+.wealth table[aria-label="银行持仓"] small {display:block;}

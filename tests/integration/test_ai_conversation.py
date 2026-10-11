@@ -122,7 +122,7 @@ async def test_model_faults_and_note_are_not_instructions(db, monkeypatch):
     assert response['kind'] == 'error' and response['task'] is None
     class Slow:
         async def extract(self, *args): await asyncio.sleep(1)
-    monkeypatch.setenv('TRANSFER_MODEL_TIMEOUT', '0.01')
+    monkeypatch.setenv('LLM_TIMEOUT', '0.01')
     assert (await send(db, req('给李四转300元'), nlu=NLUEngine(Slow())))['kind'] == 'error'
     class Invented:
         async def extract(self, *args): return {'intent':'transfer','recipient':'李四','amount_text':'500元'}
@@ -209,20 +209,23 @@ async def test_additional_unsafe_expressions(db, text):
 @pytest.mark.asyncio
 async def test_model_http_adapter_validates_output(monkeypatch):
     from backend.app.services.ai.nlu import ModelAdapter
-    monkeypatch.setenv('TRANSFER_MODEL_API_KEY','test-only')
-    monkeypatch.setenv('TRANSFER_MODEL_NAME','test-model')
+    monkeypatch.setenv('LLM_MODE','auto')
+    monkeypatch.setenv('LLM_API_KEY','test-only')
+    monkeypatch.setenv('LLM_MODEL','test-model')
     seen = []
     def handler(request):
         import json
         payload = json.loads(request.content)
         seen.append(payload)
         return httpx.Response(200, json={'choices':[{'message':{'content':'{"intent":"transfer","recipient":"李四","amount_text":"300元"}'}}]})
-    original = httpx.AsyncClient
-    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    from backend.app.services.ai import nlu
+    from backend.app.services.ai.llm import LLMService
+    monkeypatch.setattr(nlu, "llm", LLMService(httpx.MockTransport(handler)))
     result = await ModelAdapter().extract('给李四转300元', {'missing_recipient':True, 'secret':'not-sent'})
     assert result.recipient == '李四'
     assert 'not-sent' not in str(seen)
     assert 'tools' not in seen[0]
+    await nlu.llm.aclose()
 
 
 @pytest.mark.asyncio

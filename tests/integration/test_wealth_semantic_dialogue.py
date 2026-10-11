@@ -13,7 +13,7 @@ from backend.app.domain.wealth_requirements import SemanticFrame
 @pytest.mark.asyncio
 async def test_pending_purchase_does_not_become_planning_dependency(store,http_store,monkeypatch):
     client,_,_=http_store
-    monkeypatch.setenv('WEALTH_NLU_MODE','model')
+    monkeypatch.setenv('LLM_MODE','model')
     responses=[Intent(intent='purchase',product_refs=['B017'],amount_fen=100000),
         Intent(intent='allocate',semantic=SemanticFrame()),
         Intent(intent='allocate',semantic=SemanticFrame.model_validate({'patches':[

@@ -29,7 +29,7 @@ export default function OperatorPanel() {
   };
   if (!rows) return null;
   return <details><summary>操作员处理工作台（服务端角色）</summary>
-    <p>接管只处理任务与记录说明；本人确认和模拟授权仍由原用户完成。交还后须重新核验。</p>
+    <p>接管只处理任务与记录说明；本人确认和TOTP／短信验证仍由原用户完成。交还后须重新核验。</p>
     <button disabled={busy} onClick={() => {void load();}}>刷新待接管任务</button>
     <label>处理说明／待用户事项<textarea value={note} maxLength={1000} onChange={e => setNote(e.target.value)} /></label>
     {error && <p role="alert">{error}</p>}

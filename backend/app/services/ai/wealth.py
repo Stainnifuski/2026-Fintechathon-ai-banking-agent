@@ -12,6 +12,7 @@ from ...integrations.wealth_authorization import WealthPolicyError, require_suit
 from ...models.wealth import WealthConversationORM
 from ..orchestration import wealth_plan
 from ...domain.wealth_allocation import candidates
+from .llm import get_mode
 
 READ_TOOLS = ("wealth_products", "wealth_compare", "wealth_assets", "wealth_diagnose")
 PREVIEW_TOOLS = ("wealth_purchase_preview", "wealth_redemption_preview", "wealth_allocation_preview")
@@ -53,8 +54,7 @@ def checked_explanation(proposal: dict, facts: list[dict]) -> str:
 async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
                   text: str, session_id: str | None, version: int | None,client_message_id: str | None=None) -> dict:
     """解释和方案预览入口，任何自然语言确认都不会执行交易。"""
-    import os
-    if client_message_id or os.getenv('WEALTH_NLU_MODE')=='model':
+    if client_message_id or get_mode()=='model':
         from .wealth_dialogue import message as respond
         return await respond(db,user_id,bank,text,session_id,version,client_message_id or uuid4().hex)
     if re.search(r"验证码|TOTP|口令|密码|忽略.*(风控|授权|规则)|绕过.*验证|代答|替我.*(问卷|评估)|提高.*等级", text, re.I) or re.fullmatch(r"\d{6}", text.strip()):

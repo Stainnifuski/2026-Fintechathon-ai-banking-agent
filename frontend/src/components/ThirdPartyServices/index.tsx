@@ -3,12 +3,14 @@ import { useCallback, useEffect, useState } from 'react';
 import * as flowerShop from '../../services/flowerShop';
 import * as cakeShop from '../../services/cakeShop';
 import Calendar from '../Calendar';
+import type { NovaPageContext } from '../../services/nova';
 import './styles.css';
 
 type ServiceTab = 'calendar' | 'flower' | 'cake';
 
 interface Props {
   revision: number;
+  onContextChange?: (context: NovaPageContext) => void;
   onBack: () => void;
   onGoBank: (paymentRequestId?: string) => void;
 }
@@ -31,8 +33,11 @@ const statusText: Record<flowerShop.FlowerOrder['status'], string> = {
   REFUNDED: '已退款',
 };
 
-export default function ThirdPartyServices({ revision, onBack, onGoBank }: Props) {
+export default function ThirdPartyServices({ revision, onBack, onGoBank, onContextChange }: Props) {
   const [tab, setTab] = useState<ServiceTab>('flower');
+  useEffect(() => {
+    if (tab !== 'calendar') onContextChange?.({ version: 1, page: 'thirdParty', shop: { shop: tab } });
+  }, [tab, onContextChange]);
   return <section className="third-party">
     <div className="third-party-title">
       <div>
@@ -47,11 +52,11 @@ export default function ThirdPartyServices({ revision, onBack, onGoBank }: Props
         <button key={key} className={tab === key ? '' : 'secondary'} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>
       )}
     </nav>
-    {tab === 'calendar' ? <Calendar revision={revision} /> : <Storefront key={tab} shopType={tab} revision={revision} onGoBank={onGoBank} />}
+    {tab === 'calendar' ? <Calendar revision={revision} onContextChange={onContextChange} /> : <Storefront key={tab} shopType={tab} revision={revision} onGoBank={onGoBank} onContextChange={onContextChange} />}
   </section>;
 }
 
-function Storefront({ revision, onGoBank, shopType }: Pick<Props, 'revision' | 'onGoBank'> & { shopType: 'flower' | 'cake' }) {
+function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Props, 'revision' | 'onGoBank' | 'onContextChange'> & { shopType: 'flower' | 'cake' }) {
   const shop = shopType === 'cake' ? cakeShop : flowerShop;
   const category = shopType === 'cake' ? '蛋糕' : '鲜花';
   const shopName = shopType === 'cake' ? '甜时光蛋糕店' : '花语鲜花店';
@@ -63,6 +68,14 @@ function Storefront({ revision, onGoBank, shopType }: Pick<Props, 'revision' | '
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [selected, setSelected] = useState<{ type: 'product' | 'order'; id: string } | null>(null);
+  useEffect(() => {
+    const valid = selected && (selected.type === 'product' ? products.some(p => p.product_id === selected.id) : orders.some(o => o.order_id === selected.id));
+    onContextChange?.({ version: 1, page: 'thirdParty', shop: {
+      shop: shopType,
+      ...(valid && selected ? { selected: { ...selected, ...(selected.type === 'product' ? { quantity: quantities[selected.id] || 1 } : {}) } } : {}),
+    } });
+  }, [selected, products, orders, quantities, shopType, onContextChange]);
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +168,7 @@ function Storefront({ revision, onGoBank, shopType }: Pick<Props, 'revision' | '
                     {[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>{value}</option>)}
                   </select>
                 </label>
+                <button className="secondary" type="button" aria-pressed={selected?.type === 'product' && selected.id === product.product_id} onClick={() => setSelected(current => current?.type === 'product' && current.id === product.product_id ? null : { type: 'product', id: product.product_id })}>{selected?.type === 'product' && selected.id === product.product_id ? '已选中 · 可问 NOVA' : '选择商品问 NOVA'}</button>
                 <button onClick={() => openConfirmation(product)}>购买{category}</button>
               </div>
             </article>;
@@ -175,6 +189,7 @@ function Storefront({ revision, onGoBank, shopType }: Pick<Props, 'revision' | '
               </div>
               <div className="order-summary">
                 <strong>¥{order.total.toFixed(2)}</strong>
+                <button className="secondary" type="button" aria-pressed={selected?.type === 'order' && selected.id === order.order_id} onClick={() => setSelected(current => current?.type === 'order' && current.id === order.order_id ? null : { type: 'order', id: order.order_id })}>{selected?.type === 'order' && selected.id === order.order_id ? '已选中 · 可问 NOVA' : '选择订单问 NOVA'}</button>
                 <span className={`order-status ${order.status.toLowerCase()}`}>
                   {statusText[order.status]}
                 </span>

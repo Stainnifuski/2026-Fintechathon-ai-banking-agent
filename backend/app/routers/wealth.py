@@ -11,7 +11,7 @@ from ..integrations.wealth_bank_api import HttpWealthBankApi
 from ..integrations import wealth_authorization as policy
 from ..middleware.auth import get_current_user
 from ..models.wealth import WealthAuthorizationORM, WealthProfileORM
-from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan, PlanConfirmation
+from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation, StrongVerification, PlanVerification, PlanInput, PlanVersion, ProfileUpdate, GoalInput, WealthMessage, AdoptPlan, PlanConfirmation
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
 from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
 from pydantic import Field
@@ -20,16 +20,91 @@ from pydantic import Field
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 
 
+def get_wealth_bank() -> HttpWealthBankApi:
+    """可替换HTTP客户端用于隔离集成测试。"""
+    return HttpWealthBankApi()
+
+
+@router.post('/sessions')
+async def new_session(user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db),
+                      bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..services.orchestration import wealth_lifecycle
+    try:
+        context=(await bank.call('POST','/contexts',{'subject_user_id':user['user_id']}))['selected']
+        await wealth_lifecycle.expire(db)
+        return await wealth_lifecycle.start(db,user['user_id'],context)
+    except (BankApiError,policy.WealthPolicyError) as error:await db.rollback();fail(error)
+
+
+@router.post('/sessions/{session_id}/close')
+async def close_session(session_id:str,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from ..services.orchestration.wealth_lifecycle import close
+    try:return await close(db,user['user_id'],session_id)
+    except policy.WealthPolicyError as error:await db.rollback();fail(error)
+
+
+@router.get('/sessions/{session_id}')
+async def current_session(session_id:str,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from ..models.wealth import WealthConversationORM
+    row=await db.get(WealthConversationORM,session_id)
+    if not row or row.user_id!=user['user_id'] or row.data.get('closed'):
+        raise HTTPException(404,detail={'code':'NOT_FOUND'})
+    return {'session_id':row.session_id,'version':row.version,**row.data}
+
+
+class ContinueTask(StrictRequest):
+    task_id:str=Field(min_length=1,max_length=64)
+
+
+@router.post('/sessions/{session_id}/continue')
+async def continue_current(session_id:str,request:ContinueTask,user:dict=Depends(get_current_user),
+        db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..models.wealth import WealthConversationORM
+    from ..services.orchestration import wealth_task
+    facts=await bank.assets(user['user_id'])
+    task=await wealth_task.owned(db,user['user_id'],request.task_id)
+    row=await db.get(WealthConversationORM,session_id)
+    if (not row or row.user_id!=user['user_id'] or row.data.get('closed') or
+        row.data.get('context_id')!=task.context_id or task.status in wealth_task.TERMINAL):
+        raise HTTPException(409,detail={'code':'STALE_TASK','message':'没有可续接的当前任务'})
+    if row.data.get('active_task'):raise HTTPException(409,detail={'code':'ACTIVE_TASK_SELECTION_REQUIRED'})
+    row.data={**row.data,'active_task':{'task_id':task.task_id,'version':task.version},
+        'requirements':task.data.get('requirements'),'planning_task_id':task.task_id}
+    task.session_id=session_id;row.version+=1
+    await db.commit()
+    return {'kind':'task','message':'已核对原任务进度。后续交易须重新读现金、预览及本人确认授权。',
+        'session_id':row.session_id,'version':row.version,'task':await wealth_task.view(db,task),'assets':facts,
+        'requirement_card':task.data.get('requirements')}
+
+
+class WindowPreview(StrictRequest):
+    authorization_id:str=Field(min_length=1,max_length=64)
+
+
+@router.post('/sessions/{session_id}/preview-link')
+async def link_window_preview(session_id:str,request:WindowPreview,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from ..models.wealth import WealthConversationORM
+    await policy.lock_profile(db,user['user_id'])
+    row=await db.get(WealthConversationORM,session_id)
+    if not row or row.user_id!=user['user_id'] or row.data.get('closed'):raise HTTPException(409,detail={'code':'SESSION_CLOSED'})
+    auth=await policy.owned_authorization(db,user['user_id'],request.authorization_id)
+    command=InvestmentCommand.model_validate(auth.command)
+    if command.direction=='redeem' and not command.plan_id:
+        from ..services.orchestration import wealth_task
+        from ..models.wealth import WealthTaskNodeORM,WealthTaskORM
+        linked=await db.scalar(select(WealthTaskNodeORM).join(WealthTaskORM,
+            WealthTaskORM.task_id==WealthTaskNodeORM.task_id).where(
+                WealthTaskORM.user_id==user['user_id'],WealthTaskNodeORM.operation_id==command.operation_id))
+        if linked is None:
+            await wealth_task.create_command(db,user['user_id'],session_id,row.data.get('context_id','legacy-v1'),command,holding_redemption=True)
+    row.data={**row.data,'preview_ids':list(dict.fromkeys([*row.data.get('preview_ids',[]),auth.authorization_id]))}
+    await db.commit();return {'linked':True}
+
 
 def fail(error: BankApiError | policy.WealthPolicyError) -> None:
     """错误传递保留事实未知语义。"""
     code = "RESULT_UNKNOWN" if isinstance(error, BankResponseUnknown) else error.code
     raise HTTPException(error.status_code, detail={"code": code, "message": error.message}) from error
-
-
-def get_wealth_bank() -> HttpWealthBankApi:
-    """可替换HTTP客户端用于隔离集成测试。"""
-    return HttpWealthBankApi()
 
 
 @router.get('/products/{product_id}/detail')
@@ -141,14 +216,6 @@ async def verification_mode(user: dict = Depends(get_current_user), bank: HttpWe
         fail(error)
 
 
-@router.post("/previews/{authorization_id}/verify/demo")
-async def demo_verify(authorization_id: str, user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
-    try:
-        return await bank.call("POST", "/verify/demo", {"subject_user_id": user["user_id"], "authorization_ids": [authorization_id]})
-    except BankApiError as error:
-        fail(error)
-
-
 @router.post("/plans/{plan_id}/preview")
 async def preview_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:
@@ -167,10 +234,10 @@ async def confirm_plan(plan_id: str, request: PlanConfirmation, user: dict = Dep
         fail(error)
 
 
-@router.post("/plans/{plan_id}/verify/demo")
-async def demo_verify_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+@router.post("/plans/{plan_id}/verify")
+async def verify_plan(plan_id: str, request: PlanVerification, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:
-        return await wealth_plan.demo_verify_all(db, user["user_id"], plan_id, request.version, bank)
+        return await wealth_plan.verify_all(db, user["user_id"], plan_id, request, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
@@ -294,7 +361,7 @@ async def verify(authorization_id: str, request: StrongVerification, user: dict 
     """验证码只进入可信验证组件和银行，不进入模型消息。"""
     try:
         return await bank.call("POST", "/verify", {"subject_user_id": user["user_id"],
-            "authorization_id": authorization_id, "proof": request.proof})
+            "authorization_id": authorization_id, **request.model_dump()})
     except BankApiError as error:
         fail(error)
 
@@ -422,29 +489,15 @@ async def adopt_plan(plan_id: str, request: AdoptPlan, user: dict = Depends(get_
         fail(error)
 
 
-@router.get("/messages/history")
-async def message_history(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
-    bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict | None:
-    """本人最近会话刷新恢复，只返回受控模拟消息。"""
-    from ..models.wealth import WealthConversationORM
-    try: context=(await bank.call('POST','/contexts',{'subject_user_id':user['user_id']}))['selected']
-    except BankApiError as error: fail(error)
-    rows = (await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id == user["user_id"])
-        .order_by(WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).all()
-    row=next((item for item in rows if item.data.get('context_id','legacy-v1')==context and not item.data.get('legacy_read_only')),None)
-    return {"session_id": row.session_id, "version": row.version, **row.data} if row else None
+@router.get('/messages/history')
+async def message_history(user:dict=Depends(get_current_user)):
+    """Deprecated: workspace never restores historical conversations."""
+    return None
 
 
 @router.get('/messages/archives')
-async def message_archives(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
-    """本人旧历史只读展示；不恢复命令、方案或授权，不跨用户返回。"""
-    from ..models.wealth import WealthConversationORM
-    rows = (await db.scalars(select(WealthConversationORM).where(
-        WealthConversationORM.user_id == user['user_id']).order_by(
-        WealthConversationORM.updated_at.desc(), WealthConversationORM.session_id.desc()))).all()
-    return {'items': [{'session_id': row.session_id, 'context_id': row.data.get('context_id', 'legacy-unassigned'),
-        'read_only': True, 'history': row.data.get('history', [])}
-        for row in rows if row.data.get('legacy_read_only') is True]}
+async def message_archives(user:dict=Depends(get_current_user)):
+    return {'items':[]}
 
 
 @router.get("/profile")

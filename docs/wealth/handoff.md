@@ -1,5 +1,6 @@
 ## v1.2数据与迁移交接
 
+> 2026-10-05授权更新：本模块已接入三号统一TOTP／短信校验，旧点击模拟授权及开关移除。授权使用、接口和迁移以[统一验证说明](simulated_authorization.md)为准；历史测试记录不代表当前授权行为。
 schema3新增8类研究/上下文/同步/知识/消息请求表；旧8产品、净值、持仓和计价不改写。备份、停写、运行wealth_migration、核对余额/流水/订单/占款/批次/历史NAV、恢复服务；迁移重复幂等。失败保留新旧事实，非空业务不自动删表回退。大量历史只由管理员CLI显式init，不在每次API启动生成。见data_sources.md。
 
 4号维护版本、日历、价格、预检、受理/占款/FIFO/结算、审计和管理员数据；5号通过HttpWealthBankApi和原操作号恢复；2号仅理解/受控查询和预览；1号展示来源/缺数、本人确认与模拟按钮；3号后续整体替换simulated/replacement_required提供者，保留参数、主体、期限和版本绑定。沙箱账户禁止普通转账/AA收款，汇总按资金上下文隔离。
@@ -22,7 +23,7 @@ schema3新增8类研究/上下文/同步/知识/消息请求表；旧8产品、�
 | wealth_cash_holds/unit_holds | 4号现金/逐批份额占用；account锁与全部共享扣款同一串行边界 |
 | wealth_settlements/clocks/schema_versions | 4号唯一计价/到账分录、隔离业务钟、升级版本 |
 | wealth_assessments/authorizations | 3号本人量表结果、原始答案受控存储、本人确认与强验证绑定；银行独立核验 |
-| wealth_profiles/goals/plans/conversations/executions | 5号画像、用途标签、方案快照及版本、有限意图恢复、网络提交观察；不是银行账务事实 |
+| wealth_profiles/goals/plans/conversations/executions | 5号画像、用途标签、当前会话临时方案/版本、未决提交观察（结束后清理）；不是银行账务事实 |
 | audit_logs/transactions | 复用现有公共审计及现金流水；investment_purchase/redemption区别于消费 |
 
 银行订单号与授权操作号唯一；分录事件键operation_id:pricing/cash唯一；占款与批次都有非负/正值约束。所有账务与银行审计同事务。主体读写先验归属，银行账户锁按ID排序；PG FOR UPDATE，SQLite写锁。自动结算、取消、重复请求不能绕开同一账户锁。
@@ -52,8 +53,8 @@ python -m backend.app.services.bank.wealth_migration --rollback
 
 ## 其他组员须注意
 
-- 1/2号：用公开API和银行返回卡片，不由模型编金额/份额/状态；验证码只走可信组件。对话只生成意图，不能代答问卷或同意协议。页面初始确认未勾选。刷新从previews/plans/messages恢复。
-- 3号：申购和赎回都RED。每笔授权独立；产品风险、本人承受能力和动作安全级别不同。旧User.risk_level不能申购，强验证不能提升适当性；画像改版须重评。默认使用绑定逐笔订单的模拟授权，后续调用3号统一高风险授权；不需要等待验证码。
+- 1/2号：用公开API和银行返回卡片，不由模型编金额/份额/状态；验证码只走可信组件。对话只生成意图，不能代答问卷或同意协议。页面初始确认未勾选。刷新不恢复聊天、方案或未提交预览；银行订单由原号查询。
+- 3号：申购和赎回都RED。每笔授权独立；产品风险、本人承受能力和动作安全级别不同。旧User.risk_level不能申购，强验证不能提升适当性；画像改版须重评。已调用3号统一第二因素校验，整份方案一次验证码、逐笔证据；需要有效TOTP或绑定当前完整集合的短信验证码。
 - 5号：只通过HttpWealthBankApi访问4号；纯购买计划1—5笔原子batch，不能按子单拆开占款。修改plan_version使旧授权失效；原号查询404仍不能判断永未受理；保留未知/成功事实。
 - 共享扣款：使用available_fen，不仅balance。转账、定时、AA最终付款复用转账扣款，订阅同样检查占款；不得另写直接减余额路径。
 - 账单：投资流水是资金流，消费原额仍仅purchase/subscription，避免把调仓误判消费。时间范围仍按真实账单时钟；隔离演示业务钟推进到未来时，未来流水不会提前出现在“截至现在”报告。
@@ -67,10 +68,14 @@ python -m backend.app.services.bank.wealth_migration --rollback
 
 ## 2026-10-01 普通演示库模拟授权修订
 
-理财默认点击模拟授权，取消独立库名称限制；既有.env的WEALTH_DEMO_VERIFICATION_ENABLED=false需改为true。迁移表结构不变，提供者版本为demo-click-v2。管理员时钟仍保留隔离库要求。旧记录不可改写。
+理财已移除点击授权和旧开关。版本6扩展验证方法约束支持SMS，提供者版本unified-mfa-v1；升级前停止写入并备份。管理员时钟仍保留隔离库要求，旧验证和订单记录不可改写。
 
-replacement_required表示后续替换为3号统一高风险授权适配器，不代表将来必须开发真实验证。接口、模拟标志、停用兼容路径及协作方案见[模拟授权说明](simulated_authorization.md)。
+新TOTP/SMS证据replacement_required=false；SMS默认mock通道simulated=true仅指发送模拟。旧点击证据只保留历史，不能受理新交易。接口、迁移与模拟边界见[统一验证说明](simulated_authorization.md)。
 
 ## 最新全量基金补充
 
 默认混合研究池、全量目录、池外详情／比较、可调整清单、官方原始规则和模拟变更、TTL及日更见[补充入口](preload_and_directory.md)。真实基金缺审核规则仅研究，银行B产品交易使用独立模拟资金上下文；不复制旧余额或改变旧订单引用。数量不是固定上限。
+
+## 2026-10-04生命周期变更
+
+旧理财会话/需求/方案不再长期存档；兼容历史读取返回空值。保留表结构供当前窗口、2号契约及最小未完依赖使用。单笔受理及无未决节点终态压缩为银行操作号最小回执，不删除银行订单/审计/占款/流水。清理须停写、预览、备份、核对保护表指纹；[脚本与新契约](workspace_simplification.md)。旧刷新恢复和逐笔采用页面说明以本条为准。

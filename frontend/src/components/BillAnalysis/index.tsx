@@ -4,6 +4,7 @@ import * as echarts from 'echarts/core';
 import { PieChart, LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, AriaComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import type { NovaPageContext } from '../../services/nova';
 import type { Account } from '../../services/bank';
 import * as bills from '../../services/bills';
 import './styles.css';
@@ -20,7 +21,7 @@ const errorText = (error: unknown) => {
   return detail?.message || '账单加载失败，请重试。';
 };
 
-export default function BillAnalysis({ accounts, revision }: { accounts: Account[]; revision: number }) {
+export default function BillAnalysis({ accounts, revision, onContextChange }: { accounts: Account[]; revision: number; onContextChange?: (context: NovaPageContext) => void }) {
   const [draft, setDraft] = useState<bills.BillQuery>(initialQuery);
   const applied = useRef<bills.BillQuery>(initialQuery());
   const [result, setResult] = useState<bills.BillAnalysis | null>(null);
@@ -36,6 +37,18 @@ export default function BillAnalysis({ accounts, revision }: { accounts: Account
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailRetry, setDetailRetry] = useState(0);
   const sequence = useRef(0);
+  const [selectedTransaction, setSelectedTransaction] = useState<string | null>(null);
+  useEffect(() => {
+    onContextChange?.({ version: 1, page: 'insights',
+      ...(result && !busy ? {
+        filters: result.query,
+        observed_as_of: result.as_of,
+        details: { category: detailFilter.category, tx_ids: detailFilter.tx_ids?.split(',').slice(0, 10) || [], page },
+        ...(selectedTransaction ? { selected: { type: 'transaction' as const, id: selectedTransaction } } : {}),
+      } : {}),
+    });
+  }, [result, busy, detailFilter, page, selectedTransaction, onContextChange]);
+  useEffect(() => { setSelectedTransaction(null); }, [result, detailFilter, page]);
 
   const accept = (data: bills.BillAnalysis) => {
     applied.current = data.query;
@@ -113,7 +126,7 @@ export default function BillAnalysis({ accounts, revision }: { accounts: Account
       <div className="bill-alerts"><h3>待核对提示 <span>{result.anomalies.length}</span></h3>{result.anomalies.length === 0 ? <p className="hint">未触发当前规则。历史不足及统计限制见下方说明。</p> : result.anomalies.map((item, index) => <article key={`${item.kind}-${index}`}><div><strong>{item.title}</strong><p>{item.reason}</p></div><button className="secondary" onClick={() => drill(item.category || undefined, item.tx_ids.join(',') || undefined, item.title)}>查看依据</button></article>)}</div>
       <div id="bill-transactions"><div className="bill-heading"><h3>{detailFilter.label}</h3><button className="secondary" onClick={() => drill(undefined, undefined, result.query.category ? `${labels[result.query.category]}消费` : '全部已完成流水')}>重置明细筛选</button></div>
         {detailBusy && <p role="status">正在加载流水…</p>}{detailError && <p role="alert" className="error">{detailError} <button onClick={() => setDetailRetry(n => n + 1)}>重试</button></p>}
-        {rows && <><div className="bill-table"><table><thead><tr><th>时间 / 流水号</th><th>交易对手 / 备注</th><th>类型 / 账户</th><th>金额</th></tr></thead><tbody>{rows.items.map(tx => <tr key={tx.tx_id}><td>{dateTime(tx.timestamp)}<small>{tx.tx_id}</small></td><td>{tx.counterparty}<small>{tx.note || '无备注'}</small></td><td>{types[tx.type] || tx.type}<small>{tx.account_id}</small></td><td>{['purchase', 'subscription', 'transfer_out'].includes(tx.type) ? '−' : ['salary', 'refund', 'transfer_in'].includes(tx.type) ? '+' : ''}{money(tx.amount_fen)}</td></tr>)}</tbody></table></div>{!rows.total && <p className="bill-empty">暂无符合筛选条件的流水</p>}<div className="bill-pagination"><span>共 {rows.total} 笔 · 第 {rows.page} / {Math.max(1, Math.ceil(rows.total / rows.page_size))} 页</span><button className="secondary" disabled={page <= 1 || detailBusy} onClick={() => setPage(n => n - 1)}>上一页</button><button className="secondary" disabled={page * rows.page_size >= rows.total || detailBusy} onClick={() => setPage(n => n + 1)}>下一页</button></div></>}
+        {rows && <><div className="bill-table"><table><thead><tr><th>时间 / 流水号</th><th>交易对手 / 备注</th><th>类型 / 账户</th><th>金额</th></tr></thead><tbody>{rows.items.map(tx => <tr key={tx.tx_id}><td>{dateTime(tx.timestamp)}<small>{tx.tx_id}</small><button type="button" className="secondary" aria-pressed={selectedTransaction === tx.tx_id} onClick={() => setSelectedTransaction(current => current === tx.tx_id ? null : tx.tx_id)}>{selectedTransaction === tx.tx_id ? '已选中 · 可问 NOVA' : '选择这笔'}</button></td><td>{tx.counterparty}<small>{tx.note || '无备注'}</small></td><td>{types[tx.type] || tx.type}<small>{tx.account_id}</small></td><td>{['purchase', 'subscription', 'transfer_out'].includes(tx.type) ? '−' : ['salary', 'refund', 'transfer_in'].includes(tx.type) ? '+' : ''}{money(tx.amount_fen)}</td></tr>)}</tbody></table></div>{!rows.total && <p className="bill-empty">暂无符合筛选条件的流水</p>}<div className="bill-pagination"><span>共 {rows.total} 笔 · 第 {rows.page} / {Math.max(1, Math.ceil(rows.total / rows.page_size))} 页</span><button className="secondary" disabled={page <= 1 || detailBusy} onClick={() => setPage(n => n - 1)}>上一页</button><button className="secondary" disabled={page * rows.page_size >= rows.total || detailBusy} onClick={() => setPage(n => n + 1)}>下一页</button></div></>}
       </div>
       <details className="bill-notices"><summary>统计口径与数据说明</summary><ul>{result.notices.map(line => <li key={line}>{line}</li>)}</ul><p>数据截止：{dateTime(result.as_of)}。报告按交易时间查询，未保存历史快照；稍后补录的数据可能改变结果。</p></details>
     </>}

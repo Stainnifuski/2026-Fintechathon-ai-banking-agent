@@ -6,13 +6,13 @@ DeepSeek输出严格`wealth-semantics-v1`，从双向近期对话、最后未回
 
 每字段保留状态、用户原文、来源消息及版本。补丁`set/clear/mark_unknown/skip`明确区分设置、未提及、未知和跳过；无值不代表清除。比例保存ratio/base，以银行核对的基数Decimal向下取整到整数分；半年以北京业务日加六个日历月。
 
-具体支出用途（学费、房租、旅游）可缺失。投资目标、可投资期限、临时用钱到账要求分别记录且可同时成立；目标/期限缺失影响下一步时按上下文引导，模型可选择真正需要澄清的字段，无固定问序。已经提供的信息不重问；不确定、请助手建议、暂不提供保留真实状态，返回注明条件的候选，不默认填值、不循环追问。产品查询/比较无上述前置问题。
+2026-10-04最新范围：已明确本次投资金额且已有有效风险评估时直接生成配置，不补问目标、期限、具体用途或保留现金；未评估才进入原问卷后续接。明确提供的目标/期限/到账偏好分别保留并进入筛选；未提供不伪造答案，默认365天仅内部筛选窗口。预算不明、指代冲突或用户明确仅要条件研究仍按影响澄清，不循环追问。产品查询无这些前置问题。
 
 “保值”是偏好，不表示保本或正式风险评估。少波动/保值、兼顾、增长及到账约束进入provider输入、服务端候选过滤及方案证据。个性化建议仍检查有效本人评估，可通过原九题可信表单后继续需求。
 
 ## 持久化
 
-复用`wealth_tasks`/`wealth_task_nodes`，澄清阶段真实保存READ_FACTS、REQUIRE_INPUT、PLAN/RESEARCH节点及需求版本；修订新增无环节点，保留已完成事实。新规划和旧待确认申购分别保留，主任务选择不撤销旧订单，也不授予交易权限。订单图使用既有确认/模拟授权/提交/结算保护。
+复用`wealth_tasks`/`wealth_task_nodes`，澄清阶段真实保存READ_FACTS、REQUIRE_INPUT、PLAN/RESEARCH节点及需求版本；修订新增无环节点，保留已完成事实。当前窗口仅展示一个方案；窗口结束清理文本和草稿、作废未提交授权。银行已受理节点不撤销；未知及复杂依赖以最少结构化状态保留。订单图使用既有确认/模拟授权/提交/结算保护。
 
 ## 2号接口
 
@@ -45,11 +45,11 @@ typed方式在同一请求增加：
 }
 ```
 
-返回统一envelope：schema_version、child_task_id、parent_task_id、session_id、session_version、request_id、version、requirement_version、status、waiting_reason、cards、result、error/code。`version`为任务版本；继续消息的`version`使用`session_version`，不能互换。节点在`result.nodes`中；卡片保存原对话响应。纯等待上层事件尚无子会话版本时session_version为空。
+返回统一envelope：schema_version、child_task_id、parent_task_id、session_id、session_version、request_id、version、requirement_version、status、waiting_reason、cards、result、error/code。`version`为任务版本；继续消息的`version`使用`session_version`，不能互换。进行中节点在`result.nodes`中；终态压缩后仅保留操作号/最小回执，不应依赖历史卡片或聊天文本。纯等待上层事件尚无子会话版本时session_version为空。
 
-- `GET /subtasks/{id}`：读取本人状态/需求/节点与已保存卡片。
+- `GET /subtasks/{id}`：读取本人最小执行状态；进行中可含需求/节点，已清理终态无原卡片。
 - `PATCH /subtasks/{id}`：expected_version、request_id、raw_text、可选parsed_intent，复用原会话修订。
-- 控制沿用`POST /tasks/{id}/{pause|resume|rollback|cancel|handoff}`；`POST /tasks/{id}/select-main`只改变会话主任务，返回更新后session_version。
+- 控制沿用`POST /tasks/{id}/{pause|resume|rollback|cancel|handoff}`；旧`select-main`仅兼容既有集成，网页不再列主任务。新窗口通过`POST /sessions/{sid}/continue`明确关联未完成任务，不能复用旧交易授权。
 - create请求按完整参数幂等：换parent/context/typed内容重放拒绝；跨用户不能读任务。
 
 ## 上层先付房租，再规划剩余现金

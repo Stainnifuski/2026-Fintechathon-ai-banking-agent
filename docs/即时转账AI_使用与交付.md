@@ -6,7 +6,7 @@
 
 从应用仓库根目录执行原有启动命令。首次启动的 `init_db/create_all` 会自动添加 `transfer_conversations` 和 `transfer_chat_receipts` 两张应用表，不修改银行表结构。生产迁移需要团队将相同表定义纳入自己的迁移流程；回滚代码前可保留新表，恢复本版本仍可继续会话。若确需删除这两张表，只在备份并确认不再需要对话恢复后执行；任务/银行账本无需回滚或重置。
 
-默认 `TRANSFER_NLU_MODE=offline`：有限中文规则，完全离线可运行。支持示例：
+无有效模型密钥，或设置全局 `LLM_MODE=offline` 时：有限中文规则，完全离线可运行。支持示例：
 
 - `给李四转300元`、`转三百块给李四，备注聚餐`、`转给 李四 300元`。
 - `给李四转钱` → `300元`；`转300元` → `李四`。
@@ -20,14 +20,7 @@
 
 ## 模型配置
 
-显式设置 `TRANSFER_NLU_MODE=model`。配置：
-
-| 变量 | 说明 |
-|---|---|
-| TRANSFER_MODEL_API_KEY | 模型密钥；未设置时兼容 LLM_API_KEY |
-| TRANSFER_MODEL_NAME | 模型名；未设置时兼容 LLM_MODEL |
-| TRANSFER_MODEL_BASE_URL | 兼容API根地址；未设置时兼容 LLM_BASE_URL，再默认 https://api.openai.com/v1 |
-| TRANSFER_MODEL_TIMEOUT | 请求与整体理解超时秒数，默认15 |
+2026-10-06 起使用统一 `LLM_*` 配置及共享客户端，默认 DeepSeek 只需填写一次 `LLM_API_KEY`。`LLM_MODE=auto` 自动启用所有业务模块，offline 全局关闭模型，model 强制模型。旧业务开关不再生效；变量、迁移规则及开发入口见[统一模型配置](setup/model_configuration.md)。
 
 适配器使用现有 httpx 依赖，调用 `/chat/completions` 的 JSON 对象输出模式；不依赖新增Agent框架、不开放任何模型工具调用。兼容服务需要支持JSON输出。Pydantic额外字段禁止、严格类型、金额原文核对及受控目录解析仍在本地执行。模型仅收到当前消息和“是否缺收款人”布尔值，不收到JWT、内部银行令牌、账户余额或完整对话历史。禁止从模型输出风险、授权、执行状态或任意工具动作。
 

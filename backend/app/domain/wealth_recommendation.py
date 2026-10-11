@@ -49,6 +49,8 @@ class DeterministicRuleProvider:
             'few_business_days':'按明确的到账等待要求筛选','flexible':'可接受产品规定的到账等待'}.get(liquidity.get('mode'),'到账偏好未指定，逐项显示产品规则')
         result['summary']=[f"{goal_text}；按正式风险评估及{parameters['horizon_days']}天可投资期限筛选。",
             liquidity_text+'。','预算尾款留为现金，交易仍需本人确认及模拟授权。']
+        if parameters.get('full_investment'):
+            result['summary']=['按现有正式风险评估、费用和流动性规则分配本次投资总额。',result.get('unallocated_reason') or '全部投入所指定金额；未指定期限时365天仅为内部筛选窗口，不代表本人已承诺持有一年。']
         for item in result['items']:
             product=next(p for p in inputs['products'] if p['product_id']==item['product_id'])
             item.update(reason_codes=['RISK_MATCH','LIQUIDITY_MATCH','COST_PRIORITY'],

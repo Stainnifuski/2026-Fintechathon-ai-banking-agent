@@ -58,7 +58,7 @@ totals 含 inflow_fen、outflow_fen、net_inflow_fen、consumption_fen、refund_
 
 ## 模型设置与降级
 
-默认 BILL_NLU_MODE=offline，无外部请求。设置 BILL_NLU_MODE=model 后，可用 BILL_MODEL_API_KEY/BILL_MODEL_NAME/BILL_MODEL_BASE_URL，未设置时复用 TRANSFER_MODEL_*，再回退 LLM_*。
+账单与转账、理财共用 `LLM_*` 和统一客户端。默认 `LLM_MODE=auto` 有有效密钥时启用模型，无密钥离线；`LLM_MODE=offline` 全局关闭外部模型。旧 `BILL_NLU_MODE` 不再生效，旧密钥组仅在全局密钥未配置时作为统一配置的过渡兼容。迁移和开发接口见[统一模型配置](../setup/model_configuration.md)。
 
 模型仅收到本次问题和提取 schema，不收到登录凭据、余额、历史流水或报告。用户自行写在问题中的信息会随问题发送。输出必须逐字来自原文并通过本地规则校验；异常、超时、未配置时回退离线并标注。当前模型增强支持范围仍以月／年、已知消费分类为限。
 

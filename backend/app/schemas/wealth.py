@@ -80,6 +80,12 @@ class PersonalConfirmation(StrictRequest):
 
 class StrongVerification(StrictRequest):
     proof: str = Field(pattern=r"^\d{6}$")
+    method: Literal["totp", "sms"] = "totp"
+    challenge_id: str | None = Field(default=None, max_length=64)
+
+
+class PlanVerification(StrongVerification):
+    version: int = Field(ge=1)
 
 
 class InternalInvestmentSubmission(StrictRequest):
@@ -130,6 +136,7 @@ class PlanInput(StrictRequest):
     excluded_products: list[str] = Field(default_factory=list, max_length=60)
     need: Literal['cash','balanced','growth'] | None = None
     constraint_states: dict = Field(default_factory=dict)
+    full_investment: bool = False
 
 
 class PlanVersion(StrictRequest):

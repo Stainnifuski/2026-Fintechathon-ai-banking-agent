@@ -73,25 +73,32 @@ def _transaction_dict(transaction: TransactionORM) -> dict:
     }
 
 
-async def list_accounts(user_id: str) -> list[dict]:
+async def list_accounts(user_id: str, *, session: AsyncSession | None = None) -> list[dict]:
+    """页面与 Agent 共用查询；可注入已认证请求的会话。"""
+    if session is not None:
+        return await _list_accounts(session, user_id)
     async with AsyncSessionLocal() as session:
-        accounts = (
-            await session.execute(
-                select(AccountORM)
-                .where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
-                .order_by(AccountORM.account_type.desc(), AccountORM.account_id)
-            )
-        ).scalars().all()
-        views = []
-        now = datetime.now(timezone.utc)
-        for account in accounts:
-            view = _account_dict(account)
-            view["available_fen"] = await available_cash(session, account.account_id, account.balance_fen)
-            view["held_fen"] = await held_cash(session, account.account_id)
-            view["daily_transfer_used"] = (
-                await _daily_used_fen(session, account_ids=[account.account_id], now=now)
-            ) / 100
-            views.append(view)
+        return await _list_accounts(session, user_id)
+
+
+async def _list_accounts(session: AsyncSession, user_id: str) -> list[dict]:
+    accounts = (
+        await session.execute(
+            select(AccountORM)
+            .where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
+            .order_by(AccountORM.account_type.desc(), AccountORM.account_id)
+        )
+    ).scalars().all()
+    views = []
+    now = datetime.now(timezone.utc)
+    for account in accounts:
+        view = _account_dict(account)
+        view["available_fen"] = await available_cash(session, account.account_id, account.balance_fen)
+        view["held_fen"] = await held_cash(session, account.account_id)
+        view["daily_transfer_used"] = (
+            await _daily_used_fen(session, account_ids=[account.account_id], now=now)
+        ) / 100
+        views.append(view)
     return views
 
 

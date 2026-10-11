@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as calendar from '../../services/calendar';
+import type { NovaPageContext } from '../../services/nova';
 import { beijingTime, beijingInput } from '../../utils/time';
 import './styles.css';
 
@@ -36,7 +37,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '日历暂时不可用，请稍后重试';
 }
 
-export default function Calendar({ revision }: { revision: number }) {
+export default function Calendar({ revision, onContextChange }: { revision: number; onContextChange?: (context: NovaPageContext) => void }) {
   const today = beijingTime(new Date()).split(' ')[0];
   const timeZone = 'Asia/Shanghai';
   const [selected, setSelected] = useState(today);
@@ -57,6 +58,15 @@ export default function Calendar({ revision }: { revision: number }) {
   const [formError, setFormError] = useState('');
   const [deleting, setDeleting] = useState<calendar.CalendarEvent | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
+  useEffect(() => { setSelectedEventKey(null); }, [selected]);
+  useEffect(() => {
+    const item = !loading && !loadError ? events.find(event => eventKey(event) === selectedEventKey && onDay(event, dayDate(selected))) : undefined;
+    onContextChange?.({ version: 1, page: 'thirdParty', calendar: {
+      visible_month: dateKey(month).slice(0, 7), selected_date: selected, timezone: timeZone,
+      ...(item ? { selected_event: { event_id: item.event_id, starts_at: item.starts_at } } : {}),
+    } });
+  }, [month, selected, selectedEventKey, events, loading, loadError, timeZone, onContextChange]);
 
   const days = useMemo(() => {
     const first = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -188,6 +198,7 @@ export default function Calendar({ revision }: { revision: number }) {
             {eventDate(item) !== selected && <small>开始于 {eventDate(item)}</small>}
             {item.location && <p className="calendar-location">地点：{item.location}</p>}
             {item.description && <p className="calendar-description">{item.description}</p>}
+            <button className="secondary" type="button" aria-pressed={selectedEventKey === eventKey(item)} onClick={() => setSelectedEventKey(current => current === eventKey(item) ? null : eventKey(item))}>{selectedEventKey === eventKey(item) ? '已选中 · 可问 NOVA' : '选择这个活动'}</button>
             <button className="calendar-delete" disabled={busy} onClick={() => setDeleting(item)}>删除{item.recurring ? '整个重复日程' : '事件'}</button>
           </li>)}</ul>}
       </aside>

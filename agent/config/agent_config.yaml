@@ -1,10 +1,5 @@
 # Agent 配置文件
-llm:
-  model: "gpt-4"
-  temperature: 0.3
-  max_tokens: 4096
-  timeout: 30
-  retry_count: 3
+# 模型统一读取根目录 .env 的 LLM_*；这里不再维护第二套模型配置。
 
 dialog:
   max_turns: 20

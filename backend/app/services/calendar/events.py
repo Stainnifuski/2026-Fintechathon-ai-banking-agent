@@ -9,6 +9,7 @@ from icalendar import Calendar
 import recurring_ical_events
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database.connection import AsyncSessionLocal
 from ...models.calendar_event import CalendarEventORM
@@ -177,15 +178,19 @@ async def import_events(user_id: str, data: bytes, time_zone: str) -> dict:
     return counts
 
 
-async def list_events(user_id: str, start: datetime, end: datetime, time_zone: str) -> list[dict]:
+async def list_events(user_id: str, start: datetime, end: datetime, time_zone: str,
+                      *, session: AsyncSession | None = None) -> list[dict]:
     if start.tzinfo is None or end.tzinfo is None or not timedelta(0) < end - start <= timedelta(days=62):
         raise CalendarError("查询时间必须包含时区，范围须大于零且不超过 62 天")
     try:
         zone = ZoneInfo(time_zone)
     except ZoneInfoNotFoundError as error:
         raise CalendarError("无法识别日历时区") from error
-    async with AsyncSessionLocal() as session:
-        rows = (await session.execute(select(CalendarEventORM).where(CalendarEventORM.user_id == user_id))).scalars().all()
+    if session is None:
+        async with AsyncSessionLocal() as owned_session:
+            rows = (await owned_session.scalars(select(CalendarEventORM).where(CalendarEventORM.user_id == user_id))).all()
+    else:
+        rows = (await session.scalars(select(CalendarEventORM).where(CalendarEventORM.user_id == user_id))).all()
     return await to_thread(expand_events, rows, start, end, zone)
 
 

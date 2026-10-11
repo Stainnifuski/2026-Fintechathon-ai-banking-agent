@@ -191,7 +191,7 @@ def test_ambiguous_or_write_requests_need_clarification(message):
 @pytest.mark.asyncio
 async def test_model_grounding_failure_fallback(monkeypatch):
     from backend.app.services.ai import bills
-    monkeypatch.setenv("BILL_NLU_MODE", "model")
+    monkeypatch.setenv("LLM_MODE", "model")
     async def malicious(_):
         return Extraction(intent="bill", time_text="2025年", account_text="A3")
     monkeypatch.setattr(bills, "model_extract", malicious)
@@ -258,7 +258,7 @@ async def test_api_auth_pagination_validation_and_read_only(db, monkeypatch):
     from backend.app.main import app
     from backend.app.database.connection import get_db
     from backend.app.middleware.auth import create_access_token
-    monkeypatch.setenv("BILL_NLU_MODE", "offline")
+    monkeypatch.setenv("LLM_MODE", "offline")
     db.add_all([tx("mine", 1234), tx("foreign", 88888, account="A3")])
     await db.commit()
     async def override():
