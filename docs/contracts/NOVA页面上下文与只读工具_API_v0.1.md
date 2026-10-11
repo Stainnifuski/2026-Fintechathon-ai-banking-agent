@@ -2,6 +2,20 @@
 
 NOVA 已在时间查询 Agent Loop 上增加本人账户概览、账单统计、分页流水和单笔流水详情。后续已增加 [本人日历查询工具与日历选择上下文](NOVA日历查询_API_v0.1.md) 及 [鲜花店/蛋糕店只读工具与店铺选择上下文](NOVA店铺查询_API_v0.1.md)及 [卡片/订阅只读查询与选择上下文](NOVA卡片与订阅查询_API_v0.1.md)。前端传递页面状态，服务端独立注入登录身份；页面和工具共用银行查询服务。
 
+## 流式接口
+
+`POST /api/v1/nova/chat/stream` 与 `/chat` 请求体、认证、工具和安全规则完全相同，响应为 `text/event-stream`。认证失败（401）和参数错误（422）仍在开始推送前以 HTTP 状态码返回。之后依次推送事件，每个事件一行 `event: <type>` 加一行 `data: <JSON>`：
+
+| 事件 | data | 含义 |
+|---|---|---|
+| `tool` | `{"type":"tool","name":"list_cards"}` | 即将执行某个工具（只含名称，结果在 done 中） |
+| `delta` | `{"type":"delta","text":"…"}` | 回答正文片段，按顺序拼接 |
+| `reset` | `{"type":"reset"}` | 本轮已推送的正文作废（模型输出文字后改为调用工具），客户端清空草稿 |
+| `done` | 与 `/chat` 的响应体相同，外加 `"type":"done"` | 最终结果，以此为准 |
+| `error` | `{"type":"error","code":"…","message":"…"}` | 模型或执行失败，错误码与 `/chat` 的 503 detail 相同；未知异常为 `NOVA_STREAM_FAILED`，不含内部信息 |
+
+模型以 `stream: true` 请求，工具调用参数在拼接完整并通过与非流式相同的校验后才执行；输出被截断（如 `finish_reason=length`）时不执行工具，推送 error。离线规则直接推送一个 done。客户端断开时停止后续模型调用和工具执行。响应带 `X-Accel-Buffering: no`，经 nginx 代理时不缓冲。前端优先使用流式接口，浏览器不支持读取响应流时退回 `/chat`。
+
 ## 页面上下文协议
 
 `POST /api/v1/nova/chat` 沿用 Bearer JWT。既有 message/history 限制和错误响应保持不变，新增可省略的 page_context：

@@ -1,8 +1,15 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import NovaMarkdown from './NovaMarkdown';
-import { askNova, NovaMessage, NovaReply, NovaPageContext } from '../services/nova';
+import { streamNova, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent } from '../services/nova';
 
-type Entry = NovaMessage & { details?: NovaReply };
+type Entry = NovaMessage & { details?: NovaReply; streaming?: boolean; status?: string };
+const TOOL_LABELS: Record<string, string> = {
+  list_cards: '卡片列表', get_card: '卡片详情', list_subscriptions: '订阅列表与预计月费', get_subscription: '订阅详情',
+  get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表',
+  get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情',
+  list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
+  preview_card_operation: '卡片操作预览',
+};
 const money = (value: unknown) => typeof value === 'number' ? (value / 100).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) : '暂无';
 function queryRecord(call: NovaReply['tool_calls'][number]): string {
   const result = call.result;
@@ -23,8 +30,7 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
   }
   if (call.name === 'preview_card_operation') {
     const preview = result.data as { action_label?: string; card_number?: string | null; permission_level?: string; changes?: { label: string }[] } | undefined;
-    return `模拟银行 · ${preview?.action_label}${preview?.card_number ? ` · ${preview.card_number}` : ''} · ${preview?.permission_level === 'red' ? '需确认 + 验证码' : '需本人确认'} · 尚未执行
-变更：${(preview?.changes ?? []).map(change => change.label).join('、')}`;
+    return `模拟银行 · ${preview?.action_label}${preview?.card_number ? ` · ${preview.card_number}` : ''} · ${preview?.permission_level === 'red' ? '需确认 + 验证码' : '需本人确认'} · 尚未执行\n变更：${(preview?.changes ?? []).map(change => change.label).join('、')}`;
   }
   let text = '模拟银行数据';
   if (['list_cards', 'get_card', 'list_subscriptions', 'get_subscription'].includes(call.name)) {
@@ -60,20 +66,28 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
     const controller = new AbortController();
     request.current = controller;
     const history = messages.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) }));
-    setMessages(previous => [...previous, { role: 'user', content }]);
+    // 先放一条草稿回答，流式片段逐步写入；完成后替换为带查询记录的正式回答。
+    setMessages(previous => [...previous, { role: 'user', content }, { role: 'assistant', content: '', streaming: true }]);
     setInput(''); setError(''); setBusy(true);
+    const updateDraft = (change: (draft: Entry) => Entry) => setMessages(previous => {
+      const last = previous[previous.length - 1];
+      return last?.streaming ? [...previous.slice(0, -1), change(last)] : previous;
+    });
+    const onEvent = (event: NovaStreamEvent) => {
+      if (event.type === 'delta') updateDraft(draft => ({ ...draft, content: draft.content + event.text, status: undefined }));
+      else if (event.type === 'reset') updateDraft(draft => ({ ...draft, content: '' }));
+      else updateDraft(draft => ({ ...draft, status: `正在查询：${TOOL_LABELS[event.name] || event.name}` }));
+    };
     try {
-      const reply = await askNova(content, history, controller.signal, pageContext);
-      if (!controller.signal.aborted) {
-        setMessages(previous => [...previous, { role: 'assistant', content: reply.reply, details: reply }]);
-      }
+      const reply = await streamNova(content, history, controller.signal, pageContext, onEvent);
+      if (!controller.signal.aborted) updateDraft(() => ({ role: 'assistant', content: reply.reply, details: reply }));
     } catch (failure: unknown) {
       if (!controller.signal.aborted) {
         const detail = (failure as { response?: { data?: { detail?: { message?: string; code?: string } } } }).response?.data?.detail;
         setError(`${detail?.message || '查询失败，请重新发送。'}${detail?.code ? `（${detail.code}）` : ''}`);
         setInput(content);
-        // 失败请求不进入下一轮上下文。
-        setMessages(previous => previous.slice(0, -1));
+        // 失败请求及其半截回答不进入下一轮上下文。
+        setMessages(previous => previous[previous.length - 1]?.streaming ? previous.slice(0, -2) : previous.slice(0, -1));
       }
     } finally {
       if (!controller.signal.aborted) { setBusy(false); request.current = null; }
@@ -117,15 +131,15 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
         <div className="nova-messages" aria-live="polite">
           {messages.map((entry, index) => <div key={index} className={`nova-message nova-${entry.role}`}>
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
-            {entry.role === 'assistant' ? <NovaMarkdown content={entry.content} /> : <p>{entry.content}</p>}
+            {entry.role === 'assistant' ? (entry.content ? <NovaMarkdown content={entry.content} /> : null) : <p>{entry.content}</p>}
+            {entry.streaming && <p className="hint" role="status">{entry.status ? `🔍 ${entry.status}…` : entry.content ? '▍' : 'NOVA 正在思考…'}</p>}
             {entry.details && <small>{entry.details.mode === 'offline' ? '离线规则' : '模型回答'}{entry.details.tool_calls.length > 0 && ` · 工具调用 ${entry.details.tool_calls.length} 次`}</small>}
-            {entry.details?.tool_calls.map((call, callIndex) => <details key={callIndex}><summary>{({ list_cards: '卡片列表', get_card: '卡片详情', list_subscriptions: '订阅列表与预计月费', get_subscription: '订阅详情', get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表', get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情', list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态', preview_card_operation: '卡片操作预览' } as Record<string, string>)[call.name] || call.name}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
+            {entry.details?.tool_calls.map((call, callIndex) => <details key={callIndex}><summary>{TOOL_LABELS[call.name] || call.name}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
             {entry.details?.tool_calls.filter(call => call.name === 'preview_card_operation' && !call.result.error).map((call, callIndex) => {
               const preview = call.result.data as { operation_id: string; action_label: string };
               return <button key={`review-${callIndex}`} className="agent-prompt" onClick={() => onReviewCardOperation?.(preview.operation_id)}>去卡片页核对并确认：{preview.action_label} <span>→</span></button>;
             })}
           </div>)}
-          {busy && <p className="hint" role="status">NOVA 正在处理查询…</p>}
           {error && <p className="nova-error" role="alert">{error}</p>}
           <div ref={bottom} />
         </div>

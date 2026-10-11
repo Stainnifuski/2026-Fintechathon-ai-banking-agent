@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 ModelT = TypeVar("ModelT", bound=BaseModel)
+DeltaCallback = Callable[[str], Awaitable[None]]
 
 
 def _validate_messages(messages: list[dict[str, Any]]) -> None:
@@ -39,6 +41,53 @@ def _validate_tool_calls(calls: Any, code: str) -> None:
                 or not isinstance(function.get("arguments"), str)):
             raise LLMError(code)
         ids.add(call["id"])
+
+
+async def _read_stream(response: httpx.Response, on_delta: DeltaCallback) -> dict[str, Any]:
+    """把 SSE 增量拼回与非流式相同的 payload，正文片段实时交给回调；工具参数只在拼完后整体校验。"""
+    content: list[str] = []
+    calls: dict[int, dict[str, Any]] = {}
+    finish_reason = None
+    usage: dict[str, Any] = {}
+    async for line in response.aiter_lines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        chunk = json.loads(data)
+        if isinstance(chunk.get("usage"), dict):
+            usage = chunk["usage"]
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        choice = choices[0]
+        delta = choice.get("delta") or {}
+        text = delta.get("content")
+        if text:
+            if not isinstance(text, str):
+                raise LLMError("MODEL_RESPONSE_INVALID")
+            content.append(text)
+            await on_delta(text)
+        for part in delta.get("tool_calls") or []:
+            slot = calls.setdefault(part.get("index", 0), {"type": "function", "function": {"name": "", "arguments": ""}})
+            if part.get("id"):
+                slot["id"] = part["id"]
+            if part.get("type"):
+                slot["type"] = part["type"]
+            function = part.get("function") or {}
+            for key in ("name", "arguments"):
+                if function.get(key) is not None:
+                    if not isinstance(function[key], str):
+                        raise LLMError("MODEL_RESPONSE_INVALID")
+                    slot["function"][key] += function[key]
+        if choice.get("finish_reason"):
+            finish_reason = choice["finish_reason"]
+    message: dict[str, Any] = {"role": "assistant", "content": "".join(content) if content else None}
+    if calls:
+        message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    return {"choices": [{"finish_reason": finish_reason, "message": message}], "usage": usage}
 
 
 @dataclass(frozen=True)
@@ -109,6 +158,7 @@ class LLMService:
         self, messages: list[dict[str, Any]], *, structured: bool,
         max_tokens: int | None, temperature: float | None,
         tools: list[dict[str, Any]] | None = None,
+        on_delta: DeltaCallback | None = None,
     ) -> LLMResult[Any]:
         if get_mode() == "offline":
             raise LLMError("MODEL_DISABLED")
@@ -147,22 +197,35 @@ class LLMService:
             body["response_format"] = {"type": "json_object"}
         if settings.provider == "deepseek":
             body["thinking"] = {"type": "disabled"}
+        if on_delta is not None:
+            body["stream"] = True
+            if settings.provider == "deepseek":
+                body["stream_options"] = {"include_usage": True}
         client = await self._connection(settings)
         slots, idle = self._slots, self._idle
         assert slots is not None and idle is not None
         self._active += 1
         idle.clear()
         try:
-            # 总超时包括并发排队和网络等待；不自动重试请求。
+            # 总超时包括并发排队和网络等待（流式还包括读完全部增量）；不自动重试请求。
             async with asyncio.timeout(settings.timeout):
                 async with slots:
-                    response = await client.post(
-                        settings.base_url + "/chat/completions", json=body,
-                        headers={"Authorization": "Bearer " + settings.api_key},
-                    )
-            if response.status_code != 200:
-                raise LLMError("MODEL_HTTP_" + str(response.status_code))
-            payload = response.json()
+                    if on_delta is None:
+                        response = await client.post(
+                            settings.base_url + "/chat/completions", json=body,
+                            headers={"Authorization": "Bearer " + settings.api_key},
+                        )
+                        if response.status_code != 200:
+                            raise LLMError("MODEL_HTTP_" + str(response.status_code))
+                        payload = response.json()
+                    else:
+                        async with client.stream(
+                            "POST", settings.base_url + "/chat/completions", json=body,
+                            headers={"Authorization": "Bearer " + settings.api_key},
+                        ) as response:
+                            if response.status_code != 200:
+                                raise LLMError("MODEL_HTTP_" + str(response.status_code))
+                            payload = await _read_stream(response, on_delta)
             choice = payload["choices"][0]
             if choice.get("finish_reason") not in ({None, "stop", "tool_calls"} if tools is not None else {None, "stop"}):
                 reason = choice.get("finish_reason")
@@ -210,11 +273,14 @@ class LLMService:
 
     async def generate_with_tools(
         self, *, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
-        max_tokens: int = 800,
+        max_tokens: int = 800, on_delta: DeltaCallback | None = None,
     ) -> LLMResult[dict[str, Any]]:
-        """返回 assistant 消息，保留原生 tool_calls 供 Agent 回传。"""
+        """返回 assistant 消息，保留原生 tool_calls 供 Agent 回传。
+
+        传入 on_delta 时以流式请求模型，正文片段到达即回调；返回值与校验规则同非流式。
+        """
         return await self._generate(messages, structured=False, tools=tools,
-                                    max_tokens=max_tokens, temperature=0)
+                                    max_tokens=max_tokens, temperature=0, on_delta=on_delta)
 
     async def generate_text(
         self, *, messages: list[dict[str, Any]], max_tokens: int | None = None,

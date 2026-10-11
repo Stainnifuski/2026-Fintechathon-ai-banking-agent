@@ -3,6 +3,7 @@ import asyncio
 import json
 import re
 import inspect
+from collections.abc import Awaitable, Callable
 
 from fastapi.encoders import jsonable_encoder
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -21,6 +22,7 @@ from .card_subscription_tools import offline_reply as offline_cards_subscription
 from ..shop_reads import ShopReadError
 
 MAX_STEPS = 4
+EventCallback = Callable[[dict], Awaitable[None]]
 TOTAL_TIMEOUT = 90
 RESPONSE_MAX_TOKENS = 4096
 
@@ -125,7 +127,10 @@ async def execute_tool(call: dict, context: ToolContext | None = None) -> dict:
         return {"error": "TOOL_EXECUTION_FAILED"}
 
 
-async def chat(message: str, history: list[dict], *, model=None, context: ToolContext | None = None) -> dict:
+async def chat(message: str, history: list[dict], *, model=None, context: ToolContext | None = None,
+               on_event: EventCallback | None = None) -> dict:
+    """返回完整回答；传入 on_event 时边执行边推送 tool（开始调用工具）、delta（正文片段）、
+    reset（本轮已推送的正文作废，模型改为调用工具）事件，最终结果仍以返回值为准。"""
     trace = []
     if get_mode() == "offline" and model is None:
         cards_subscriptions = await offline_cards_subscriptions(message, context, execute_tool)
@@ -161,14 +166,26 @@ async def chat(message: str, history: list[dict], *, model=None, context: ToolCo
     try:
         async with asyncio.timeout(TOTAL_TIMEOUT):
             for _ in range(MAX_STEPS):
-                response = await client.generate_with_tools(
-                    messages=messages, tools=[t["schema"] for t in TOOL_REGISTRY.values()],
-                    max_tokens=RESPONSE_MAX_TOKENS)
+                streamed: list[str] = []
+                request = {"messages": messages, "tools": [t["schema"] for t in TOOL_REGISTRY.values()],
+                           "max_tokens": RESPONSE_MAX_TOKENS}
+                if on_event is not None:
+                    async def on_delta(text: str) -> None:
+                        streamed.append(text)
+                        await on_event({"type": "delta", "text": text})
+                    request["on_delta"] = on_delta
+                response = await client.generate_with_tools(**request)
                 assistant = response.data
                 messages.append(assistant)
                 if not assistant.get("tool_calls"):
+                    if on_event is not None and not streamed:
+                        await on_event({"type": "delta", "text": assistant["content"]})
                     return {"reply": assistant["content"], "mode": "model", "tool_calls": trace}
+                if on_event is not None and streamed:
+                    await on_event({"type": "reset"})
                 for call in assistant["tool_calls"]:
+                    if on_event is not None:
+                        await on_event({"type": "tool", "name": call["function"]["name"]})
                     result = await execute_tool(call, context)
                     trace.append({"name": call["function"]["name"], "result": result})
                     messages.append({"role": "tool", "tool_call_id": call["id"],
