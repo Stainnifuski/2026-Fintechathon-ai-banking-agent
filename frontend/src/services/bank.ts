@@ -144,15 +144,22 @@ export const modifyTask = (task: TaskSnapshot, payload: {
   request_id: crypto.randomUUID(), state_version: task.state_version, ...payload,
 }).then(r => r.data);
 
-export type CardAction = 'card_apply_virtual' | 'card_set_transaction_limits' | 'card_adjust_credit_limit' | 'card_unlock' | 'card_report_lost';
+export type CardAction = 'card_apply_virtual' | 'card_set_transaction_limits' | 'card_adjust_credit_limit' | 'card_unlock'
+  | 'card_report_lost' | 'card_lock' | 'card_cancel_virtual' | 'card_reissue' | 'card_set_channels';
+export type CardStatus = 'ACTIVE' | 'LOCKED' | 'LOST' | 'CANCELLED';
+export type CardChannelSwitch = 'online_enabled' | 'atm_enabled' | 'overseas_enabled' | 'contactless_enabled';
+export type CardTransactionChannel = 'online' | 'pos' | 'contactless' | 'atm' | 'overseas';
 export interface BankCard {
   card_id: string; account_id: string; account_label: string; card_type: 'DEBIT' | 'CREDIT';
-  is_virtual: boolean; card_number: string; status: 'ACTIVE' | 'LOCKED' | 'LOST'; lock_reason?: string | null;
+  is_virtual: boolean; card_number: string; status: CardStatus; lock_reason?: string | null;
   credit_limit_fen?: number | null; credit_limit_cap_fen?: number | null;
+  used_credit_fen: number; available_credit_fen?: number | null;
   single_txn_limit_fen: number; daily_txn_limit_fen: number; single_txn_cap_fen: number; daily_txn_cap_fen: number;
-  state_version: number; lost_reported_at?: string | null;
+  state_version: number; lost_reported_at?: string | null; valid_thru?: string | null;
+  online_enabled: boolean; atm_enabled: boolean; overseas_enabled: boolean; contactless_enabled: boolean;
+  replaced_by_card_id?: string | null; cancelled_at?: string | null;
 }
-export interface CardChange { field: string; label: string; before?: number | string | null; after?: number | string | null; unit?: 'fen' | null; }
+export interface CardChange { field: string; label: string; before?: boolean | number | string | null; after?: boolean | number | string | null; unit?: 'fen' | null; }
 export interface CardOperation {
   operation_id: string; action: CardAction; status: string; permission_level: 'green' | 'yellow' | 'red';
   requires_confirmation: boolean; requires_mfa: boolean; digest: string; card_id?: string | null;
@@ -162,6 +169,12 @@ export interface CardOperation {
 export interface CardOperationRequest {
   operation_id: string; action: CardAction; card_id?: string; account_id?: string;
   credit_limit?: string; single_txn_limit?: string; daily_txn_limit?: string;
+  online_enabled?: boolean; atm_enabled?: boolean; overseas_enabled?: boolean; contactless_enabled?: boolean;
+}
+export interface CardAuthorization {
+  auth_id: string; operation_id: string; card_id: string; amount_fen: number; merchant: string;
+  channel: CardTransactionChannel; approved: boolean; decline_code?: string | null; tx_id?: string | null;
+  authorized_at: string; message: string;
 }
 export const listCards = () => apiClient.get<BankCard[]>('/cards').then(r => r.data);
 export const previewCardOperation = (payload: CardOperationRequest) =>
@@ -175,3 +188,8 @@ export const cancelCardOperation = (operation: CardOperation) =>
   apiClient.post<CardOperation>(`/cards/operations/${operation.operation_id}/cancel`).then(r => r.data);
 export const getCardOperation = (operationId: string) =>
   apiClient.get<CardOperation>(`/cards/operations/${operationId}`).then(r => r.data);
+export const listCardTransactions = (cardId: string) =>
+  apiClient.get<CardAuthorization[]>(`/cards/${cardId}/transactions`).then(r => r.data);
+export const simulateCardPurchase = (cardId: string, payload: {
+  operation_id: string; amount: string; merchant: string; channel: CardTransactionChannel;
+}) => apiClient.post<{ authorization: CardAuthorization; card: BankCard }>(`/cards/${cardId}/transactions`, payload).then(r => r.data);

@@ -67,6 +67,7 @@ function App() {
   const [wealthTestMode, setWealthTestMode] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string>();
+  const [pendingCardOperationId, setPendingCardOperationId] = useState<string>();
   const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string>();
   const [billPageContext, setBillPageContext] = useState<NovaPageContext>({ version: 1, page: 'insights' });
   const [thirdPartyPageContext, setThirdPartyPageContext] = useState<NovaPageContext>({ version: 1, page: 'thirdParty' });
@@ -464,6 +465,7 @@ function App() {
     bankShellRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+  const reviewCardOperation = (operationId: string) => { openSection('cards'); setPendingCardOperationId(operationId); };
 
   if (!user) return <main className="auth"><BeijingClock /><section className="card"><h1>AI 模拟银行</h1><p>任务状态机转账演示</p><form onSubmit={authenticate}>
     {loginMode === 'register' && <label>姓名<input required value={name} onChange={e => setName(e.target.value)} /></label>}
@@ -575,7 +577,7 @@ function App() {
         const counterparty = recipients.find(recipient => recipient.account_id === tx.counterparty)?.name || tx.counterparty;
         return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{beijingTime(tx.timestamp)} · {statusLabel}</small></span><strong className={tx.status !== 'completed' ? 'hint' : outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
       })}</ul>}</div></section></>}
-    {bankingSection === 'cards' && <><div className="page-intro"><p className="eyebrow">CARDS</p><h1>卡片控制，清楚而克制。</h1><p>低风险设置与高风险操作明确分层。</p></div><Suspense fallback={<section className="card"><p>正在加载卡片管理…</p></section>}><CardManagement key={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} selectedCardId={selectedCardId} onSelectCard={setSelectedCardId} /></Suspense></>}
+    {bankingSection === 'cards' && <><div className="page-intro"><p className="eyebrow">CARDS</p><h1>卡片控制，清楚而克制。</h1><p>低风险设置与高风险操作明确分层。</p></div><Suspense fallback={<section className="card"><p>正在加载卡片管理…</p></section>}><CardManagement key={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} selectedCardId={selectedCardId} onSelectCard={setSelectedCardId} pendingOperationId={pendingCardOperationId} onPendingHandled={() => setPendingCardOperationId(undefined)} /></Suspense></>}
     {bankingSection === 'subscriptions' && <><div className="page-intro"><p className="eyebrow">SUBSCRIPTIONS</p><h1>看清每一笔周期支出。</h1><p>取消前展示影响，历史流水不会被删除。</p></div><section className="card subscription-card">
       <h2>订阅管理</h2><p className="hint">选择一项订阅后，可向 NOVA 询问“这个订阅什么时候扣费？”</p>
       {subscriptions.length === 0 ? <p className="hint">暂未识别到订阅扣费</p> : <ul className="history">{subscriptions.map(subscription => {
@@ -598,7 +600,7 @@ function App() {
         </div>
       </div>
     </div>
-    <NovaChat pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection }} key={user.user_id} name={user.name} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => openSection(section)} />
+    <NovaChat pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection }} key={user.user_id} name={user.name} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} />
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>

@@ -187,14 +187,15 @@ async def seed_bank_data() -> None:
                 )
             )
         card_specs = [
-            # 卡号沿用对应账户的脱敏卡号；信用卡锁定用于演示解锁后再调额。
-            ("CARD001", "U001", "A001", "DEBIT", "6222****8842", "ACTIVE", None, None, None,
-             1_000_000, 5_000_000, 5_000_000, 10_000_000),
+            # 卡号沿用对应账户的脱敏卡号；信用卡锁定用于演示解锁后再调额，已用额度用于演示降额下限。
+            ("CARD001", "U001", "A001", "DEBIT", "6222****8842", "ACTIVE", None, None, None, 0,
+             1_000_000, 5_000_000, 5_000_000, 10_000_000, "2029-08"),
             ("CARD002", "U001", "A002", "CREDIT", "6225****3301", "LOCKED", "连续输错密码已被风控锁定",
-             2_000_000, 5_000_000, 500_000, 2_000_000, 2_000_000, 5_000_000),
+             2_000_000, 5_000_000, 320_000, 500_000, 2_000_000, 2_000_000, 5_000_000, "2028-12"),
         ]
         for (card_id, user_id, account_id, card_type, card_number, card_status, lock_reason,
-             credit_limit_fen, credit_cap_fen, single_fen, daily_fen, single_cap_fen, daily_cap_fen) in card_specs:
+             credit_limit_fen, credit_cap_fen, used_credit_fen, single_fen, daily_fen, single_cap_fen,
+             daily_cap_fen, valid_thru) in card_specs:
             if await session.get(CardORM, card_id) is None:
                 session.add(CardORM(
                     card_id=card_id, user_id=user_id, account_id=account_id, card_type=card_type,
@@ -202,7 +203,8 @@ async def seed_bank_data() -> None:
                     lock_reason=lock_reason, credit_limit_fen=credit_limit_fen,
                     credit_limit_cap_fen=credit_cap_fen, single_txn_limit_fen=single_fen,
                     daily_txn_limit_fen=daily_fen, single_txn_cap_fen=single_cap_fen,
-                    daily_txn_cap_fen=daily_cap_fen, state_version=1,
+                    daily_txn_cap_fen=daily_cap_fen, used_credit_fen=used_credit_fen,
+                    valid_thru=valid_thru, state_version=1,
                 ))
         await session.commit()
         logger.info("模拟银行种子数据同步完成")

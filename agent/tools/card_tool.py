@@ -18,8 +18,8 @@ QUERY_CARDS_SCHEMA: dict = {
 PREVIEW_CARD_OPERATION_SCHEMA: dict = {
     "name": "preview_card_operation",
     "description": (
-        "为卡片操作生成待用户核对的预览，不会执行。申请虚拟卡、设置交易限额需用户确认；"
-        "调整信用额度、解锁、挂失需用户确认并通过验证器强验证。card_id/account_id 必须取自 query_cards 结果。"
+        "为卡片操作生成待用户核对的预览，不会执行。申请虚拟卡、"
+        "锁卡、注销虚拟卡、补卡、调低额度/限额、关闭渠道需用户确认；调高额度/限额、打开渠道、解锁、挂失还需验证器强验证。card_id/account_id 必须取自 query_cards 结果。"
     ),
     "parameters": {
         "type": "object",
@@ -27,13 +27,18 @@ PREVIEW_CARD_OPERATION_SCHEMA: dict = {
             "action": {
                 "type": "string",
                 "enum": ["card_apply_virtual", "card_set_transaction_limits",
-                         "card_adjust_credit_limit", "card_unlock", "card_report_lost"],
+                         "card_adjust_credit_limit", "card_unlock", "card_report_lost",
+                         "card_lock", "card_cancel_virtual", "card_reissue", "card_set_channels"],
             },
             "card_id": {"type": "string", "description": "目标卡片 ID（申请虚拟卡时不传）"},
             "account_id": {"type": "string", "description": "虚拟卡关联的借记账户 ID（仅申请虚拟卡）"},
             "credit_limit": {"type": "string", "description": "新信用额度（元，用户原文金额）"},
             "single_txn_limit": {"type": "string", "description": "新单笔交易限额（元）"},
             "daily_txn_limit": {"type": "string", "description": "新单日交易限额（元）"},
+            "online_enabled": {"type": "boolean", "description": "线上支付开关（仅设置交易渠道，四个开关须同时传）"},
+            "atm_enabled": {"type": "boolean", "description": "ATM取现开关"},
+            "overseas_enabled": {"type": "boolean", "description": "境外交易开关"},
+            "contactless_enabled": {"type": "boolean", "description": "免密/闪付开关"},
         },
         "required": ["action"],
     },

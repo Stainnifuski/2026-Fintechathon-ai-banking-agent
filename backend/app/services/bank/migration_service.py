@@ -97,6 +97,30 @@ async def upgrade_legacy_user_mfa_columns(connection) -> None:
     await connection.run_sync(add_missing)
 
 
+async def upgrade_card_columns(connection) -> None:
+    """补齐卡片额度、有效期与渠道开关列；create_all 不会升级旧 cards 表。"""
+    def add_missing(sync_connection) -> None:
+        inspector = inspect(sync_connection)
+        if "cards" not in inspector.get_table_names():
+            return
+        columns = {column["name"] for column in inspector.get_columns("cards")}
+        definitions = {
+            "used_credit_fen": "BIGINT NOT NULL DEFAULT 0",
+            "valid_thru": "VARCHAR(7)",
+            "online_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "atm_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "overseas_enabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "contactless_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "replaced_by_card_id": "VARCHAR(32)",
+            "cancelled_at": "TIMESTAMP WITH TIME ZONE",
+        }
+        for name, definition in definitions.items():
+            if name not in columns:
+                sync_connection.execute(text(f"ALTER TABLE cards ADD COLUMN {name} {definition}"))
+
+    await connection.run_sync(add_missing)
+
+
 async def upgrade_phone_registry(session_factory) -> None:
     """检查旧库号码冲突并填充唯一登记表；不改写客户数据。"""
     async with session_factory() as session:

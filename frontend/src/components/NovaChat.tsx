@@ -21,6 +21,11 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
     const dateRange = calendar?.query ? `\n范围：${calendar.query.start} 至 ${calendar.query.end_exclusive}（不含终点）` : '';
     return `本人日历 · ${calendar?.title || calendar?.keyword || '日程查询'} · 共 ${calendar?.total ?? 0} 项${dateRange}\n时区：${result.timezone}`;
   }
+  if (call.name === 'preview_card_operation') {
+    const preview = result.data as { action_label?: string; card_number?: string | null; permission_level?: string; changes?: { label: string }[] } | undefined;
+    return `模拟银行 · ${preview?.action_label}${preview?.card_number ? ` · ${preview.card_number}` : ''} · ${preview?.permission_level === 'red' ? '需确认 + 验证码' : '需本人确认'} · 尚未执行
+变更：${(preview?.changes ?? []).map(change => change.label).join('、')}`;
+  }
   let text = '模拟银行数据';
   if (['list_cards', 'get_card', 'list_subscriptions', 'get_subscription'].includes(call.name)) {
     const item = result.data as { total?: number; card_number?: string; merchant_name?: string; status?: string; summary?: { monthly_commitment_fen?: number } };
@@ -35,9 +40,10 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
   return text;
 }
 
-export default function NovaChat({ name, open, onClose, onNavigate, pageContext }: {
+export default function NovaChat({ name, open, onClose, onNavigate, pageContext, onReviewCardOperation }: {
   name: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
   onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
+  onReviewCardOperation?: (operationId: string) => void;
 }) {
   const [messages, setMessages] = useState<Entry[]>([]);
   const [input, setInput] = useState('');
@@ -80,13 +86,14 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext 
       <div className="agent-head"><span className="agent-orb">✦</span><div><strong>NOVA</strong><small>银行与生活服务助手</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
       <div className="agent-body">
         <p className="agent-greeting">你好，{name}。可以问我账户资金、账单、日历、店铺商品和订单。</p>
-        <p className="hint">我会结合当前页面筛选查询本人数据。转账及其他操作请进入对应工作台。</p>
+        <p className="hint">我会结合当前页面筛选查询本人数据。卡片操作我只生成待确认的变更，需你在卡片页本人确认；转账及其他操作请进入对应工作台。</p>
         <button className="agent-prompt" disabled={busy} onClick={() => void send('现在北京时间几点？')}>现在北京时间几点？ <span>→</span></button>
         <button className="agent-prompt" disabled={busy} onClick={() => void send('我现在有多少钱可以用？')}>查看可用资金 <span>→</span></button>
         <button className="agent-prompt" disabled={busy} onClick={() => void send('明天有什么日程安排？')}>明天有什么安排？ <span>→</span></button>
         {pageContext.page === 'cards' && <>
           <button className="agent-prompt" disabled={busy} onClick={() => void send('查看我的卡片状态和限额')}>查看我的卡片 <span>→</span></button>
           {pageContext.cards?.selected_card_id && <button className="agent-prompt" disabled={busy} onClick={() => void send('这张卡的状态和限额是多少？')}>查询选中卡片 <span>→</span></button>}
+          {pageContext.cards?.selected_card_id && <button className="agent-prompt" disabled={busy} onClick={() => void send('帮我把这张卡临时锁上')}>锁定选中卡片（生成预览） <span>→</span></button>}
         </>}
         {pageContext.page === 'subscriptions' && <>
           <button className="agent-prompt" disabled={busy} onClick={() => void send('我的订阅每月预计要花多少钱？')}>查看订阅与预计月费 <span>→</span></button>
@@ -112,7 +119,11 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext 
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
             {entry.role === 'assistant' ? <NovaMarkdown content={entry.content} /> : <p>{entry.content}</p>}
             {entry.details && <small>{entry.details.mode === 'offline' ? '离线规则' : '模型回答'}{entry.details.tool_calls.length > 0 && ` · 工具调用 ${entry.details.tool_calls.length} 次`}</small>}
-            {entry.details?.tool_calls.map((call, callIndex) => <details key={callIndex}><summary>{({ list_cards: '卡片列表', get_card: '卡片详情', list_subscriptions: '订阅列表与预计月费', get_subscription: '订阅详情', get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表', get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情', list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态' } as Record<string, string>)[call.name] || call.name}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
+            {entry.details?.tool_calls.map((call, callIndex) => <details key={callIndex}><summary>{({ list_cards: '卡片列表', get_card: '卡片详情', list_subscriptions: '订阅列表与预计月费', get_subscription: '订阅详情', get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表', get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情', list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态', preview_card_operation: '卡片操作预览' } as Record<string, string>)[call.name] || call.name}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
+            {entry.details?.tool_calls.filter(call => call.name === 'preview_card_operation' && !call.result.error).map((call, callIndex) => {
+              const preview = call.result.data as { operation_id: string; action_label: string };
+              return <button key={`review-${callIndex}`} className="agent-prompt" onClick={() => onReviewCardOperation?.(preview.operation_id)}>去卡片页核对并确认：{preview.action_label} <span>→</span></button>;
+            })}
           </div>)}
           {busy && <p className="hint" role="status">NOVA 正在处理查询…</p>}
           {error && <p className="nova-error" role="alert">{error}</p>}

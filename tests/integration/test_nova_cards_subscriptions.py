@@ -1,4 +1,4 @@
-"""NOVA 卡片/订阅：页面事实一致、身份隔离、只读和上下文闭环。"""
+"""NOVA 卡片/订阅：页面事实一致、身份隔离、查询只读、卡片操作仅生成预览和上下文闭环。"""
 import json
 from datetime import datetime, timezone
 
@@ -109,7 +109,8 @@ async def test_strict_arguments_and_no_write_tools(db):
         ('list_cards', {'last_four': '1'}), ('list_subscriptions', {'keyword': ' '}),
         ('list_subscriptions', {'status': 'bad'}), ('get_subscription', {'subscription_id': 'a' * 41})]:
         assert (await nova.execute_tool(call(name, arguments), context(db)))['error'] == 'INVALID_ARGUMENTS'
-    for name in ('cancel_subscription', 'simulate_subscription_charge', 'card_unlock', 'card_report_lost'):
+    for name in ('cancel_subscription', 'simulate_subscription_charge', 'card_unlock', 'card_report_lost',
+                 'confirm_card_operation', 'verify_card_operation', 'simulate_card_purchase'):
         assert (await nova.execute_tool(call(name), context(db)))['error'] == 'UNKNOWN_TOOL'
 
 
@@ -126,13 +127,15 @@ async def test_offline_and_queries_do_not_mutate_bank(db):
     await seed_subscriptions(db)
     ctx = context(db, 'cards', cards=CardContext(selected_card_id='C2'))
     for question, expected in [('这张卡的状态和限额是多少？', 'get_card'), ('查看我的信用卡', 'list_cards'),
+        ('查看已锁定的卡片', 'list_cards'), ('查看已注销的卡片', 'list_cards'),
         ('我的订阅每月预计要花多少钱？', 'list_subscriptions'), ('查看已取消的订阅', 'list_subscriptions')]:
         result = await nova.chat(question, [], context=ctx)
         assert result['tool_calls'][0]['name'] == expected and not result['tool_calls'][0]['result'].get('error')
     ctx = context(db, 'subscriptions', subscriptions=SubscriptionContext(selected_subscription_id='S1'))
     result = await nova.chat('这个订阅什么时候扣费？', [], context=ctx)
     assert result['tool_calls'][0]['name'] == 'get_subscription'
-    for question in ('请取消订阅', '请帮我解锁这张卡', '给这个订阅模拟扣费', '把这张卡挂失', '帮我把这个订阅取消'):
+    for question in ('请取消订阅', '请帮我解锁这张卡', '给这个订阅模拟扣费', '把这张卡挂失', '帮我把这个订阅取消',
+                     '帮我把这张卡临时锁上', '把这张卡的境外交易打开', '给这张卡补卡', '帮我锁定这张卡'):
         result = await nova.chat(question, [], context=ctx)
         assert result['tool_calls'] == []
     assert (await db.get(AccountORM, 'A1')).balance_fen == 100000
@@ -155,3 +158,54 @@ async def test_nova_http_context_and_auth(client):
     assert response.json()['tool_calls'][0]['result']['error'] == 'CARD_NOT_FOUND'
     body['page_context']['user_id'] = 'U2'
     assert (await client.post('/api/v1/nova/chat', headers=headers(), json=body)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_preview_tool_only_opens_pending_operation(client, db):
+    ctx = context(db, 'cards', cards=CardContext(selected_card_id='C1'))
+    result = await nova.execute_tool(call('preview_card_operation', {'action': 'card_lock'}), ctx)
+    data = result['data']
+    assert result['source'] == 'cards.operation_preview'
+    assert (data['executed'], data['permission_level'], data['card_id'], data['status']) == (
+        False, 'yellow', 'C1', 'AWAITING_CONFIRMATION')
+    assert data['operation_id'].startswith('NOVA-') and 'digest' not in data and '尚未执行' in data['next_step']
+    assert (await db.get(CardORM, 'C1', populate_existing=True)).status == 'ACTIVE'
+
+    # NOVA 生成的预览只能由本人在卡片接口确认。
+    view = (await client.get(f"/api/v1/cards/operations/{data['operation_id']}", headers=headers())).json()
+    assert (await client.get(f"/api/v1/cards/operations/{data['operation_id']}", headers=headers('U2'))).status_code == 404
+    done = await client.post(f"/api/v1/cards/operations/{data['operation_id']}/confirm", headers=headers(),
+                             json={'digest': view['digest']})
+    assert done.json()['status'] == 'COMPLETED'
+    assert (await db.get(CardORM, 'C1', populate_existing=True)).status == 'LOCKED'
+
+
+@pytest.mark.asyncio
+async def test_preview_tool_fills_unmentioned_fields_and_levels_by_direction(db):
+    ctx = context(db, 'cards', cards=CardContext(selected_card_id='C1'))
+    overseas = await nova.execute_tool(call('preview_card_operation', {'action': 'card_set_channels', 'overseas_enabled': True}), ctx)
+    assert overseas['data']['permission_level'] == 'red'
+    assert [change['field'] for change in overseas['data']['changes']] == ['overseas_enabled']
+    lower = await nova.execute_tool(call('preview_card_operation', {'action': 'card_set_transaction_limits', 'daily_txn_limit': '30000'}), ctx)
+    assert lower['data']['permission_level'] == 'yellow'
+    assert [change['after'] for change in lower['data']['changes']] == [1_000_000, 3_000_000]
+    apply = await nova.execute_tool(call('preview_card_operation', {'action': 'card_apply_virtual', 'account_id': 'A1'}), ctx)
+    assert apply['data']['changes'][0]['after'] == '****0001'
+    assert await db.scalar(select(func.count()).select_from(CardOperationORM)) == 3
+    assert await db.scalar(select(func.count()).select_from(CardORM).where(CardORM.is_virtual.is_(True))) == 0
+
+
+@pytest.mark.asyncio
+async def test_preview_tool_rejects_missing_foreign_and_malformed_requests(db):
+    home = context(db)
+    assert (await nova.execute_tool(call('preview_card_operation', {'action': 'card_lock'}), home))['error'] == 'MISSING_SELECTION'
+    foreign = await nova.execute_tool(call('preview_card_operation', {'action': 'card_lock', 'card_id': 'C3'}), home)
+    assert foreign['error'] == 'CARD_NOT_FOUND'
+    extra = await nova.execute_tool(call('preview_card_operation', {'action': 'card_lock', 'card_id': 'C1', 'credit_limit': '1'}), home)
+    assert extra['error'] == 'INVALID_ARGUMENTS'
+    for arguments in ({'action': 'card_adjust_credit_limit', 'card_id': 'C2', 'credit_limit': '1.001'},
+                      {'action': 'card_lock', 'card_id': 'C1', 'user_id': 'U2'}, {'action': 'card_delete'}):
+        assert (await nova.execute_tool(call('preview_card_operation', arguments), home))['error'] == 'INVALID_ARGUMENTS'
+    locked = await nova.execute_tool(call('preview_card_operation', {'action': 'card_lock', 'card_id': 'C2'}), home)
+    assert locked['error'] == 'CARD_NOT_ACTIVE'
+    assert await db.scalar(select(func.count()).select_from(CardOperationORM)) == 0
