@@ -64,7 +64,7 @@ async def lifespan(application):
         await conn.run_sync(Base.metadata.create_all)
     bank.business_now = test_clock
     async with AsyncSessionLocal() as db:
-        db.add_all([UserORM(user_id=uid,name='B6 隔离验收（固定方案）' if uid=='U1' else 'B6 隔离操作员' if operator_test else '隔离收款对象',
+        db.add_all([UserORM(user_id=uid,name='张三' if uid=='U1' else '李四',
                     phone=f'1380000000{i}',id_card='disposable-fixture',password_hash=hash_password('password123'),status='active')
                     for i,uid in enumerate(('U1','U2'),1)])
         await db.flush()
