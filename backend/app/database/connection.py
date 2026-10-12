@@ -54,6 +54,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """初始化数据库，创建所有表。"""
     from ..services.bank.migration_service import (
+        upgrade_card_columns,
         upgrade_flower_purchase_transactions,
         upgrade_legacy_user_mfa_columns,
         upgrade_phone_registry,
@@ -62,6 +63,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await upgrade_legacy_user_mfa_columns(conn)
+        await upgrade_card_columns(conn)
         await migrate_bank_money(conn)
     await upgrade_phone_registry(AsyncSessionLocal)
     await upgrade_flower_purchase_transactions(AsyncSessionLocal)

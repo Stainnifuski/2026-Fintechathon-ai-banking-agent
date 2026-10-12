@@ -90,19 +90,25 @@ async def _find_payment_request(customer_user_id: str, payment_request_id: str) 
     )
 
 
+def effective_order_status(stored_status: str, payment: dict | None) -> str:
+    """页面对账与NOVA投影共用状态规则；函数不修改订单。"""
+    if payment is None or stored_status in {COMPLETED, PAYMENT_CLOSED, REFUNDED}:
+        return stored_status
+    if payment["status"] == "PAID":
+        return COMPLETED
+    if payment["status"] in {"REJECTED", "CANCELLED", "EXPIRED"}:
+        return PAYMENT_CLOSED
+    return PENDING_PAYMENT
+
+
 async def _reconcile(order: CakeOrderORM) -> tuple[bool, dict | None]:
     if not order.payment_request_id:
         return False, None
     payment = await _find_payment_request(order.customer_user_id, order.payment_request_id)
     if payment is None:
         return False, None
-    if payment["status"] == "PAID":
-        target = COMPLETED
-    elif payment["status"] in {"REJECTED", "CANCELLED", "EXPIRED"}:
-        target = PAYMENT_CLOSED
-    else:
-        target = PENDING_PAYMENT
-    if target == order.status or order.status in {COMPLETED, PAYMENT_CLOSED, REFUNDED}:
+    target = effective_order_status(order.status, payment)
+    if target == order.status:
         return False, payment
     order.status = target
     order.state_version += 1

@@ -17,7 +17,7 @@ from .payment_request import PaymentRequestORM
 from .payment_request_batch import PaymentRequestBatchORM
 from .payment_request_payment import PaymentRequestPaymentORM
 from .subscription import SubscriptionORM
-from .card import CardORM, CardOperationORM
+from .card import CardAuthorizationORM, CardORM, CardOperationORM
 from .flower_order import FlowerOrderORM
 from .cake_order import CakeOrderORM
 from .calendar_event import CalendarEventORM
@@ -79,6 +79,7 @@ __all__ = [
     "PaymentRequestBatchORM",
     "PaymentRequestPaymentORM",
     "SubscriptionORM",
+    "CardAuthorizationORM",
     "CardORM",
     "CardOperationORM",
     "FlowerOrderORM",

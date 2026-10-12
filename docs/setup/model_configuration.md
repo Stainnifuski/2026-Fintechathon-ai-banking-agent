@@ -1,6 +1,6 @@
 # 统一 LLM 配置与开发接口
 
-转账理解、账单问答、理财多轮理解及知识解释共用 `backend/app/services/ai/llm/`。业务模块不再自行读取密钥、设置服务地址或发模型 HTTP 请求。
+NOVA工具调用、转账理解、账单问答、理财多轮理解及知识解释共用 `backend/app/services/ai/llm/`。业务模块不再自行读取密钥、设置服务地址或发模型 HTTP 请求。
 
 ## 用户配置
 
@@ -88,6 +88,18 @@ text = result.data
 上述示例位于异步函数内。业务模块通过 `get_mode()` 判断是否走自己的离线实现。`result.evidence` 仅包含 provider、model、白名单整数 token 统计和 live 标记，不保存输入、凭据或服务商原始响应。Agent 的源码导入入口沿用现有 backend 包；Docker 后端内使用 `app.services.ai.llm` 或相对导入，避免重复导入两套客户端。
 
 统一接口负责通信、并发、总超时、JSON 解析和结构校验；业务仍负责提示词、最小必要上下文、金额原文、产品引用及事实一致性校验。转账不发送银行凭据、余额或历史流水；账单报告仍由服务端统计；理财保留原有最小上下文和来源校验。
+
+## NOVA 原生工具调用
+
+`llm.generate_with_tools(messages=messages, tools=tools)` 返回assistant消息字典（content、可选tool_calls），支持原生工具调用和role=tool回传，复用统一连接池与LLM配置，不改变generate_text/generate_structured契约。服务商须支持兼容Chat Completions的工具调用，否则返回模型错误。
+
+NOVA当前注册16个只读工具，覆盖时间、账户/账单、卡片/订阅、日历及两家模拟店铺。每轮输出显式申请4096 token，受LLM_MAX_TOKENS上限约束；底层工具接口默认仍为800，其他业务预算不变。默认报告优先摘要，年度趋势概括主要变化，异常只举少量例子；详细内容可继续查询。
+
+业务工具发送查询所需的本人事实：脱敏账户与账单、本人日历事件、模拟店铺商品和本人订单。金额为整数分，日历使用user_calendar，店铺使用simulated_merchant；登录凭据、服务端ToolContext和订单客户ID字段不发送给模型。无模型时NOVA使用明确标记的有限离线规则；模型启用后的调用失败不会伪装成离线成功。
+
+停止原因length会记录实际预算及completion_tokens，并提示回答超出输出限制；其他中断保留白名单原因，不记录提示词、外部响应正文或密钥。截断工具参数不会执行。
+
+操作示例和当前工具清单见 [NOVA使用指南](nova_usage.md)，接口分别见 [基础只读工具](../contracts/NOVA页面上下文与只读工具_API_v0.1.md)、[日历](../contracts/NOVA日历查询_API_v0.1.md)、[店铺](../contracts/NOVA店铺查询_API_v0.1.md)。基础循环限制见 [时间契约](../contracts/NOVA时间查询_API_v0.1.md)。
 
 ## 错误及验证
 

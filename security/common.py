@@ -33,11 +33,15 @@ PERMISSION_MAP: dict[str, PermissionLevel] = {
     "transfer_small": PermissionLevel.YELLOW,        # 小额转账（日累计 ≤ 1000元）
     "schedule_transfer": PermissionLevel.YELLOW,     # 定时转账
     "card_apply_virtual": PermissionLevel.YELLOW,    # 申请虚拟卡
-    "card_set_transaction_limits": PermissionLevel.YELLOW,  # 设置交易限额
+    "card_lock": PermissionLevel.YELLOW,             # 本人锁卡（降低风险）
+    "card_cancel_virtual": PermissionLevel.YELLOW,   # 注销虚拟卡
+    "card_reissue": PermissionLevel.YELLOW,          # 挂失补卡
 
     # 🔴 红色 - 强验证 MFA
     "transfer_large": PermissionLevel.RED,           # 大额转账（日累计 > 1000元）
-    "card_adjust_credit_limit": PermissionLevel.RED, # 调整信用额度
+    "card_set_transaction_limits": PermissionLevel.RED,  # 设置交易限额（仅调低时降为黄色）
+    "card_adjust_credit_limit": PermissionLevel.RED, # 调整信用额度（仅调低时降为黄色）
+    "card_set_channels": PermissionLevel.RED,        # 交易渠道开关（仅关闭时降为黄色）
     "card_unlock": PermissionLevel.RED,              # 解锁卡片
     "card_report_lost": PermissionLevel.RED,         # 卡片挂失
 }
@@ -61,6 +65,19 @@ def get_transfer_permission(amount: float, daily_used: float) -> PermissionLevel
         return PermissionLevel.YELLOW
     else:
         return PermissionLevel.RED
+
+
+# 方向型卡片动作：变更只降低风险敞口（调低额度、关闭渠道）时只需本人确认。
+CARD_RISK_REDUCING_ACTIONS: set[str] = {
+    "card_set_transaction_limits", "card_adjust_credit_limit", "card_set_channels",
+}
+
+
+def get_card_permission(action: str, raises_risk: bool) -> PermissionLevel:
+    """根据卡片动作及变更方向判定权限级别；未知动作返回 RED。"""
+    if action in CARD_RISK_REDUCING_ACTIONS and not raises_risk:
+        return PermissionLevel.YELLOW
+    return get_permission_level(action)
 
 
 def get_permission_level(action: str) -> PermissionLevel:

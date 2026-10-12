@@ -561,3 +561,23 @@ async def cancel_payment_request(
         await session.commit()
         await session.refresh(record)
         return _view(record, users[record.requester_user_id], users[record.payer_user_id])
+
+
+async def read_payment_snapshots(db, *, user_id: str, requester_user_id: str,
+                                 payment_request_ids: list[str]) -> dict[str, dict]:
+    """本人店铺收款申请的只读快照；过期只投影，不更新状态或版本。"""
+    from ...domain.time import as_utc
+    if not payment_request_ids:
+        return {}
+    records = (await db.scalars(select(PaymentRequestORM).where(
+        PaymentRequestORM.payment_request_id.in_(payment_request_ids),
+        PaymentRequestORM.payer_user_id == user_id,
+        PaymentRequestORM.requester_user_id == requester_user_id))).all()
+    now = _now()
+    return {record.payment_request_id: {
+        "payment_request_id": record.payment_request_id,
+        "status": EXPIRED if record.status == PENDING and as_utc(record.expires_at, legacy_utc=True) <= now else record.status,
+        "stored_status": record.status, "state_version": record.state_version,
+        "amount_fen": record.amount_fen, "currency": record.currency,
+        "expires_at": as_utc(record.expires_at, legacy_utc=True),
+    } for record in records}

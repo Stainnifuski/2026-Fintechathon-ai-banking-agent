@@ -1,57 +1,24 @@
-"""受认证保护的卡片管理接口：预览 → 本人确认（黄）/确认+TOTP（红）→ 银行受理。"""
+"""受认证保护的卡片管理接口：预览 → 本人确认（黄）/确认+TOTP（红）→ 银行受理；另含模拟用卡交易。"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.connection import get_db
+from ..domain import yuan_to_fen
 from ..integrations import card_authorization as auth
 from ..integrations.card_authorization import CardAuthorizationError
 from ..middleware.auth import get_current_user
 from ..models.card import CardOperationORM
 from ..schemas.bank import BANK_ERROR_RESPONSES
 from ..schemas.cards import (
-    CardConfirmRequest, CardOperationCreate, CardOperationView, CardVerifyRequest, CardView,
+    CardAuthorizationView, CardConfirmRequest, CardOperationCreate, CardOperationView,
+    CardPurchaseRequest, CardPurchaseResult, CardVerifyRequest, CardView,
 )
 from ..services.bank import BankError, card_service as cards, verify_second_factor
+from ..services.card_operations import open_preview, operation_view as _view
 
 router = APIRouter(prefix="/api/v1/cards", tags=["cards"], responses=BANK_ERROR_RESPONSES)
-
-ACTION_LABELS = {
-    "card_apply_virtual": "申请虚拟卡",
-    "card_set_transaction_limits": "设置交易限额",
-    "card_adjust_credit_limit": "调整信用额度",
-    "card_unlock": "解锁卡片",
-    "card_report_lost": "卡片挂失",
-}
-
-
-def _message(row: CardOperationORM) -> str:
-    label = ACTION_LABELS[row.action]
-    if row.status == auth.AWAITING_CONFIRMATION:
-        if row.permission_level == "red":
-            return f"{label}为高风险操作：请核对银行返回的变更，确认后还需输入验证器动态码"
-        return f"请核对银行返回的变更，确认后{label}"
-    return {
-        auth.AWAITING_MFA: f"已确认{label}，请输入验证器6位动态码完成强验证",
-        auth.AUTHORIZED: f"{label}已授权，正在提交银行",
-        auth.COMPLETED: f"{label}已完成",
-        auth.CANCELLED: f"{label}已取消，未提交银行",
-        auth.EXPIRED: f"{label}确认已过期，未提交银行，请重新预览",
-    }.get(row.status, f"{label}未执行（{row.error_code}）")
-
-
-def _view(row: CardOperationORM) -> CardOperationView:
-    return CardOperationView(
-        operation_id=row.operation_id, action=row.action, status=row.status,
-        permission_level=row.permission_level,
-        requires_confirmation=row.permission_level in ("yellow", "red"),
-        requires_mfa=row.permission_level == "red",
-        digest=row.param_digest, card_id=row.card_id, card=row.preview.get("card"),
-        changes=row.preview.get("changes", []), result=row.result, error_code=row.error_code,
-        failed_verifications=row.failed_verifications, expires_at=row.expires_at,
-        allowed_actions=auth.allowed_actions(row), message=_message(row),
-    )
 
 
 async def _fail(db: AsyncSession, error: BankError | CardAuthorizationError) -> None:
@@ -75,7 +42,7 @@ async def _execute(db: AsyncSession, row: CardOperationORM) -> CardOperationView
     except BankError as error:
         await db.rollback()
         row = await auth.owned_operation(db, user_id, operation_id)
-        auth.mark_failed(row, error.code)
+        auth.mark_failed(db, row, error.code)
         await db.commit()
         raise HTTPException(error.status_code, detail={"code": error.code, "message": error.message}) from error
 
@@ -89,25 +56,8 @@ async def list_user_cards(current_user: dict = Depends(get_current_user),
 @router.post("/operations", response_model=CardOperationView, status_code=status.HTTP_201_CREATED)
 async def preview_operation(request: CardOperationCreate, current_user: dict = Depends(get_current_user),
                             db: AsyncSession = Depends(get_db)) -> CardOperationView:
-    user_id = current_user["user_id"]
-    params = request.bank_params()
     try:
-        existing = await db.get(CardOperationORM, request.operation_id)
-        if existing is not None:
-            # 原号重放直接返回原预览，避免以新银行状态覆盖用户已核对的内容。
-            row = await auth.open_operation(
-                db, user_id=user_id, operation_id=request.operation_id, action=request.action,
-                card_id=existing.card_id, card_state_version=existing.card_state_version,
-                params=params, preview=existing.preview)
-            if row.card_id != request.card_id:
-                raise CardAuthorizationError("原操作号参数冲突", "IDEMPOTENCY_CONFLICT")
-            return _view(row)
-        preview = await cards.preview_card_operation(
-            db, user_id=user_id, action=request.action, card_id=request.card_id, params=params)
-        row = await auth.open_operation(
-            db, user_id=user_id, operation_id=request.operation_id, action=request.action,
-            card_id=preview["card_id"], card_state_version=preview["card_state_version"],
-            params=params, preview=jsonable_encoder(preview))
+        row = await open_preview(db, user_id=current_user["user_id"], request=request)
         await db.commit()
         return _view(row)
     except (BankError, CardAuthorizationError) as error:
@@ -151,7 +101,7 @@ async def verify_operation(operation_id: str, request: CardVerifyRequest,
         if row.status == auth.COMPLETED:
             return _view(row)
         if row.status != auth.AUTHORIZED:
-            auth.require_verification_pending(row)
+            auth.require_verification_pending(db, row)
             try:
                 await verify_second_factor(db, user_id, request.proof, method=request.method,
                                            challenge_id=request.challenge_id,
@@ -160,7 +110,7 @@ async def verify_operation(operation_id: str, request: CardVerifyRequest,
                 await db.rollback()
                 if error.code in ("TOTP_INVALID", "TOTP_REPLAY", "SMS_INVALID"):
                     row = await auth.owned_operation(db, user_id, operation_id)
-                    locked = auth.record_failed_verification(row)
+                    locked = auth.record_failed_verification(db, row, request.method)
                     await db.commit()
                     if locked is not None:
                         raise locked from error
@@ -178,8 +128,34 @@ async def cancel_operation(operation_id: str, current_user: dict = Depends(get_c
                            db: AsyncSession = Depends(get_db)) -> CardOperationView:
     try:
         row = await auth.owned_operation(db, current_user["user_id"], operation_id)
-        auth.cancel(row)
+        auth.cancel(db, row)
         await db.commit()
         return _view(row)
     except CardAuthorizationError as error:
         await _fail(db, error)
+
+
+@router.get("/{card_id}/transactions", response_model=list[CardAuthorizationView])
+async def list_card_transactions(card_id: str, current_user: dict = Depends(get_current_user),
+                                 db: AsyncSession = Depends(get_db)) -> list[CardAuthorizationView]:
+    """本卡最近20笔用卡授权，含被拒绝的交易及原因。"""
+    try:
+        rows = await cards.list_card_authorizations(db, user_id=current_user["user_id"], card_id=card_id)
+    except BankError as error:
+        await _fail(db, error)
+    return [CardAuthorizationView(**row) for row in rows]
+
+
+@router.post("/{card_id}/transactions", response_model=CardPurchaseResult, status_code=status.HTTP_201_CREATED)
+async def simulate_purchase(card_id: str, request: CardPurchaseRequest,
+                            current_user: dict = Depends(get_current_user),
+                            db: AsyncSession = Depends(get_db)) -> CardPurchaseResult:
+    """模拟商户发起的用卡交易；被拒绝也返回201并保留授权记录，approved 区分结果。"""
+    try:
+        result = await cards.simulate_card_purchase(
+            db, user_id=current_user["user_id"], card_id=card_id, operation_id=request.operation_id,
+            amount_fen=yuan_to_fen(request.amount), merchant=request.merchant, channel=request.channel)
+        await db.commit()
+    except BankError as error:
+        await _fail(db, error)
+    return CardPurchaseResult(**jsonable_encoder(result))

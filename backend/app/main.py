@@ -27,6 +27,7 @@ from .routers.bills import router as bills_router
 from .routers.wealth_bank import router as wealth_bank_router
 from .routers.wealth import router as wealth_router
 from .routers.system import router as system_router
+from .routers.nova import router as nova_router
 from .routers.wealth_tasks import router as wealth_tasks_router
 from .routers.flower_shop import router as flower_shop_router
 from .routers.cake_shop import router as cake_shop_router
@@ -116,6 +117,7 @@ app.include_router(bills_router)
 app.include_router(wealth_bank_router)
 app.include_router(wealth_router)
 app.include_router(system_router)
+app.include_router(nova_router)
 app.include_router(flower_shop_router)
 app.include_router(cake_shop_router)
 app.include_router(calendar_router)
