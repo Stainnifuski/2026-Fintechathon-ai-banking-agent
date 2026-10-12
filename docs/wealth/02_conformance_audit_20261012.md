@@ -54,3 +54,5 @@ npm run build
 该片段只是参数示例，完整 ActionV1 还必须带 schema_version/request_id/context_id 及适用的 session/version。响应、prepare 映射、实际运行步骤分别见 manual_flow_b5_actions.md、manual_flow_b5_shared_tables.md、manual_flow_b6_bank_chain_20261012.md 和 manual_flow_b6_browser_20261012.md。
 
 下一步：补角色切换/旧预览失效等浏览器验收记录，整理 02 §8 的逐项证据及给 Peter 的字段/注册清单。收到 A 的组件/提供者后，在功能分支接入真实输出，再进入 wealth 联合验收，最后才到 main。03 的正式汇总由双方按约定共同修订；当前记录为 B 补充草案。本次不合入或推送共享 wealth/main。
+
+后续补充：客户暂停/继续/重新预览的非空浏览器操作，以及真实 JWT 的客户/操作员领取交还 HTTP 链路已继续验证，见 manual_flow_b6_controls_20261012.md。该报告明确区分接口验证与尚未完成的操作员浏览器矩阵。
