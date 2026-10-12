@@ -69,7 +69,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     if(!active)return;
     manualDrafts.bind(draftScope(userId,assets.context_id??'legacy-v1',assets.cash.map(a=>a.account_id)),assets.context_id??'legacy-v1');
     const nextScope=draftScope(userId,assets.context_id??'legacy-v1',assets.cash.map(a=>a.account_id));
-    if(factScope.current!==nextScope){setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setConfirm(null);recordRows.current.clear();setReviewing(false);client.current.setContext(null);}
+    if(factScope.current!==nextScope){setActivityNotice('');setDetailView(null);setCompareView(false);setResults({});setActionErrors({});setConfirm(null);recordRows.current.clear();setReviewing(false);client.current.setContext(null);}
     else if(assets.asset_summary){
       // After acceptance/cancellation/settlement, refresh already-open tables
       // from the complete bank read immediately, keeping their independent UI state.
@@ -216,7 +216,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       {candidateGroups.length>0&&ready&&<><ProductPicker groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={next=>{setCandidateSelection(next);setReviewing(false);}} busy={busy}
         onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:ids})}
         loadDetail={loadDetail} loadComparison={loadComparison} onContinue={()=>{if(!portfolio)void run('plan_portfolio',{});else setReviewing(true);}}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。尚无整体方案时，继续操作会先请求配置服务创建方案。</p></>}
-      {portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.version}:${revision}:${reload}:${controlKey}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={onActivity}
+      {portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.version}:${revision}:${reload}:${controlKey}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={()=>{setActivityNotice('银行操作已返回，请核对更新后的资金、订单与持仓；已受理不等于已结算。');onActivity();}}
         onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)});if(result?.status!=='ok')throw new Error(result?.message??'比例校验未完成，请重新核对。');return readPortfolioPlan(result.data,portfolio.context_id);}}
         onPrepare={async plan=>{const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id});if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}
     </fieldset>
@@ -235,6 +235,6 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     {cancelView&&<OrderCancellationDialog rows={cancelView} blockedAccounts={blockedAccounts} onClose={()=>setCancelView(null)} onComplete={message=>{setCancelView(null);setActivityNotice(message);setOrderState(current=>({...current,selected:[]}));onActivity();setReload(n=>n+1);}}/>}
     {detailView&&<ProductDetail productId={detailView.id} productVersion={detailView.version} loadDetail={loadDetail} onClose={()=>setDetailView(null)}/>}
     {compareView&&ready&&<ProductComparison products={ready.products} loadComparison={loadComparison} onClose={()=>setCompareView(false)}/>}
-    {confirm&&<SingleTradePreview preview={confirm.preview} redemption={confirm} onClose={()=>setConfirm(null)} onActivity={onActivity}/>}
+    {confirm&&<SingleTradePreview preview={confirm.preview} redemption={confirm} onClose={()=>setConfirm(null)} onActivity={onActivity} onCompleted={setActivityNotice}/>}
   </section>;
 }

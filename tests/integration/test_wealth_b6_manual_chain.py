@@ -97,7 +97,7 @@ async def register_recorded_handlers(source, local, app):
     async def revise(**kwargs):
         selection = kwargs['params']['selection']
         assert selection['expected_version'] == source.plan['version']
-        assert {(p['product_id'],p['target_ratio_total']) for p in selection['items']} == {(pid,ratio) for pid,_,ratio in SEVEN}
+        assert {(p['product_id'],Decimal(p['target_ratio_total'])) for p in selection['items']} == {(pid,Decimal(ratio)) for pid,_,ratio in SEVEN}
         source.plan['version'] += 1
         return deepcopy(source.plan)
     app.state.wealth_action_handlers = dict(plan_portfolio=plan, recommend_products=recommend, revise_portfolio=revise)
