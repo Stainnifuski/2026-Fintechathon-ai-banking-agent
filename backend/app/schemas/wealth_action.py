@@ -48,7 +48,7 @@ class SelectionItem(StrictRequest):
         from ..domain.wealth import rate
         rate(self.target_ratio_total)
         return self
-class PortfolioSelection(StrictRequest):
+class PortfolioSelection(PlanParams):
     portfolio_id: str
     snapshot_id: str
     context_id: str

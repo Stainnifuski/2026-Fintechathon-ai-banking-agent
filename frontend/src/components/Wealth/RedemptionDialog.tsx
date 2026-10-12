@@ -2,13 +2,14 @@ import {useState} from 'react';
 import * as w from '../../services/wealth';
 import SingleTradePreview from './SingleTradePreview';
 
-interface Conversion {
+export interface Conversion {
   resolved_units:string;holding_units:string;redeemable_units:string;holding_ratio:string;
   estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;
   nav:string;nav_date:string;notice:string;preview:w.Preview;
 }
-export default function RedemptionDialog({rows,contextId,fixtureOnly,blockedAccounts=[],sessionId,onClose,onActivity}:{
-  rows:w.PositionRow[];contextId:string;fixtureOnly:boolean;blockedAccounts?:string[];sessionId?:string;onClose:()=>void;onActivity:()=>void
+export type RedemptionPreviewLoader=(params:Record<string,unknown>,row:w.PositionRow)=>Promise<Conversion>;
+export default function RedemptionDialog({rows,contextId,fixtureOnly,blockedAccounts=[],sessionId,loadPreview,onCompleted,onClose,onActivity}:{
+  rows:w.PositionRow[];contextId:string;fixtureOnly:boolean;blockedAccounts?:string[];sessionId?:string;loadPreview?:RedemptionPreviewLoader;onCompleted?:(message:string)=>void;onClose:()=>void;onActivity:()=>void
 }){
   const [inputs,setInputs]=useState<Record<string,{mode:string;value:string;redemption:string}>>({});
   const [result,setResult]=useState<Conversion|null>(null);const [confirm,setConfirm]=useState(false);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
@@ -33,8 +34,8 @@ export default function RedemptionDialog({rows,contextId,fixtureOnly,blockedAcco
         if(!/^\d+(\.\d{1,4})?$/.test(input.value))throw new Error('份额最多保留四位小数。');params.units=input.value;
       }
       if(fixtureOnly){setError('当前是F23录制持仓。输入已填写；可信换算和交易预览请切换“查询登录账户模拟银行”，样例不会生成银行授权。');return;}
-      const converted=await w.post<Conversion>('/redemptions/preview',params);
-      if(sessionId)await w.post(`/sessions/${sessionId}/preview-link`,{authorization_id:converted.preview.authorization_id});
+      const converted=loadPreview?await loadPreview(params,row):await w.post<Conversion>('/redemptions/preview',params);
+      if(sessionId&&!loadPreview)await w.post(`/sessions/${sessionId}/preview-link`,{authorization_id:converted.preview.authorization_id});
       setResult(converted);
     }catch(reason){setError((reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??(reason instanceof Error?reason.message:'预览失败，请刷新持仓后重试。'));}
     finally{setBusy(false);}
@@ -47,5 +48,5 @@ export default function RedemptionDialog({rows,contextId,fixtureOnly,blockedAcco
     </article>;})}
     {error&&<p role="alert">{error}</p>}<button className="secondary" disabled={busy} onClick={onClose}>关闭赎回输入</button>
   </section></div>}{result&&!confirm&&<div className="wealth-modal"><section className="card" role="dialog" aria-modal="true" aria-label="赎回换算核对"><h3>核对赎回换算</h3><p>份额 {result.resolved_units} ／总持仓 {result.holding_units} · 比例 {(Number(result.holding_ratio)*100).toFixed(4)}%</p><p>舍入后拟赎回市值 {w.money(result.estimated_market_value_fen)} · 净值 {result.nav}（{result.nav_date}）</p><p>预计费用 {w.money(result.estimated_fee_fen)} · 预计到账 {w.money(result.estimated_net_cash_fen)}</p><p>{result.notice}</p><button onClick={()=>setConfirm(true)}>继续本人确认与验证</button><button className="secondary" onClick={()=>setResult(null)}>返回修改输入</button></section></div>}
-    {result&&confirm&&<SingleTradePreview preview={result.preview} redemption={result} onClose={()=>{setResult(null);setConfirm(false);}} onActivity={onActivity}/>}</>;
+    {result&&confirm&&<SingleTradePreview preview={result.preview} redemption={result} onClose={()=>{setResult(null);setConfirm(false);}} onActivity={onActivity} onCompleted={onCompleted}/>}</>;
 }

@@ -16,6 +16,7 @@ export type PortfolioSnapshot = PortfolioRecording['snapshot']
   | typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f10.json')['snapshot'];
 export type PortfolioSelection = Pick<PortfolioPlan, 'portfolio_id' | 'snapshot_id' | 'context_id'> & {
   expected_version: number;
+  growth_ratio_ex_cash?: string | null;
   items: Pick<PortfolioPlan['selected_positions'][number], 'product_id' | 'product_version' | 'share_class' | 'target_ratio_total'>[];
 };
 export interface PortfolioAction {

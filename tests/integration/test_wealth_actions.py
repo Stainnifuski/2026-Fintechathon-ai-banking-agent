@@ -84,6 +84,29 @@ async def test_clarify_three_filters_and_injected_A_adapter(store,http_store):
     assert len(calls)==2
 
 @pytest.mark.asyncio
+async def test_revision_preserves_optional_growth_preference_for_A(store,http_store):
+    client,_,app=http_store
+    calls=[]
+    async def adapter(**kwargs):
+        calls.append(kwargs['params']['selection'])
+        return {'selection':kwargs['params']['selection']}
+    app.state.wealth_action_handlers={'revise_portfolio':adapter}
+    selection={'portfolio_id':'portfolio-contract','snapshot_id':'snapshot-contract','context_id':'legacy-v1',
+               'expected_version':1,'items':[{'product_id':'MF001','product_version':1,'share_class':None,'target_ratio_total':'1'}]}
+    for i,preference in enumerate(['0.625',None,'0','1']):
+        payload={**action('revise_portfolio',{'selection':{**selection,'growth_ratio_ex_cash':preference}}),
+                 'request_id':f'actions-growth-valid-{i}'}
+        response=await client.post('/api/v1/wealth/actions',json=payload)
+        assert response.status_code==200,response.text
+        assert response.json()['status']=='ok',response.text
+        assert calls[-1]['growth_ratio_ex_cash']==preference
+    for i,preference in enumerate([True,0.625,'-0.1','1.01','nan']):
+        payload={**action('revise_portfolio',{'selection':{**selection,'growth_ratio_ex_cash':preference}}),
+                 'request_id':f'actions-growth-invalid-{i}'}
+        assert (await client.post('/api/v1/wealth/actions',json=payload)).status_code==422
+    assert len(calls)==4
+
+@pytest.mark.asyncio
 async def test_redemption_and_cancellation_preview_never_execute(store,http_store):
     await setup_holding(store)
     client,_,_=http_store

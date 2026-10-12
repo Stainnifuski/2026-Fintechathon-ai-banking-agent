@@ -12,6 +12,8 @@ import type {ReturnsPreviewSource} from './ReturnsView';
 import {initialTableState,currentTableState} from './tableState';
 import {orderTableData,positionTableData} from './tableData';
 import SingleTradePreview from './SingleTradePreview';
+import RedemptionDialog from './RedemptionDialog';
+import type {Conversion,RedemptionPreviewLoader} from './RedemptionDialog';
 import ProductDetail from './ProductDetail';
 import type {ProductDetailData,ProductDetailLoader} from './ProductDetail';
 import ProductComparison,{comparisonRows} from './ProductComparison';
@@ -46,6 +48,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   const [results,setResults]=useState<Partial<Record<ResultSlot,ActionResult>>>({});
   const [pending,setPending]=useState<ResultSlot|null>(null);const [reading,setReading]=useState(true);const [reload,setReload]=useState(0);const busy=pending!==null||reading;
   const [cancelView,setCancelView]=useState<CancellationRow[]|null>(null);const [activityNotice,setActivityNotice]=useState('');
+  const [redemptionRows,setRedemptionRows]=useState<w.PositionRow[]|null>(null);
   const recordRows=useRef(new Map<string,w.OrderRow|w.PositionRow>());
   const [actionErrors,setActionErrors]=useState<Partial<Record<ResultSlot,string>>>({});const [error,setError]=useState('');
   const fail=(slot:ResultSlot,message:string)=>setActionErrors(current=>({...current,[slot]:message}));
@@ -65,7 +68,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     setResults(current=>{const next={...current};delete next.redemption;delete next.cancellation;return next;});
     setConfirm(null);setCancelView(null);
   },[orderState.selected,positionState.selected,inputMode,value,revision,reload]);
-  useEffect(()=>{let active=true;++latestRequest.current;setPending(null);setReading(true);setCancelView(null);setReturnView(null);setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<w.Product[]>('/products'),w.get<{items:w.WealthTask[]}>('/tasks')]).then(([assets,products,tasks])=>{
+  useEffect(()=>{let active=true;++latestRequest.current;setPending(null);setReading(true);setCancelView(null);setRedemptionRows(null);setReturnView(null);setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<w.Product[]>('/products'),w.get<{items:w.WealthTask[]}>('/tasks')]).then(([assets,products,tasks])=>{
     if(!active)return;
     manualDrafts.bind(draftScope(userId,assets.context_id??'legacy-v1',assets.cash.map(a=>a.account_id)),assets.context_id??'legacy-v1');
     const nextScope=draftScope(userId,assets.context_id??'legacy-v1',assets.cash.map(a=>a.account_id));
@@ -95,7 +98,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   scope.current=ready?.assets.context_id??null;
   const controlKey=JSON.stringify(ready?.tasks.map(t=>[t.task_id,t.version,t.status,t.control_mode,t.owner_id]).sort()??[]);
   useEffect(()=>{
-    ++latestRequest.current;setPending(null);setConfirm(null);setCancelView(null);setReviewing(false);
+    ++latestRequest.current;setPending(null);setConfirm(null);setCancelView(null);setRedemptionRows(null);setReviewing(false);
     setResults(current=>{const next={...current};delete next.redemption;delete next.cancellation;return next;});
     client.current.setContext(null);if(ready)client.current.setContext(contextId);
   },[controlKey,contextId]);
@@ -162,8 +165,13 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   };
   const selectRedeem=(rows:w.PositionRow[])=>{
     setPositionState(current=>({...current,selected:rows.map(row=>row.position_key)}));setValue('');
-    redemptionRef.current?.scrollIntoView({behavior:'smooth',block:'start'});
+    setRedemptionRows(rows);
   };
+  const loadRedemption=useCallback<RedemptionPreviewLoader>(async(params,row)=>{
+    const response=await run('preview_redemption',{redemption:params},{object_type:'positions',ids:[row.position_key]});
+    if(response?.status!=='ok')throw new Error(response?.message??'赎回预览未完成，请重新查询持仓后核对。');
+    return response.data as Conversion;
+  },[run]);
   const openReturns=(product?:string)=>{setReturnView({product,period:'day',date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready!.assets.business_at))});returnsRef.current?.scrollIntoView({behavior:'smooth',block:'start'});};
   const returnsSource=useMemo<ReturnsPreviewSource>(()=>({actualBank:true,scenarios:[],notice:'仅查询当前授权范围，不产生交易。',
     defaultDate:ready?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready.assets.business_at)):'',
@@ -236,5 +244,6 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     {detailView&&<ProductDetail productId={detailView.id} productVersion={detailView.version} loadDetail={loadDetail} onClose={()=>setDetailView(null)}/>}
     {compareView&&ready&&<ProductComparison products={ready.products} loadComparison={loadComparison} onClose={()=>setCompareView(false)}/>}
     {confirm&&<SingleTradePreview preview={confirm.preview} redemption={confirm} onClose={()=>setConfirm(null)} onActivity={onActivity} onCompleted={setActivityNotice}/>}
+    {redemptionRows&&<RedemptionDialog rows={redemptionRows} contextId={contextId} fixtureOnly={false} blockedAccounts={blockedAccounts} loadPreview={loadRedemption} onClose={()=>setRedemptionRows(null)} onCompleted={message=>{setActivityNotice(message);setRedemptionRows(null);}} onActivity={onActivity}/>}
   </section>;
 }
