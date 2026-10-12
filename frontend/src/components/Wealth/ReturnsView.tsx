@@ -7,13 +7,13 @@ export interface ReturnsPreviewSource {
   load:(query:ReturnsQuery,scenario:string)=>Promise<WealthReturns>;
   scenarios:ReturnScenario[];notice:string;scenarioNotice:(scenario:string)=>string;defaultDate:string;actualBank?:boolean;
 }
-interface Props {source:ReturnsPreviewSource;initialProduct?:string;onClose:()=>void}
+interface Props {source:ReturnsPreviewSource;initialProduct?:string;initialPeriod?:ReturnPeriod;initialDate?:string;onClose:()=>void}
 const periods:{id:ReturnPeriod;label:string}[]=[{id:'day',label:'日'},{id:'month',label:'月'},{id:'year',label:'年'},{id:'cumulative',label:'累计'}];
-export default function ReturnsView({source,initialProduct,onClose}:Props){
+export default function ReturnsView({source,initialProduct,initialPeriod='day',initialDate,onClose}:Props){
   const [scenario,setScenario]=useState(source.scenarios[0]?.id??'bank');
   const [product,setProduct]=useState(initialProduct??'');
-  const [period,setPeriod]=useState<ReturnPeriod>('day');
-  const [date,setDate]=useState(source.defaultDate);
+  const [period,setPeriod]=useState<ReturnPeriod>(initialPeriod);
+  const [date,setDate]=useState(initialDate??source.defaultDate);
   const [result,setResult]=useState<WealthReturns|null>(null);
   const [options,setOptions]=useState<{product_id:string;product_name:string}[]>([]);
   const [error,setError]=useState('');const [loading,setLoading]=useState(false);

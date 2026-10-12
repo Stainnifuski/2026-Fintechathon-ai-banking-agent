@@ -1,15 +1,18 @@
 import type {CandidateGroup,PortfolioPlan} from './wealth';
 import type {ProductSelectionState} from '../components/Wealth/productSelection';
+import {initialTableState} from '../components/Wealth/tableState.ts';
+import type {TableState} from '../components/Wealth/tableState';
 
 export interface ManualDraft {
-  mode:string; category:string; theme:string; pageSize:number;
-  selected:{type:'orders'|'positions';ids:string[]}; inputMode:string; value:string;
+  orderTable:TableState;positionTable:TableState;
+  mode:string; category:string; theme:string;
+  inputMode:string; value:string;
   target:string; period:string; date:string;
   candidateGroups:CandidateGroup[]; candidateSelection:ProductSelectionState;
   portfolio:PortfolioPlan|null; ratios:{planKey:string;values:Record<string,string>}|null;
 }
 export const draftScope=(owner:string,context:string,accounts:string[])=>JSON.stringify([owner,context,[...accounts].sort()]);
-const initial=(context:string):ManualDraft=>({mode:'general',category:'bond_fund',theme:'high_dividend',pageSize:5,selected:{type:'positions',ids:[]},inputMode:'market_value',value:'',target:'',period:'day',date:'',candidateGroups:[],candidateSelection:{scopeKey:context,items:[],preferredShares:{}},portfolio:null,ratios:null});
+const initial=(context:string):ManualDraft=>({orderTable:initialTableState(),positionTable:initialTableState(),mode:'general',category:'bond_fund',theme:'high_dividend',inputMode:'market_value',value:'',target:'',period:'day',date:'',candidateGroups:[],candidateSelection:{scopeKey:context,items:[],preferredShares:{}},portfolio:null,ratios:null});
 /** Memory-only inputs. Never store previews, consent, codes, tokens or action sessions. */
 export class ManualDraftStore {
   private currentKey:string|null=null;

@@ -26,6 +26,10 @@ async def test_strict_session_replay_scope_and_page(store,http_store):
     reply=await client.post('/api/v1/wealth/actions',json=payload)
     assert reply.status_code==200,reply.text
     data=reply.json();assert data['status']=='ok' and data['data']['total']==1
+    assert data['data']['table_data']['object_type']=='positions'
+    assert data['data']['table_data']['scope_key']==data['data']['scope_key']
+    assert data['data']['snapshot_id'].startswith('WASNAP-')
+    assert data['data']['table_data']['rows']==data['data']['rows']
     row=data['data']['rows'][0]
     assert row['position_key']=='A1:MF001:1' and row['units']=='1000.0000'
     assert (await client.post('/api/v1/wealth/actions',json=payload)).json()==data

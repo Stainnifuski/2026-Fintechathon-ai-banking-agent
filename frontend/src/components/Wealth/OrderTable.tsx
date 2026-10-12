@@ -5,6 +5,7 @@ import {beijingTime} from '../../utils/time';
 import {metricText} from './tableData';
 import {useTableState} from './useTableState';
 import TablePager from './TablePager';
+import type {TableControl} from './tableState';
 import ProductDetail from './ProductDetail';
 import type {ProductDetailLoader} from './ProductDetail';
 import './wealthTables.css';
@@ -12,9 +13,9 @@ import './wealthTables.css';
 export type EligibilityLoader=(id:string)=>Promise<CancellationEligibility>;
 export const bankEligibility:EligibilityLoader=id=>get(`/orders/${encodeURIComponent(id)}/cancellation-eligibility`);
 const statusLabels:Record<string,string>={ACCEPTED:'已受理，待结算',PENDING_PRICING:'等待计价',PENDING_CASH:'等待赎回到账',SETTLED:'已结算',CANCELLED:'已撤单',REJECTED:'已拒绝',UNKNOWN:'结果未知，请按原号核对'};
-interface Props {data:OrderTableData;loadEligibility?:EligibilityLoader;loadDetail?:ProductDetailLoader;onCancel:(rows:OrderRow[])=>void;blockedAccounts?:string[];refreshKey?:number}
-export default function OrderTable({data,loadEligibility=bankEligibility,loadDetail,onCancel,blockedAccounts=[],refreshKey=0}:Props){
-  const table=useTableState(data.rows,data.scope_key,row=>row.operation_id);
+interface Props {data:OrderTableData;loadEligibility?:EligibilityLoader;loadDetail?:ProductDetailLoader;onCancel:(rows:OrderRow[])=>void;blockedAccounts?:string[];refreshKey?:number;control?:TableControl}
+export default function OrderTable({data,loadEligibility=bankEligibility,loadDetail,onCancel,blockedAccounts=[],refreshKey=0,control}:Props){
+  const table=useTableState(data.rows,data.scope_key,row=>row.operation_id,control);
   const [detail,setDetail]=useState<{scope:string;row:OrderRow}|null>(null);
   const [eligibility,setEligibility]=useState<Record<string,CancellationEligibility>>({});
   const pageKey=JSON.stringify(table.rows.map(row=>[row.operation_id,row.status,row.digest]));

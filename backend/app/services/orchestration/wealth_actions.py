@@ -92,6 +92,11 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
             total=len(items);pages=max(1,(total+p['page_size']-1)//p['page_size']);page=min(p['page'],pages)
             data=dict(object_type='orders' if action=='list_orders' else 'positions',scope_key=facts['asset_summary']['asset_scope_id'],
                 rows=items[(page-1)*p['page_size']:page*p['page_size']],page=page,page_size=p['page_size'],pages=pages,total=total)
+            # Shared complete tables page the full authorized snapshot locally,
+            # preserving independent cross-page selections. Existing paged fields
+            # remain compatible; no second bank read or per-card narrowed scope.
+            data['table_data'] = dict(object_type=data['object_type'],scope_key=data['scope_key'],rows=items)
+            data['snapshot_id'] = facts['asset_summary']['snapshot_id']
     elif action=='show_wealth_returns':
         if selection:
             if selection.object_type!='positions':reject('收益入口需要持仓对象','SELECTION_MISMATCH')

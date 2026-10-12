@@ -36,6 +36,16 @@ async def test_http_assets_include_full_accounts_orders_and_bound_metadata(store
         assert row['daily_metric']['date']>row['daily_metric']['previous_date']
     assert all(row['version_id']=='MF002:1' for row in facts['lots'])
     assert not any(row['account_id']=='A2' for row in facts['orders'])
+    response=await client.post('/api/v1/wealth/actions',json={
+        'schema_version':'wealth-action-v1','request_id':'table-full-snapshot-request',
+        'context_id':'legacy-v1','action':'list_orders','params':{'page':1,'page_size':1}})
+    assert response.status_code==200,response.text
+    page=response.json()['data']
+    assert len(page['rows'])==1 and len(page['table_data']['rows'])==2
+    assert page['table_data']['scope_key']==facts['asset_summary']['asset_scope_id']
+    assert page['snapshot_id']==facts['asset_summary']['snapshot_id']
+    assert {row['operation_id'] for row in page['table_data']['rows']}=={'first-lot','second-lot'}
+    assert all(row['object_type']=='orders' and row['account_id']=='A1' for row in page['table_data']['rows'])
 
 
 @pytest.mark.asyncio

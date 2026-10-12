@@ -6,10 +6,10 @@ test('two consumers share inputs, not authorization or action results',()=>{
   const store=new ManualDraftStore(),key=draftScope('u','c',['a']);store.bind(key,'c');
   let notifications=0;const stop=store.subscribe(()=>notifications++);
   store.update(key,'value','123.45');store.update(key,'inputMode','market_value');
-  store.update(key,'selected',{type:'positions',ids:['original-position']});
+  store.update(key,'positionTable',{scope:'scope',page:1,pageSize:5,selected:['original-position']});
   store.update(key,'ratios',{planKey:'plan:v1:snapshot',values:{p:'20'}});
   assert.equal(store.read(key,'c').value,'123.45');
-  assert.deepEqual(store.read(key,'c').selected.ids,['original-position']);
+  assert.deepEqual(store.read(key,'c').positionTable.selected,['original-position']);
   assert.equal(store.read(key,'c').ratios?.values.p,'20');assert.equal(notifications,4);
   for(const name of ['consent','code','preview','session','results','token'])assert.equal(name in store.read(key,'c'),false);
   stop();

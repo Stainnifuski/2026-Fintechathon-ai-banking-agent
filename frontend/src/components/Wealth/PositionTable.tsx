@@ -4,12 +4,13 @@ import {money} from '../../services/wealth';
 import {metricText,scaledUnits} from './tableData';
 import {useTableState} from './useTableState';
 import TablePager from './TablePager';
+import type {TableControl} from './tableState';
 import ProductDetail from './ProductDetail';
 import type {ProductDetailLoader} from './ProductDetail';
 import './wealthTables.css';
-interface Props {data:PositionTableData;loadDetail?:ProductDetailLoader;onRedeem:(rows:PositionRow[])=>void;onReturns:(productId?:string)=>void;blockedAccounts?:string[]}
-export default function PositionTable({data,loadDetail,onRedeem,onReturns,blockedAccounts=[]}:Props){
-  const table=useTableState(data.rows,data.scope_key,row=>row.position_key);
+interface Props {data:PositionTableData;loadDetail?:ProductDetailLoader;onRedeem:(rows:PositionRow[])=>void;onReturns:(productId?:string)=>void;blockedAccounts?:string[];control?:TableControl}
+export default function PositionTable({data,loadDetail,onRedeem,onReturns,blockedAccounts=[],control}:Props){
+  const table=useTableState(data.rows,data.scope_key,row=>row.position_key,control);
   const [detail,setDetail]=useState<{scope:string;key:string}|null>(null);
   const detailRow=detail?.scope===data.scope_key?data.rows.find(row=>row.position_key===detail.key):undefined;
   const canRedeem=(row:PositionRow)=>scaledUnits(row.redeemable_units)>0n&&row.disclosure_version!=null&&!blockedAccounts.includes(row.account_id);
