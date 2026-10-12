@@ -15,8 +15,14 @@ path = Path(os.environ['B6_BROWSER_DATABASE']).resolve()
 assert path.is_relative_to((ROOT/'.tmp').resolve()) and path.name=='browser_bank.db'
 assert not path.exists(), 'Browser bank must be a new disposable file; no reset/delete is performed'
 path.parent.mkdir(parents=True, exist_ok=True)
+port = int(os.environ.get('B6_BROWSER_PORT', '8011'))
+assert port in (8011, 8012), 'Only dedicated loopback B6 ports are allowed'
+operator_test = os.environ.get('B6_BROWSER_OPERATOR_TEST') == '1'
+if operator_test:
+    assert port == 8012, 'Role testing must use the separate B6 operator environment'
+    os.environ['WEALTH_OPERATOR_USER_IDS'] = 'U2'  # Disposable user only; no production role changes.
 os.environ['DATABASE_URL'] = 'sqlite+aiosqlite:///'+path.as_posix()
-os.environ['BANK_API_BASE_URL'] = 'http://127.0.0.1:8011'
+os.environ['BANK_API_BASE_URL'] = f'http://127.0.0.1:{port}'
 os.environ['INTERNAL_BANK_TOKEN'] = uuid4().hex
 os.environ['LLM_MODE'] = 'offline'
 os.environ['SMS_PROVIDER'] = 'mock'
@@ -58,7 +64,7 @@ async def lifespan(application):
         await conn.run_sync(Base.metadata.create_all)
     bank.business_now = test_clock
     async with AsyncSessionLocal() as db:
-        db.add_all([UserORM(user_id=uid,name='B6 隔离验收（固定方案）' if uid=='U1' else '隔离收款对象',
+        db.add_all([UserORM(user_id=uid,name='B6 隔离验收（固定方案）' if uid=='U1' else 'B6 隔离操作员' if operator_test else '隔离收款对象',
                     phone=f'1380000000{i}',id_card='disposable-fixture',password_hash=hash_password('password123'),status='active')
                     for i,uid in enumerate(('U1','U2'),1)])
         await db.flush()
@@ -100,4 +106,4 @@ async def advance(request:Advance,user:dict=Depends(get_current_user)):
 
 if __name__=='__main__':
     import uvicorn
-    uvicorn.run(app,host='127.0.0.1',port=8011)
+    uvicorn.run(app,host='127.0.0.1',port=port)

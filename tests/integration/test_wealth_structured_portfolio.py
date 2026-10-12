@@ -40,3 +40,27 @@ async def test_snapshot_and_actions_revision_prepare_keep_personal_scope(store,h
     assert (await client.get('/api/v1/wealth/portfolio/snapshot')).status_code==409
     http_store[2].state.wealth_portfolio_source=None
     assert (await client.get('/api/v1/wealth/portfolio/snapshot')).status_code==503
+
+@pytest.mark.asyncio
+async def test_reprepare_revised_plan_preserves_structured_session(store,http_store,monkeypatch):
+    client,local,source,_=await setup(store,http_store,monkeypatch)
+    await source.record(local,SEVEN)
+    def payload(number,**session):
+        return {**action('prepare_purchase',dict(portfolio_id=source.plan['portfolio_id'],
+            expected_version=source.plan['version'],snapshot_id=source.plan['snapshot_id']),**session),
+            'request_id':f'structured-reprepare-{number}'}
+    first=await client.post('/api/v1/wealth/actions',json=payload(1))
+    assert first.status_code==200,first.text
+    initial=first.json()
+    source.plan['version']+=1
+    request=payload(2,session_id=initial['session_id'],expected_session_version=initial['session_version'])
+    second=await client.post('/api/v1/wealth/actions',json=request)
+    assert second.status_code==200,second.text
+    revised=second.json()
+    assert revised['session_id']==initial['session_id']
+    assert revised['session_version']==initial['session_version']+1
+    assert revised['data']['execution_plan_id']==initial['data']['execution_plan_id']
+    assert revised['data']['execution_plan_version']==initial['data']['execution_plan_version']+1
+    assert (await client.post('/api/v1/wealth/actions',json=request)).json()==revised
+    facts=await local.assets('U1')
+    assert not facts['orders'] and all(a['held_fen']==0 for a in facts['cash'])
