@@ -25,6 +25,7 @@ export interface Command {
   quoted_cash_fen?: number | null; context_id?: string | null; context_epoch?: number | null;
 }
 export interface Product {
+  product_risk_source?: string; project_policy_version?: string | null; underlying_source_kind?: string;
   product_id: string; version: number; name: string; kind: string; category: string;
   product_risk_level: number; status: string; nav: string | null; nav_date: string | null;
   rules: { min_amount_fen: number; holding_days: number; cash_business_days: number; purchase_fee_rate: string;

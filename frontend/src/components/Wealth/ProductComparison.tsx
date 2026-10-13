@@ -5,6 +5,7 @@ import type { Product } from '../../services/wealth';
 export interface ProductComparisonRow {
   product_id: string; name: string; share_class: string | null; product_version: number;
   product_risk_level: number | null; min_amount_fen: number | null;
+  source_label?: string;
   purchase_fee_rate: string | null; sales_service_fee_rate: string | null;
   redemption_fee_rules: string | null; performance_label: string; performance_value: string; performance_dates: string;
 }
@@ -18,6 +19,7 @@ const bankComparison: ComparisonLoader = async ids => {
 export function comparisonRows(rows:Product[]):ProductComparisonRow[]{
   return rows.map(row => ({ product_id: row.product_id, name: row.name, share_class: null, product_version: row.version,
     product_risk_level: row.product_risk_level, min_amount_fen: row.rules.min_amount_fen,
+    source_label: row.product_risk_source==='project_policy'?'真实基金资料；项目分级独立于发行人；模拟交易费用':'模拟产品等级与模拟交易费用',
     purchase_fee_rate: row.rules.purchase_fee_rate, sales_service_fee_rate: null, redemption_fee_rules: row.disclosure.fees,
     performance_label: '近一年业绩', performance_value: '此接口未提供，详见产品资料', performance_dates: '日期未提供' }));
 }
@@ -43,10 +45,10 @@ export default function ProductComparison({ products, onClose, loadComparison = 
     {ids.length < 2 && <p>请至少选择两只产品。</p>}{busy && <p role="status">正在读取比较资料…</p>}{error && <p role="alert">{error}</p>}
     {!!rows.length && <div className="wealth-table"><table aria-label="所选产品比较"><thead><tr><th>产品／份额</th><th>风险／起购</th><th>费率</th><th>历史指标及日期</th></tr></thead><tbody>{rows.map(row => <tr key={row.product_id}>
       <td>{row.name}<small>{row.share_class ? `${row.share_class}类 · ` : ''}{row.product_id} · v{row.product_version}</small></td>
-      <td>{row.product_risk_level == null ? '风险未提供' : `R${row.product_risk_level}`}<small>起购 {money(row.min_amount_fen)}</small></td>
+      <td>{row.product_risk_level == null ? '风险未提供' : `R${row.product_risk_level}`}<small>{row.source_label}</small><small>起购 {money(row.min_amount_fen)}</small></td>
       <td>申购 {rate(row.purchase_fee_rate)}<small>销售服务 {rate(row.sales_service_fee_rate)}</small><small>{row.redemption_fee_rules || '赎回费规则未提供'}</small></td>
       <td>{row.performance_label}：{row.performance_value}<small>{row.performance_dates}</small></td>
     </tr>)}</tbody></table></div>}
-    <p className="consumer-note">历史指标须按各自口径阅读，不代表本人实际收益或未来回报。</p>
+    <p className="consumer-note">本表费用是模拟银行成交条件，不代表现实渠道完整费用；公开未知值仍未知。历史指标须按各自口径阅读，不代表本人实际收益或未来回报。</p>
   </section></div>;
 }
