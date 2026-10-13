@@ -160,7 +160,7 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
         product = catalog.get(item['product_id'])
         if product is None or product['version'] != item['product_version'] or product['disclosure']['version'] != item['disclosure_version']:
             reject('所选产品或披露版本已变化', 'RULE_VERSION_CHANGED', 409)
-        if item.get('share_class')!=product['rules'].get('share_class'):
+        if item.get('share_class')!=product.get('share_class',product['rules'].get('share_class')):
             reject('所选具体份额与银行当前份额不一致','SELECTED_SHARE_IDENTITY_MISMATCH',409)
         existing=next((p for p in snapshot['positions'] if (p['account_id'],p['product_id'],p['product_version'])==(item['account_id'],item['product_id'],item['product_version'])),None)
         # A zero/tiny target is still a newly selected product. Check its actual

@@ -16,7 +16,8 @@ from .wealth_portfolio_data import (read, canonical, digest, utc, reference, mis
 def product_content(row: dict) -> dict:
     """规则/披露/身份的内容绑定；净值和观察时刻另由当前业务时效检查。"""
     keys=('product_id','version','name','kind','category','product_risk_level','identity',
-          'fund_family_id','dataset_key','rules','disclosure')
+          'fund_family_id','dataset_key','rules','disclosure','share_class',
+          'investment_objective','investment_strategy','benchmark','tracking_target','material_origin')
     return {key:row.get(key) for key in keys}
 
 
@@ -49,7 +50,7 @@ def current_product(row: dict, ref: RawReference, capture: dict, old, base_versi
     disclosure=row.get('disclosure',{});rules=row.get('rules',{});native=native_product_evidence(row)
     normalized={'product_id':code,'name':row.get('name'),'category':category,
         'risk_level':row.get('product_risk_level'),'product_version':row.get('version'),
-        'disclosure_version':disclosure.get('version'),'share_class':rules.get('share_class'),
+        'disclosure_version':disclosure.get('version'),'share_class':row.get('share_class',rules.get('share_class')),
         'manager':disclosure.get('manager'),'rules':rules,'rules_complete':native['rules_complete'],
         'principal_guaranteed':row.get('principal_guaranteed',rules.get('principal_guaranteed'))}
     product=simulated_product(normalized,ref,bank)
@@ -72,7 +73,16 @@ def current_product(row: dict, ref: RawReference, capture: dict, old, base_versi
         for container,prefix in ((row,''),(disclosure,'disclosure.')):
             for key in keys:
                 value=container.get(key)
-                if isinstance(value,str) and value.strip():
+                # These saved labels name a synthetic series but define no
+                # investment benchmark. Preserve the raw observation, not a
+                # false sufficient investment-material claim.
+                named_only = field == 'benchmark' and (value in {
+                    '虚构money基准','虚构bond基准','虚构broad_index基准',
+                    '虚构sector基准','虚构active基准','虚构bank_wealth基准',
+                    '模拟因子基准；不采用说明书比较基准作为收益'})
+                if named_only:
+                    product.fields['benchmark_name_only']=field_fact([observation(value,prefix+key,ref)],simulated=True)
+                if isinstance(value,str) and value.strip() and not named_only:
                     observations.append(observation(value,prefix+key,ref))
         product.fields[field]=field_fact(observations,simulated=True) if observations else missing('current_bank_text_missing; old_research_not_rebound')
         if observations:adopted[field]=[o.field for o in observations]
@@ -85,6 +95,14 @@ def current_product(row: dict, ref: RawReference, capture: dict, old, base_versi
         observed_at=ref.observed_at,reference=ref,excerpt=f'protected current product_id={code}; exact independent SKU',
         family_id='bank-sku:'+code,document_sha256=ref.sha256,location='products.'+code)
     product.identity_evidence=[entity]
+    origin=row.get('material_origin',{})
+    family=row.get('fund_family_id')
+    if (origin.get('source')=='immutable_project_simulation_dataset'
+        and origin.get('dataset_key')==row.get('dataset_key')
+        and origin.get('product_id')==code and origin.get('product_version')==row.get('version')
+        and origin.get('dataset_fingerprint') and 'fund_family_id' in origin.get('fields',[])
+        and isinstance(family,str) and family):
+        product.fields['family_id']=field_fact([observation(family,'fund_family_id',ref)],simulated=True)
     product.current_binding={'source':'protected-local-bank-current-products','source_kind':'simulated',
         'product_id':code,'share_class':product.share_class,'product_version':product.product_version,
         'disclosure_version':product.disclosure_version,'original_research_version':base_version,
@@ -101,7 +119,33 @@ def current_product(row: dict, ref: RawReference, capture: dict, old, base_versi
     return product
 
 
-def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_of: datetime) -> DataSnapshot:
+def bind_current_families(products, rows, ref):
+    """Register explicit multi-code relationships from this whole bank capture.
+
+    A single matching label is not proof of a second share or independent risk.
+    """
+    groups={};by_code={p.product_id:p for p in products}
+    for row in rows:
+        origin=row.get('material_origin',{});code=row['product_id'];p=by_code[code]
+        family=p.fields.get('family_id')
+        if (not family or not family.value or origin.get('source')!='immutable_project_simulation_dataset'
+            or origin.get('dataset_key')!=row.get('dataset_key') or origin.get('product_id')!=code
+            or origin.get('product_version')!=row['version'] or not origin.get('dataset_fingerprint')):
+            continue
+        key=(origin['dataset_key'],origin['dataset_fingerprint'],family.value)
+        groups.setdefault(key,[]).append(p)
+    for key,members in groups.items():
+        if len(members)<2:continue
+        codes=sorted(p.product_id for p in members);shares={p.product_id:p.share_class for p in members}
+        payload=members[0].identity_evidence[0].model_dump(mode='json')
+        payload.update(kind='family',evidence_id='bank-family:'+digest({'source':key,'codes':codes,'shares':shares}),
+            family_id=key[2],codes=codes,share_classes=shares,
+            excerpt='explicit immutable project simulation family '+str(key[2])+': '+', '.join(codes))
+        evidence=EvidenceRecord.model_validate(payload)
+        for p in members:p.family_evidence=[evidence.model_copy(deep=True)]
+
+
+def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_of: datetime, *, allow_current_catalog: bool=False) -> DataSnapshot:
     root=root.resolve();base=read(root,root/'.deps/wealth_portfolio_data/snapshots',base_version)
     if as_of<base.as_of:raise ValueError('DERIVED_CUTOFF_BEFORE_BASE')
     capture=read_protected_json(root,bank_path,bank_sha256,'.deps/wealth_portfolio_step08')
@@ -122,7 +166,8 @@ def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_o
     entries=[validate_evidence(root,r,manifest['authority_sources'],real_codes) for r in manifest['records']]
     products=[];daily=[d.model_copy(deep=True) for d in base.daily if d.source_kind=='real']
     previous={p.product_id:p for p in base.products}
-    if set(ids)!={p.product_id for p in base.products if p.source_kind=='simulated'}:
+    old_simulated={p.product_id for p in base.products if p.source_kind=='simulated'}
+    if set(ids)!=old_simulated and not allow_current_catalog:
         raise ValueError('BANK_CAPTURE_CATALOG_SET_CHANGED')
     for old in base.products:
         if old.source_kind!='real':continue
@@ -138,6 +183,7 @@ def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_o
         else:fields['unit_nav']=missing('bank_nav_not_visible_at_business_time')
         daily.append(DailyFact(product_id=row['product_id'],source_kind='simulated',fields=fields,
             observations_cutoff=as_of,freshness='observed',freshness_reason='protected current observation; runtime rechecks sale/rules/time'))
+    bind_current_families([p for p in products if p.source_kind=='simulated'],rows,ref)
     adapter='portfolio-derived-v1:'+hashlib.sha256(Path(__file__).read_bytes()+ADAPTER_VERSION.encode()).hexdigest()
     fixed=digest({'base':base.version,'products':[p.model_dump(mode='json') for p in products],
         'evidence':digest(manifest),'adapter':adapter,'as_of':as_of.isoformat()})
@@ -146,6 +192,9 @@ def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_o
     version=digest({'fixed':fixed,'daily':daily_version,'evidence':evidence_version,'as_of':as_of.isoformat()})
     info=coverage(products,daily)
     info.update(base_version=base.version,current_bank_count=len(rows),
+        current_catalog_explicitly_selected=allow_current_catalog,
+        simulated_catalog_added=sorted(set(ids)-old_simulated),
+        simulated_catalog_removed=sorted(old_simulated-set(ids)),
         independent_simulated_skus=sum(bool(p.identity_evidence) for p in products if p.source_kind=='simulated'),
         bank_current_versions=dict(Counter(str(r['version']) for r in rows)),
         simulation_text_complete=sum(any(p.fields[f].value for f in TEXT_FIELDS) for p in products if p.source_kind=='simulated'))

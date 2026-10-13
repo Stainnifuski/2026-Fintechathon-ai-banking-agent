@@ -55,6 +55,7 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
     })}>校验所选产品与比例</button>}
     <PortfolioAllocation plan={plan} snapshot={snapshot} contextId={plan.context_id??'legacy-v1'} showProductEditor={false} loading={busy} readOnly={!!onPropose||fixtureOnly}
       onAdjust={onRevise} onPreferenceChange={onRevise} onAccepted={next=>{setPlan(next);setPrepared(null);setValidatedKey(selectionKey({items:next.selected_positions}));}}/>
+    {plan.selected_positions.length===0&&plan.candidate_groups.every(group=>group.items.length===0)&&<p role="note">当前没有合格产品候选。此图仅显示账户现金及受候选不足限制的配置基准，尚未完成可投资产品配置；未发生申购。</p>}
     <p>已校验保留现金 {w.money(plan.cash_residual_fen)} · 赎回应收 {w.money(snapshot.receivable_fen)}（到账前不可用于买入）</p>
     <details><summary>查看全部现有持仓与保留项目（{snapshot.positions.length}）</summary>{snapshot.positions.length?snapshot.positions.map(position=><p key={position.position_key}>{position.account_id} · {position.product_id} v{position.product_version} · {position.units}份 · 市值 {w.money(position.market_value_fen)} · 可赎 {position.redeemable_units}份</p>):<p>当前快照没有持仓；不会把在途申请算成已确认份额。</p>}</details>
     {!onPropose&&<><button disabled={busy||!clean||!snapshot.valuation_complete} onClick={()=>act(async()=>{

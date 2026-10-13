@@ -28,7 +28,8 @@ try{
  await page.getByRole('button',{name:'本人确认上述评估结果并继续原需求',exact:true}).click();await pause();
  const assessment=await request('GET','/api/v1/wealth/assessments/current');assert.equal(assessment.body.capacity_level,4);assert.equal(assessment.body.confirmed,true);mark('actual nine-question UI and personal confirmation',{capacity:4,confirmed:true});
  const snapshot=await request('GET','/api/v1/wealth/portfolio/snapshot');assert.equal(snapshot.http,200);assert.equal(snapshot.body.snapshot_id,home.body.snapshot_id);assert.equal(snapshot.body.asset_scope_id,home.body.asset_scope_id);assert.equal(snapshot.body.context_epoch,null);mark('A snapshot same B scope/snapshot',snapshot.body);
- const independent=await request('POST','/api/v1/wealth/portfolio/recommendations',{context_id:'legacy-v1',filter:{mode:'general'}});assert.equal(independent.http,200);assert.ok(!independent.body.reason_codes.includes('ASSESSMENT_CURRENT_VERSION_UNPROVEN'));mark('A05 no Plan, current profile proof',{http:200,status:independent.body.status,count:independent.body.items.length,reasons:independent.body.reason_codes});
+ const context=snapshot.body.context_id;
+ const independent=await request('POST','/api/v1/wealth/portfolio/recommendations',{context_id:context,filter:{mode:'general'}});assert.equal(independent.http,200);assert.ok(!independent.body.reason_codes.includes('ASSESSMENT_CURRENT_VERSION_UNPROVEN'));mark('A05 no Plan, current profile proof',{http:200,status:independent.body.status,count:independent.body.items.length,reasons:independent.body.reason_codes});
  await page.getByText('直接选择操作（无需聊天）',{exact:true}).click();await pause();
  const panel=page.getByRole('region',{name:'统一手动操作'});
  await panel.getByRole('button',{name:'产品推荐',exact:true}).click();await pause();mark('formal Action recommendation UI',await panel.innerText());
@@ -46,13 +47,13 @@ try{
  const plans=http.filter(h=>h.path.endsWith('/wealth/actions')&&h.action==='plan_portfolio');mark('formal plan result',plans.at(-1));
  await page.screenshot({path:out+'/formal-plan.png',fullPage:true});
  const after=await request('GET','/api/v1/wealth/assets');assert.equal(after.body.cash[0].balance_fen,2_000_000);assert.equal(after.body.orders.length,0);assert.equal(after.body.lots.length,0);mark('recommend/configure does not trade',{cash:2_000_000,orders:0,lots:0});
- const bad=await request('POST','/api/v1/wealth/portfolio/plans',{context_id:'legacy-v1',risk_level:5});assert.equal(bad.http,422);mark('client risk rejected',422);
+ const bad=await request('POST','/api/v1/wealth/portfolio/plans',{context_id:context,risk_level:5});assert.equal(bad.http,422);mark('client risk rejected',422);
  for(const name of ['转账与收款','账单洞察','卡片','订阅','生活服务']){const button=page.getByRole('button',{name:new RegExp(name)}).first();if(await button.count()){await button.click();await pause();mark('existing navigation '+name,'loaded');}}
  if(planBody.status==='ok'){
   // Navigation closes the chat window, not necessarily the structured Action
   // session. Exercise that specific related session's real HTTP boundary.
   const closed=await request('POST','/api/v1/wealth/sessions/'+planBody.session_id+'/close',{});assert.equal(closed.http,200);
-  const old=await request('GET','/api/v1/wealth/portfolio/plans/'+planBody.data.portfolio_id+'?context_id=legacy-v1');assert.equal(old.http,409);assert.equal(old.body.detail.code,'PORTFOLIO_SESSION_CLOSED');mark('actual related Action session HTTP close rejects old Plan',{http:old.http,code:old.body.detail.code});
+  const old=await request('GET','/api/v1/wealth/portfolio/plans/'+planBody.data.portfolio_id+'?context_id='+encodeURIComponent(context));assert.equal(old.http,409);assert.equal(old.body.detail.code,'PORTFOLIO_SESSION_CLOSED');mark('actual related Action session HTTP close rejects old Plan',{http:old.http,code:old.body.detail.code});
  }
  assert.equal(http.filter(h=>h.path.includes('/messages')||h.path.startsWith('/api/v1/nova/messages')).length,0);mark('new structured workflow model requests',0);
  await page.screenshot({path:out+'/final-page.png',fullPage:true});

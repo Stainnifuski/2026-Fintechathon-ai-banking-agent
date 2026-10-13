@@ -27,6 +27,8 @@ from backend.app.models.wealth import WealthClockORM,WealthOrderORM
 from backend.app.services.bank import wealth_service as bank
 from backend.app.services.bank.wealth_catalog import seed_catalog
 from backend.app.middleware.auth import get_current_user
+from backend.app.database.connection import get_db
+from backend.app.routers.wealth import get_wealth_bank
 from backend.app.security.passwords import hash_password
 BASE=datetime(2026,10,12,6,0,tzinfo=timezone.utc)
 
@@ -46,13 +48,37 @@ async def lifespan(application):
             balance_fen=2_000_000,daily_transfer_limit_fen=5_000_000) for i in (1,2)])
         from backend.app.domain.wealth import CALENDAR_VERSION
         db.add(WealthClockORM(clock_id='mock',business_at=BASE,calendar_version=CALENDAR_VERSION))
-        await seed_catalog(db);await db.commit()
+        await seed_catalog(db)
+        catalog_mode=os.environ.get('WEALTH_JOINT_CATALOG','fixed-full')
+        assert catalog_mode in {'legacy','fixed-synthetic','fixed-full'}
+        if catalog_mode!='legacy':
+            # Existing immutable 60-product definition, no new product design,
+            # model, ratings or prices; the original legacy catalogue remains.
+            from backend.app.services.bank.wealth_research import initialize,select_context
+            if catalog_mode=='fixed-full':
+                from backend.app.services.bank.wealth_baseline_upgrade import fixed_payload
+                from backend.app.services.bank.wealth_research import import_dataset
+                imported=await import_dataset(db,await fixed_payload(db))
+                assert imported['ok']
+                result=await initialize(db,'U1','normal',dataset_key=imported['dataset_key'])
+                from backend.app.models.wealth_research import WealthContextORM
+                context=await db.get(WealthContextORM,result['context_id'])
+                context.data={**context.data,'label':'既有固定78产品｜虚构银行与资金｜联合隔离诊断','business_at':BASE.isoformat()}
+            else:result=await initialize(db,'U1','normal')
+            await select_context(db,'U1',result['context_id'],1)
+        await db.commit()
         # No prefilled assessment: the actual public questionnaire is part of browser acceptance.
     yield
     await engine.dispose()
 
 app.router.lifespan_context=lifespan
 class Advance(BaseModel):days:int=Field(ge=0,le=60)
+class Diagnose(BaseModel):derive_current:bool=False
+@app.post('/api/v1/joint-test/diagnose')
+async def diagnosis(request:Diagnose,user:dict=Depends(get_current_user),db=Depends(get_db),bank_api=Depends(get_wealth_bank)):
+    assert user['user_id']=='U1'
+    from tests.browser.wealth_joint_diagnosis import diagnose
+    return await diagnose(db,user['user_id'],app.state.wealth_portfolio_source,bank_api,derive_current=request.derive_current)
 @app.post('/api/v1/joint-test/advance')
 async def advance(request:Advance,user:dict=Depends(get_current_user)):
     assert user['user_id']=='U1'

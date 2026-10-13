@@ -247,7 +247,7 @@ class BankPortfolioFacts:
                     purchase_paused=rules['purchase_paused'],purchase_open=row['purchase_open'],data_stale=row['data_stale'],
                     product_content_sha256=digest(product_content(row)))
             # 缺销售有效区间、渠道和明确许可时保留unknown，绝不默认可买。
-            offers[code] = BankPurchaseFact(product_id=code, share_class=rules.get('share_class'),
+            offers[code] = BankPurchaseFact(product_id=code, share_class=row.get('share_class', rules.get('share_class')),
                 product_version=row.get('version'), disclosure_version=disclosure.get('version'),
                 rules_version='adapter:'+digest(rules) if rules else None,
                 source_id='protected-local-bank', source_kind='simulated', channel='local-competition-bank',

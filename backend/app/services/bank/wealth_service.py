@@ -236,6 +236,8 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
         fixture=context.data.get('fixture',{}) if context else {}
         if fixture.get('no_match'): continue
         if fixture.get('source_unavailable'): price=None
+        from .wealth_material import current_material
+        material = await current_material(db, row)
         result.append({"product_id": product.product_id, "version": row.version, "name": row.name,
             "kind": row.kind, "category": row.category, "product_risk_level": row.risk_level,
             "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,
@@ -246,7 +248,7 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
             "dataset_key": dataset_key if context else "legacy-v1",
             "purchase_open": (now.astimezone(TZ).date()-date(2026,9,30)).days % row.rules.get('open_interval_days',1) == 0,
             "data_stale": bool(context and price and now.astimezone(TZ).date()>advance_business(price.nav_date,3,row.rules['calendar_version'])),
-            "notice": "比赛模拟环境／模拟资金；历史净值不代表未来收益"})
+            "notice": "比赛模拟环境／模拟资金；历史净值不代表未来收益", **material})
     return result
 
 
