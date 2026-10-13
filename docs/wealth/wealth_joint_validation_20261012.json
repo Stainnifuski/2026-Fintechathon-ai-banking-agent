@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-12 America/Toronto",
+  "status": "not_sealable",
+  "sources": {
+    "a_head": "5e36e4c48c82c24a088c9f271df7774727d7435f",
+    "b_head": "8b611dd10a6b876c8a3baf50ec1b5d94247dc6b4",
+    "fetched_main": "853569b1b06b3f7fb261e4e62cdf053eb382d47d"
+  },
+  "checks": {
+    "primary_pytest": {
+      "passed": 495,
+      "skipped": 48
+    },
+    "shared_actual_pytest": {
+      "passed": 79,
+      "skipped": 14
+    },
+    "latest_lifecycle_pytest": {
+      "passed": 69,
+      "skipped": 12
+    },
+    "frontend_states": 66,
+    "browser": 20,
+    "browser_runtime_errors": 0,
+    "browser_network_failures": 0,
+    "new_model_calls": 0
+  },
+  "sets_overlap": true,
+  "database_scope": "isolated SQLite only; independent PostgreSQL URL not configured",
+  "positive_products": 0,
+  "research": "historical total-return/fixed-portfolio/OOS blocked",
+  "remote_writes": 0,
+  "human_acceptance": "pending",
+  "j_report": "wealth_joint_acceptance.md",
+  "integrated_code_commit": "82681abc598ca90b45265c6101573b1090908675",
+  "owned_test_services": "stopped after acceptance; original 3010/8010 retained"
+}

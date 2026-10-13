@@ -79,3 +79,17 @@ python -m backend.app.services.bank.wealth_migration --rollback
 ## 2026-10-04生命周期变更
 
 旧理财会话/需求/方案不再长期存档；兼容历史读取返回空值。保留表结构供当前窗口、2号契约及最小未完依赖使用。单笔受理及无未决节点终态压缩为银行操作号最小回执，不删除银行订单/审计/占款/流水。清理须停写、预览、备份、核对保护表指纹；[脚本与新契约](workspace_simplification.md)。旧刷新恢复和逐笔采用页面说明以本条为准。
+
+## 2026-10-12 01／02本地联合接线：03工程索引
+
+以[portfolio_handoff.md](portfolio_handoff.md)和[wealth_joint_acceptance.md](wealth_joint_acceptance.md)为当前工程事实。旧“模型待讨论”“02未接A”等历史交接不能作为当前状态；模型参数已冻结，但必要J未全部通过，尚不能登记L0通过或接新LLM/NLP。
+
+- Action：`schemas/wealth_action.py`、`services/orchestration/wealth_actions.py`、`routers/wealth.py` POST `/api/v1/wealth/actions`。request_id/context_id/会话版本/selection_context是可信对象引用；身份来自JWT。Action不直接执行自然语言。
+- A注册：`services/orchestration/wealth_portfolio_joint.py` 三个async handler；main.py install；canonical `wealth_portfolio*.py` schema与前端`types/wealthPortfolio.ts`。Direct create/get/revise和Action同store，无第二模型。
+- 接线：客户StructuredActionPanel→AllocationReview→A PortfolioAllocation；B ProductPicker/双表/Returns保持。operator A图只读；人工备注不是客户授权。推荐不需要Plan/预算/期限。
+- 资产：GET `/asset-summary`与唯一GET `/portfolio/snapshot`同全授权scope/snapshot；账面现金+持仓+赎回应收；可付available另列，冻结不重复。历史lot采用显式product_version。
+- 交易：A Plan ID→B prepare差额→现行本人确认/统一验证→执行→原操作号查询/结算回读。旧版本/closed/stop/HUMAN/PAUSED拒绝；未知提交不能新号重发，已受理不因清会话/改方案回滚。prepare不占款；接受即时占用；具体份额等级最终重验。
+- 双表/收益：订单operation_id与持仓position_key不混用；独立分页/跨页选择/当前页全选，scope改变清选择。show_wealth_returns按整体/产品及日月年累计调用B实际银行收益，费用不双扣、全赎贡献不丢；投资现金流保留原流水但从消费账单排除。
+- 成功样例：正式无金额/期限plan_portfolio读取20,000元并得到全现金Plan，随后可Direct GET（最终结果见联合报告）；**不等于推荐/购买成功**。
+- 失败样例：CandidateGroup status=unavailable/items=[]带产品证据原因；final prepare R2/R4 ->409 SUITABILITY_MISMATCH；客户端risk_level ->422；缺资料包503；closed/版本变更409。Action外层成功状态不能覆盖A业务错误。不要把失败翻译为“已购买”。
+- 03责任仍仅后续统一NLP结构化动作与有据表达；无新模型接入/训练。本轮模型实际新调用0。相关允许操作必须由服务器状态推导，LLM不能制造可购标记、评估或授权。
