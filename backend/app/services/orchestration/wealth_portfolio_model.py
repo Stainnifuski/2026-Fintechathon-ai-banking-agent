@@ -92,6 +92,13 @@ class PortfolioModelProvider:
         facts,index,now=await self.candidates.current(user_id)
         if version_context(facts)!=initial_context:
             raise ModelError('MODEL_FACTS_CHANGED')
+        if hasattr(self.asset_source,'read_from_current'):
+            # The second protected read also captured assets. Compare those
+            # observations without another HTTP round trip; a cash/scope
+            # change during the sandwich must invalidate the calculation.
+            completed_asset=await read_asset_model_facts(self.asset_source,user_id,list(index.products.values()),from_current=True)
+            if snapshot_content(completed_asset.snapshot)!=snapshot_content(asset.snapshot):
+                raise ModelError('MODEL_FACTS_CHANGED')
         gate=assessment_reasons(facts,user_id,now)
         if gate:raise ModelError('FORMAL_ASSESSMENT_UNAVAILABLE',{'reason_codes':gate})
         s=asset.snapshot

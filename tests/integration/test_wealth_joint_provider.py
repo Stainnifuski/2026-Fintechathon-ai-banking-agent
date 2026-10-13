@@ -17,6 +17,29 @@ from tests.integration.test_wealth_asset_summary import seed_f18
 from tests.integration.test_wealth_portfolio_prepare import setup
 
 @pytest.mark.asyncio
+async def test_cash_change_between_current_reads_invalidates_calculation(store,http_store,monkeypatch):
+    from tests.fixtures.wealth_portfolio_candidates_v1 import fixture_pool
+    from backend.app.domain.wealth_portfolio_candidates import ProductIndex
+    from backend.app.services.orchestration.wealth_portfolio_candidates import SnapshotIndexCache
+    from backend.app.domain.wealth_portfolio_allocation import ModelError
+    _,bank,_=http_store
+    data,_=fixture_pool();provider=JointPortfolio(Path(__file__).resolve().parents[2],bank_factory=lambda:bank,
+        data_version=data.version,daily_version=data.daily_version)
+    provider.indexes=SnapshotIndexCache(lambda v:ProductIndex(data))
+    original=bank.assets;calls=0
+    async def changing(user):
+        nonlocal calls
+        result=await original(user);calls+=1
+        if calls==1:
+            async with store() as writer:
+                row=await writer.get(AccountORM,'A1');row.balance_fen+=1;await writer.commit()
+        return result
+    monkeypatch.setattr(bank,'assets',changing)
+    async with store() as db:
+        await assess(db);_,service=provider.bind(db,'U1',bank)
+        with pytest.raises(ModelError,match='MODEL_FACTS_CHANGED'):await service.provider._facts('U1')
+
+@pytest.mark.asyncio
 async def test_request_local_bundle_keeps_snapshot_but_next_current_read_sees_cash_change(store,http_store):
     from datetime import datetime,timezone
     _,bank,_=http_store
