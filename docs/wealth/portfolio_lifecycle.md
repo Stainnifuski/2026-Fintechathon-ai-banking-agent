@@ -1,3 +1,5 @@
+> 当前正式接线（2026-10-13）：main已经注册canonical A提供器；Action与direct计划读写同一store。selected_positions四字段引用不含金额/账户，advised_positions提供target_fen/account_ids与可选disclosure_version。跨批已选卡保存在Plan供接管只读；不重做算法。B多账户须显式payment_account_id，未提交旧A修订使旧B preview/confirm/verify/execute拒绝；受理后仍原号恢复，不撤销账务。真实正向证据和当前边界以portfolio_handoff.md为准。
+
 # 整体配置：方案生命周期与独立组件
 
 ## 2026-10-10 第11步当前交付

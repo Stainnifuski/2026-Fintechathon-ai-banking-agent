@@ -1,3 +1,15 @@
+# 03及银行理财当前交接索引（2026-10-13）
+
+**当前权威入口：[01/02工程交接](portfolio_handoff.md)、[修订J01—J23](wealth_joint_acceptance.md)、[当前结果JSON](wealth_joint_validation_20261012.json)。Codex本轮功能检查通过，人工未验，未发布。**
+
+03接入：读取JWT当前context及全授权snapshot，调用A plan_portfolio/recommend_products/revise_portfolio；消费canonical四字段selected_positions与advised_positions金额，不创建第二配置算法。prepare_purchase给B已有A id/version/snapshot，多账户显式付款账户。本人确认/统一MFA/execute必须由可信页面与银行执行；模型不得代答风险、代签授权、猜账户/成交、绕过Risk/闭会话/暂停/人工接管。
+
+真实基金项目分类等级独立发行人评级。公开更高可靠评级/分类冲突不降级，政策版本绑定；无新增30天期限或2万元上限。取消A/C切换、默认A/C例外与家族登记前置；可靠关系去重、未知不编造。真实价格来源与模拟定价日/费用/到账分列。当前38映射/36材料操作组，七具体代码只是联合样本。公开缺数和历史金融研究未完成状态须继续传递。接管时保存的七卡/历史快照只是解释材料，交还后客户重验。
+
+新NLP尚未接入本轮手动工作台，本轮模型调用0。依赖/数据包SHA/缺包拒绝与准备命令见portfolio_handoff第5节；原env、日常库、采集缓存不提交。以下旧迁移记录保持供追溯，旧“研究资料不能交易/等级待确认/替换点击验证”等状态以本节为准。
+
+---
+
 ## v1.2数据与迁移交接
 
 > 2026-10-05授权更新：本模块已接入三号统一TOTP／短信校验，旧点击模拟授权及开关移除。授权使用、接口和迁移以[统一验证说明](simulated_authorization.md)为准；历史测试记录不代表当前授权行为。
@@ -99,3 +111,11 @@ python -m backend.app.services.bank.wealth_migration --rollback
 当前代码、双池、正常注册、离线包、性能及必要门禁见portfolio_handoff.md和wealth_joint_acceptance.md。真实基金材料不等于可交易SKU：真实当前映射/资格为0，需要明确真实资料＋比赛模拟风险/交易政策决定，尚未实施、未可封板。七S产品补目标方案不采用。03不得将CandidateGroup unavailable/空候选或全现金Plan表达为推荐/申购成功。
 
 原01 A6历史总回报、固定组合、样本外金融效果已移出本轮运行门禁，保持未完成、不承诺金融效果；B实际持仓收益/四粒度/日历/费用/已赎贡献和J23保持必需。03仍等真实正向必要J闭合后再接新LLM/NLP，不用语言层替代资格、交易、本人确认或MFA。内部fee_rules仅补读已有版本费用，未知仍null；外部ActionV1/Fees/Plan/Selection协议不变。
+
+## 2026-10-13 交接变更：具体代码与双来源
+
+01/02本轮采用真实公开基金资料＋比赛模拟交易。2号后续接线必须区分underlying_source_kind、execution_source_kind、product_risk_source=project_policy和project_policy_version；不得把项目R1/R2/R3/R4解释成发行人评级或保本承诺。可靠公开更高等级/分类冲突由服务端拒绝复核。
+
+A/C切换、默认A、仅C例外和强制家族登记已取消；仅保留已可靠登记关系去重，未知关系不推断。按具体代码/产品版本/披露与规则版本引用，null份额字母不阻断已核实代码。旧/switch返回410，不新增替代自动切换。不得从生成式文本补身份/评级/价格/交易结果。
+
+项目policy版本不设30天自动失效和额外2万元上限；现有评估、预览和授权有效期、银行金额/现金校验仍生效。资料包/规则版本变化应重新准备，已受理原单不可回滚。正式步骤与证据以portfolio_handoff.md和wealth_joint_acceptance.md为准；本轮没有接入新LLM/NLP，人工验收前不称封板。

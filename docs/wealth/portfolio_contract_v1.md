@@ -1,3 +1,5 @@
+> 当前权威修订：2026-10-13真实基金资料＋项目分级＋比赛模拟交易。下列A0/A1时期的未注册/默认A/家族前置文字只作历史，冲突以本文件末节及portfolio_handoff.md为准。
+
 # 整体理财共用契约：A0落地（00 v0.3）
 
 > 2026-10-12联合状态：本文件保留01原实现/独立验证说明。当前正式主应用已注册A提供器与规范路由并消费B全授权事实；正式接线、已关闭旧缺口和剩余产品/研究阻塞以 [portfolio_handoff.md](portfolio_handoff.md) 为准。独立入口不替代正式联合验收。
@@ -47,3 +49,19 @@ AssetSummary和明细必须来自同次完整读取；A不直接读取银行ORM�
 A0验证全部24个文件格式/可重现性及已有DTO输入输出；A1实际构建F01/F08/F10/F18。F03—F05筛选、F09默认份额/资格回退等行为留A2；F11仅验证7项选择DTO，不宣称批量成交；F13账务、F15完整手工交易及F19—F24收益/流水由B验收。固定20/30/50是协议样例，不能当正式参数。全部fixture文件存在不等于全部后续业务已完成。
 
 阶段交付、实际数据来源和限制见[A0/A1交付](portfolio_a0_a1_20261005.md)。
+## 2026-10-13：已批准的真实资料／比赛模拟交易契约修订
+
+本节覆盖00 v0.3中冲突要求，工程协议字段保持兼容，不更改既定DPP、ETA、DELTA、风险配置区间或投影参数。当前有效交接与联合结果见 portfolio_handoff.md / wealth_joint_acceptance.md；旧段落仅作历史。
+
+- 分类核实后项目等级：货币R1、债券R2、混合R3、股票R4。项目等级独立于发行人/渠道公开评级；公开更高可靠评级或分类冲突必须拒绝复核，不降低等级。政策按版本与具体代码/材料/报价指纹绑定，不新增30天期限，不新增单笔2万元上限。额度沿用银行产品、账户及现有支付能力校验。
+- 删除：A/C切换操作、默认A、仅C例外、强制家族登记前置。公开的A/C关系仍用于已知同基金去重；未知关系使用exact-code操作身份，不宣称独立基金家族或风险来源。share_class兼容字段可为null，具体代码及版本才是购买引用；不从名称后缀编造份额事实。
+- 调整J03/J05/J08：按具体代码推荐/换批/多选/申购；保留最终R2购买R4拒绝、手动选择、0/极小权重绕行检查；不再把A/C切换作为完成条件。
+- 同时保留：正式本人风险问卷、最新画像/评估版本、本人确认、统一红色MFA、账户/作用域/会话/控制权限、预览期限、参数绑定、幂等、唯一账务与审计。清聊天/修改草稿不撤回已提交订单。
+- ProductFact.source_kind保持real。execution_policy标underlying_source_kind=real、execution_source_kind=simulated；BankPurchaseFact带同版本policy，CurrentSimulationEvidence带pricing_mode=frozen-public-nav-v1。公共原值/日期/SHA与模拟规则分开记录。
+- 项目模拟条件：最低100元，最高沿用现有普通基金银行规则；申购/赎回0费用，无额外销售服务费。现实完整费用未知不补0。北京15:00截止、现有中国交易日历、申购T+1确认，普通赎回T+1确认/T+2到账，holding_days=0，计价前按既有规则撤。
+- 报价为不可变版本最后已取得公开NAV的模拟成交基准。source_nav_date、simulated_pricing_date与price_reference_sha256分别保存；不生成未来NAV或冒称真实T日成交价。MM-DD年份解释有独立标注，不改原值。收益缺数据维持partial/null。
+- 不新增生产七代码白名单：准备程序检查全目录资料/价格交集，版本化证据登记用于拒绝未核实或篡改的等级/分类。joint_samples仅验收，不进入推荐或购买过滤。可用证据增加时显式准备新版本。
+
+### Canonical引用与当前操作卡
+
+selected_positions仍是四字段SelectionItem，不含金额/账户。advised_positions新增可选disclosure_version，持仓/account_ids和整数target_fen原样供B差额消费。显式多选Plan中的candidate_groups保存全部已核实的已选代码卡，与A05短推荐批次分开；不是新推荐算法。唯一借记账户可解析，多账户B prepare要求显式payment_account_id；多账户减持分配未知受控拒绝。旧未提交A版本在B preview/confirm/verify/execute均再验；受理后的原号恢复不依赖易失A草稿。
