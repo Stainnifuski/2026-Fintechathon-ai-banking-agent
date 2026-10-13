@@ -14,6 +14,26 @@ run=asyncio.run
 GENERAL=CandidateFilter(mode='general')
 THEME=CandidateFilter(mode='theme',theme_key='high_dividend')
 
+def test_immutable_index_interns_only_unknown_constants_without_changing_content():
+    from backend.app.services.orchestration.wealth_portfolio_data import digest
+    from pydantic import ValidationError
+    data,_=fixture_pool(1)
+    for p in data.products:p.fields['unknown-probe']=FieldFact(status='missing',reason='source did not provide it')
+    expected=digest([p.model_dump(mode='json') for p in data.products])
+    index=ProductIndex(data,immutable_source=True)
+    a,b=data.products[:2]
+    assert a.fields['unknown-probe'] is b.fields['unknown-probe']
+    assert index.content_fingerprint==expected and index.interned_unknown_fields>0
+    with pytest.raises(ValidationError):a.fields['unknown-probe'].value='invented'
+    with pytest.raises(TypeError):a.fields['unknown-probe'].observations.append(None)
+
+def test_mutable_injected_index_keeps_independent_unknown_fields():
+    data,_=fixture_pool(1)
+    for p in data.products:p.fields['unknown-probe']=FieldFact(status='missing',reason='same missing reason')
+    index=ProductIndex(data)
+    assert index.interned_unknown_fields==0
+    assert data.products[0].fields['unknown-probe'] is not data.products[1].fields['unknown-probe']
+
 def risk(snapshot,facts,code,level):
     next(p for p in snapshot.products if p.product_id==code).fields['formal_risk']=field(level,'risk_level')
     facts.offers[code].risk_level=level

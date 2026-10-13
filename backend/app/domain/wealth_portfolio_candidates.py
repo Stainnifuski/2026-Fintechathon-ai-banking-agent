@@ -3,11 +3,34 @@ import re
 from collections import Counter, defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pydantic import ConfigDict
 from ..schemas.wealth_portfolio_candidates import (CandidateFilter,ThemeEvidence,FamilyCandidate,ShareReference,
     PipelineResult,CurrentFacts)
-from ..schemas.wealth_portfolio_data import ProductFact, DataSnapshot
+from ..schemas.wealth_portfolio_data import ProductFact, DataSnapshot,FieldFact
 from .wealth_portfolio_eligibility import qualify_purchase,assessment_reasons,version_context
 from ..services.orchestration.wealth_portfolio_data import digest
+
+class _ReadOnlyEmptyList(list):
+    def _deny(self,*args,**kwargs):raise TypeError('immutable source observation')
+    append=extend=insert=remove=pop=clear=sort=reverse=__setitem__=__delitem__=__iadd__=__imul__=_deny
+
+class _ImmutableMissingField(FieldFact):
+    model_config=ConfigDict(extra='forbid',allow_inf_nan=False,frozen=True)
+
+def intern_missing_fields(products):
+    """Share identical proven-unknown constants, never evidence or user facts."""
+    constants={};reused=0
+    for p in products:
+        for key,fact in p.fields.items():
+            if fact.status!='missing' or fact.value is not None or fact.observations:continue
+            signature=fact.reason
+            if signature not in constants:
+                frozen=_ImmutableMissingField.model_validate(fact.model_dump())
+                object.__setattr__(frozen,'observations',_ReadOnlyEmptyList())
+                constants[signature]=frozen
+            else:reused+=1
+            p.fields[key]=constants[signature]
+    return reused
 
 THEME_RULE_VERSION='portfolio-themes-v1'
 THEME_RULES={
@@ -85,6 +108,7 @@ class ProductIndex:
         self.version=snapshot.version;self.daily_version=snapshot.daily_version
         self.products={p.product_id:p for p in snapshot.products}
         if len(self.products)!=len(snapshot.products):raise ValueError('DUPLICATE_PRODUCT_IDENTITY')
+        self.interned_unknown_fields=intern_missing_fields(snapshot.products) if immutable_source else 0
         # This index is a version-bound immutable source, not a user result.
         # Hash its material once instead of serializing the full directory at
         # every lifecycle read. New material must load a new index/version.

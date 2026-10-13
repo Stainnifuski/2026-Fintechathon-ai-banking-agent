@@ -142,8 +142,13 @@ class JointPortfolio:
         import asyncio
         index=await asyncio.to_thread(self.indexes.get,self.data_version)
         if index.daily_version!=self.daily_version:raise CandidateError('DAILY_VERSION_MISMATCH')
+        # Finish collecting the discarded full daily graph during startup,
+        # rather than making the first user calculation pay that cost.
+        import gc
+        await asyncio.to_thread(gc.collect)
         return {'data_version':index.version,'directory':len(index.products),
-                'initialization_seconds':self.indexes.last_load_seconds}
+                'initialization_seconds':self.indexes.last_load_seconds,
+                'interned_unknown_fields':index.interned_unknown_fields}
     def bind(self,db,user_id,bank):
         facts=JointFacts(ServerReads(db,user_id,bank),self.data_version,self.daily_version)
         candidates=CandidateService(facts,self.indexes,self.selector);candidates.sessions=self.sessions;candidates.lock=self.lock
