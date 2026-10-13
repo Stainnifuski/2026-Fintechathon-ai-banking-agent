@@ -22,10 +22,13 @@ from ...integrations.wealth_authorization import WealthPolicyError
 async def invoke(call):
     try:return await call
     except (CandidateError,SnapshotError,ModelError) as error:
-        raise WealthPolicyError(str(error),error.code,getattr(error,'status_code',422)) from error
+        details=getattr(error,'details',None)
+        reasons=details.get('reason_codes',[]) if isinstance(details,dict) else []
+        message=str(error)+('：'+', '.join(r for r in reasons if isinstance(r,str)) if reasons else '')
+        raise WealthPolicyError(message,error.code,getattr(error,'status_code',422)) from error
 
-DATA='38005c79535cb83a2d5be663d8a7a1812ba21946fe8f9fa2ab21ca80aea338a9'
-DAILY='e5ce972368c9b735a5fe9ddd64fa0fd81a9194c419cb89ceda255ead71f460d0'
+DATA='b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd'
+DAILY='2732304411e02771e334239139049d5b496b491e1106331b32cccd24db3bf938'
 
 class ServerReads:
     def __init__(self,db,user,bank):self.db,self.user,self.bank=db,user,bank

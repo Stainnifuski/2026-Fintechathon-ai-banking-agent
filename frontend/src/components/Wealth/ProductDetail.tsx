@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import * as w from '../../services/wealth';
 import { beijingTime } from '../../utils/time';
 export interface ProductDetailData {
+  risk_source_kind?:string|null;project_policy_version?:string|null;public_risk_rating?:unknown;public_nav_date_basis?:string|null;execution_source_kind?:string;
   name:string;product_id:string;identity:string;category?:string;risk_level?:number|null;latest_nav?:{nav:string;date:string};as_of:string;source?:string|{url?:string;title?:string};
   rules?:{min_amount_fen?:number|null;holding_days?:number;cash_business_days?:number;purchase_fee_rate?:string|null;sales_service_fee_rate?:string|null;redeem_fee_bands?:{days_lt:number;rate:string}[];quick_redemption?:{start:string;end:string;daily_limit_fen:number;window:string}};
   money_yield?:{date:string;income_per_10000?:string|null;seven_day_annualized_percent?:string|null}[];
@@ -23,9 +24,11 @@ export default function ProductDetail({productId,productVersion,onClose,loadDeta
   const feeRate=(value:string|null|undefined)=>value==null?'未提供':`${(Number(value)*100).toLocaleString('zh-CN',{maximumFractionDigits:4})}%`;
   const categories:Record<string,string>={cash_management:'活钱',stable:'稳健',growth:'进取',cash:'活钱',bond:'债券',mixed:'混合',equity:'权益',index:'指数'};
   return <div className="wealth-modal"><section role="dialog" aria-modal="true" aria-label="产品详情" className="card wealth-detail"><button className="secondary" onClick={onClose}>关闭</button><h3>{detail?.name || productId}</h3>{error&&<p role="alert">{error}</p>}{!detail&&!error&&<p>正在读取已发布数据…</p>}
-    {detail&&<><p>{detail.product_id} · {detail.identity}</p><p>{categories[detail.category || ''] || detail.category || '类别待核对'} · 风险 {detail.risk_level?`R${detail.risk_level}`:'未审核'}</p><p>已发布净值 {detail.latest_nav?.nav || '暂无'} · {detail.latest_nav?.date || '无有效净值日'}</p>
+    {detail&&<><p>{detail.product_id} · {detail.identity}</p><p>{categories[detail.category || ''] || detail.category || '类别待核对'} · {detail.risk_source_kind==='project_policy'?'项目等级（独立于发行人评级）':'风险'} {detail.risk_level?`R${detail.risk_level}`:'未审核'}</p><p>已发布净值 {detail.latest_nav?.nav || '暂无'} · {detail.latest_nav?.date || '无有效净值日'}</p>
+      {detail.project_policy_version&&<p>政策版本 {detail.project_policy_version}；公开更高评级或分类冲突需复核，不降级放行。</p>}
+      {detail.public_nav_date_basis?.includes('MM-DD')&&<p>原报告只有月日；年份按观测日前最近日期解释，原值与来源指纹已保留。</p>}
       <p>起购 {w.money(detail.rules?.min_amount_fen)} · 持有期 {detail.rules?.holding_days ?? '未审核'}天 · 普通到账 {detail.rules?.cash_business_days ?? '未审核'}营业日</p>
-      <p>申购费率 {feeRate(detail.rules?.purchase_fee_rate)} · 销售服务费率 {feeRate(detail.rules?.sales_service_fee_rate)}</p>
+      <p>{detail.risk_source_kind==='project_policy'?'项目模拟费用：':''}申购费率 {feeRate(detail.rules?.purchase_fee_rate)} · 销售服务费率 {feeRate(detail.rules?.sales_service_fee_rate)}</p>
       {detail.rules?.quick_redemption&&<p>模拟快赎：北京时间 {detail.rules.quick_redemption.start}—{detail.rules.quick_redemption.end} · {detail.rules.quick_redemption.window==='trading_day'?'交易日':'自然日'} · 每自然日限额 {w.money(detail.rules.quick_redemption.daily_limit_fen)}，成功不可撤。</p>}
       <div role="group" aria-label="净值观察范围">{[['1m','近一月'],['3m','近三月'],['1y','近一年']].map(([key,label])=><button key={key} className="secondary" aria-pressed={period===key} onClick={()=>setPeriod(key)}>{label}</button>)}</div>
       {!detail.chart?<><p>收益率资料不是单位净值，不计算这三个净值指标。</p>{detail.money_yield?.length ? <p>报告日 {detail.money_yield[detail.money_yield.length-1].date} · 万份收益 {detail.money_yield[detail.money_yield.length-1].income_per_10000 ?? '未知'}元 · 七日年化 {detail.money_yield[detail.money_yield.length-1].seven_day_annualized_percent ?? '未知'}%（历史报告值，不代表未来收益）</p>:<p>暂无已发布收益率报告。</p>}</>:<>{!points.length?<p>本窗口暂无已发布净值。</p>:<><p>实际观察 {detail.chart.window_start}—{detail.chart.window_end} · {points.length}点{points.length===1?'；仅一个点，不连线或计算涨跌':''}</p>

@@ -37,4 +37,7 @@ async def current_material(db, version, *, records=None, datasets=None):
         'product_id': version.product_id, 'product_version': version.version,
         'fields': sorted(result),
     }
+    if rules.get('execution_policy'):
+        result.update(source_product_code=version.product_id,underlying_source_kind='real',execution_source_kind='simulated')
+        result['material_origin'].update(source='immutable_real_public_paper_dataset',underlying_source_kind='real',execution_source_kind='simulated')
     return result

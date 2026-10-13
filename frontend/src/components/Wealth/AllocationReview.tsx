@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import * as w from '../../services/wealth';
 import type { ProductSelectionState } from './productSelection';
 import { collectPortfolioSelection, selectionKey } from './allocationSelection';
@@ -11,7 +11,7 @@ const errorMessage = (error:unknown) => (error as {response?:{data?:{detail?:{me
 interface Props {
   plan: w.PortfolioPlan; snapshot: w.PortfolioSnapshot; selection: ProductSelectionState;
   onRevise?: (selection:w.PortfolioSelection) => Promise<w.PortfolioPlan>;
-  onPrepare?: (plan:w.PortfolioPlan) => Promise<w.PreparedPortfolio>;
+  onPrepare?: (plan:w.PortfolioPlan,paymentAccountId?:string) => Promise<w.PreparedPortfolio>;
   onActivity?: () => void;
   fixtureOnly?: boolean;
   draftPercentages?:Record<string,string>;
@@ -28,11 +28,11 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
   const [validatedKey,setValidatedKey]=useState<string|null>(null);
   const [prepared,setPrepared]=useState<w.PreparedPortfolio|null>(null);
   const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('');
+  const [paymentAccount,setPaymentAccount]=useState('');
   let draft:w.PortfolioSelection|null=null;
   try { draft=collectPortfolioSelection(plan,selection,percentages); } catch { /* Explain invalid input when submitted. */ }
   const clean=!!draft && validatedKey===selectionKey(draft);
   const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(e){setNotice(errorMessage(e));}finally{setBusy(false);}};
-  useEffect(()=>{setPrepared(null);setValidatedKey(null);},[draftPercentages]);
   const change=(id:string,value:string)=>{const next={...percentages,[id]:value};setPercentages(next);onPercentagesChange?.(next);setPrepared(null);setValidatedKey(null);};
   return <section className="allocation-review" aria-label="整体配置核对">
     <div className="consumer-card-head"><h2>核对整体配置</h2><span>整体目标 v{plan.version}</span></div>
@@ -40,7 +40,7 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
     <p className="consumer-note">{onPropose?'当前是原方案及准备时的历史快照。比例修改只形成待本人核对的建议，未通过配置服务校验，不能授权或下单。':fixtureOnly?'当前为录制样例，比例修订只回放已登记的契约结果；不会提交模拟银行。':'修改后先由配置服务校验，再重读资产计算真正需要执行的差额。'}</p>
     {onPropose&&<p className="consumer-note">原方案时点 {plan.as_of}。目标金额和板块汇总仍显示原方案，尚未按建议重算。</p>}
     <div className="allocation-table"><table><thead><tr><th>具体产品／份额</th><th>{onPropose?'建议整体占比':'整体占比'}</th><th>{onPropose?'原方案目标':'已校验目标'}</th><th>{onPropose?'原快照持仓':'现有持仓'}</th></tr></thead><tbody>
-      {selection.items.map(({candidate,share})=>{const target=plan.selected_positions.find(p=>p.product_id===share.product_id&&p.product_version===share.product_version);
+      {selection.items.map(({candidate,share})=>{const target=plan.advised_positions?.find(p=>p.product_id===share.product_id&&p.product_version===share.product_version);
         const current=snapshot.positions.filter(p=>p.product_id===share.product_id&&p.product_version===share.product_version).reduce((sum,p)=>sum+(p.market_value_fen??0),0);
         return <tr key={share.product_id}><td>{candidate.name}{share.share_class && ` · ${share.share_class}类`}<small>{share.product_id} · 产品 v{share.product_version} · 披露 v{share.disclosure_version}</small></td>
           <td><label><span className="allocation-input-label">{candidate.name}整体占比</span><input aria-label={`${share.product_id}整体占比`} type="number" min="0" max="100" step="0.01" value={percentages[share.product_id]??''} onChange={e=>change(share.product_id,e.target.value)} disabled={busy}/> %</label></td>
@@ -54,12 +54,18 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
       setNotice('已收到配置服务校验结果，请核对板块与目标后再准备差额。');
     })}>校验所选产品与比例</button>}
     <PortfolioAllocation plan={plan} snapshot={snapshot} contextId={plan.context_id??'legacy-v1'} showProductEditor={false} loading={busy} readOnly={!!onPropose||fixtureOnly}
-      onAdjust={onRevise} onPreferenceChange={onRevise} onAccepted={next=>{setPlan(next);setPrepared(null);setValidatedKey(selectionKey({items:next.selected_positions}));}}/>
+      onAdjust={onRevise} onPreferenceChange={onRevise} onAccepted={next=>{
+        const values=Object.fromEntries(next.selected_positions.map(p=>[p.product_id,percentage(p.target_ratio_total)]));
+        setPlan(next);setPercentages(values);onPercentagesChange?.(values);setPrepared(null);
+        // The editable two-decimal percentage is a display draft. Prepare uses
+        // the returned Plan's exact integer targets, never these rounded values.
+        setValidatedKey(selectionKey(collectPortfolioSelection(next,selection,values)));
+      }}/>
     {plan.selected_positions.length===0&&plan.candidate_groups.every(group=>group.items.length===0)&&<p role="note">当前没有合格产品候选。此图仅显示账户现金及受候选不足限制的配置基准，尚未完成可投资产品配置；未发生申购。</p>}
     <p>已校验保留现金 {w.money(plan.cash_residual_fen)} · 赎回应收 {w.money(snapshot.receivable_fen)}（到账前不可用于买入）</p>
     <details><summary>查看全部现有持仓与保留项目（{snapshot.positions.length}）</summary>{snapshot.positions.length?snapshot.positions.map(position=><p key={position.position_key}>{position.account_id} · {position.product_id} v{position.product_version} · {position.units}份 · 市值 {w.money(position.market_value_fen)} · 可赎 {position.redeemable_units}份</p>):<p>当前快照没有持仓；不会把在途申请算成已确认份额。</p>}</details>
-    {!onPropose&&<><button disabled={busy||!clean||!snapshot.valuation_complete} onClick={()=>act(async()=>{
-      const result=await onPrepare(plan);
+    {!onPropose&&<>{snapshot.accounts.length>1&&<label>本次付款账户<select value={paymentAccount} onChange={e=>{setPaymentAccount(e.target.value);setPrepared(null);}}><option value="">请选择，不跨账户自动付款</option>{snapshot.accounts.map(a=><option key={a.account_id} value={a.account_id}>{a.account_id} · 可用 {w.money(a.available_fen)}</option>)}</select></label>}<button disabled={busy||!clean||!snapshot.valuation_complete||snapshot.accounts.length>1&&!paymentAccount} onClick={()=>act(async()=>{
+      const result=await onPrepare(plan,paymentAccount||undefined);
       if(result.portfolio_id!==plan.portfolio_id||result.portfolio_version!==plan.version)throw new Error('差额结果与当前整体版本不一致');
       setPrepared(result);
     })}>核对差额与准备预览</button>

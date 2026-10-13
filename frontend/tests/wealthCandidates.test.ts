@@ -21,6 +21,7 @@ test('catalog version mismatch and changed filter cannot become current candidat
   assertCurrentCandidates(group,[{product_id:share.product_id,version:share.product_version} as Product]);
   assert.throws(()=>assertCurrentCandidates(group,[{product_id:share.product_id,version:share.product_version+1} as Product]));
   assert.equal(sameCandidateFilter({mode:'general'},{mode:'general',category:null,bucket:null}),true);
+  assert.equal(sameCandidateFilter({mode:'general'},{mode:'general',theme_keys:[],theme_operator:null}),true);
   assert.equal(sameCandidateFilter({mode:'category',category:'bond_fund'},{mode:'category',category:'equity_fund'}),false);
 });
 test('replacement preserves other groups and selection across batches; scope switch clears',()=>{

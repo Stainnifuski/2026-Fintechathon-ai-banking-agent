@@ -171,8 +171,23 @@ def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_o
         raise ValueError('BANK_CAPTURE_CATALOG_SET_CHANGED')
     for old in base.products:
         if old.source_kind!='real':continue
-        product=old.model_copy(deep=True);apply_evidence(product,entries,as_of);products.append(product)
+        product=old.model_copy(deep=True);apply_evidence(product,entries,as_of)
+        row=next((r for r in rows if r['product_id']==old.product_id and r.get('rules',{}).get('execution_policy')),None)
+        if row:
+            from ...domain.wealth_paper_policy import validate_policy
+            policy=row['rules']['execution_policy']
+            reasons=validate_policy(policy,product.product_id,product.substantive_category,row['product_risk_level'],business)
+            if reasons:raise ValueError(','.join(reasons))
+            product.product_version=row['version'];product.disclosure_version=row['disclosure']['version']
+            product.execution_policy=policy
+            product.current_binding={'source':'protected-local-bank-current-products','content_sha256':digest(product_content(row)),
+                'underlying_source_kind':'real','execution_source_kind':'simulated','capture_sha256':ref.sha256,
+                'product_id':product.product_id,'original_research_version':base.version}
+        products.append(product)
     for row in sorted(rows,key=lambda r:r['product_id']):
+        if row['product_id'] in real_codes:
+            if not row.get('rules',{}).get('execution_policy'):raise ValueError('REAL_CODE_REQUIRES_EXPLICIT_POLICY')
+            continue
         products.append(current_product(row,ref,capture,previous.get(row['product_id']),base_version))
         fields={'purchase_status':field_fact([observation(row.get('purchase_open'),'purchase_open',ref)],simulated=True),
             'redemption_status':field_fact([observation(row.get('rules',{}).get('redeem_paused'),'rules.redeem_paused',ref)],simulated=True)}
@@ -183,7 +198,7 @@ def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_o
         else:fields['unit_nav']=missing('bank_nav_not_visible_at_business_time')
         daily.append(DailyFact(product_id=row['product_id'],source_kind='simulated',fields=fields,
             observations_cutoff=as_of,freshness='observed',freshness_reason='protected current observation; runtime rechecks sale/rules/time'))
-    bind_current_families([p for p in products if p.source_kind=='simulated'],rows,ref)
+    bind_current_families([p for p in products if p.source_kind=='simulated'],[r for r in rows if r['product_id'] not in real_codes],ref)
     adapter='portfolio-derived-v1:'+hashlib.sha256(Path(__file__).read_bytes()+ADAPTER_VERSION.encode()).hexdigest()
     fixed=digest({'base':base.version,'products':[p.model_dump(mode='json') for p in products],
         'evidence':digest(manifest),'adapter':adapter,'as_of':as_of.isoformat()})

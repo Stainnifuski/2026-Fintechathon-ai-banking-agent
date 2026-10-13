@@ -29,6 +29,60 @@ def ratio(value):
         reject('整体比例须为0至1的十进制字符串')
 
 
+def execution_targets(plan,snapshot,payment_account_id=None):
+    """Adapt canonical A references to B execution; never select another payer.
+
+    A's selected_positions contain references/ratios, while advised_positions
+    contain authoritative integer targets. A unique authorized debit account
+    is unambiguous; multiple accounts require an explicit payment choice.
+    Existing multi-account holdings are preserved for increases/maintenance.
+    A reduction across multiple accounts requires an explicit distribution.
+    """
+    if plan['selected_positions'] and all('account_id' in p and 'target_fen' in p for p in plan['selected_positions']):
+        return plan,None # compatible already-bound legacy provider
+    accounts={a['account_id']:a for a in snapshot['accounts'] if a['account_type']!='credit'}
+    if payment_account_id is not None and payment_account_id not in accounts:
+        reject('付款账户不属于当前授权范围','ACCOUNT_CONTEXT_MISMATCH',409)
+    payer=payment_account_id or (next(iter(accounts)) if len(accounts)==1 else None)
+    advice={(p['product_id'],p['product_version']):p for p in plan.get('advised_positions',[])}
+    if len(advice)!=len(plan.get('advised_positions',[])):reject('目标资料重复','INVALID_PORTFOLIO',409)
+    references={(p['product_id'],p['product_version']):p for p in plan['selected_positions']}
+    if len(references)!=len(plan['selected_positions']):reject('重复具体产品','INVALID_PORTFOLIO',409)
+    # Existing holding targets are part of the whole-asset proposal, not new
+    # purchase intent. They remain subject to ordinary exit/lot permissions.
+    for key,p in advice.items():
+        if p.get('account_ids') and key not in references:
+            references[key]={'product_id':key[0],'product_version':key[1],'share_class':p['share_class'],
+                'target_ratio_total':format(Decimal(p['target_fen'])/Decimal(snapshot['basis_fen']),'f')}
+    rows=[]
+    for key,ref in references.items():
+        detail=advice.get(key)
+        if not detail or type(detail.get('target_fen')) is not int or type(detail.get('disclosure_version')) is not int:
+            reject('缺少A返回的具体目标或披露版本','PORTFOLIO_TARGET_DETAIL_MISSING',409)
+        target=detail['target_fen']
+        if abs(Decimal(snapshot['basis_fen'])*ratio(ref['target_ratio_total'])-target)>1:
+            reject('A目标金额与引用比例不一致','INVALID_PORTFOLIO',409)
+        held=[p for p in snapshot['positions'] if (p['product_id'],p['product_version'])==key]
+        if any(p['market_value_fen'] is None for p in held):reject('持仓估值缺失','VALUATION_INCOMPLETE',409)
+        total=sum(p['market_value_fen'] for p in held)
+        allocations={p['account_id']:p['market_value_fen'] for p in held}
+        if target>=total:
+            if target>total:
+                if payer is None:reject('请选择本次付款账户；不会跨账户自动付款','PAYMENT_ACCOUNT_REQUIRED',409)
+                allocations[payer]=allocations.get(payer,0)+target-total
+            elif not allocations:
+                # Retain a zero target so its actual risk is still checked.
+                if payer is None:reject('请选择本次付款账户','PAYMENT_ACCOUNT_REQUIRED',409)
+                allocations[payer]=0
+        elif len(held)==1:allocations={held[0]['account_id']:target}
+        else:reject('同产品跨账户减持需要明确账户分配，不能自动卖出','ACCOUNT_ALLOCATION_REQUIRED',409)
+        for account_id,value in allocations.items():
+            rows.append({**ref,'account_id':account_id,'target_fen':value,'target_ratio_total':format(Decimal(value)/Decimal(snapshot['basis_fen']),'f'),
+                'family_id':detail['family_id'],'bucket':detail['bucket'],'name':detail['name'],'disclosure_version':detail['disclosure_version']})
+    mapped=deepcopy(plan);mapped['selected_positions']=rows
+    return mapped,payer
+
+
 def difference_actions(plan, snapshot):
     """Deterministic execution arithmetic only; A decides the target weights.
 
@@ -44,18 +98,18 @@ position binds a payment account; reading a scope grants no transfer authority.
     positions = {(p['account_id'], p['product_id'], p['product_version']): p for p in snapshot['positions']}
     if len(positions) != len(snapshot['positions']):
         reject('快照必须按账户和产品版本聚合持仓')
-    targets, seen_families, actions = {}, set(), []
+    targets, seen_families, actions = {}, {}, []
     for item in plan['selected_positions']:
         key = (item['account_id'], item['product_id'], item['product_version'])
-        if key in targets or item['family_id'] in seen_families:
+        if key in targets or item['family_id'] in seen_families and seen_families[item['family_id']]!=item['product_id']:
             reject('同一家族只能选择一种具体份额')
         if item['account_id'] not in accounts:
             reject('付款账户不属于当前授权资产范围', 'ACCOUNT_CONTEXT_MISMATCH', 409)
-        target = int((Decimal(basis) * ratio(item['target_ratio_total'])).to_integral_value(rounding=ROUND_DOWN))
-        if type(item['target_fen']) is not int or item['target_fen'] != target:
+        target = item['target_fen']
+        if type(target) is not int or abs(Decimal(basis)*ratio(item['target_ratio_total'])-target)>1:
             reject('目标金额与整体比例不一致')
         targets[key] = item
-        seen_families.add(item['family_id'])
+        seen_families[item['family_id']]=item['product_id']
         current = positions.get(key)
         current_fen = current['market_value_fen'] if current else 0
         if current_fen is None:
@@ -153,10 +207,11 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
         reject('整体资产或应收已变化', 'STALE_SNAPSHOT', 409)
     if any(o['status'] in {'ACCEPTED', 'PENDING_PRICING', 'PENDING_CASH'} for o in facts['orders']):
         reject('存在在途交易，请先核对结算后再准备整体差额', 'RECONCILIATION_REQUIRED', 409)
-    actions = difference_actions(plan, snapshot)
+    executable,payment_account_id=execution_targets(plan,snapshot,request.payment_account_id)
+    actions = difference_actions(executable, snapshot)
     catalog = {p['product_id']: p for p in products}
     await lock_profile(db,user_id)
-    for item in plan['selected_positions']:
+    for item in executable['selected_positions']:
         product = catalog.get(item['product_id'])
         if product is None or product['version'] != item['product_version'] or product['disclosure']['version'] != item['disclosure_version']:
             reject('所选产品或披露版本已变化', 'RULE_VERSION_CHANGED', 409)
@@ -174,7 +229,7 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     previous = next((row for row in rows if row.data.get('portfolio_id') == portfolio_id), None)
     if previous:
         await wealth_task.require_plan_edit(db, user_id, previous.plan_id)
-        if previous.data['portfolio_version'] == plan['version'] and previous.data['portfolio_snapshot_id'] == snapshot['snapshot_id']:
+        if previous.data['portfolio_version'] == plan['version'] and previous.data['portfolio_snapshot_id'] == snapshot['snapshot_id'] and previous.data.get('payment_account_id')==payment_account_id:
             return prepared_view(previous)
         if any(i['status'] != 'AWAITING_CONFIRMATION' for i in previous.data['items']):
             if previous.data['stage'] != 'SELL' or not all(i['status'] == 'SETTLED' for i in previous.data['items']):
@@ -251,8 +306,8 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     profile = await db.get(WealthProfileORM, user_id)
     goals = list(await db.scalars(select(WealthGoalORM).where(WealthGoalORM.user_id == user_id)))
     row.version, row.status = execution_version, 'AWAITING_CONFIRMATION' if items else 'COMPLETED'
-    row.data = {'portfolio_id': portfolio_id, 'portfolio_version': plan['version'], 'portfolio_snapshot_id': snapshot['snapshot_id'],
-        'portfolio_actions': actions, 'portfolio_plan': plan, 'portfolio_snapshot': snapshot, 'session_id': session_id,
+    row.data = {'portfolio_id': portfolio_id, 'portfolio_version': plan['version'], 'portfolio_snapshot_id': snapshot['snapshot_id'],'context_id':plan['context_id'],
+        'portfolio_actions': actions, 'portfolio_plan': plan, 'portfolio_snapshot': snapshot, 'session_id': session_id,'payment_account_id':payment_account_id,
         'request': {'kind': 'adjustment', 'account_id': active[0]['account_id'] if active else snapshot['account_ids'][0]},
         'stage': stage, 'items': items, 'history': history, 'snapshot': facts,
         'profile_version': profile.version if profile else 1,

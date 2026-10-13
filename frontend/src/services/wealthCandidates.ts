@@ -44,7 +44,8 @@ export function assertCurrentCandidates(group:CandidateGroup,products:Product[])
 }
 export function sameCandidateFilter(a:unknown,b:unknown):boolean{
   if(!object(a)||!object(b))return false;
-  return ['mode','category','theme_key','bucket','theme_operator','theme_keys'].every(k=>JSON.stringify(a[k]??null)===JSON.stringify(b[k]??null));
+  return ['mode','category','theme_key','bucket','theme_operator','theme_keys'].every(k=>
+    JSON.stringify(a[k]??(k==='theme_keys'?[]:null))===JSON.stringify(b[k]??(k==='theme_keys'?[]:null)));
 }
 export function replaceCandidateGroup(groups:CandidateGroup[],next:CandidateGroup):CandidateGroup[]{
   const index=groups.findIndex(g=>g.bucket===next.bucket&&sameCandidateFilter(g.filter,next.filter));

@@ -39,6 +39,7 @@ class CurrentSimulationEvidence(DTO):
     purchase_open: bool = Field(strict=True)
     data_stale: bool = Field(strict=True)
     product_content_sha256: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+    pricing_mode: str | None = None
 
 class BankPurchaseFact(DTO):
     product_id: str
@@ -63,6 +64,7 @@ class BankPurchaseFact(DTO):
     redemption_allowed: bool | None = Field(default=None,strict=True)
     current_simulation: CurrentSimulationEvidence | None = None
     fee_rules: Fees | None = None # read-only current version; not a qualification prerequisite
+    execution_policy: dict | None = None
 
 class CurrentFacts(DTO):
     user_id: str

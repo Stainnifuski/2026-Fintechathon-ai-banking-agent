@@ -27,7 +27,7 @@ async def select(request: SessionSelectionRequest,user=Depends(get_current_user)
 
 @router.post('/switch')
 async def switch(request: SwitchRequest,user=Depends(get_current_user),service=Depends(get_candidate_service)):
-    return await invoke(service.switch_share(user['user_id'],request))
+    raise HTTPException(410,detail={'code':'SHARE_SWITCH_REMOVED','message':'按已核实具体代码选择，不再提供A/C切换'})
 
 @router.post('/next')
 async def next_batch(request: NextBatchRequest,user=Depends(get_current_user),service=Depends(get_candidate_service)):

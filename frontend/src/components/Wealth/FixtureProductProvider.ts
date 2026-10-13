@@ -32,9 +32,10 @@ export async function recordedRevision(selection: PortfolioSelection): Promise<P
   return readPortfolioPlan(structuredClone(output),output.context_id);
 }
 export async function recordedPrepare(plan:PortfolioPlan):Promise<PreparedPortfolio> {
-  if (![f11.plan,f11.revision].some(p=>JSON.stringify(p)===JSON.stringify(plan)))throw new Error('未登记的整体版本，不能准备样例差额');
+  const recorded=[f11.plan,f11.revision].find(p=>JSON.stringify(p)===JSON.stringify(plan));
+  if (!recorded)throw new Error('未登记的整体版本，不能准备样例差额');
   return {portfolio_id:plan.portfolio_id,portfolio_version:plan.version,execution_plan_id:null,execution_plan_version:null,stage:'BUY',
-    actions:plan.selected_positions.map(p=>{if(p.current_fen==null)throw new Error('Recorded valuation missing');return {...p,current_fen:p.current_fen,difference_fen:p.target_fen-p.current_fen,direction:'purchase',amount_fen:p.target_fen-p.current_fen,units:'0.0000',status:'READY'};})};
+    actions:recorded.selected_positions.map(p=>{if(p.current_fen==null)throw new Error('Recorded valuation missing');return {...p,current_fen:p.current_fen,difference_fen:p.target_fen-p.current_fen,direction:'purchase',amount_fen:p.target_fen-p.current_fen,units:'0.0000',status:'READY'};})};
 }
 const allGroups: CandidateGroup[] = [...recording.groups, ...recording.next_groups].map(readCandidateGroup);
 const allCandidates = allGroups.flatMap<ProductCandidate>(group => group.items);

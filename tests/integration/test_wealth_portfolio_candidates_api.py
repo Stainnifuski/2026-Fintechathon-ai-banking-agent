@@ -28,15 +28,15 @@ def test_http_r2_r4_direct_manual_small_weight_and_zero():
         assert result.json()['decisions'][0]['user_level']==2 and result.json()['decisions'][0]['product_level']==4
 
 
-def test_http_AC_failed_switch_preserves_prior_selection():
+def test_removed_http_AC_switch_preserves_prior_selection():
     snapshot,facts=fixture_pool(1);snapshot.products[1].fields['formal_risk'].value=4;facts.offers['Q00C'].risk_level=4
     engine,_=service(snapshot,facts)
     created=request(engine,'',{'mode':'general'}).json();state=created['session']
     selected=request(engine,'/select',{'session_id':state['session_id'],'expected_version':state['version'],'items':[share('Q00A').model_dump(mode='json')]}).json()
     state=selected['session']
     switched=request(engine,'/switch',{'session_id':state['session_id'],'expected_version':state['version'],'family_id':'fixture-family-00','target':share('Q00C').model_dump(mode='json')})
-    assert switched.status_code==200 and switched.json()['selection']['accepted'] is False
-    assert switched.json()['session']==state
+    assert switched.status_code==410 and switched.json()['detail']['code']=='SHARE_SWITCH_REMOVED'
+    assert engine._view(engine.sessions[state['session_id']])==state
 
 
 def test_http_client_facts_fixture_and_profile_rejected():

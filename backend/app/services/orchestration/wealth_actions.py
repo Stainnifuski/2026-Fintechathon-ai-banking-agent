@@ -180,7 +180,7 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
                 # Rollback expires loaded objects and detaches a new conversation;
                 # never increment that old ORM instance after the handler returns.
                 action_session_id,action_session_version,action_session_data=row.session_id,row.version,deepcopy(row.data)
-                data=await prepare(db,user_id,p['portfolio_id'],PortfolioPrepare(expected_version=p['expected_version'],snapshot_id=p['snapshot_id']),bank,portfolio_source)
+                data=await prepare(db,user_id,p['portfolio_id'],PortfolioPrepare(expected_version=p['expected_version'],snapshot_id=p['snapshot_id'],payment_account_id=p.get('payment_account_id')),bank,portfolio_source)
                 await policy.lock_profile(db,user_id)
                 row=await db.get(WealthConversationORM,action_session_id,populate_existing=True)
                 if row is None:

@@ -189,6 +189,8 @@ class CandidateService:
             return {'selection':decision.model_dump(mode='json'),'session':self._view(state)}
 
     async def switch_share(self,user_id: str,request: SwitchRequest) -> dict:
+        if not self.enable_fixture:raise CandidateError('SHARE_SWITCH_REMOVED',410)
+        # Legacy isolated fixture replay only; not a published operation.
         async with self.lock:
             state=self._state(user_id,request);facts,index,now=await self._current_for_state(state);self._check_binding(state,facts,index,now)
             previous=[code for code,entry in state.selected.items() if entry['family_id']==request.family_id]

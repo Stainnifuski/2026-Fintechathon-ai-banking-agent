@@ -67,7 +67,10 @@ async def _invoke(call):
     try:return await call
     except (CandidateError,SnapshotError,ModelError) as error:
         code=error.code;status=getattr(error,'status_code',422)
-        raise HTTPException(status,detail={'code':code,'message':str(error),'evidence':getattr(error,'details',None)}) from error
+        details=getattr(error,'details',None)
+        reasons=details.get('reason_codes',[]) if isinstance(details,dict) else []
+        message=str(error)+('：'+', '.join(r for r in reasons if isinstance(r,str)) if reasons else '')
+        raise HTTPException(status,detail={'code':code,'message':message,'evidence':details}) from error
 
 @router.post('/plans',response_model=PortfolioPlan)
 async def create_plan(request: PortfolioCreate,user: dict=Depends(get_current_user),service: PortfolioLifecycle=Depends(get_portfolio_lifecycle)) -> PortfolioPlan:

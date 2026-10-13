@@ -137,6 +137,8 @@ async def test_independent_recommend_selected_six_binding_and_missing_assets_pre
     binding=CandidateBinding(session_id=group.session_binding['session_id'],expected_version=group.session_binding['version'],filter=CandidateFilter(mode='general'))
     before=deepcopy(s.provider.candidates.sessions[binding.session_id])
     p=await s.create(U,PortfolioCreate(context_id=C,selected=refs,candidate_binding=binding));assert len(p.selected_positions)==6
+    cards={share.product_id for group in p.candidate_groups for card in group.items for share in card.share_classes}
+    assert {r.product_id for r in refs}<=cards  # cross-batch operator review retains exact selected facts
     assert s.provider.candidates.sessions[binding.session_id]==before
     assets=s.provider.asset_source;s.provider.asset_source=None
     with pytest.raises(Exception):await s.create(U,PortfolioCreate(context_id=C,selected=refs,candidate_binding=binding))

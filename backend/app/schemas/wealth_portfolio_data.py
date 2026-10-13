@@ -126,6 +126,7 @@ class ProductFact(DTO):
     family_evidence: list[EvidenceRecord] = Field(default_factory=list)
     identity_evidence: list[EvidenceRecord] = Field(default_factory=list)
     current_binding: dict | None = None
+    execution_policy: dict | None = None # approved project policy, never issuer evidence
     references: list[RawReference] = Field(default_factory=list)
     policy_version: str = 'portfolio-scope-20261009-v1'
     approved_trade_product: Literal[False] = False

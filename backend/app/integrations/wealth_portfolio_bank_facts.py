@@ -246,7 +246,7 @@ class BankPortfolioFacts:
                     purchase_end_date=rules.get('purchase_end_date'),nav_date=row.get('nav_date'),
                     available_at=row.get('available_at'),nav=row.get('nav'),status=row['status'],
                     purchase_paused=rules['purchase_paused'],purchase_open=row['purchase_open'],data_stale=row['data_stale'],
-                    product_content_sha256=digest(product_content(row)))
+                    product_content_sha256=digest(product_content(row)),pricing_mode=rules.get('pricing_mode'))
             # 缺销售有效区间、渠道和明确许可时保留unknown，绝不默认可买。
             offers[code] = BankPurchaseFact(product_id=code, share_class=row.get('share_class', rules.get('share_class')),
                 product_version=row.get('version'), disclosure_version=disclosure.get('version'),
@@ -258,7 +258,7 @@ class BankPortfolioFacts:
                 limit_kind='bounded' if rules.get('max_amount_fen') is not None else 'unknown',
                 risk_level=row.get('product_risk_level'), risk_current_confirmed=native['risk_current_confirmed'],
                 risk_evidence_id=native['risk_evidence_id'], holding_allowed=rules.get('holding_allowed'),
-                redemption_allowed=rules.get('redemption_allowed'),current_simulation=evidence,
+                redemption_allowed=rules.get('redemption_allowed'),current_simulation=evidence,execution_policy=rules.get('execution_policy'),
                 fee_rules={'purchase_fee_rate':rules.get('purchase_fee_rate'),
                     'sales_service_fee_rate':rules.get('sales_service_fee_rate'),
                     'redemption_fee_rules':rules.get('redeem_fee_bands'),

@@ -371,6 +371,7 @@ class PortfolioSelection(DTO):
 class AdvisedPosition(DTO):
     product_id: str
     product_version: Version
+    disclosure_version: Version | None = None
     share_class: Literal['A', 'C'] | None
     original_share_class: str | None
     family_id: str

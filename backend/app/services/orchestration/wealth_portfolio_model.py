@@ -37,6 +37,10 @@ def adapt_candidate_group(result: dict,index: ProductIndex,filter: CandidateFilt
     for family in result.get('items',[]):
         shares=[]
         for decision in family['shares']:
+            # The public operation now selects one verified exact code. Keep
+            # all relationship/qualification evidence in the audit, but do
+            # not let an unmapped peer share poison the eligible code's batch.
+            if decision['product_id']!=family['default_share']['product_id']:continue
             p=index.products[decision['product_id']]
             if type(p.product_version) is not int or type(p.disclosure_version) is not int:status='unavailable';continue
             point=PerformancePoint(metric='nav_change',value_percent=None,status='unavailable',reason='未核实本次行情窗口',source=p.source_kind)
@@ -45,7 +49,7 @@ def adapt_candidate_group(result: dict,index: ProductIndex,filter: CandidateFilt
                 share_class=p.share_class if p.share_class in ('A','C') else None,product_risk_level=decision['product_level'],
                 status='purchase_eligible' if decision['purchase_eligible'] else 'purchase_ineligible',tradable=decision['purchase_eligible'],
                 min_amount_fen=offer.get('minimum_fen'),fees=Fees.model_validate(offer['fee_rules']) if offer.get('fee_rules') else Fees(purchase_fee_rate=None,sales_service_fee_rate=None,redemption_fee_rules=None,missing_fields=['fee_rules']),
-                performance=Performance(one_year=point,latest_day=point.model_copy(update={'metric':'daily_nav_change'})),detail_ref='local:'+p.product_id,data_source=p.source_kind,data_as_of=decision['checked_at']))
+                performance=Performance(one_year=point,latest_day=point.model_copy(update={'metric':'daily_nav_change'})),detail_ref='local:'+p.product_id,data_source='真实公开资料／项目分级／模拟成交与费用' if p.execution_policy else p.source_kind,data_as_of=decision['checked_at']))
         if shares:items.append(ProductCandidate(family_id=family['family_id'],name=index.products[family['default_share']['product_id']].name,
             bucket=family['bucket'],reason='具体份额资格已核实；依据投资资料特征的DPP贪心选择。',reason_codes=['QUALIFIED_SHARE','DOCUMENT_FEATURE_DIVERSITY'],
             evidence={'default_share':family['default_share'],'share_decisions':family['shares'],'source_kind':result['source_kind'],'fixture_only':result['fixture_only']},share_classes=shares))

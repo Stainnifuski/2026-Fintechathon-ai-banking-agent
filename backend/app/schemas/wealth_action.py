@@ -52,6 +52,7 @@ class PrepareParams(StrictRequest):
     portfolio_id: str|None=None
     expected_version: int|None=Field(default=None,strict=True,ge=1)
     snapshot_id: str|None=None
+    payment_account_id: str|None=Field(default=None,min_length=1,max_length=64)
 class RedemptionDraft(StrictRequest):
     schema_version: Literal['wealth-redemption-request-v1']='wealth-redemption-request-v1'
     context_id: str

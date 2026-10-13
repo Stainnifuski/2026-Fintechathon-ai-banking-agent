@@ -17,6 +17,13 @@ def current_offer_reasons(offer, facts: CurrentFacts, now: datetime) -> list[str
         or facts.channel!='local-competition-bank' or offer.channel!=facts.channel):
         return ['BANK_FACT_TIME_UNPROVEN']
     reasons=[]
+    if evidence.pricing_mode=='frozen-public-nav-v1':
+        from .wealth_paper_policy import validate_policy
+        policy=offer.execution_policy
+        reasons.extend(validate_policy(policy,offer.product_id,policy.get('category') if policy else None,offer.risk_level,evidence.business_at))
+        quote=policy.get('quote',{}) if policy else {}
+        if not isinstance(quote,dict) or (quote.get('value'),quote.get('date'))!=(evidence.nav,str(evidence.nav_date)):
+            reasons.append('PAPER_PRICE_MISMATCH')
     if ((evidence.product_id,evidence.product_version,evidence.disclosure_version)
         !=(offer.product_id,offer.product_version,offer.disclosure_version)):
         reasons.append('BANK_CURRENT_EVIDENCE_MISMATCH')
@@ -37,7 +44,7 @@ def current_offer_reasons(offer, facts: CurrentFacts, now: datetime) -> list[str
         else:
             nav(evidence.nav)
             if evidence.nav_date>day or evidence.available_at>evidence.business_at:reasons.append('BANK_FUTURE_DATA')
-            if advance_business(evidence.nav_date,3,evidence.calendar_version)<day:reasons.append('BANK_DATA_STALE')
+            if evidence.pricing_mode!='frozen-public-nav-v1' and advance_business(evidence.nav_date,3,evidence.calendar_version)<day:reasons.append('BANK_DATA_STALE')
     except (ValueError,ArithmeticError,KeyError):reasons.append('BANK_BUSINESS_RULES_UNPROVEN')
     return list(dict.fromkeys(reasons))
 
@@ -89,16 +96,28 @@ def qualify_purchase(product: ProductFact | None, facts: CurrentFacts, user_id: 
     offer=facts.offers.get(code);hold=None;redeem=None;details={}
     if product is None:reasons.append('PRODUCT_NOT_FOUND')
     else:
+        paper=product.source_kind=='real' and product.execution_policy is not None
         if product.scope_status!='verified':reasons.append({'excluded':'PRODUCT_OUT_OF_SCOPE','pending':'PRODUCT_SCOPE_UNPROVEN','policy_mismatch':'SIMULATED_POLICY_MISMATCH'}[product.scope_status])
-        if product.source_kind!=facts.mode and facts.mode!='fixture':reasons.append('PRODUCT_SOURCE_KIND_MISMATCH')
+        if product.source_kind!=facts.mode and facts.mode!='fixture' and not paper:reasons.append('PRODUCT_SOURCE_KIND_MISMATCH')
         if product.source_kind=='fixture' and facts.mode!='fixture':reasons.append('FIXTURE_SOURCE_FORBIDDEN')
         if product.product_version is None:reasons.append('PRODUCT_VERSION_UNKNOWN')
         if product.disclosure_version is None:reasons.append('DISCLOSURE_VERSION_UNKNOWN')
-        if product.source_kind=='real' and product.share_class is None:reasons.append('PRODUCT_SHARE_UNKNOWN')
         if requested:
             for attr in ('product_version','disclosure_version','share_class'):
                 if getattr(requested,attr)!=getattr(product,attr):reasons.append('SELECTED_'+attr.upper()+'_MISMATCH')
-        if product.source_kind=='real':
+        if paper:
+            from .wealth_paper_policy import validate_policy,policy_sha
+            policy=product.execution_policy
+            product_level=policy.get('risk_level') if type(policy.get('risk_level')) is int else None
+            reasons.extend(validate_policy(policy,code,product.substantive_category,product_level,now))
+            if facts.mode!='simulated' or facts.source_id!='protected-local-bank' or facts.channel!='local-competition-bank':reasons.append('PAPER_EXECUTION_SOURCE_MISMATCH')
+            if offer is None or offer.execution_policy is None or policy_sha(policy)!=policy_sha(offer.execution_policy):reasons.append('PAPER_POLICY_VERSION_MISMATCH')
+            # Public evidence remains independent; even an undated reliable
+            # higher observation triggers review rather than a downgrade.
+            if type(product_level) is int and any(e.risk_level>product_level for e in product.risk_evidence if e.observed_at<=now):reasons.append('PUBLIC_HIGHER_RISK_REVIEW_REQUIRED')
+            if any(product.fields.get(f) and product.fields[f].status=='conflict' for f in ('raw_category','raw_risk','formal_risk')):reasons.append('PAPER_CLASSIFICATION_CONFLICT')
+            details['execution_policy']=policy
+        elif product.source_kind=='real':
             scoped=[e for e in product.risk_evidence if e.source_kind=='real' and code in e.codes and e.share_classes.get(code)==product.share_class and e.channel==facts.channel]
             details['risk_evidence_ids']=[e.evidence_id for e in scoped]
             if not product.risk_evidence:reasons.append('PRODUCT_RISK_UNKNOWN')
@@ -125,7 +144,7 @@ def qualify_purchase(product: ProductFact | None, facts: CurrentFacts, user_id: 
             if product.current_binding:
                 bound=product.current_binding
                 current=offer.current_simulation
-                if (product.source_kind!='simulated' or bound.get('source')!='protected-local-bank-current-products'
+                if ((product.source_kind!='simulated' and not paper) or bound.get('source')!='protected-local-bank-current-products'
                     or current is None or current.product_content_sha256!=bound.get('content_sha256')
                     or not bound.get('content_sha256')):
                     reasons.append('BANK_PRODUCT_CONTENT_MISMATCH')
@@ -138,7 +157,7 @@ def qualify_purchase(product: ProductFact | None, facts: CurrentFacts, user_id: 
             if requested and offer.rules_version!=requested.rules_version:reasons.append('SELECTED_RULES_VERSION_MISMATCH')
             time_reasons=current_offer_reasons(offer,facts,now)
             # 真实基金即使附带模拟来源描述，也不能绕过真实窗口要求。
-            if product.source_kind!='simulated' and offer.valid_from is None and offer.valid_until is None:
+            if product.source_kind!='simulated' and not paper and offer.valid_from is None and offer.valid_until is None:
                 time_reasons=['BANK_FACT_TIME_UNPROVEN']
             current=not time_reasons
             if not current:reasons.extend(['BANK_FACT_TIME_UNPROVEN',*time_reasons])

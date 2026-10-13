@@ -11,7 +11,8 @@ export const validShares = (candidate: ProductCandidate) => candidate.share_clas
 export function displayedShare(candidate: ProductCandidate, state: ProductSelectionState): CandidateShare | undefined {
   const valid = validShares(candidate);
   return valid.find(share => share.product_id === state.preferredShares[candidate.family_id])
-    ?? valid.find(share => share.share_class === 'A') ?? valid.find(share => share.share_class === 'C') ?? valid[0];
+    ?? valid.find(share => share.product_id === (candidate.evidence?.default_share as {product_id?:string} | undefined)?.product_id)
+    ?? [...valid].sort((a,b) => a.product_id.localeCompare(b.product_id))[0];
 }
 export function toggleProduct(state: ProductSelectionState, candidate: ProductCandidate): ProductSelectionState {
   const existing = state.items.find(item => item.candidate.family_id === candidate.family_id);

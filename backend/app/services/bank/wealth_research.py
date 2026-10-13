@@ -39,6 +39,11 @@ def validate(payload: dict) -> list[dict]:
                 if not 0<=Decimal(rules['purchase_fee_rate'])<1: raise ValueError('INVALID_FEE_RULES')
                 if not rules['redeem_fee_bands'] or any(not 0<=Decimal(b['rate'])<1 or b['days_lt']<=0 for b in rules['redeem_fee_bands']): raise ValueError('INVALID_FEE_RULES')
                 for field in ('kind','product_version','disclosure_version'): p[field]
+                if rules.get('pricing_mode')=='frozen-public-nav-v1':
+                    from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons
+                    failures=validate_policy(rules.get('execution_policy'),pid,'money' if p['category']=='cash' else p['category'],p['risk_level'])
+                    failures+=registered_policy_reasons(rules.get('execution_policy'),pid)
+                    if failures:raise ValueError(','.join(failures))
             last=None
             for point in p["history"]:
                 d=date.fromisoformat(point["date"])
@@ -103,6 +108,16 @@ async def import_dataset(db: AsyncSession, payload: dict, dry_run: bool=False) -
         if p.get('official_reference'):
             disclosure.update(identity=p['identity'], official_reference=p['official_reference'],
                 source_rules=p['source_rules'], rules_adaptations=p['rules_adaptations'])
+        if p['rules'].get('pricing_mode')=='frozen-public-nav-v1':
+            policy=p['rules']['execution_policy']
+            disclosure.update(identity='真实公开基金资料＋比赛模拟交易',
+                underlying_source_kind='real',execution_source_kind='simulated',source_product_code=pid,
+                project_policy_version=policy['version'],issuer_risk_rating=p.get('public_risk_rating'),
+                risk='项目风险分级独立于发行人评级；可靠公开更高等级或分类冲突停止申购；不承诺保本',
+                pricing='使用本版本冻结的最后公开NAV作为模拟成交基准，公开NAV日期与模拟计价日分别记录',
+                fees='项目模拟申购和赎回费用为0，无额外销售服务费；公开费用原值另存，未知不补零',
+                limitations='真实资料不代表真实代销或真实成交；价格冻结，不填未来行情',
+                public_sources=p.get('public_sources',[]),public_fields=p.get('public_fields',{}))
         if p['rules'].get('quick_redemption'):
             disclosure.update(quick_redemption=p['rules']['quick_redemption'],
                 cancellation='普通申购/赎回仅计价日15:30前全撤；模拟快赎成功受理后不可撤',
@@ -170,11 +185,12 @@ async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balanc
         cid='CTX'+fingerprint([user_id,dataset_key,'research'])[:28]
         if await db.get(WealthContextORM,cid): return {'context_id':cid,'created':False}
         aid='SA'+fingerprint([cid,'account'])[:28]
+        paper=dataset.manifest.get('policy_version') is not None
         db.add(AccountORM(account_id=aid,user_id=user_id,account_type='savings',card_number='模拟研究****'+aid[-4:],balance_fen=balance_fen,daily_transfer_used_fen=0,daily_transfer_limit_fen=5000000,status='active'))
         await db.flush()
-        db.add(WealthContextORM(context_id=cid,user_id=user_id,account_id=aid,dataset_key=dataset_key,version=1,data={'label':'真实基金数据｜研究演示｜模拟资金','mode':dataset.mode,'scenario':'research','fixture':{},'disposable':True,'business_at':datetime.now(timezone.utc).isoformat()}))
+        db.add(WealthContextORM(context_id=cid,user_id=user_id,account_id=aid,dataset_key=dataset_key,version=1,data={'label':'真实基金公开资料｜比赛模拟交易｜模拟资金' if paper else '真实基金数据｜研究演示｜模拟资金','mode':dataset.mode,'scenario':'research','fixture':{},'disposable':True,'business_at':datetime.now(timezone.utc).isoformat()}))
         from .audit_service import record_bank_event
-        record_bank_event(db,event_key=cid,subject_user_id=user_id,action='investment_research_sandbox_initialize',result='success',facts={'context_id':cid,'issued_simulated_cash_fen':balance_fen,'dataset_key':dataset_key},decision_chain=['explicit_admin_initialization','new_account_no_balance_copy','research_only_rules_missing'])
+        record_bank_event(db,event_key=cid,subject_user_id=user_id,action='investment_research_sandbox_initialize',result='success',facts={'context_id':cid,'issued_simulated_cash_fen':balance_fen,'dataset_key':dataset_key},decision_chain=['explicit_admin_initialization','new_account_no_balance_copy','approved_real_public_paper_policy' if paper else 'research_only_rules_missing'])
         await db.flush(); return {'context_id':cid,'account_id':aid,'created':True}
     key=f"{DATASET_ID}:{DATASET_VERSION}"
     if await db.get(WealthDatasetORM,key) is None:

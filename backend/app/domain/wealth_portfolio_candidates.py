@@ -97,7 +97,12 @@ def reliable_family(product: ProductFact, now: datetime) -> tuple[str | None,lis
             and e.source_role=='simulation' and e.codes==[product.product_id] and e.observed_at<=now
             and e.share_classes[product.product_id]==product.share_class and e.family_id=='bank-sku:'+product.product_id]
         if identities:return 'bank-sku:'+product.product_id,[]
-    if not records:return None,['FAMILY_UNVERIFIED']
+    if not records:
+        if product.source_kind=='real' and product.execution_policy and product.scope_status=='verified':
+            # Operational identity only. This does not assert a fund family
+            # or independent financial risk when a relationship is unknown.
+            return 'exact-code:'+product.product_id,[]
+        return None,['FAMILY_UNVERIFIED']
     values={e.family_id for e in records}
     if len(values)!=1 or (field and field.status=='conflict'):return None,['FAMILY_CONFLICT']
     return next(iter(values)),[]
@@ -185,8 +190,8 @@ def family_candidates(index: ProductIndex,matched: list[ProductFact],decisions: 
             if reasons:exclusions[p.product_id]=list(dict.fromkeys(reasons))
             else:enough.append(p);details[p.product_id]={'issuer':issuer,'texts':texts}
         if not enough:continue
-        # 默认有效A，否则C，否则保持其他真实份额标识按稳定代码选一个，不做推荐排序。
-        default=min(enough,key=lambda p:({'A':0,'C':1}.get(p.share_class,2),p.product_id))
+        # Known related codes deduplicate; no A/C preference or letter inference.
+        default=min(enough,key=lambda p:p.product_id)
         offer=facts.offers[default.product_id]
         candidates.append(FamilyCandidate(family_id=family,default_share=ShareReference(product_id=default.product_id,
             product_version=default.product_version,disclosure_version=default.disclosure_version,share_class=default.share_class,rules_version=offer.rules_version),
@@ -214,7 +219,12 @@ def pipeline(index: ProductIndex,filter: CandidateFilter,facts: CurrentFacts,use
     elif all(d.product_level is not None and d.user_level is not None and d.product_level>d.user_level for d in decisions):
         status='risk_mismatch';reasons=['ALL_MATCHED_RISK_EXCEEDS_CAPACITY'];risk_explanation={'user_level':facts.assessment.capacity_level,'product_levels':sorted({d.product_level for d in decisions}),'other_reasons':sorted({r for rs in exclusions.values() for r in rs if r!='RISK_EXCEEDS_CAPACITY'})}
     else:status='no_eligible_products';reasons=sorted({r for rs in exclusions.values() for r in rs})
-    pool_version=digest({'data':index.version,'context':version_context(facts).model_dump(mode='json'),'filter':filter.model_dump(mode='json'),'families':[f.model_dump(mode='json',exclude={'shares':{'__all__':{'checked_at'}}}) for f in families]})
+    # Observation timestamps are not pool revisions. Full decisions remain in
+    # the response/audit; current identity/risk/rules/price are bound by context.
+    # Serializing the nested current-bank read time made every real next-batch
+    # request falsely stale despite unchanged products and user facts.
+    pool_version=digest({'data':index.version,'context':version_context(facts).model_dump(mode='json'),
+        'filter':filter.model_dump(mode='json'),'families':[f.model_dump(mode='json',exclude={'shares'}) for f in families]})
     return PipelineResult(status=status,reason_codes=list(dict.fromkeys(reasons)),stages={'directory':len(index.products),'scope_verified':len(index.scope_codes),
         'matched':len(matched),'purchase_qualified_shares':sum(d.purchase_eligible for d in decisions),'family_verified_qualified_shares':family_verified_count,
         'family_groups':len({reliable_family(index.products[d.product_id],now)[0] for d in decisions if d.purchase_eligible and reliable_family(index.products[d.product_id],now)[0]}),

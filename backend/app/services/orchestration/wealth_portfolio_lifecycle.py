@@ -5,7 +5,7 @@ from decimal import Decimal
 from fractions import Fraction
 from typing import Sequence
 from datetime import datetime
-from ...schemas.wealth_portfolio_candidates import CurrentFacts
+from ...schemas.wealth_portfolio_candidates import CurrentFacts,CandidateFilter
 from ...schemas.wealth_portfolio_data import AssetModelFacts
 from ...domain.wealth_portfolio_candidates import ProductIndex
 from ...schemas.wealth_portfolio import (PortfolioPlan,PortfolioSelection,SelectionItem,AdvisedPosition,PortfolioModelView,CandidateGroup)
@@ -99,13 +99,14 @@ class PortfolioLifecycle:
         plan=plan.model_copy(deep=True);snap=meta['snapshot'];current={};accounts={}
         for pos in snap['positions']:
             code=pos['product_id'];current[code]=current.get(code,0)+(pos['market_value_fen'] or 0);accounts.setdefault(code,set()).add(pos['account_id'])
-        rows=[];chosen={r.product_id for r in explicit}
+        rows=[];chosen={r.product_id for r in explicit};decisions={}
         for bucket,projection in meta['product_projections'].items():
             for family in projection['targets']:
                 for part in family['parts']:
                     p=index.products[part['product_id']];q=qualify_purchase(p,facts,facts.user_id,now)
+                    decisions[p.product_id]=q
                     role='holding' if p.product_id in current else 'selected' if p.product_id in chosen else 'advice'
-                    rows.append(AdvisedPosition(product_id=p.product_id,product_version=p.product_version,share_class=p.share_class if p.share_class in ('A','C') else None,
+                    rows.append(AdvisedPosition(product_id=p.product_id,product_version=p.product_version,disclosure_version=p.disclosure_version,share_class=p.share_class if p.share_class in ('A','C') else None,
                         original_share_class=p.share_class,family_id=family['family_id'],name=p.name,bucket=bucket,target_fen=part['target_fen'],current_fen=current.get(p.product_id,0),
                         role=role,account_ids=sorted(accounts.get(p.product_id,[])),holding_cap_fen=current.get(p.product_id,0) if not q.purchase_eligible else None))
         meta['accepted_targets']={'bucket_amounts_fen':[b.target_fen for b in plan.buckets],
@@ -114,6 +115,26 @@ class PortfolioLifecycle:
         for row in meta.get('positions',[]):
             row['target_fen']=meta['accepted_targets']['products_fen'].get(row['position']['product_id'],0)
         model=meta['model'];plan.advised_positions=rows
+        # A recommendation batch is not the complete selection. Persist the
+        # qualified exact-code cards for cross-batch selection and human review.
+        # These are existing facts, not new DPP recommendations or trade consent.
+        from ...domain.wealth_portfolio_candidates import family_candidates
+        selected_products=[index.products[r.product_id] for r in explicit if r.product_id in decisions and decisions[r.product_id].purchase_eligible]
+        if selected_products:
+            families,_,_=family_candidates(index,selected_products,[decisions[p.product_id] for p in selected_products],facts,now)
+            selected=adapt_candidate_group({'status':'ok','source_kind':facts.mode,
+                'fixture_only':facts.mode=='fixture','items':[f.model_dump(mode='json') for f in families],
+                'pipeline':{'reason_codes':[],'exclusions':{},'risk_explanation':None}},
+                index,CandidateFilter(mode='general'))
+            # With explicit selection, Plan cards describe that selection;
+            # unrelated recommendation-batch cards remain in the A05 session.
+            for group in plan.candidate_groups:group.items=[]
+            for card in selected.items:
+                group=next(g for g in plan.candidate_groups if g.bucket==card.bucket)
+                card.reason='本人选中的具体代码；当前资格与投资资料已核实，尚未授权交易。'
+                card.reason_codes=['QUALIFIED_SHARE','USER_SELECTED_EXACT_CODE']
+                group.items=[c for c in group.items if c.family_id!=card.family_id]+[card]
+                group.status='ok'
         plan.model_view=PortfolioModelView(initial_ratios=[str(x) for x in model['continuous_solution']],slider_bounds=None if model['slider'] is None else [str(v) for v in model['slider']],
             available_cash_fen=meta['available_cash_fen'],receivable_fen=meta['receivable_not_payable_fen'],held_fen=sum(a['held_fen'] for a in snap['accounts']),snapshot=snap)
         return PortfolioPlan.model_validate(plan.model_dump())

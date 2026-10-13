@@ -15,7 +15,7 @@ export interface PreparedPortfolio {
   execution_plan_version: number | null; actions: PortfolioAction[]; stage: string; execution_plan?: Plan;
 }
 export const revisePortfolio = (selection: PortfolioSelection) => put<PortfolioPlan>(`/portfolio/plans/${selection.portfolio_id}`, selection);
-export const preparePortfolio = (plan: PortfolioPlan) => post<PreparedPortfolio>(`/portfolio/plans/${plan.portfolio_id}/prepare`, { expected_version: plan.version, snapshot_id: plan.snapshot_id });
+export const preparePortfolio = (plan: PortfolioPlan,paymentAccountId?:string) => post<PreparedPortfolio>(`/portfolio/plans/${plan.portfolio_id}/prepare`, { expected_version: plan.version, snapshot_id: plan.snapshot_id,...(paymentAccountId?{payment_account_id:paymentAccountId}:{}) });
 
 export interface Command {
   operation_id: string; direction: 'purchase' | 'redeem'; product_id: string;

@@ -267,6 +267,10 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
         material = await current_material(db, row,records=records,datasets=datasets)
         result.append({"product_id": product.product_id, "version": row.version, "name": row.name,
             "kind": row.kind, "category": row.category, "product_risk_level": row.risk_level,
+            "product_risk_source":"project_policy" if row.rules.get('execution_policy') else "original_simulation",
+            "project_policy_version":row.rules.get('execution_policy',{}).get('version'),
+            "underlying_source_kind":"real" if row.rules.get('execution_policy') else "simulated",
+            "execution_source_kind":"simulated",
             "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,
             "nav": price.price if price else None, "nav_date": price.nav_date.isoformat() if price else None,
             "available_at":utc_iso(nav_available_at(price)) if price else None,
@@ -274,7 +278,7 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
             "identity": row.disclosure.get('identity', '虚构产品与模拟行情'),
             "dataset_key": dataset_key if context else "legacy-v1",
             "purchase_open": (now.astimezone(TZ).date()-date(2026,9,30)).days % row.rules.get('open_interval_days',1) == 0,
-            "data_stale": bool(context and price and now.astimezone(TZ).date()>advance_business(price.nav_date,3,row.rules['calendar_version'])),
+            "data_stale": bool(context and price and row.rules.get('pricing_mode')!='frozen-public-nav-v1' and now.astimezone(TZ).date()>advance_business(price.nav_date,3,row.rules['calendar_version'])),
             "notice": "比赛模拟环境／模拟资金；历史净值不代表未来收益", **material})
     return result
 
@@ -328,7 +332,17 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     estimate = None
     suitability = None
     price = await latest_nav(db, row.version_id, now)
-    if row.rules.get('dataset_id') and (price is None or advance_business(price.nav_date,3,row.rules['calendar_version'])<now.astimezone(TZ).date()):
+    paper=row.rules.get('pricing_mode')=='frozen-public-nav-v1'
+    if paper:
+        from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons
+        category='money' if row.category=='cash' else row.category
+        reasons=validate_policy(row.rules.get('execution_policy'),row.product_id,category,row.risk_level,now)
+        reasons+=registered_policy_reasons(row.rules.get('execution_policy'),row.product_id)
+        if reasons:raise BankError('公开资料或项目政策绑定不满足：'+','.join(reasons),'PAPER_POLICY_INVALID',409)
+        quote=row.rules['execution_policy']['quote']
+        if price is None or str(price.price)!=quote['value'] or price.nav_date.isoformat()!=quote['date'] or utc_iso(nav_available_at(price))!=utc_iso(datetime.fromisoformat(quote['available_at'])):
+            raise BankError('冻结公开成交基准不一致','PAPER_PRICE_MISMATCH',409)
+    if row.rules.get('dataset_id') and (price is None or (not paper and advance_business(price.nav_date,3,row.rules['calendar_version'])<now.astimezone(TZ).date())):
         raise BankError('净值缺失或过期，请等待可见有效数据','DATA_STALE',409)
     if command.direction == "purchase":
         suitability = await require_suitability(db, user_id, row.risk_level)
@@ -555,7 +569,16 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
     account = await db.get(AccountORM, row.account_id, populate_existing=True)
     if row.status != "PENDING_CASH":
         row.status = "PENDING_PRICING"
-        price = await db.get(WealthNavORM, f"{row.version_id}:{row.pricing_date.isoformat()}")
+        if version.rules.get('pricing_mode')=='frozen-public-nav-v1':
+            quote=version.rules['execution_policy']['quote']
+            price=await db.get(WealthNavORM,f"{row.version_id}:{quote['date']}")
+            if price is not None and (str(price.price)!=quote['value'] or utc_iso(nav_available_at(price))!=utc_iso(datetime.fromisoformat(quote['available_at']))):
+                raise BankError('受理版本公开价格指纹不一致','PAPER_PRICE_MISMATCH',409)
+            row.details={**row.details,'underlying_source_kind':'real','execution_source_kind':'simulated',
+                'source_nav_date':quote['date'],'simulated_pricing_date':row.pricing_date.isoformat(),
+                'price_reference_sha256':quote['reference_sha256'],'project_policy_version':version.rules['execution_policy']['version']}
+        else:
+            price = await db.get(WealthNavORM, f"{row.version_id}:{row.pricing_date.isoformat()}")
         from ...models.wealth_research import WealthContextORM
         context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==row.account_id))).first()
         if context and context.data.get('fixture',{}).get('missing_pricing_nav'): price=None

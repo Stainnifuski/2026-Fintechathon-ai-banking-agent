@@ -14,6 +14,28 @@ run=asyncio.run
 GENERAL=CandidateFilter(mode='general')
 THEME=CandidateFilter(mode='theme',theme_key='high_dividend')
 
+def test_current_bank_observation_time_does_not_change_pool_but_rules_do():
+    from backend.app.schemas.wealth_portfolio_candidates import CurrentSimulationEvidence
+    snapshot,facts=fixture_pool(2)
+    facts.mode='simulated';facts.source_id='protected-local-bank';facts.channel='local-competition-bank'
+    facts.assessment.source_kind='simulated';facts.assessment.source_id=facts.source_id
+    for p in snapshot.products:
+        p.source_kind='simulated';p.fields['formal_risk'].status='simulated'
+        for evidence in p.family_evidence:evidence.source_kind='simulated'
+        offer=facts.offers[p.product_id];offer.source_kind='simulated';offer.source_id=facts.source_id;offer.channel=facts.channel
+        offer.valid_from=None;offer.valid_until=None
+        offer.current_simulation=CurrentSimulationEvidence(provenance='protected-local-bank-current-products',
+            product_id=p.product_id,product_version=p.product_version,disclosure_version=p.disclosure_version,
+            observed_at=NOW,business_at=NOW,calendar_version='mock-cn-2026-v1',cutoff='15:00',open_interval_days=1,
+            nav_date=NOW.date(),available_at=NOW,nav='1.2000',status='on_sale',purchase_paused=False,purchase_open=True,data_stale=False)
+    index=ProductIndex(snapshot);first=pipeline(index,GENERAL,facts,facts.user_id,NOW)
+    assert first.family_candidates
+    later=NOW+timedelta(seconds=1);facts.read_at=later;facts.assessment.read_at=later
+    for offer in facts.offers.values():offer.current_simulation.observed_at=later;offer.current_simulation.business_at=later
+    assert pipeline(index,GENERAL,facts,facts.user_id,later).pool_version==first.pool_version
+    facts.offers[next(iter(facts.offers))].rules_version='changed-version'
+    assert pipeline(index,GENERAL,facts,facts.user_id,later).pool_version!=first.pool_version
+
 def test_immutable_index_interns_only_unknown_constants_without_changing_content():
     from backend.app.services.orchestration.wealth_portfolio_data import digest
     from pydantic import ValidationError

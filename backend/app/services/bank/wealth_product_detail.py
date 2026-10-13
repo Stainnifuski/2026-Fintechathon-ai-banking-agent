@@ -40,10 +40,15 @@ async def detail(db,user_id,product_id,period='1y',product_version=None):
         rows=(await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id==f'{product_id}:{version}').order_by(WealthNavORM.nav_date))).all()
         history=[{'date':p.nav_date.isoformat(),'nav':p.price,'available_at':utc_iso(bank.nav_available_at(p))} for p in rows]
     result=chart(history,as_of=now,period=period,calendar_version=calendar,data_version=data_version,simulated=simulated)
-    published=[p for p in history if datetime.fromisoformat(p['available_at'])<=now]
+    published=[p for p in history if datetime.fromisoformat(p['available_at'])<=now and p['date']<=now.astimezone(bank.TZ).date().isoformat()]
     latest=max(published,key=lambda p:p['date']) if published else None
+    paper=rules.get('execution_policy') if rules.get('pricing_mode')=='frozen-public-nav-v1' else None
     return {'product_id':product_id,'name':metadata['name'],'product_version':version,
-        'identity':metadata.get('identity','虚构产品与模拟行情') if simulated else '真实基金数据／模拟资金交易环境',
+        'identity':metadata.get('identity','真实公开基金资料＋比赛模拟交易') if paper else metadata.get('identity','虚构产品与模拟行情') if simulated else '真实基金数据／模拟资金交易环境',
+        'underlying_source_kind':'real' if paper or not simulated else 'simulated','execution_source_kind':'simulated',
+        'risk_source_kind':'project_policy' if paper else None,'project_policy_version':paper.get('version') if paper else None,
+        'public_risk_rating':metadata.get('public_risk_rating') if paper else None,
+        'public_nav_date_basis':paper['quote'].get('date_basis') if paper else None,
         'category':metadata.get('category'),'risk_level':metadata.get('risk_level',metadata.get('product_risk_level')),
         'rules':rules,'source':metadata.get('official_reference',metadata.get('source_url')),
         'as_of':utc_iso(now),'latest_nav':{'date':latest['date'],'nav':latest['nav']} if latest else None,
