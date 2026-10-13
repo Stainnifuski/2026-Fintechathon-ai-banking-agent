@@ -17,6 +17,27 @@ from tests.integration.test_wealth_asset_summary import seed_f18
 from tests.integration.test_wealth_portfolio_prepare import setup
 
 @pytest.mark.asyncio
+async def test_request_local_bundle_keeps_snapshot_but_next_current_read_sees_cash_change(store,http_store):
+    from datetime import datetime,timezone
+    _,bank,_=http_store
+    provider=JointPortfolio(Path(__file__).resolve().parents[2],bank_factory=lambda:bank)
+    async with store() as db:
+        await assess(db);facts,_=provider.bind(db,'U1',bank)
+        await facts.read_current('U1',datetime.now(timezone.utc))
+        fee=facts.observations['products'][0]['rules']['purchase_fee_rate']
+        current=await facts.read_current('U1',datetime.now(timezone.utc))
+        assert current.offers[facts.observations['products'][0]['product_id']].fee_rules.purchase_fee_rate==fee
+        assert current.offers[facts.observations['products'][0]['product_id']].fee_rules.sales_service_fee_rate is None
+        first=build_snapshot(await facts.read_from_current('U1'))
+        account=await db.get(AccountORM,'A1');account.balance_fen+=50_000;await db.commit()
+        # Captured facts are one coherent earlier observation, never mutated.
+        assert build_snapshot(await facts.read_from_current('U1')).snapshot_id==first.snapshot_id
+        await facts.read_current('U1',datetime.now(timezone.utc))
+        fresh=build_snapshot(await facts.read_from_current('U1'))
+        assert fresh.snapshot_id!=first.snapshot_id
+        assert fresh.total_assets_fen==first.total_assets_fen+50_000
+
+@pytest.mark.asyncio
 async def test_joint_snapshot_is_exact_b_summary_and_explicit_lot_version(store,http_store):
     await seed_f18(store)
     _,bank,_=http_store

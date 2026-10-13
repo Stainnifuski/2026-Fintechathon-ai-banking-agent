@@ -49,11 +49,20 @@ class JointFacts(BankPortfolioFacts):
         if 'asset_summary' not in raw:raise SnapshotError('shared summary unavailable','ASSET_SUMMARY_UNAVAILABLE',503)
         assessment=await self.transport.get('/api/v1/wealth/assessments/current')
         contexts=await self.transport.get('/api/v1/wealth/contexts')
+        products=await self.transport.bank.products(user_id)
+        return self._bundle(raw,assessment,contexts,products)
+    async def read_from_current(self,user_id):
+        # Used only by _facts between fresh current reads. This bundle is
+        # request-local; final lifecycle validation rereads all current facts.
+        if user_id!=self.transport.user:raise SnapshotError('subject mismatch','FACT_SCOPE_FORBIDDEN',403)
+        if not self.observations.get('assets'):return await self.read(user_id)
+        return self._bundle(self.observations['assets'],self.observations['assessment'],
+                            self.observations['contexts'],self.observations['products'])
+    def _bundle(self,raw,assessment,contexts,products):
         if contexts['selected']!=raw['context_id']:raise SnapshotError('context changed','PORTFOLIO_CONTEXT_STALE',409)
         current=next((c for c in contexts['items'] if c['context_id']==raw['context_id']),{})
         fields=('account_id','account_type','balance_fen','held_fen','available_fen')
         ids=set(raw['asset_summary']['account_ids'])
-        products=await self.transport.bank.products(user_id)
         return {'summary':deepcopy(raw['asset_summary']),
             'accounts':[{k:a[k] for k in fields} for a in raw['cash'] if a['account_id'] in ids],
             'lots':[deepcopy(l) for l in raw['lots'] if l['account_id'] in ids],
@@ -124,10 +133,17 @@ class JointPortfolio:
         self.selector=DppSelector()
         def load(version):
             from ...domain.wealth_portfolio_candidates import ProductIndex
-            try:return ProductIndex(read(self.root,self.root/'.deps/wealth_portfolio_data/snapshots',version))
+            try:return ProductIndex(read(self.root,self.root/'.deps/wealth_portfolio_data/snapshots',version),immutable_source=True)
             except (OSError,ValueError) as error:raise CandidateError('PORTFOLIO_DATA_UNAVAILABLE',503) from error
         self.indexes=SnapshotIndexCache(load)
         self.indexes.async_load=True
+    async def preload(self):
+        """Validate the immutable source once at startup; no bank/user caching."""
+        import asyncio
+        index=await asyncio.to_thread(self.indexes.get,self.data_version)
+        if index.daily_version!=self.daily_version:raise CandidateError('DAILY_VERSION_MISMATCH')
+        return {'data_version':index.version,'directory':len(index.products),
+                'initialization_seconds':self.indexes.last_load_seconds}
     def bind(self,db,user_id,bank):
         facts=JointFacts(ServerReads(db,user_id,bank),self.data_version,self.daily_version)
         candidates=CandidateService(facts,self.indexes,self.selector);candidates.sessions=self.sessions;candidates.lock=self.lock

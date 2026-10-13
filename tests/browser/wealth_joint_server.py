@@ -38,6 +38,7 @@ async def test_clock(db,account_id=None):
 
 @asynccontextmanager
 async def lifespan(application):
+    await application.state.wealth_portfolio_source.preload()
     async with engine.begin() as conn:await conn.run_sync(Base.metadata.create_all)
     bank.business_now=test_clock
     async with AsyncSessionLocal() as db:

@@ -81,10 +81,14 @@ def reliable_family(product: ProductFact, now: datetime) -> tuple[str | None,lis
 
 class ProductIndex:
     """每个资料版本建立一次只读索引，保留全目录台账和标签出处。"""
-    def __init__(self,snapshot: DataSnapshot,mappings: dict | None=None):
+    def __init__(self,snapshot: DataSnapshot,mappings: dict | None=None,*,immutable_source: bool=False):
         self.version=snapshot.version;self.daily_version=snapshot.daily_version
         self.products={p.product_id:p for p in snapshot.products}
         if len(self.products)!=len(snapshot.products):raise ValueError('DUPLICATE_PRODUCT_IDENTITY')
+        # This index is a version-bound immutable source, not a user result.
+        # Hash its material once instead of serializing the full directory at
+        # every lifecycle read. New material must load a new index/version.
+        self._content_fingerprint=digest([p.model_dump(mode='json') for p in snapshot.products]) if immutable_source else None
         self.tags={p.product_id:theme_tags(p,mappings) for p in snapshot.products}
         self.scope_codes=[p.product_id for p in snapshot.products if p.scope_status=='verified']
         self.family_members=defaultdict(list)
@@ -95,6 +99,11 @@ class ProductIndex:
             for family in families:
                 self.family_members[family].append(p)
         self.directory_counts=dict(Counter(p.scope_status for p in snapshot.products))
+
+    @property
+    def content_fingerprint(self):
+        # Injected/live in-memory sources may mutate; do not memoize those.
+        return self._content_fingerprint or digest([p.model_dump(mode='json') for p in self.products.values()])
 
     def match(self,filter: CandidateFilter) -> list[ProductFact]:
         keys=[filter.theme_key] if filter.theme_key else filter.theme_keys
@@ -162,11 +171,14 @@ def family_candidates(index: ProductIndex,matched: list[ProductFact],decisions: 
     return candidates,exclusions,family_verified_count
 
 
-def pipeline(index: ProductIndex,filter: CandidateFilter,facts: CurrentFacts,user_id: str,now: datetime) -> PipelineResult:
+def pipeline(index: ProductIndex,filter: CandidateFilter,facts: CurrentFacts,user_id: str,now: datetime,*,checked_decisions=None) -> PipelineResult:
     matched=index.match(filter)
     # 先完整匹配，再逐份额资格；所有匹配及排除明细都保留。
     context=version_context(facts)
-    decisions=[qualify_purchase(p,facts,user_id,now,context=context) for p in matched]
+    if checked_decisions is not None:
+        decisions=[checked_decisions[p.product_id] for p in matched]
+        if any(d.context!=context or d.checked_at!=now for d in decisions):raise ValueError('QUALIFICATION_CONTEXT_STALE')
+    else:decisions=[qualify_purchase(p,facts,user_id,now,context=context) for p in matched]
     families,material_exclusions,family_verified_count=family_candidates(index,matched,decisions,facts,now)
     exclusions={d.product_id:d.reason_codes[:] for d in decisions if not d.purchase_eligible}
     for code,reasons in material_exclusions.items():exclusions.setdefault(code,[]).extend(reasons)

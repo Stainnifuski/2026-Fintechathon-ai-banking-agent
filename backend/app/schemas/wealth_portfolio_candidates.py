@@ -2,7 +2,7 @@
 from datetime import datetime,date
 from typing import Annotated, Literal, Self
 from pydantic import Field, field_validator, model_validator
-from .wealth_portfolio import DTO, Fen, ratio, RecommendationFilter
+from .wealth_portfolio import DTO, Fen, ratio, RecommendationFilter,Fees
 from .wealth_portfolio_data import VersionValue
 
 SourceKind=Literal['real','simulated','fixture']
@@ -62,6 +62,7 @@ class BankPurchaseFact(DTO):
     holding_allowed: bool | None = Field(default=None,strict=True)
     redemption_allowed: bool | None = Field(default=None,strict=True)
     current_simulation: CurrentSimulationEvidence | None = None
+    fee_rules: Fees | None = None # read-only current version; not a qualification prerequisite
 
 class CurrentFacts(DTO):
     user_id: str

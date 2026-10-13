@@ -311,10 +311,11 @@ def read(root: Path, directory: Path, version: str) -> DataSnapshot:
     return snapshot
 
 
-async def read_asset_model_facts(source, user_id: str, product_facts: list[ProductFact] | None = None) -> AssetModelFacts:
+async def read_asset_model_facts(source, user_id: str, product_facts: list[ProductFact] | None = None,*,from_current: bool=False) -> AssetModelFacts:
     """复用同一银行builder，不从ORM或旧context拼接资产。"""
     if source is None:raise SnapshotError('full AssetSummary source unavailable','ASSET_SUMMARY_UNAVAILABLE',503)
-    bundle=await source.read(user_id);snapshot=build_snapshot(bundle)
+    reader=getattr(source,'read_from_current',source.read) if from_current else source.read
+    bundle=await reader(user_id);snapshot=build_snapshot(bundle)
     unknown=[p.position_key for p in snapshot.positions if p.bucket is None]
     if product_facts is not None:
         by_id={p.product_id:p for p in product_facts}

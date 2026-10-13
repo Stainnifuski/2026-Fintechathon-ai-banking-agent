@@ -52,7 +52,7 @@ class PortfolioLifecycle:
         if (snap.context_id,snap.context_epoch,snap.asset_scope_id,sorted(snap.account_ids))!=(grant['context_id'],grant['context_epoch'],grant['asset_scope_id'],sorted(grant['account_ids'])):
             raise CandidateError('PORTFOLIO_ASSET_SCOPE_STALE')
         stamp=digest({'snapshot':snapshot_content(snap),'qualification':version_context(facts).model_dump(mode='json'),
-            'products':[p.model_dump(mode='json') for p in index.products.values()],
+            'products_fingerprint':index.content_fingerprint,
             'offer_validity':{code:offer_is_current(o,facts,now) for code,o in facts.offers.items()}})
         return facts,index,now,asset,stamp
 
@@ -124,7 +124,8 @@ class PortfolioLifecycle:
         await self._candidate_binding(user_id,request,grant,facts)
         refs=None if request.selected is None else self._refs(request.selected,facts,index)
         if refs is not None:self._qualify(user_id,refs,facts,index,now)
-        result=await self.provider.plan(user_id,request.growth_ratio_ex_cash,refs)
+        result=await self.provider.plan(user_id,request.growth_ratio_ex_cash,refs,
+            _initial_facts=(facts,index,now,asset),_defer_final_validation=True)
         if result.status!='ok' or result.plan is None:raise CandidateError((result.reason_codes or result.missing_fields or ['PORTFOLIO_'+result.status.upper()])[0],422)
         plan=self._decorate(result.plan,result.metadata,refs or [],facts,index,now)
         plan.portfolio_id='portfolio-'+secrets.token_urlsafe(24);plan.version=1

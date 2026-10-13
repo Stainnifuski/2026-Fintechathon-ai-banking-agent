@@ -223,21 +223,48 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
     context = await selected(db, user_id) if user_id else None
     now = await business_now(db, context.account_id if context else None)
     result = []
-    for product in (await db.scalars(select(WealthProductORM).order_by(WealthProductORM.product_id))).all():
-        row = await db.get(WealthProductVersionORM, f"{product.product_id}:{product.current_version}")
-        if row is None:
-            continue
+    # Read current versions in one query; current state is never response-cached.
+    pairs = (await db.execute(select(WealthProductORM, WealthProductVersionORM).join(
+        WealthProductVersionORM, (WealthProductVersionORM.product_id == WealthProductORM.product_id)
+        & (WealthProductVersionORM.version == WealthProductORM.current_version))
+        .order_by(WealthProductORM.product_id))).all()
+    visible = []
+    for product, row in pairs:
         dataset_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
         if context and dataset_key != context.dataset_key:
             continue
         if not context and row.rules.get("dataset_id"):
             continue
-        price = await latest_nav(db, row.version_id, now)
+        visible.append((product,row,dataset_key))
+    versions=[row.version_id for _,row,_ in visible]
+    prices={};records={};datasets={}
+    if versions:
+        # Explicit publication times and the legacy 18:00 Beijing assumption
+        # have the same visibility semantics as latest_nav, including future rows.
+        local=now.astimezone(TZ);legacy_day=local.date() if local.hour>=18 else local.date()-timedelta(days=1)
+        eligible=select(WealthNavORM.version_id,func.max(WealthNavORM.nav_date).label('nav_date')).where(
+            WealthNavORM.version_id.in_(versions),WealthNavORM.nav_date<=local.date(),
+            or_(WealthNavORM.available_at<=now,(WealthNavORM.available_at.is_(None)) & (WealthNavORM.nav_date<=legacy_day)))
+        eligible=eligible.group_by(WealthNavORM.version_id).subquery()
+        navs=(await db.scalars(select(WealthNavORM).join(eligible,
+            (WealthNavORM.version_id==eligible.c.version_id)&(WealthNavORM.nav_date==eligible.c.nav_date)))).all()
+        prices={p.version_id:p for p in navs}
+        from ...models.wealth_research import WealthResearchProductORM,WealthDatasetORM
+        keys={key for _,row,key in visible if row.rules.get('dataset_id')}
+        if keys:
+            from types import SimpleNamespace
+            rows=(await db.execute(select(WealthResearchProductORM.record_id,WealthResearchProductORM.data)
+                .where(WealthResearchProductORM.dataset_key.in_(keys)))).all()
+            records={rid:SimpleNamespace(data=data) for rid,data in rows}
+            ds=(await db.scalars(select(WealthDatasetORM).where(WealthDatasetORM.dataset_key.in_(keys)))).all()
+            datasets={r.dataset_key:r for r in ds}
+    for product,row,dataset_key in visible:
+        price=prices.get(row.version_id)
         fixture=context.data.get('fixture',{}) if context else {}
         if fixture.get('no_match'): continue
         if fixture.get('source_unavailable'): price=None
         from .wealth_material import current_material
-        material = await current_material(db, row)
+        material = await current_material(db, row,records=records,datasets=datasets)
         result.append({"product_id": product.product_id, "version": row.version, "name": row.name,
             "kind": row.kind, "category": row.category, "product_risk_level": row.risk_level,
             "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,

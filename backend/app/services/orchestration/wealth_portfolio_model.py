@@ -44,7 +44,7 @@ def adapt_candidate_group(result: dict,index: ProductIndex,filter: CandidateFilt
             shares.append(ShareClass(product_id=p.product_id,product_version=p.product_version,disclosure_version=p.disclosure_version,
                 share_class=p.share_class if p.share_class in ('A','C') else None,product_risk_level=decision['product_level'],
                 status='purchase_eligible' if decision['purchase_eligible'] else 'purchase_ineligible',tradable=decision['purchase_eligible'],
-                min_amount_fen=offer.get('minimum_fen'),fees=Fees(purchase_fee_rate=None,sales_service_fee_rate=None,redemption_fee_rules=None,missing_fields=['fee_rules']),
+                min_amount_fen=offer.get('minimum_fen'),fees=Fees.model_validate(offer['fee_rules']) if offer.get('fee_rules') else Fees(purchase_fee_rate=None,sales_service_fee_rate=None,redemption_fee_rules=None,missing_fields=['fee_rules']),
                 performance=Performance(one_year=point,latest_day=point.model_copy(update={'metric':'daily_nav_change'})),detail_ref='local:'+p.product_id,data_source=p.source_kind,data_as_of=decision['checked_at']))
         if shares:items.append(ProductCandidate(family_id=family['family_id'],name=index.products[family['default_share']['product_id']].name,
             bucket=family['bucket'],reason='具体份额资格已核实；依据投资资料特征的DPP贪心选择。',reason_codes=['QUALIFIED_SHARE','DOCUMENT_FEATURE_DIVERSITY'],
@@ -85,7 +85,7 @@ class PortfolioModelProvider:
         facts,index,now=await self.candidates.current(user_id)
         gate=assessment_reasons(facts,user_id,now)
         if gate:raise ModelError('FORMAL_ASSESSMENT_UNAVAILABLE',{'reason_codes':gate})
-        asset=await read_asset_model_facts(self.asset_source,user_id,list(index.products.values()))
+        asset=await read_asset_model_facts(self.asset_source,user_id,list(index.products.values()),from_current=True)
         # Real sequential reads finish after the first eligibility timestamp.
         # Recheck at actual completion; never backdate the bank observation.
         initial_context=version_context(facts)
@@ -151,8 +151,12 @@ class PortfolioModelProvider:
         by_bucket['cash_management']['__cash_asset__']=WeightFamily('__cash_asset__','cash_management',cash,[],True)
         return by_bucket,eligible,positions,missing
 
-    async def plan(self,user_id: str,p: str | None=None,selected: Sequence[ShareReference] | None=None) -> ModelResult:
-        facts,index,now,asset=await self._facts(user_id);s=asset.snapshot;T=s.total_assets_fen
+    async def plan(self,user_id: str,p: str | None=None,selected: Sequence[ShareReference] | None=None,
+                   *,_initial_facts=None,_defer_final_validation=False) -> ModelResult:
+        # Lifecycle already captured these facts. Reuse only within this call,
+        # then its final _fresh rechecks bank, time, assessment and write control.
+        facts,index,now,asset=_initial_facts if _initial_facts is not None else await self._facts(user_id)
+        s=asset.snapshot;T=s.total_assets_fen
         if not s.valuation_complete:return ModelResult(status='unavailable',reason_codes=['VALUATION_INCOMPLETE'],missing_fields=s.missing_fields)
         if T==0:return ModelResult(status='no_configurable_assets',reason_codes=['NO_CONFIGURABLE_ASSETS'])
         families,eligible,positions,missing=self._families(asset,facts,index,now,selected)
@@ -186,9 +190,10 @@ class PortfolioModelProvider:
             code=row['position']['product_id'];row['target_fen']=target_by_product.get(code,0) if not missing else None
             row['direction']='not_executed_target' if row['target_fen'] is not None else 'unknown_target'
         # 纯只读输出前再次验证可信当前版本、资产scope和快照指纹。
-        fresh,index2,now2=await self.candidates.current(user_id)
-        check=await read_asset_model_facts(self.asset_source,user_id,list(index2.products.values()))
-        if version_context(fresh)!=version_context(facts) or snapshot_content(check.snapshot)!=snapshot_content(s) or assessment_reasons(fresh,user_id,now2):raise ModelError('MODEL_FACTS_CHANGED')
+        if not _defer_final_validation:
+            fresh,index2,now2=await self.candidates.current(user_id)
+            check=await read_asset_model_facts(self.asset_source,user_id,list(index2.products.values()),from_current=True)
+            if version_context(fresh)!=version_context(facts) or snapshot_content(check.snapshot)!=snapshot_content(s) or assessment_reasons(fresh,user_id,now2):raise ModelError('MODEL_FACTS_CHANGED')
         ratios=ratio_strings(model['amounts_fen'],T);buckets=[]
         for i,b in enumerate(BUCKETS):
             lo,hi=model['ranges'][i];actual=float(ratios[i])
@@ -197,7 +202,8 @@ class PortfolioModelProvider:
         group_results=[]
         # 整体建议已在本次固定事实上运行DPP；不借会话多次读取混合版本。
         for bucket in BUCKETS:
-            r=pipeline(index,CandidateFilter(mode='general',bucket=bucket),facts,user_id,now);pool=r.family_candidates
+            r=pipeline(index,CandidateFilter(mode='general',bucket=bucket),facts,user_id,now,
+                       checked_decisions={d.product_id:d for d in eligible.decisions});pool=r.family_candidates
             ids=self.candidates.selector.select(pool,set(),3) if pool else []
             raw={'pipeline':r.model_dump(mode='json'),'status':r.status,'source_kind':facts.mode,'fixture_only':facts.mode=='fixture','items':[f.model_dump(mode='json') for f in pool if f.family_id in ids]}
             group_results.append(adapt_candidate_group(raw,index,CandidateFilter(mode='general',bucket=bucket)))

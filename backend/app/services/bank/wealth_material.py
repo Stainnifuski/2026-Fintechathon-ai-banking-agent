@@ -6,13 +6,13 @@ strategy, rating, share relationships or benchmark definitions.
 from ...models.wealth_research import WealthDatasetORM, WealthResearchProductORM
 
 
-async def current_material(db, version):
+async def current_material(db, version, *, records=None, datasets=None):
     rules = version.rules
     if not rules.get('dataset_id') or not rules.get('dataset_version'):
         return {}
     key = rules['dataset_id'] + ':' + rules['dataset_version']
-    dataset = await db.get(WealthDatasetORM, key)
-    record = await db.get(WealthResearchProductORM, key + ':' + version.product_id)
+    dataset = datasets.get(key) if datasets is not None else await db.get(WealthDatasetORM, key)
+    record = records.get(key + ':' + version.product_id) if records is not None else await db.get(WealthResearchProductORM, key + ':' + version.product_id)
     if dataset is None or record is None:
         return {}
     raw = record.data

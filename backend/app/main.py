@@ -59,6 +59,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await init_db()
         logger.info("正在加载种子数据...")
         await seed_data()
+        # Material initialization is separate from request latency. Missing
+        # offline material keeps the ordinary app alive, but A reads fail 503;
+        # there is never a fixture fallback.
+        try:
+            initialized=await app.state.wealth_portfolio_source.preload()
+            logger.info('Portfolio immutable index ready: %s',initialized)
+        except Exception as error:
+            logger.warning('Portfolio material unavailable: %s',type(error).__name__)
         workers.append(asyncio.create_task(
             scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()), name="scheduled-transfer-loop"))
         workers.append(asyncio.create_task(settlement_loop(AsyncSessionLocal), name="wealth-settlement-loop"))

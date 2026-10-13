@@ -217,6 +217,7 @@ class BankPortfolioFacts:
         raw = value['assessment']
         business = await self.transport.get('/api/v1/wealth/assets') if value['products'] else None
         contexts = await self.transport.get('/api/v1/wealth/contexts') if value['products'] else None
+        self.observations.update({'assets':business,'contexts':contexts})
         selected = next((r for r in contexts.get('items',[]) if r.get('context_id')==contexts.get('selected')),None) if isinstance(contexts,dict) else None
         assessment = None
         if raw is not None:
@@ -257,7 +258,13 @@ class BankPortfolioFacts:
                 limit_kind='bounded' if rules.get('max_amount_fen') is not None else 'unknown',
                 risk_level=row.get('product_risk_level'), risk_current_confirmed=native['risk_current_confirmed'],
                 risk_evidence_id=native['risk_evidence_id'], holding_allowed=rules.get('holding_allowed'),
-                redemption_allowed=rules.get('redemption_allowed'),current_simulation=evidence)
+                redemption_allowed=rules.get('redemption_allowed'),current_simulation=evidence,
+                fee_rules={'purchase_fee_rate':rules.get('purchase_fee_rate'),
+                    'sales_service_fee_rate':rules.get('sales_service_fee_rate'),
+                    'redemption_fee_rules':rules.get('redeem_fee_bands'),
+                    'missing_fields':[out for out,key in [('purchase_fee_rate','purchase_fee_rate'),
+                        ('sales_service_fee_rate','sales_service_fee_rate'),('redemption_fee_rules','redeem_fee_bands')]
+                        if rules.get(key) is None]})
         return CurrentFacts(user_id=user_id, source_id='protected-local-bank', mode='simulated', channel='local-competition-bank',
             read_at=at, data_version=self.data_version, daily_version=self.daily_version,
             offers_version='adapter:'+digest(value['products']), assessment=assessment,

@@ -3,6 +3,7 @@ from datetime import datetime,timezone
 from pathlib import Path
 from types import SimpleNamespace
 import hashlib
+from collections import Counter
 from backend.app.domain.wealth_portfolio_candidates import pipeline,reliable_family,sourced_value
 from backend.app.domain.wealth_portfolio_eligibility import qualify_purchase
 from backend.app.schemas.wealth_portfolio_candidates import CandidateFilter
@@ -52,6 +53,17 @@ async def diagnose(db,user_id,provider,bank,*,derive_current=False):
     eligible=[t for t in table if t['qualification']['purchase_eligible']]
     families=[f for f in result.family_candidates if any(c in codes for c in f.member_codes)]
     selected=service.provider.candidates.selector.select(families,set(),3) if families else []
+    real=[p for p in index.products.values() if p.source_kind=='real']
+    real_decisions=[d for d in result.decisions if d.source_kind=='real']
+    real_chain={'directory':len(real),'scope_verified':sum(p.scope_status=='verified' for p in real),
+        'matched':len(real_decisions),'current_bank_skus':sum(p.product_id in current.offers for p in real),
+        'current_product_versions':sum(p.product_version is not None for p in real),
+        'purchase_qualified_shares':sum(d.purchase_eligible for d in real_decisions),
+        'material_fields':{field:sum(sourced_value(p,field)[0] is not None for p in real) for field in ('objective','strategy','benchmark','tracking_target','issuer_raw')},
+        'registered_risk_shares':sum(bool(p.risk_evidence) for p in real),
+        'registered_family_shares':sum(bool(p.family_evidence) for p in real),
+        'exclusion_counts':dict(Counter(r for d in real_decisions for r in d.reason_codes)),
+        'pipeline_source_mode':current.mode,'channel':current.channel}
     return {'environment':'fresh_isolated_joint_bank','context_id':assets['context_id'],'business_at':assets['business_at'],
         'old_data_version':old_version,'data_version':provider.data_version,'daily_version':provider.daily_version,
         'capture_sha256':capture_hash,'scope_id':assets['asset_summary']['asset_scope_id'],'assessment_level':current.assessment.capacity_level if current.assessment else None,
@@ -60,4 +72,4 @@ async def diagnose(db,user_id,provider,bank,*,derive_current=False):
             'qualified_families':len({t['family'] for t in eligible if t['family']}),
             'material_complete_families':len(families),'dpp_returned':len(selected)},
         'whole_a_pipeline':{'stages':result.stages,'status':result.status,'reason_codes':result.reason_codes},
-        'table':table,'model_calls':0,'external_collection_requests':0}
+        'table':table,'real_chain':real_chain,'model_calls':0,'external_collection_requests':0}
