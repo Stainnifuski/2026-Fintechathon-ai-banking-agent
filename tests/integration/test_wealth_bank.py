@@ -244,6 +244,8 @@ async def http_store(store, monkeypatch):
     install_error_handlers(app)
     app.include_router(auth.router)
     app.include_router(wealth.router)
+    from backend.app.routers.wealth_portfolio import router as canonical_portfolio_router
+    app.include_router(canonical_portfolio_router)
     app.include_router(wealth_bank.router)
     app.include_router(wealth_tasks.router)
     token = __import__("uuid").uuid4().hex

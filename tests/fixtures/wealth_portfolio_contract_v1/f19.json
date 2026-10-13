@@ -1,13 +1,70 @@
 {
   "fixture_id": "F19",
   "data_source": "contract_fixture_only",
-  "query": {"period": "month", "date": "2026-09"},
+  "query": {
+    "period": "month",
+    "date": "2026-09"
+  },
   "transactions": [
-    {"tx_id": "fixture-f19-consumption", "account_id": "A1", "type": "purchase", "category": "dining", "amount_fen": 20000, "timestamp": "2026-09-10T04:00:00+00:00"},
-    {"tx_id": "fixture-f19-purchase", "account_id": "A1", "type": "investment_purchase", "category": "investment", "amount_fen": 100000, "timestamp": "2026-09-10T04:01:00+00:00"},
-    {"tx_id": "fixture-f19-redemption", "account_id": "A1", "type": "investment_redemption", "category": "investment", "amount_fen": 110000, "timestamp": "2026-09-10T04:02:00+00:00"}
+    {
+      "tx_id": "fixture-f19-consumption",
+      "account_id": "A1",
+      "type": "purchase",
+      "category": "dining",
+      "amount_fen": 20000,
+      "timestamp": "2026-09-10T04:00:00+00:00"
+    },
+    {
+      "tx_id": "fixture-f19-purchase",
+      "account_id": "A1",
+      "type": "investment_purchase",
+      "category": "investment",
+      "amount_fen": 100000,
+      "timestamp": "2026-09-10T04:01:00+00:00"
+    },
+    {
+      "tx_id": "fixture-f19-redemption",
+      "account_id": "A1",
+      "type": "investment_redemption",
+      "category": "investment",
+      "amount_fen": 110000,
+      "timestamp": "2026-09-10T04:02:00+00:00"
+    }
   ],
-  "expected_bill": {"count": 1, "consumption_fen": 20000, "inflow_fen": 0, "outflow_fen": 20000, "net_inflow_fen": -20000, "unknown_count": 0},
-  "expected_bill_ids": ["fixture-f19-consumption"],
-  "expected_cashflow_count": 3
+  "expected_bill": {
+    "count": 1,
+    "consumption_fen": 20000,
+    "inflow_fen": 0,
+    "outflow_fen": 20000,
+    "net_inflow_fen": -20000,
+    "unknown_count": 0
+  },
+  "expected_bill_ids": [
+    "fixture-f19-consumption"
+  ],
+  "expected_cashflow_count": 3,
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "transactions": [
+      {
+        "type": "purchase",
+        "amount_fen": 20000
+      },
+      {
+        "type": "investment_purchase",
+        "amount_fen": 100000
+      },
+      {
+        "type": "investment_redemption",
+        "amount_fen": 110000
+      }
+    ]
+  },
+  "expected": {
+    "history_count": 3,
+    "bill_count": 1,
+    "bill_fen": 20000
+  }
 }

@@ -132,7 +132,9 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     # their IDs, valuation and redeemable units. Snapshot is never browser input.
     grouped = {}
     for lot in facts['lots']:
-        key = (lot['account_id'], lot['product_id'], int(lot['version_id'].rsplit(':', 1)[1]))
+        if type(lot.get('product_version')) is not int or lot['product_version']<1:
+            reject('持仓缺少明确产品历史版本','PRODUCT_VERSION_UNAVAILABLE',409)
+        key = (lot['account_id'], lot['product_id'], lot['product_version'])
         group = grouped.setdefault(key, {'lots': set(), 'value': 0, 'units': Decimal(0), 'redeemable': Decimal(0), 'nav': lot['nav']})
         if lot['market_value_fen'] is None:
             reject('银行持仓缺少估值', 'VALUATION_INCOMPLETE', 409)
@@ -153,10 +155,20 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
         reject('存在在途交易，请先核对结算后再准备整体差额', 'RECONCILIATION_REQUIRED', 409)
     actions = difference_actions(plan, snapshot)
     catalog = {p['product_id']: p for p in products}
+    await lock_profile(db,user_id)
     for item in plan['selected_positions']:
         product = catalog.get(item['product_id'])
         if product is None or product['version'] != item['product_version'] or product['disclosure']['version'] != item['disclosure_version']:
             reject('所选产品或披露版本已变化', 'RULE_VERSION_CHANGED', 409)
+        if item.get('share_class')!=product['rules'].get('share_class'):
+            reject('所选具体份额与银行当前份额不一致','SELECTED_SHARE_IDENTITY_MISMATCH',409)
+        existing=next((p for p in snapshot['positions'] if (p['account_id'],p['product_id'],p['product_version'])==(item['account_id'],item['product_id'],item['product_version'])),None)
+        # A zero/tiny target is still a newly selected product. Check its actual
+        # grade before difference_actions can silently omit a zero-sized order.
+        # Maintaining/reducing a real existing holding remains an exit operation.
+        if existing is None or item['target_fen']>existing['market_value_fen']:
+            from ...integrations.wealth_authorization import require_suitability
+            await require_suitability(db,user_id,product['product_risk_level'])
     await lock_profile(db, user_id)
     rows = list(await db.scalars(select(WealthPlanORM).where(WealthPlanORM.user_id == user_id)))
     previous = next((row for row in rows if row.data.get('portfolio_id') == portfolio_id), None)

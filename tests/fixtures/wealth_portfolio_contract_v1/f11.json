@@ -330,5 +330,64 @@
     "reasons": [
       "F11七家族整体目标录制，仅用于消费端核对；不运行配置模型或银行交易。"
     ]
+  },
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A_contract_B_execution_future",
+  "input": {
+    "selection": {
+      "portfolio_id": "fixture-plan",
+      "expected_version": 1,
+      "snapshot_id": "fixture-snapshot",
+      "context_id": "fixture-context",
+      "items": [
+        {
+          "product_id": "fixture-0",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-1",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-2",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-3",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-4",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-5",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-6",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "selected_count": 7,
+    "confirmation_count": 1
   }
 }

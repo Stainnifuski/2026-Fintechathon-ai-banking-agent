@@ -14,19 +14,12 @@ class SelectionContext(StrictRequest):
         if len(set(self.ids))!=len(self.ids) or any(not 1<=len(x)<=180 for x in self.ids):raise ValueError('Invalid object references')
         return self
 
-class RecommendationFilter(StrictRequest):
-    mode: Literal['general','category','theme']
-    category: Literal['quick_redeem','bank_wealth','money_fund','bond_fund','mixed_fund','equity_fund']|None=None
-    theme_key: str|None=Field(default=None,min_length=1,max_length=80)
-    bucket: Literal['cash_management','stable','growth']|None=None
-    @model_validator(mode='after')
-    def matching(self):
-        if self.mode=='general' and (self.category or self.theme_key):raise ValueError('General filter has no category/theme')
-        if self.mode=='category' and (not self.category or self.theme_key):raise ValueError('Category filter requires category only')
-        if self.mode=='theme' and (not self.theme_key or self.category):raise ValueError('Theme filter requires theme only')
-        return self
+from .wealth_portfolio import RecommendationFilter, PortfolioSelection
+from .wealth_portfolio_lifecycle import SelectedShare, CandidateBinding
 
 class PlanParams(StrictRequest):
+    selected: list[SelectedShare]|None=None
+    candidate_binding: CandidateBinding|None=None
     growth_ratio_ex_cash: str|None=None
     @model_validator(mode='after')
     def ratio(self):
@@ -35,25 +28,11 @@ class PlanParams(StrictRequest):
             rate(self.growth_ratio_ex_cash)
         return self
 class RecommendParams(StrictRequest):
+    selected: list[SelectedShare]|None=None
+    candidate_binding: CandidateBinding|None=None
     filter: RecommendationFilter|None=None
     cursor: str|None=Field(default=None,max_length=128)
     selected_family_ids: list[str]|None=Field(default=None,max_length=160)
-class SelectionItem(StrictRequest):
-    product_id: str=Field(min_length=1,max_length=120)
-    product_version: int=Field(strict=True,ge=1)
-    share_class: Literal['A','C']|None
-    target_ratio_total: str
-    @model_validator(mode='after')
-    def ratio(self):
-        from ..domain.wealth import rate
-        rate(self.target_ratio_total)
-        return self
-class PortfolioSelection(PlanParams):
-    portfolio_id: str
-    snapshot_id: str
-    context_id: str
-    expected_version: int=Field(strict=True,ge=1)
-    items: list[SelectionItem]=Field(min_length=1,max_length=160)
 class ReviseParams(StrictRequest):
     selection: PortfolioSelection|None=None
 class DetailParams(StrictRequest):

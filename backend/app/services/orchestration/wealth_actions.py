@@ -202,7 +202,10 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
             handler=(handlers or {}).get(action)
             if handler is None:
                 status='blocked';message='队友的配置/推荐服务尚未接入，此入口不返回固定产品';data={'code':'PORTFOLIO_PROVIDER_UNAVAILABLE','reason':message}
-            else:data=await handler(db=db,user_id=user_id,context_id=request.context_id,bank=bank,params=p)
+            else:
+                db.info['wealth_portfolio_action_session']=row.session_id
+                try:data=await handler(db=db,user_id=user_id,context_id=request.context_id,bank=bank,params=p)
+                finally:db.info.pop('wealth_portfolio_action_session',None)
     current=(await bank.call('POST','/contexts',{'subject_user_id':user_id}))['selected']
     if current!=request.context_id:reject('处理期间资金环境已变化，请重新查询','STALE_CONTEXT')
     row.version+=1

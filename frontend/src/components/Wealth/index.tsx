@@ -122,6 +122,7 @@ export default function Wealth({ accounts, revision, onActivity, userId, develop
         `${direction}状态：${statusLabel[fact.status] || fact.status}`);
   };
   return <section className="card wealth" aria-label="理财模拟">
+      {import.meta.env.DEV&&import.meta.env.VITE_WEALTH_JOINT_TEST==='true'&&<p className="notice">01/02隔离联合验收 · 正式A算法与模拟银行 · 专用虚构账户和模拟业务时点，不是录制方案或真实资金。</p>}
       {!manual && <OperatorPanel userId={userId} revision={revision} onActivity={onActivity}/>}
     <div className="wealth-title"><div><h2>{manual ? '手选产品 · 模拟银行联调' : '理财模拟'}</h2><p>比赛模拟环境／模拟资金 · 请仅输入虚构数据 · 本金可能亏损</p></div><button className="secondary" disabled={busy} onClick={() => act(async () => { onActivity(); })}>刷新银行事实</button></div>
     <section aria-label="当前银行事实" className="notice">

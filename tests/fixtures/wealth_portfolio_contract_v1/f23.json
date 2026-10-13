@@ -904,5 +904,26 @@
       ],
       "value_percent": "0.5000"
     }
-  ]
+  ],
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "order_ids": [
+      "order-1"
+    ],
+    "position_keys": [
+      "position-1"
+    ],
+    "periods": [
+      "day",
+      "month",
+      "year",
+      "cumulative"
+    ]
+  },
+  "expected": {
+    "independent_selection": true,
+    "order_id_redeemable": false
+  }
 }

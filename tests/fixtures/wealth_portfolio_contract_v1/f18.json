@@ -58,5 +58,108 @@
       "fixture": "v1"
     },
     "missing_fields": []
+  },
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A_contract",
+  "input": {
+    "bundle": {
+      "summary": {
+        "schema_version": "wealth-asset-summary-v1",
+        "asset_scope_id": "fixture-scope",
+        "account_ids": [
+          "fixture-account",
+          "fixture-account-2"
+        ],
+        "snapshot_id": "fixture-snapshot",
+        "as_of": "2026-10-05T04:00:00+00:00",
+        "business_at": "2026-10-05T04:00:00+00:00",
+        "cash_balance_fen": 800000,
+        "held_fen": 100000,
+        "available_cash_fen": 700000,
+        "positions_market_value_fen": 150000,
+        "redemption_receivable_fen": 50000,
+        "total_assets_fen": 1000000,
+        "valuation_complete": true,
+        "missing_fields": [],
+        "data_source": "fixture_only"
+      },
+      "context_id": "fixture-context",
+      "context_epoch": null,
+      "basis_status": "fixture_only",
+      "accounts": [
+        {
+          "account_id": "fixture-account",
+          "account_type": "savings",
+          "balance_fen": 600000,
+          "held_fen": 100000,
+          "available_fen": 500000
+        },
+        {
+          "account_id": "fixture-account-2",
+          "account_type": "checking",
+          "balance_fen": 200000,
+          "held_fen": 0,
+          "available_fen": 200000
+        }
+      ],
+      "lots": [
+        {
+          "lot_id": "fixture-lot",
+          "account_id": "fixture-account",
+          "product_id": "fixture-product",
+          "version_id": "fixture-product:1",
+          "product_version": 1,
+          "category": "bond",
+          "units": "500.0000",
+          "redeemable_units": "500.0000",
+          "market_value_fen": 100000,
+          "nav": "2.00000000",
+          "nav_date": "2026-09-30"
+        },
+        {
+          "lot_id": "fixture-lot-2",
+          "account_id": "fixture-account",
+          "product_id": "fixture-product",
+          "version_id": "fixture-product:1",
+          "product_version": 1,
+          "category": "bond",
+          "units": "250.0000",
+          "redeemable_units": "250.0000",
+          "market_value_fen": 50000,
+          "nav": "2.00000000",
+          "nav_date": "2026-09-30"
+        }
+      ],
+      "orders": [
+        {
+          "operation_id": "fixture-receivable",
+          "account_id": "fixture-account-2",
+          "direction": "redeem",
+          "status": "PENDING_CASH",
+          "details": {
+            "actual": {
+              "cash_fen": 50000
+            }
+          }
+        }
+      ],
+      "assessment": {
+        "assessment_id": "fixture-assessment",
+        "capacity_level": 4,
+        "purchase_allowed": true,
+        "expires_at": "2027-10-01T00:00:00Z",
+        "confirmed": true
+      },
+      "data_versions": {
+        "contract": "00-v0.3",
+        "data": "fixture_only"
+      }
+    }
+  },
+  "expected": {
+    "total_assets_fen": 1000000,
+    "basis_fen": 1000000,
+    "available_cash_fen": 700000
   }
 }

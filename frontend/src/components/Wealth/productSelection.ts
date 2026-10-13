@@ -7,7 +7,7 @@ export interface ProductSelectionState {
   preferredShares: Record<string, string>;
 }
 export const emptyProductSelection = (scopeKey: string): ProductSelectionState => ({ scopeKey, items: [], preferredShares: {} });
-export const validShares = (candidate: ProductCandidate) => candidate.share_classes.filter(share => share.tradable && share.status === 'on_sale' && share.product_risk_level != null);
+export const validShares = (candidate: ProductCandidate) => candidate.share_classes.filter(share => share.tradable && ['on_sale','purchase_eligible'].includes(share.status) && share.product_risk_level != null);
 export function displayedShare(candidate: ProductCandidate, state: ProductSelectionState): CandidateShare | undefined {
   const valid = validShares(candidate);
   return valid.find(share => share.product_id === state.preferredShares[candidate.family_id])

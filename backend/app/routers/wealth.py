@@ -72,23 +72,6 @@ async def actual_returns(query: ReturnsQuery = Query(), user: dict = Depends(get
         fail(error)
 
 
-@router.get('/portfolio/snapshot')
-async def portfolio_snapshot(http_request:Request,user:dict=Depends(get_current_user),
-        db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
-    """Read the shared A snapshot through its existing trusted adapter."""
-    try:
-        facts=await bank.assets(user['user_id'])
-        snapshot=await get_portfolio_source(http_request).snapshot(db,user['user_id'],facts['context_id'],bank)
-        current=await bank.assets(user['user_id'])
-        expected=set(current['asset_summary']['account_ids'])
-        if snapshot['context_id']!=current['context_id'] or facts['context_id']!=current['context_id'] or set(snapshot['account_ids'])!=expected:
-            raise policy.WealthPolicyError('资产快照范围已变化，请重新读取整体方案','STALE_CONTEXT',409)
-        return snapshot
-    except (BankApiError,policy.WealthPolicyError) as error:
-        await db.rollback()
-        fail(error)
-
-
 @router.post('/portfolio/plans/{portfolio_id}/prepare')
 async def prepare_portfolio(portfolio_id: str, request: PortfolioPrepare, http_request: Request,
         user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),

@@ -32,7 +32,7 @@ export function readReviewSnapshot(value:unknown,plan:PortfolioPlan):PortfolioSn
   return value as unknown as PortfolioSnapshot;
 }
 export function planProductSelection(plan:PortfolioPlan){
-  let state=emptyProductSelection(plan.context_id);
+  let state=emptyProductSelection(plan.context_id??'legacy-v1');
   const candidates:ProductCandidate[]=[];
   for(const group of plan.candidate_groups)if(group.status==='ok')candidates.push(...group.items);
   for(const p of plan.selected_positions){

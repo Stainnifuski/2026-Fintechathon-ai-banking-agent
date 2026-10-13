@@ -4,27 +4,202 @@
   "snapshot": {
     "schema_version": "wealth-asset-snapshot-v1",
     "snapshot_id": "fixture-f01-snapshot",
-    "context_id": "fixture-f01", "context_epoch": null,
-    "asset_scope_id": "fixture-f01-scope", "account_ids": ["fixture-account"],
-    "total_assets_fen": 1000000, "basis_fen": 1000000,
-    "as_of": "2026-10-08T12:00:00+08:00", "business_at": "2026-10-08T12:00:00+08:00",
-    "basis_kind": "linked_bank_assets", "basis_status": "fixture_only", "valuation_complete": true,
-    "accounts": [{"account_id": "fixture-account", "account_type": "savings", "balance_fen": 1000000, "held_fen": 0, "available_fen": 1000000}],
-    "positions": [], "receivable_fen": 0, "orders": [],
-    "assessment": null, "data_versions": {"contract": "v0.3", "fixture": "v1"}, "missing_fields": []
+    "context_id": "fixture-f01",
+    "context_epoch": null,
+    "asset_scope_id": "fixture-f01-scope",
+    "account_ids": [
+      "fixture-account"
+    ],
+    "total_assets_fen": 1000000,
+    "basis_fen": 1000000,
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "business_at": "2026-10-08T12:00:00+08:00",
+    "basis_kind": "linked_bank_assets",
+    "basis_status": "fixture_only",
+    "valuation_complete": true,
+    "accounts": [
+      {
+        "account_id": "fixture-account",
+        "account_type": "savings",
+        "balance_fen": 1000000,
+        "held_fen": 0,
+        "available_fen": 1000000
+      }
+    ],
+    "positions": [],
+    "receivable_fen": 0,
+    "orders": [],
+    "assessment": null,
+    "data_versions": {
+      "contract": "v0.3",
+      "fixture": "v1"
+    },
+    "missing_fields": []
   },
   "plan": {
-    "schema_version": "wealth-portfolio-plan-v1", "portfolio_id": "fixture-f01-plan", "version": 1,
-    "snapshot_id": "fixture-f01-snapshot", "asset_scope_id": "fixture-f01-scope", "context_id": "fixture-f01",
-    "as_of": "2026-10-08T12:00:00+08:00", "basis_kind": "linked_bank_assets", "basis_status": "fixture_only", "basis_fen": 1000000,
-    "provider_id": "contract-fixture", "provider_version": "v1", "model_status": "fixture",
+    "schema_version": "wealth-portfolio-plan-v1",
+    "portfolio_id": "fixture-f01-plan",
+    "version": 1,
+    "snapshot_id": "fixture-f01-snapshot",
+    "asset_scope_id": "fixture-f01-scope",
+    "context_id": "fixture-f01",
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "basis_kind": "linked_bank_assets",
+    "basis_status": "fixture_only",
+    "basis_fen": 1000000,
+    "provider_id": "contract-fixture",
+    "provider_version": "v1",
+    "model_status": "fixture",
     "buckets": [
-      {"bucket": "cash_management", "min_ratio": "0.15", "target_ratio": "0.20", "max_ratio": "0.25", "target_fen": 200000, "current_fen": 1000000, "reason": "契约F01示例，非模型建议"},
-      {"bucket": "stable", "min_ratio": "0.25", "target_ratio": "0.30", "max_ratio": "0.35", "target_fen": 300000, "current_fen": 0, "reason": "契约F01示例，非模型建议"},
-      {"bucket": "growth", "min_ratio": "0.45", "target_ratio": "0.50", "max_ratio": "0.55", "target_fen": 500000, "current_fen": 0, "reason": "契约F01示例，非模型建议"}
+      {
+        "bucket": "cash_management",
+        "min_ratio": "0.15",
+        "target_ratio": "0.20",
+        "max_ratio": "0.25",
+        "target_fen": 200000,
+        "current_fen": 1000000,
+        "reason": "契约F01示例，非模型建议"
+      },
+      {
+        "bucket": "stable",
+        "min_ratio": "0.25",
+        "target_ratio": "0.30",
+        "max_ratio": "0.35",
+        "target_fen": 300000,
+        "current_fen": 0,
+        "reason": "契约F01示例，非模型建议"
+      },
+      {
+        "bucket": "growth",
+        "min_ratio": "0.45",
+        "target_ratio": "0.50",
+        "max_ratio": "0.55",
+        "target_fen": 500000,
+        "current_fen": 0,
+        "reason": "契约F01示例，非模型建议"
+      }
     ],
-    "growth_ratio_ex_cash": "0.625", "candidate_groups": [], "selected_positions": [],
-    "cash_residual_fen": 0, "data_versions": {"contract": "v0.3", "fixture": "v1"}, "missing_fields": [],
-    "reasons": ["仅验证整体配置展示。候选产品、比例修订和执行适配在后续阶段接入。"]
+    "growth_ratio_ex_cash": "0.625",
+    "candidate_groups": [],
+    "selected_positions": [],
+    "cash_residual_fen": 0,
+    "data_versions": {
+      "contract": "v0.3",
+      "fixture": "v1"
+    },
+    "missing_fields": [],
+    "reasons": [
+      "仅验证整体配置展示。候选产品、比例修订和执行适配在后续阶段接入。"
+    ]
+  },
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A_contract",
+  "input": {
+    "bundle": {
+      "summary": {
+        "schema_version": "wealth-asset-summary-v1",
+        "asset_scope_id": "fixture-scope",
+        "account_ids": [
+          "fixture-account"
+        ],
+        "snapshot_id": "fixture-snapshot",
+        "as_of": "2026-10-05T04:00:00+00:00",
+        "business_at": "2026-10-05T04:00:00+00:00",
+        "cash_balance_fen": 1000000,
+        "held_fen": 0,
+        "available_cash_fen": 1000000,
+        "positions_market_value_fen": 0,
+        "redemption_receivable_fen": 0,
+        "total_assets_fen": 1000000,
+        "valuation_complete": true,
+        "missing_fields": [],
+        "data_source": "fixture_only"
+      },
+      "context_id": "fixture-context",
+      "context_epoch": null,
+      "basis_status": "fixture_only",
+      "accounts": [
+        {
+          "account_id": "fixture-account",
+          "account_type": "savings",
+          "balance_fen": 1000000,
+          "held_fen": 0,
+          "available_fen": 1000000
+        }
+      ],
+      "lots": [],
+      "orders": [],
+      "assessment": {
+        "assessment_id": "fixture-assessment",
+        "capacity_level": 4,
+        "purchase_allowed": true,
+        "expires_at": "2027-10-01T00:00:00Z",
+        "confirmed": true
+      },
+      "data_versions": {
+        "contract": "00-v0.3",
+        "data": "fixture_only"
+      }
+    },
+    "plan": {
+      "schema_version": "wealth-portfolio-plan-v1",
+      "portfolio_id": "fixture-plan",
+      "version": 1,
+      "snapshot_id": "fixture-snapshot",
+      "asset_scope_id": "fixture-scope",
+      "context_id": "fixture-context",
+      "as_of": "2026-10-05T04:00:00+00:00",
+      "basis_kind": "linked_bank_assets",
+      "basis_status": "fixture_only",
+      "basis_fen": 1000000,
+      "provider_id": "fixture_only",
+      "provider_version": "00-v0.3",
+      "model_status": "fixture",
+      "buckets": [
+        {
+          "bucket": "cash_management",
+          "min_ratio": "0.15",
+          "target_ratio": "0.20",
+          "max_ratio": "0.25",
+          "target_fen": 200000,
+          "current_fen": 0,
+          "reason": "fixed interface example, not model parameters"
+        },
+        {
+          "bucket": "stable",
+          "min_ratio": "0.25",
+          "target_ratio": "0.30",
+          "max_ratio": "0.35",
+          "target_fen": 300000,
+          "current_fen": 0,
+          "reason": "fixed interface example, not model parameters"
+        },
+        {
+          "bucket": "growth",
+          "min_ratio": "0.45",
+          "target_ratio": "0.50",
+          "max_ratio": "0.55",
+          "target_fen": 500000,
+          "current_fen": 0,
+          "reason": "fixed interface example, not model parameters"
+        }
+      ],
+      "growth_ratio_ex_cash": "0.625",
+      "candidate_groups": [],
+      "selected_positions": [],
+      "cash_residual_fen": 200000,
+      "data_versions": {
+        "fixture": "00-v0.3"
+      },
+      "missing_fields": [],
+      "reasons": [
+        "FIXTURE_ONLY"
+      ]
+    }
+  },
+  "expected": {
+    "basis_fen": 1000000,
+    "growth_ratio_ex_cash": "0.625"
   }
 }

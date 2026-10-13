@@ -43,9 +43,9 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
             {!share ? <p>当前没有可申购的有效份额，不能选择。</p> : <>
               <div className="picker-share"><span>{share.share_class ? `${share.share_class}类` : '单一产品'} · R{share.product_risk_level}</span><small>{share.product_id} · v{share.product_version}</small></div>
               <p className="consumer-note">{candidate.reason}</p>
-              <div className="picker-performance"><strong>{performance?.label}：{performance?.value}</strong><small>{performance?.date}</small><small>资料时点 {share.data_as_of.slice(0, 10)} · {share.data_source === 'contract_fixture_only' ? '虚构样例' : share.data_source}</small></div>
+              <div className="picker-performance"><strong>{performance?.label}：{performance?.value}</strong><small>{performance?.date}</small><small>资料时点 {share.data_as_of?.slice(0, 10)??'未知'} · {share.data_source === 'contract_fixture_only' ? '虚构样例' : share.data_source}</small></div>
               <p className="picker-fees">起购 {money(share.min_amount_fen)} · 申购 {feeRate(share.fees.purchase_fee_rate)} · 销售服务 {feeRate(share.fees.sales_service_fee_rate)}</p>
-              <p className="consumer-note">赎回费：{share.fees.redemption_fee_rules || '规则未提供'}</p>
+              <p className="consumer-note">赎回费：{share.fees.redemption_fee_rules == null ? '规则未提供' : JSON.stringify(share.fees.redemption_fee_rules)}</p>
               {candidate.share_classes.some(item => item.share_class === 'A' || item.share_class === 'C') && <details className="picker-class-note"><summary>A/C 费用说明</summary><p>{classExplanation}</p></details>}
               <div className="picker-actions"><button className="secondary" disabled={busy} onClick={() => setDetailId({id:share.product_id,version:share.product_version})}>查看{candidate.name}详情</button>{validShares(candidate).filter(item => item.product_id !== share.product_id && item.share_class != null).map(item => <button className="secondary" key={item.product_id} disabled={busy} onClick={() => onSelectionChange(changeShare(state, candidate, item.product_id))}>{item.share_class === 'C' ? '切换C类' : '切回A类'}</button>)}</div>
             </>}

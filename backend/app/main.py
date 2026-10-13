@@ -87,6 +87,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(wealth_tasks_router)
+from .routers.wealth_portfolio import router as portfolio_router
+from .services.orchestration.wealth_portfolio_joint import install as install_portfolio
+from pathlib import Path
+install_portfolio(app,Path(__file__).resolve().parents[2])
+app.include_router(portfolio_router)
 
 # ──────────────────── 中间件 ────────────────────
 

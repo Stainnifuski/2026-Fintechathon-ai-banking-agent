@@ -1,0 +1,67 @@
+{
+  "fixture_id": "F02",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A_contract",
+  "input": {
+    "capacity_level": 1,
+    "plan": {
+      "schema_version": "wealth-portfolio-plan-v1",
+      "portfolio_id": "fixture-plan",
+      "version": 1,
+      "snapshot_id": "fixture-snapshot",
+      "asset_scope_id": "fixture-scope",
+      "context_id": "fixture-context",
+      "as_of": "2026-10-05T04:00:00+00:00",
+      "basis_kind": "linked_bank_assets",
+      "basis_status": "fixture_only",
+      "basis_fen": 1000000,
+      "provider_id": "fixture_only",
+      "provider_version": "00-v0.3",
+      "model_status": "fixture",
+      "buckets": [
+        {
+          "bucket": "cash_management",
+          "min_ratio": "1",
+          "target_ratio": "1",
+          "max_ratio": "1",
+          "target_fen": 1000000,
+          "current_fen": 0,
+          "reason": "fixed interface example, not model parameters"
+        },
+        {
+          "bucket": "stable",
+          "min_ratio": "0",
+          "target_ratio": "0",
+          "max_ratio": "0",
+          "target_fen": 0,
+          "current_fen": 0,
+          "reason": "fixed interface example, not model parameters"
+        },
+        {
+          "bucket": "growth",
+          "min_ratio": "0",
+          "target_ratio": "0",
+          "max_ratio": "0",
+          "target_fen": 0,
+          "current_fen": 0,
+          "reason": "fixed interface example, not model parameters"
+        }
+      ],
+      "growth_ratio_ex_cash": null,
+      "candidate_groups": [],
+      "selected_positions": [],
+      "cash_residual_fen": 1000000,
+      "data_versions": {
+        "fixture": "00-v0.3"
+      },
+      "missing_fields": [],
+      "reasons": [
+        "FIXTURE_ONLY"
+      ]
+    }
+  },
+  "expected": {
+    "growth_ratio_ex_cash": null
+  }
+}

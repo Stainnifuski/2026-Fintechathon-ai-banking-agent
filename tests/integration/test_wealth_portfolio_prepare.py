@@ -41,7 +41,8 @@ class RecordedSource:
         snap = dict(schema_version='wealth-asset-snapshot-v1', context_id=facts['context_id'], asset_scope_id='isolated-U1', account_ids=[a['account_id'] for a in cash],
             accounts=cash, positions=list(positions.values()), receivable_fen=facts['receivable_fen'], basis_fen=basis,
             total_assets_fen=basis, valuation_complete=facts['valuation_complete'])
-        snap['snapshot_id'] = hashlib.sha256(json.dumps(snap,sort_keys=True).encode()).hexdigest()
+        snap.update(orders=facts['orders'],context_epoch=None,as_of=facts['as_of'],business_at=facts['business_at'],basis_kind='linked_bank_assets',basis_status='fixture_only',assessment=None,data_versions={'fixture':'recorded-consumer-only'},missing_fields=[])
+        snap['snapshot_id'] = hashlib.sha256(json.dumps({k:v for k,v in snap.items() if k!='as_of'},sort_keys=True).encode()).hexdigest()
         return snap
 
     async def record(self, local, entries, *, version=9):

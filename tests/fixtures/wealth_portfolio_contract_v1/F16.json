@@ -1,0 +1,23 @@
+{
+  "fixture_id": "F16",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A2_B_future",
+  "input": {
+    "filters": [
+      {
+        "mode": "category",
+        "category": "money_fund"
+      },
+      {
+        "mode": "category",
+        "category": "mixed_fund"
+      }
+    ],
+    "page": 2,
+    "market_value_fen": 123456
+  },
+  "expected": {
+    "parameter_driven": true
+  }
+}

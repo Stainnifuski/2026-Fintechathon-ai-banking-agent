@@ -117,6 +117,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
         setPortfolio(plan);setCandidateGroups(plan.candidate_groups);setReviewing(true);
         setCandidateSelection(previous=>previous.items.length?previous:planProductSelection(plan));
       }
+      if(action==='revise_portfolio'&&response.status==='ok')setPortfolio(readPortfolioPlan(response.data,contextId));
       if(action==='recommend_products'&&response.status==='ok'){
         const group=readCandidateGroup(response.data);assertCurrentCandidates(group,ready.products);
         if(!sameCandidateFilter(group.filter,params.filter))throw new Error('推荐结果与当前筛选条件不一致，请重新查询。');
@@ -216,16 +217,16 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     <fieldset disabled={busy||!ready}><legend>规划与推荐</legend><div className="consumer-entry-grid">
       <button onClick={()=>void run('plan_portfolio',{})}>理财规划</button><button onClick={()=>recommend({mode:'general'})}>产品推荐</button>
       <button onClick={()=>recommend({mode:'category',category:'bond_fund'})}>推荐债券基金</button><button onClick={()=>recommend({mode:'theme',theme_key:'high_dividend'})}>想买高股息产品</button></div>
-      <p className="consumer-note">队友配置/推荐服务尚未接入时会明确显示原因；旧F11样例仍在原入口。</p>
+      <p className="consumer-note">配置与推荐由01正式服务生成；资料或资格不足会明确说明，当前入口不加载录制方案。</p>
       <label>推荐方式<select value={mode} onChange={e=>setMode(e.target.value)}><option value="general">普通推荐</option><option value="category">按类别</option><option value="theme">按主题</option></select></label>
       {mode==='category'&&<label>产品类别<select value={category} onChange={e=>setCategory(e.target.value)}><option value="quick_redeem">可快速赎回</option><option value="bank_wealth">银行理财</option><option value="money_fund">货币基金</option><option value="bond_fund">债券基金</option><option value="mixed_fund">混合基金</option><option value="equity_fund">权益基金</option></select></label>}
       {mode==='theme'&&<label>产品主题<select value={theme} onChange={e=>setTheme(e.target.value)}><option value="high_dividend">高股息/红利</option></select></label>}
       <button className="secondary" onClick={()=>recommend({mode,...(mode==='category'?{category}:mode==='theme'?{theme_key:theme}:{})})}>按条件推荐</button>{renderResult('planning')}
       {candidateGroups.length>0&&ready&&<><ProductPicker groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={next=>{setCandidateSelection(next);setReviewing(false);}} busy={busy}
         onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:ids})}
-        loadDetail={loadDetail} loadComparison={loadComparison} onContinue={()=>{if(!portfolio)void run('plan_portfolio',{});else setReviewing(true);}}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。尚无整体方案时，继续操作会先请求配置服务创建方案。</p></>}
+        loadDetail={loadDetail} loadComparison={loadComparison} onContinue={()=>{if(!portfolio)void run('plan_portfolio',{selected:candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class}))});else setReviewing(true);}}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。尚无整体方案时，继续操作会先请求配置服务创建方案。</p></>}
       {portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.version}:${revision}:${reload}:${controlKey}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={()=>{setActivityNotice('银行操作已返回，请核对更新后的资金、订单与持仓；已受理不等于已结算。');onActivity();}}
-        onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)});if(result?.status!=='ok')throw new Error(result?.message??'比例校验未完成，请重新核对。');return readPortfolioPlan(result.data,portfolio.context_id);}}
+        onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)});if(result?.status!=='ok')throw new Error(result?.message??'比例校验未完成，请重新核对。');return readPortfolioPlan(result.data,portfolio.context_id??contextId);}}
         onPrepare={async plan=>{const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id});if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}
     </fieldset>
     <fieldset disabled={busy||!ready}><legend>订单查询</legend><button onClick={()=>list('orders')}>查询我的订单</button>{renderResult('orders')}</fieldset>

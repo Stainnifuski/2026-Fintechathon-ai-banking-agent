@@ -20,18 +20,18 @@ export function readCandidateGroup(value:unknown):CandidateGroup{
     ||!(value.bucket===null||buckets.includes(String(value.bucket)))||!(value.next_cursor===undefined||optionalText(value.next_cursor))||!(value.risk_explanation==null||object(value.risk_explanation)))return invalid();
   const filter=value.filter;
   if(!['general','category','theme'].includes(String(filter.mode))
-    ||(filter.mode==='category'&&!text(filter.category))||(filter.mode==='theme'&&!text(filter.theme_key)))return invalid();
+    ||(filter.mode==='category'&&!text(filter.category))||(filter.mode==='theme'&&!text(filter.theme_key)&&!(Array.isArray(filter.theme_keys)&&filter.theme_keys.length&&['AND','OR'].includes(String(filter.theme_operator)))))return invalid();
   if(value.status==='risk_mismatch'&&(!object(value.risk_explanation)||!integer(value.risk_explanation.user_level,1)||!Array.isArray(value.risk_explanation.product_levels)||!value.risk_explanation.product_levels.every(n=>integer(n,1))))return invalid();
   const families=new Set<string>(),products=new Set<string>();
   for(const c of value.items){
     if(!object(c)||!text(c.family_id)||families.has(String(c.family_id))||!text(c.name)||!buckets.includes(String(c.bucket))||!text(c.reason)
-      ||!Array.isArray(c.reason_codes)||!c.reason_codes.every(text)||!Array.isArray(c.evidence)||!Array.isArray(c.share_classes)||!c.share_classes.length)return invalid();
+      ||!Array.isArray(c.reason_codes)||!c.reason_codes.every(text)||!(object(c.evidence)||Array.isArray(c.evidence))||!Array.isArray(c.share_classes)||!c.share_classes.length)return invalid();
     families.add(String(c.family_id));
     for(const s of c.share_classes){
       if(!object(s)||!text(s.product_id)||!integer(s.product_version,1)||!integer(s.disclosure_version,1)||![null,'A','C'].includes(s.share_class as null|string)
         ||!(s.product_risk_level===null||integer(s.product_risk_level,1)&&Number(s.product_risk_level)<=5)||!text(s.status)||typeof s.tradable!=='boolean'
-        ||!(s.min_amount_fen===null||integer(s.min_amount_fen,0))||!object(s.fees)||!decimal(s.fees.purchase_fee_rate)||!decimal(s.fees.sales_service_fee_rate)||!optionalText(s.fees.redemption_fee_rules)
-        ||!object(s.performance)||!metric(s.performance.one_year,true)||!metric(s.performance.latest_day,false)||!text(s.detail_ref)||!text(s.data_source)||!text(s.data_as_of)||Number.isNaN(Date.parse(String(s.data_as_of))))return invalid();
+        ||!(s.min_amount_fen===null||integer(s.min_amount_fen,0))||!object(s.fees)||!decimal(s.fees.purchase_fee_rate)||!decimal(s.fees.sales_service_fee_rate)||!(optionalText(s.fees.redemption_fee_rules)||Array.isArray(s.fees.redemption_fee_rules))
+        ||!object(s.performance)||!metric(s.performance.one_year,true)||!metric(s.performance.latest_day,false)||!text(s.detail_ref)||!optionalText(s.data_source)||!optionalText(s.data_as_of)||(s.data_as_of!==null&&Number.isNaN(Date.parse(String(s.data_as_of)))))return invalid();
       const ref=`${s.product_id}:${s.product_version}`;if(products.has(ref))return invalid();products.add(ref);
     }
   }
@@ -44,7 +44,7 @@ export function assertCurrentCandidates(group:CandidateGroup,products:Product[])
 }
 export function sameCandidateFilter(a:unknown,b:unknown):boolean{
   if(!object(a)||!object(b))return false;
-  return ['mode','category','theme_key','bucket'].every(k=>(a[k]??null)===(b[k]??null));
+  return ['mode','category','theme_key','bucket','theme_operator','theme_keys'].every(k=>JSON.stringify(a[k]??null)===JSON.stringify(b[k]??null));
 }
 export function replaceCandidateGroup(groups:CandidateGroup[],next:CandidateGroup):CandidateGroup[]{
   const index=groups.findIndex(g=>g.bucket===next.bucket&&sameCandidateFilter(g.filter,next.filter));

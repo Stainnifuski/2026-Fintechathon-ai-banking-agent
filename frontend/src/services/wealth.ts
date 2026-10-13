@@ -1,24 +1,10 @@
 import { apiClient } from './api';
 
-// B consumes the shared recording's shape; no competing A portfolio schema.
-// The type-only reference emits no fixture data into customer production bundles.
-type CandidateRecording = typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f09.json');
-export type CandidateGroup = CandidateRecording['groups'][number] | CandidateRecording['risk_group'] | CandidateRecording['unavailable_group'];
+export type { PortfolioPlan, PortfolioSnapshot, PortfolioSelection } from '../types/wealthPortfolio';
+import type { PortfolioPlan, PortfolioSelection, PortfolioCandidateGroup } from '../types/wealthPortfolio';
+export type CandidateGroup = PortfolioCandidateGroup;
 export type ProductCandidate = CandidateGroup['items'][number];
 export type CandidateShare = ProductCandidate['share_classes'][number];
-
-// A owns these shapes. Until its canonical types merge, infer the shared F11
-// recording rather than maintaining a second portfolio schema in B.
-type PortfolioRecording = typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f11.json');
-export type PortfolioPlan = Omit<PortfolioRecording['plan'],'candidate_groups'> & {candidate_groups:CandidateGroup[]};
-export type PortfolioSnapshot = PortfolioRecording['snapshot']
-  | typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f18.json')['snapshot']
-  | typeof import('../../../tests/fixtures/wealth_portfolio_contract_v1/f10.json')['snapshot'];
-export type PortfolioSelection = Pick<PortfolioPlan, 'portfolio_id' | 'snapshot_id' | 'context_id'> & {
-  expected_version: number;
-  growth_ratio_ex_cash?: string | null;
-  items: Pick<PortfolioPlan['selected_positions'][number], 'product_id' | 'product_version' | 'share_class' | 'target_ratio_total'>[];
-};
 export interface PortfolioAction {
   product_id: string; product_version: number; disclosure_version: number; account_id: string;
   bucket: string; name?: string; current_fen: number; target_fen: number; difference_fen: number;

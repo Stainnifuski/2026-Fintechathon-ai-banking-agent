@@ -1,0 +1,13 @@
+{
+  "fixture_id": "F22",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "fees_in_nav": true,
+    "purchase_fee_in_cashflow": true
+  },
+  "expected": {
+    "deduct_again": false
+  }
+}

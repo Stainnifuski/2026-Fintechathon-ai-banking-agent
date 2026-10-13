@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import * as w from '../../services/wealth';
 import type { ProductSelectionState } from './productSelection';
 import { collectPortfolioSelection, selectionKey } from './allocationSelection';
+import PortfolioAllocation from './PortfolioAllocation';
 import PlanExecution from './PlanExecution';
 import './allocationReview.css';
 
-const labels: Record<string,string> = { cash_management:'活钱', stable:'稳健', growth:'进取' };
 const percentage = (ratio:string) => String(Number((Number(ratio)*100).toFixed(2)));
 const errorMessage = (error:unknown) => (error as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message || (error instanceof Error ? error.message : '操作失败，请保留当前方案核对');
 interface Props {
@@ -53,7 +53,8 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
       setPlan(revised);setValidatedKey(selectionKey({items:revised.selected_positions}));setPrepared(null);
       setNotice('已收到配置服务校验结果，请核对板块与目标后再准备差额。');
     })}>校验所选产品与比例</button>}
-    <div className="allocation-buckets">{plan.buckets.map(bucket=><article key={bucket.bucket}><strong>{labels[bucket.bucket]}</strong><span>{percentage(bucket.target_ratio)}% · {w.money(bucket.target_fen)}</span><small>允许区间 {percentage(bucket.min_ratio)}%—{percentage(bucket.max_ratio)}%</small></article>)}</div>
+    <PortfolioAllocation plan={plan} snapshot={snapshot} contextId={plan.context_id??'legacy-v1'} showProductEditor={false} loading={busy} readOnly={!!onPropose||fixtureOnly}
+      onAdjust={onRevise} onPreferenceChange={onRevise} onAccepted={next=>{setPlan(next);setPrepared(null);setValidatedKey(selectionKey({items:next.selected_positions}));}}/>
     <p>已校验保留现金 {w.money(plan.cash_residual_fen)} · 赎回应收 {w.money(snapshot.receivable_fen)}（到账前不可用于买入）</p>
     <details><summary>查看全部现有持仓与保留项目（{snapshot.positions.length}）</summary>{snapshot.positions.length?snapshot.positions.map(position=><p key={position.position_key}>{position.account_id} · {position.product_id} v{position.product_version} · {position.units}份 · 市值 {w.money(position.market_value_fen)} · 可赎 {position.redeemable_units}份</p>):<p>当前快照没有持仓；不会把在途申请算成已确认份额。</p>}</details>
     {!onPropose&&<><button disabled={busy||!clean||!snapshot.valuation_complete} onClick={()=>act(async()=>{

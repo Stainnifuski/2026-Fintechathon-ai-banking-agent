@@ -1,0 +1,13 @@
+{
+  "fixture_id": "F17",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "old_schema": "wealth-subtask-v1",
+    "new_schema": "wealth-action-v1"
+  },
+  "expected": {
+    "not_interchangeable": true
+  }
+}
