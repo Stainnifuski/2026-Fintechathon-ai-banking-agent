@@ -212,7 +212,12 @@ class PortfolioModelProvider:
             r=pipeline(index,CandidateFilter(mode='general',bucket=bucket),facts,user_id,now,
                        checked_decisions={d.product_id:d for d in eligible.decisions});pool=r.family_candidates
             ids=self.candidates.selector.select(pool,set(),3) if pool else []
-            raw={'pipeline':r.model_dump(mode='json'),'status':r.status,'source_kind':facts.mode,'fixture_only':facts.mode=='fixture','items':[f.model_dump(mode='json') for f in pool if f.family_id in ids]}
+            # CandidateGroup consumes these explanations, not the complete
+            # per-product decision dump. Avoid allocating the whole directory
+            # three more times; eligibility and all exclusions stay unchanged.
+            raw={'pipeline':{'reason_codes':r.reason_codes,'exclusions':r.exclusions,'risk_explanation':r.risk_explanation},
+                 'status':r.status,'source_kind':facts.mode,'fixture_only':facts.mode=='fixture',
+                 'items':[f.model_dump(mode='json') for f in pool if f.family_id in ids]}
             group_results.append(adapt_candidate_group(raw,index,CandidateFilter(mode='general',bucket=bucket)))
         plan=None
         if not product_missing and cash_target is not None:
