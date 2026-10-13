@@ -14,6 +14,7 @@ def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['build','read','coverage','validate-evidence','register-evidence','derive'])
     parser.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--raw-root',type=Path,help='optional existing A1/Step09 cache root; no copying or collection')
     parser.add_argument('--as-of');parser.add_argument('--version');parser.add_argument('--input',type=Path)
     parser.add_argument('--bank-capture');parser.add_argument('--bank-sha256')
     args=parser.parse_args();root=args.root.resolve();directory=root/'.deps/wealth_portfolio_data/snapshots'
@@ -37,7 +38,7 @@ def main() -> None:
         snapshot=derive(root,args.version,args.bank_capture,args.bank_sha256,utc(args.as_of));save(snapshot,directory)
     elif args.command=='build':
         if not args.as_of:parser.error('--as-of with timezone required')
-        snapshot=build(root,utc(args.as_of));index=save(snapshot,directory)
+        snapshot=build(root,utc(args.as_of),raw_root=args.raw_root);index=save(snapshot,directory)
     else:
         if not args.version:parser.error('--version required; no silent latest fallback')
         snapshot=read(root,directory,args.version);index={'version':snapshot.version}

@@ -70,6 +70,20 @@ def observation(value, field: str, ref: RawReference, *, unit=None, as_of=None) 
 
 
 def read_raw(root: Path, ref: RawReference) -> dict | list:
+    if ref.function=='public_unit_nav_history':
+        # Parse the saved publisher script as data; never execute JavaScript.
+        from zoneinfo import ZoneInfo
+        text=read_protected_bytes(root,ref.path,ref.sha256,'.deps/wealth_portfolio_step09/public').decode('utf8')
+        code=ref.kwargs.get('symbol')
+        if ref.kwargs.get('url')!=f'https://fund.eastmoney.com/pingzhongdata/{code}.js':
+            raise ValueError('EVIDENCE_BINDING_MISMATCH')
+        match=re.search(r'var\s+Data_netWorthTrend\s*=\s*(\[.*?\])\s*;',text,re.S)
+        if not match:raise ValueError('PUBLIC_UNIT_NAV_SERIES_MISSING')
+        points=json.loads(match[1]);rows=[]
+        for point in points:
+            instant=datetime.fromtimestamp(point['x']/1000,timezone.utc)
+            rows.append({'基金代码':code,'净值日期':instant.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(),'单位净值':point['y']})
+        return {'records':rows}
     payload=read_protected_json(root,ref.path,ref.sha256,'.deps/a1_collection/raw')
     if not isinstance(payload,dict) or payload.get('function')!=ref.function or payload.get('kwargs')!=ref.kwargs:
         raise ValueError('EVIDENCE_BINDING_MISMATCH')

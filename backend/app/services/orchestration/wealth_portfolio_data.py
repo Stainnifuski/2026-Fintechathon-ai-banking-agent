@@ -16,7 +16,7 @@ _APP_ROOT=Path(__file__).resolve().parents[2]
 _ADAPTER_FILES=[Path(__file__),_APP_ROOT/'schemas/wealth_portfolio_data.py',_APP_ROOT/'integrations/wealth_portfolio_data.py',_APP_ROOT/'integrations/wealth_collection_cache.py']
 ADAPTER_VERSION='portfolio-data-v1:'+hashlib.sha256(b''.join(p.read_bytes() for p in _ADAPTER_FILES)).hexdigest()
 FIXED_FUNCTIONS={'fund_name_em','fund_overview_em','fund_info_ths','fund_individual_basic_info_xq'}
-DAILY_FUNCTIONS={'fund_purchase_em','fund_open_fund_info_em','fund_money_fund_info_em'}
+DAILY_FUNCTIONS={'fund_purchase_em','fund_open_fund_info_em','fund_money_fund_info_em','public_unit_nav_history'}
 BUCKETS={'money_market':'cash_management','money':'cash_management','cash':'cash_management','bond':'stable','mixed':'growth','equity':'growth'}
 TEXT_FIELDS=('objective','strategy','benchmark','tracking_target')
 
@@ -57,6 +57,17 @@ def inventory(root: Path) -> tuple[list[dict],list[RawReference]]:
         raw=read_protected_json(root,ref.path,ref.sha256,'.deps/a1_collection/raw')
         ref.observed_at=utc(raw['observed_at'])
         refs.append(ref)
+    ledger=root/'.deps/wealth_portfolio_step09/public_ledger.json'
+    if ledger.exists():
+        for entry in json.loads(ledger.read_text(encoding='utf8')):
+            if entry.get('kind')!='history' or entry.get('http')!=200 or entry.get('status')!='received':continue
+            path=(root/entry['path']).resolve()
+            if not path.is_relative_to(root/'.deps/wealth_portfolio_step09/public'):raise ValueError('EVIDENCE_PATH_DENIED')
+            if hashlib.sha256(path.read_bytes()).hexdigest()!=entry['sha256']:raise ValueError('EVIDENCE_FINGERPRINT_MISMATCH')
+            # Money-market scripts have a yield series, not a unit-NAV series.
+            if b'Data_netWorthTrend' not in path.read_bytes():continue
+            refs.append(RawReference(path=entry['path'],sha256=entry['sha256'],function='public_unit_nav_history',
+                kwargs={'symbol':entry['code'],'url':entry['url'],'indicator':'单位净值走势'},observed_at=utc(entry['observed_at'])))
     return universe,refs
 
 
@@ -139,7 +150,26 @@ def real_products(universe: list[dict], refs: list[RawReference], root: Path, cu
                         if key in row:
                             # 原始状态没有完整日期，金额未获单位元的出处证明，不转成分。
                             daily[entity][field].append(observation(row[key],key,ref,unit='source_unit_unverified' if field in ('purchase_minimum','purchase_limit') else None))
-                # 混合“最新净值/万份收益”列保留原料引用，不输出为NAV。
+                # This mixed column is NAV only for independently classified
+                # non-money funds. MM-DD has no year: preserve that uncertainty
+                # and the explicit latest-not-after-observation interpretation.
+                category=by_code[entity].get('base_type')
+                raw_type=clean(row.get('基金类型'))
+                value=clean(row.get('最新净值/万份收益'))
+                rawdate=clean(row.get('最新净值/万份收益-报告时间'))
+                non_money=(isinstance(raw_type,str) and '货币' not in raw_type) if raw_type else category in ('bond','mixed','equity')
+                if non_money and value is not None and rawdate:
+                    observed_day=ref.observed_at.astimezone(ZoneInfo('Asia/Shanghai')).date()
+                    try:
+                        if len(str(rawdate))==5:
+                            business_date=date.fromisoformat(f'{observed_day.year}-{rawdate}')
+                            if business_date>observed_day:business_date=business_date.replace(year=business_date.year-1)
+                        else:business_date=date.fromisoformat(str(rawdate)[:10])
+                        if business_date<=observed_day and business_date<=cutoff.astimezone(ZoneInfo('Asia/Shanghai')).date():
+                            obs=observation(value,'最新净值/万份收益',ref,unit='yuan_per_share',as_of=business_date)
+                            obs.reason='non_money_category_NAV; MM-DD year interpreted as latest not after observation' if len(str(rawdate))==5 else 'non_money_category_NAV'
+                            daily[entity]['unit_nav'].append(obs)
+                    except (ValueError,TypeError):pass
             else:
                 branch=ref.kwargs.get('indicator')
                 allowed={'单位净值走势':('单位净值','unit_nav','yuan_per_share'), '累计净值走势':('累计净值','cumulative_nav','yuan_per_share')}
@@ -258,14 +288,14 @@ def coverage(products: list[ProductFact],daily: list[DailyFact]) -> dict:
         'external_requests':0,'formal_asset_source':'unavailable', 'approved_trade_product':False}
 
 
-def build(root: Path, as_of: datetime) -> DataSnapshot:
-    root=root.resolve();universe,refs=inventory(root)
+def build(root: Path, as_of: datetime, *, raw_root: Path | None=None) -> DataSnapshot:
+    root=root.resolve();raw_root=(raw_root or root).resolve();universe,refs=inventory(raw_root)
     evidence_path=root/'config/wealth/portfolio_evidence_manifest.json'
     evidence_ref=reference(root,evidence_path,'registered_public_evidence')
     evidence=read_protected_json(root,evidence_ref.path,evidence_ref.sha256,'config/wealth')
     if evidence.get('schema_version')!='portfolio-evidence-v1':raise ValueError('EVIDENCE_VERSION_UNSUPPORTED')
     entries=[validate_evidence(root,e,evidence['authority_sources'],{row['code'] for row in universe}) for e in evidence['records']]
-    products,daily=real_products(universe,refs,root,as_of,entries)
+    products,daily=real_products(universe,refs,raw_root,as_of,entries)
     config_refs=[]
     for filename,bank in [('bank_products.json',True),('synthetic.json',False)]:
         path=root/'config/wealth/data'/filename;ref=reference(root,path,'simulation_config');config_refs.append(ref)

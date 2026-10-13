@@ -171,3 +171,29 @@ def test_same_channel_conflicting_risks_preserved(tmp_path):
     second=first.model_copy(update={'risk_level':2,'evidence_id':'different_observation'})
     products,_=real_products([universe()],[],tmp_path,NOW,[first,second])
     assert len(products[0].risk_evidence)==2 and products[0].fields['formal_risk'].status=='conflict'
+
+def test_purchase_nav_disambiguation_and_saved_year(tmp_path):
+    rows=[{'基金代码':'000001','最新净值/万份收益':1.208,'最新净值/万份收益-报告时间':'09-30'},
+          {'基金代码':'000002','最新净值/万份收益':0.423,'最新净值/万份收益-报告时间':'09-30'}]
+    ref=raw_file(tmp_path,function='fund_purchase_em',kwargs={'scope':'all'},rows=rows)
+    _,daily=real_products([universe(base='bond'),universe('000002',base='money_market')],[ref],tmp_path,NOW,[])
+    nav=daily[0].fields['unit_nav']
+    assert nav.value=='1.208' and str(nav.observations[0].as_of)=='2026-09-30'
+    assert 'year interpreted' in nav.observations[0].reason
+    assert daily[1].fields['unit_nav'].value is None
+
+
+def test_step09_public_nav_exact_code_hash_and_time(tmp_path):
+    from datetime import date
+    folder=tmp_path/'.deps/wealth_portfolio_step09/public';folder.mkdir(parents=True)
+    path=folder/'history.raw'
+    path.write_text('var Data_netWorthTrend = [{"x":1790697600000,"y":1.208}]; var other="not executed";',encoding='utf8')
+    ref=reference(tmp_path,path,'public_unit_nav_history',{'symbol':'000015','indicator':'单位净值走势','url':'https://fund.eastmoney.com/pingzhongdata/000015.js'},NOW)
+    _,daily=real_products([universe('000015',base='bond')],[ref],tmp_path,NOW,[])
+    assert daily[0].fields['unit_nav'].value=='1.208'
+    assert daily[0].fields['unit_nav'].observations[0].as_of==date(2026,9,30)
+    with pytest.raises(ValueError,match='BINDING'):
+        read_raw(tmp_path,ref.model_copy(update={'kwargs':{**ref.kwargs,'symbol':'000016'}}))
+    with pytest.raises(ValueError,match='FINGERPRINT'):
+        read_raw(tmp_path,ref.model_copy(update={'sha256':'0'*64}))
+
