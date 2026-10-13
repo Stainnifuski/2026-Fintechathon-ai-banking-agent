@@ -102,3 +102,13 @@ passed范围限定在SQLite/服务或API，不代表未运行的对应完整用�
 ## 本地保存与服务状态
 
 本轮代码提交 `82681abc598ca90b45265c6101573b1090908675`。文档在下一本地提交保存；最终SHA见仓库外回传。3013/8013专用服务已核对并关闭，原3010/8010保留；旧3021/3022/8051/8052无监听，旧交付smoke PID已不存在。数据库与失败证据保留。未远端写入，人工待验，禁止据此进入阶段4。
+
+## 2026-10-13 零候选处理：当前工程状态
+
+旧八MF/MW与冻结S/B目录错位、版本/材料读取路径遗漏已修复；默认联合测试server使用已有fixed_payload完整78，不调用旧轮次清理upgrade。完整目录78→46范围内→34合格份额/18家族→0材料家族→0DPP。产品目标/策略/基准正文原定义缺失，等待用户决定新增目标材料；七产品主线/J08和人工验收仍blocked，不能封板。原“PG不可得”只代表前轮：本轮PG51+SQLite51+其他2基线104通过，修复PG19+SQLite19+契约45共83通过；217 A相关回归/66前端状态/类型build通过，3个正式UI阻塞检查通过，不称投资正向。集合不能累加。
+
+具体根因：MF八在原A集里不存在；S/B原不可变metadata有显式份额/family和基准名称，被bank目录读取路径遗漏；当前只读精确版本映射恢复。基准名称不是基准定义，保留name_only/unknown；两份额同家族。B013/B014非开放、B015/B016过期，S052/S056非开放；R5超R4和银行政策不放宽。
+
+当前derived data `c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7` / daily `3aad3d4a16ea0cba70e516b4a6d79c317f358870329975f8fa42c857bcffdc65`，输入捕获 `23b28716bb7e47789c4aa194bc8495072af84353acc265bd1359929b0a358520`。新机器除原固定文件/冻结包外需受控交付该snapshot+index，或以新隔离库执行tests.browser.wealth_joint_diagnose_http取得新当前版本；诊断路由仅测试server注册，不进入正式main API。明确WEALTH_JOINT_CATALOG=fixed-full并指定PORTFOLIO_DATA_VERSION/PORTFOLIO_DAILY_VERSION；普通正式配置不可用fixture后备。
+
+待确认的最小定义：SF001/SF004/SF006/SF007/SF018/SF019/SF020七家族14个A/C，只加investment_objective，三类同目标，不编七套不同文本抬DPP得分。批准后v2版本化，风险/费用/NAV/销售/渠道/family/份额不改；不补保本/快赎，不新建七产品白名单。未生成该新设计。批准后才做七产品整份确认/MFA/交易及完整J/人工。源修复代码 `0abee504fe01ea265ee0b7170d6a2a177f0bafec`，原工作区不变、未远端写入，专用服务已停止。

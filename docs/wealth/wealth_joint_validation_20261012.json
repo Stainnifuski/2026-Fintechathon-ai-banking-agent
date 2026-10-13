@@ -33,5 +33,62 @@
   "human_acceptance": "pending",
   "j_report": "wealth_joint_acceptance.md",
   "integrated_code_commit": "82681abc598ca90b45265c6101573b1090908675",
-  "owned_test_services": "stopped after acceptance; original 3010/8010 retained"
+  "owned_test_services": "stopped after acceptance; original 3010/8010 retained",
+  "latest_followup": {
+    "date": "2026-10-13 America/Toronto",
+    "code_commit": "0abee504fe01ea265ee0b7170d6a2a177f0bafec",
+    "status": "awaiting_product_objective_definition_decision",
+    "legacy_counts_before": {
+      "bank_directory": 8,
+      "bank_ids_in_a": 0,
+      "in_scope": 0,
+      "qualified_shares": 0,
+      "qualified_families": 0,
+      "material_complete_families": 0,
+      "dpp_returned": 0
+    },
+    "legacy_counts_after": {
+      "bank_directory": 8,
+      "bank_ids_in_a": 8,
+      "in_scope": 5,
+      "qualified_shares": 5,
+      "qualified_families": 5,
+      "material_complete_families": 0,
+      "dpp_returned": 0
+    },
+    "full_current_counts": {
+      "bank_directory": 78,
+      "bank_ids_in_a": 78,
+      "in_scope": 46,
+      "qualified_shares": 34,
+      "qualified_families": 18,
+      "material_complete_families": 0,
+      "dpp_returned": 0
+    },
+    "data_version": "c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7",
+    "daily_version": "3aad3d4a16ea0cba70e516b4a6d79c317f358870329975f8fa42c857bcffdc65",
+    "input_capture_sha256": "23b28716bb7e47789c4aa194bc8495072af84353acc265bd1359929b0a358520",
+    "pg_baseline": {
+      "passed": 104,
+      "postgresql": 51,
+      "sqlite": 51,
+      "other": 2,
+      "skipped": 0
+    },
+    "repairs": {
+      "passed": 83,
+      "postgresql": 19,
+      "sqlite": 19,
+      "contract": 45,
+      "skipped": 0
+    },
+    "a_regression": 217,
+    "frontend_states": 66,
+    "browser_blocking_checks": 3,
+    "positive_investment_acceptance": false,
+    "new_product_design_implemented": false,
+    "j08": "blocked",
+    "new_model_calls": 0,
+    "remote_writes": 0
+  }
 }
