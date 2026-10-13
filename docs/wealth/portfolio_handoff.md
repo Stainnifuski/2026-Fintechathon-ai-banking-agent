@@ -1,99 +1,92 @@
-# 理财01／02：本地集成工程交接
+# 理财01／02：当前本地集成工程交接
 
-更新：2026-10-12 America/Toronto。替代旧01单独 wealth 分支交付说明。共同依据仍为00 v0.3，模型和参数以 portfolio_model.md 为准，未重新选型。
+更新：2026-10-13 America/Toronto。代码验收版本 `813894c6a6e670229ad8381a3c6367f3998f5b18`，分支 `integration/wealth-01-02`。
 
-**状态：正式代码接线完成，联合验收未全部通过、未可封板，人工待验；没有远端写入。** 真实银行来源可创建全现金配置，但合格候选为0，不能以此声称投资正向主线通过。阶段4未执行。
+**状态：独立可修项已实施，真实基金交易映射及评级政策需要业务决定；完整联合投资正向未通过，未可封板，不安排用户重复验空页面。** 未远端写入，未合原main，未接新LLM/NLP，未恢复采集。
 
-## 1. 来源与工作区保护
+## 1. 保留成果与范围变更
 
-- 本地01原 main：`5e36e4c48c82c24a088c9f271df7774727d7435f`，完整未提交01成果保留原目录。
-- 本轮只读 fetch：main `853569b1b06b3f7fb261e4e62cdf053eb382d47d`；wealth `ec8d143c0242a4f0acbeb1a4fb5d95fbb0c5d020`；02 `8b611dd10a6b876c8a3baf50ec1b5d94247dc6b4`。
-- 集成底座为02（已含核对时 main），本地 `integration/wealth-01-02`，独立检出；未切换原脏目录，未修改02源分支。没有执行阶段4整合 main。
-- 导入清单181份A源码/测试/配置/文档及7份重叠fixture语义合并。大小写冲突保留B录制字段与A input/expected，生成器不覆盖B扩展，跨平台加载兼容大小写。
-- 原旧交付检出保留；旧批处理脚本已备份并改名 `.disabled`，不会重跑。浏览器脚本的环境变量可移植性修正保留。私有附件/回传、运行库、原料/验证缓存、密钥未纳入提交。
+- 保留01前11步、02手动流程、0abee50精确版本材料映射、PostgreSQL修复和原工作区；旧七家族S产品投资目标补全方案没有批准、本轮不实施，不作为正式来源。
+- 共用00 v0.3和模型已确认参数保持；旧“模型待定”文字不覆盖 `portfolio_model.md` 的冻结DPP、区间与投影。
+- 新增只读批量目录读取、不可变资料索引指纹、正常启动预加载、不可修改的相同未知字段复用、请求内事实复用及离线包准备命令；不缓存用户资格、资金、控制权或购买许可。可变注入源不复用字段；未知值仍未知，数据指纹不变。
+- 调整：候选费用按当前具体份额版本映射，销售服务费未知仍null，不将年度综合费误称销售服务费；移除临时120秒Action超时，回到公共客户端超时，无自动交易重试。内部BankPurchaseFact增加可选fee_rules，外部Fees DTO不变。
+- **移出运行功能封板门槛**：原01 A6的含分红历史总回报、固定组合和真正样本外金融效果评价。不继续补证，保留原NAV描述及未完成状态，不宣称金融有效性。原00中的相关研究交接改为历史未完成、非本轮运行门禁；不删除资格/账务/J条件。
+- 保持：未知风险不放行、具体份额与当前版本、本人确认、统一MFA、参数/有效期/幂等/审计、超风险原持仓仅保持/减持、受理事实不回滚、B真实收益和J18—J23要求。B收益没有随A研究项排除。
 
-## 2. 相对00的新增／调整／移除／保持
+## 2. 当前双池实测及责任
 
-|类别|本轮实际内容|
+|链路|实际结果|状态|
+|---|---|---|
+|A冻结全目录|28,076条：27,998真实基金＋78原S/B模拟产品|全目录索引，不是固定44/60/七产品白名单|
+|真实范围|19,265 verified；7,243 pending；1,490 excluded|不能将所有目录条目计为可推荐|
+|真实已保存/解析|全部有目录引用；目标40、策略40、基准80、跟踪7；至少一正文/基准字段84条|目录引用不等于84条正文，更不等于合格产品|
+|真实注册证据|87条注册记录：风险5、家族3组/6份额、主体4、目标/策略/基准各25；87公开文本文件|风险5条均没有明确公布和适用起止日期；与模拟销售渠道也不匹配|
+|真实银行映射|当前SKU0、产品/披露版本0、当前资格0、DPP0、B prepare0|研究导入只标research-only；需要决定真实资料＋模拟交易的正式政策|
+|现有S60+B18|78→46范围内→34合格份额/18家族→0充分材料→0DPP|只用于隔离回归，不能替代真实基金正向|
+
+实际真实排除：19,265条来源模式不符、产品/披露版本未知、当前银行产品缺失；19,263份额未核实；19,260无评级，5条渠道不符。pipeline逐条保留结果，未按产品名称模糊匹配。MF/MW前轮遗漏已关闭，不重复诊断。
+
+已有 `wealth_research.import_dataset` 支持完整模拟overlay入银行，但没有任何已批准真实基金overlay；`wealth_preload.compose` 将真实产品写R前缀、risk=null、rules_complete=false。只改默认目录或取消门禁不能闭合。
+
+**必要决定**：是否允许为真实基金的比赛模拟交易采用明确标注的项目风险分级及模拟计价/费率/销售条件，改变原01“必须可信当前真实渠道评级”的前置要求。具体七家族及原值/拟值方案在同一仓库外联合回传，尚未实施。公开资料、项目分级和交易条件必须分别绑定、分别标源；不能将模拟分级登记为verified public evidence。
+
+责任：A核实公开材料、家族、具体份额及特征；模拟银行维护版本化交易映射、计价、规则和最终风险拒绝；01／02共同完成真实候选→prepare→本人MFA→七子单→结算回读；用户决定新政策。03不负责替代上述运行缺口。
+
+## 3. 按用途的字段门禁
+
+|字段|消费者/代码|缺失处理|
+|---|---|---|
+|本人、正式评估、画像版本、当前scope/control|assessment_reasons、JointAccess、最终银行适当性/写锁|必要；当前重读，未知或过期拒绝；MFA不提升产品资格|
+|具体代码/份额/可靠family、产品/披露/规则版本|qualify_purchase、validate_current、B prepare|必要；不从名字合并、不借A等级给C；0和极小权重仍检查|
+|实质类别、主体原文/核实别名、正文|family_candidates、DPP|类别与主体必要；目标/策略/基准/跟踪至少一个有出处，不要求全部；空文本不能用默认向量或名称补齐|
+|主题策略/跟踪证据|theme_tags|主题才需要；无主题证据不命中，不能把此门禁扩大到普通推荐|
+|当前可售、窗口、NAV可见性、规则、限额|current_offer_reasons、银行precheck|购买所需；没有真实当前映射不能伪造可售。模拟条件需明示/版本化|
+|费用|CandidateGroup.Fees、详情、银行实际交易|非DPP输入，不统一关闭推荐；公开未知为null。已存在模拟版本费率按版本返回，交易规则不完整则购买拒绝|
+|近一年/日涨跌|Performance、详情|可缺，null和准确指标/日期，不填0，不把NAV涨幅叫总回报|
+|全部授权资产估值/持仓/应收|A01 plan、B AssetSummary|配置需要完整分母；冻结不重复，应收不可支付；A05不要求先有Plan或A01成功|
+|B真实持仓收益|returns服务、日/月/年/累计/日历|必验；本金/到账不是利润，费用不重复、全赎贡献保留，缺历史/估值partial/null|
+
+## 4. 实际接口、组件和注册
+
+正常 `backend.app.main:app` 安装唯一JointPortfolio，注册plan_portfolio/recommend_products/revise_portfolio，handler签名 `async(*, db,user_id,context_id,bank,params)`。Direct create/get/revise和Action共用PortfolioLifecycle/MemoryPortfolioStore。
+
+|接口|接法|
 |---|---|
-|新增|`wealth_portfolio_joint.py` 薄服务适配、正式注册与本轮隔离银行/浏览器检查；不增加第二套算法|
-|调整|服务从B全授权 AssetSummary+完整cash/lots/orders读取；显式lot历史版本；真实profile/assessment版本与相关会话/任务控制；共享金额/比例/份额/epoch等类型；A读取过程中变版拒绝|
-|移除|同方法同路径的B重复snapshot注册、由录制fixture推导的生产类型、正式页面重复板块编辑器；不删除B测试录制数据|
-|保持|00必要资格、本人确认、统一强验证、版本/参数绑定、有效期、幂等/审计、赎回退出与受理事实、B交易引擎和双表；DPP、区间、权重投影方法和参数；其他main业务|
+|GET `/api/v1/wealth/portfolio/snapshot`|唯一A路由；消费B全授权AssetSummary|
+|POST `/portfolio/plans`；GET/PUT `/portfolio/plans/{id}`|同store与事实/会话/版本校验，GET带context_id，PUT带expected_version/snapshot_id及完整选择|
+|POST `/portfolio/recommendations`|独立A05；general/category/theme及版本化候选绑定；无Plan、无单次预算/期限|
+|POST `/api/v1/wealth/actions`|B严格ActionV1分派到同一A/B服务，JWT主体不是前端事实|
+|POST `/portfolio/plans/{id}/prepare`|B差额准备；具体SKU重读资格；不冻结。整份确认/统一MFA/受理/原号回读保持|
 
-00必须改写／移除的必要条件：**无**。空授权账户仅在余额均为0或未知时允许只读汇总，不能据此创建配置。未知估值保留null，不补0。必要输入缺失仍关闭。测试临时日期推进仅存在独立测试server，不是正式API。
+canonical schemas为wealth_portfolio*.py，B wealth_assets re-export同AssetSummary；前端types/wealthPortfolio.ts不导入fixture。金额整数分、比例十进制字符串、份额四位字符串；legacy epoch=null不造版本。正式组件 `StructuredActionPanel→AllocationReview→PortfolioAllocation`，B ProductPicker/PlanExecution/双表/收益保持；操作员图只读，本人授权不可代签。
 
-## 3. 实际接法与唯一DTO
+## 5. 当前验证与性能边界
 
-`backend/app/main.py` 安装 `JointPortfolio`：
+- 受影响147通过：PG29＋SQLite29＋其他89；涵盖目录发布时点/停售变化、银行收益/汇总/控制、请求内资产变化及A模型/生命周期。费用补验216通过，含两库JointFacts和统一MFA；最后现金双读一致性116通过，候选序列化42通过，未知字段不可变复用181通过。集合重叠不相加。前一轮257通过为中间修复证据，早期1失败已修复并保留日志。
+- 正常main生命周期在新隔离SQLite实际启动，加载真实JointPortfolio/全28,076索引；health/login/assets/snapshot=200，全scope/snapshot/T一致（正常种子总资产50,000元），不注册录制source。正常启动与隔离测试seed分开。
+- 正式浏览器SQLite3项阻塞页面检查通过、runtime/network错误0、新NLP0；仅证明状态诚实及读UI，**没有七真实家族投资正向/MFA整链**。类型、正式与两独立构建、前端66状态检查通过。既有大chunk提示保留。
+- 首轮带profile配置API 65.443/40.979/37.709秒；观察到逐SKU NAV/material请求及多次全目录序列化。改为当前版本批量查询、按日期/可用瞬时SQL取最新价、启动索引、不可变指纹、同次计算复用事实与资格结果，最终仍重读时钟/用户/画像/银行/控制；不跨用户缓存。
+- 当前冻结包配置连续响应：3.170s / 2.576s / 2.604s；普通推荐：1.245s / 1.227s / 1.958s。目录28,076/真实范围19,265/模拟合格34/材料0。首次≤10秒、重复≤3秒已在此受限路径核验，**不能代签未来真实正向性能**。启动建索引25.407秒单列，复用364,029个相同未知字段；离线安装完整校验20.333秒单列。保留之前重复请求超过3秒的日志，没有用120秒超时当验收，已删除临时超时。
 
-```python
-app.state.wealth_action_handlers = {
-    'plan_portfolio': provider.plan,
-    'recommend_products': provider.recommend,
-    'revise_portfolio': provider.revise,
-}
-app.state.wealth_portfolio_source = provider
-# async handler(*, db, user_id, context_id, bank, params) -> canonical DTO
-# snapshot(db, user_id, context_id, bank); owned_plan(db,user_id,portfolio_id)
+## 6. 可复现离线源准备与缺包
+
+源码依赖按requirements，frontend `npm ci`（锁文件）；不传.env、账务库或全量缓存。冻结data `c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7`，daily `3aad3d4a16ea0cba70e516b4a6d79c317f358870329975f8fa42c857bcffdc65`。只需受控包的manifest＋gzip和本提交config公开证据即可复现既有运行索引，**不能重建全量采集，也不续期评级/公开状态**。
+
+包gzip 2053835字节，SHA `c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c`；snapshot SHA `0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8`。实际在新空相对目录导入28,076，88个公开文件（manifest＋87文本）校验，篡改/缺包拒绝。包留本地ignored目录、未入Git；其他机器需取得同SHA受控包，不再要求本机绝对原料路径。
+
+```powershell
+# 集成检出根，导出需已有该冻结快照；没有快照不自动采集
+python -B -m scripts.wealth_portfolio_package export --version c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7
+# 其他机器收到manifest+gzip后，同版本源码根目录
+python -B -m scripts.wealth_portfolio_package install --manifest path/to/c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7.package.json
+$env:PORTFOLIO_DATA_VERSION='c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7'
+$env:PORTFOLIO_DAILY_VERSION='3aad3d4a16ea0cba70e516b4a6d79c317f358870329975f8fa42c857bcffdc65'
 ```
 
-|接口|实现／约束|
-|---|---|
-|GET `/api/v1/wealth/portfolio/snapshot`|唯一A规范路由；B全scope/snapshot，不用旧单run资产替身|
-|POST `/api/v1/wealth/portfolio/plans`|A PortfolioLifecycle.create，不问本次预算或期限|
-|GET／PUT `/api/v1/wealth/portfolio/plans/{id}`|同一生命周期/store；GET带context_id；PUT带expected_version/snapshot_id/context_id/items及revision_kind|
-|POST `/api/v1/wealth/portfolio/recommendations`|独立A05；无Plan、不读取A01完整估值；仍核实本人、产品、资料/风险|
-|POST `/api/v1/wealth/actions`|原B ActionV1；同A handler和store；参数严格，身份来自JWT，不接受浏览器Plan当权威方案|
-|POST `/api/v1/wealth/portfolio/plans/{id}/prepare`|保留B差额准备；从正式owned_plan重验，不占款，最终具体SKU再查适当性|
+正常应用启动预加载；缺/坏包保留其他业务启动能力，A请求PORTFOLIO_DATA_UNAVAILABLE，不静默切fixture。任意注入的可变内存source不缓存指纹，变资料会使旧草稿失效。生产加载的版本文件只校验一次，不承诺抵御管理员篡改运行内存；新资料必须新版本、重启/重载。
 
-canonical Python：`schemas/wealth_portfolio.py`、`wealth_portfolio_candidates.py`、`wealth_portfolio_lifecycle.py`；B `wealth_assets.py` re-export同AssetSummary；Action导入同Selection/Filter。前端 `types/wealthPortfolio.ts` 为共享类型，生产代码不导入fixture类型。
+## 7. 闭合条件和移交
 
-整数分金额；0—1十进制字符串比例；四位字符串份额；share_class A/C/null；legacy context_epoch=null不造1。产品版本、披露版本、资料data/daily/offers版本、Plan version、会话version和执行版本分别核对，不能互换。
+真实基金映射及评级政策批准→按明确公开材料定点补证/注册，缺资料继续排除→至少七不同真实家族A普通/债券正向＋B多选prepare→完整J01—J23和必要负向／两库七产品账务／正式浏览器流程→用户人工验收。A历史金融效果不再是封板前置，B收益仍是。
 
-正式客户页 `StructuredActionPanel -> AllocationReview -> PortfolioAllocation`，A滑块回调实际调用修订、接受后同步B Plan；B保留产品选择/百分比、详情/比较/整体确认、执行/订单/持仓/收益。隐藏A独立产品编辑器防重复。操作员页面复用A图为只读，交易继续依赖本人授权。独立dev入口仅测试工具，不能冒充正式购买入口。
-
-## 4. 事实与旧缺口闭合
-
-|项目|本轮证据／状态|
-|---|---|
-|全授权资产|B公开汇总与A精确相同scope/snapshot；多账户/F18、冻结/应收/缺估值与旧lot版本隔离检查通过，不再写“B没有AssetSummary”|
-|当前评估与profile|实际九题答题+本人确认；服务读取最新assessment及真实profile，版本不匹配拒绝，不把purchase_allowed当画像证明|
-|相关控制|Action实际会话绑定；新Plan入store前重核当前会话、旧Plan核其绑定会话；真实closed/stop/HUMAN/PAUSED写拒绝，查询读写分离|
-|正式A计算|正式来源全现金20,000元基准，A计算并在B正式UI展示；不是fixture Plan，但0产品不能证明申购正向|
-|A05|无需先有Plan；缺估值依赖专项通过。当前仍返回unavailable+精确产品原因，不能称推荐成功|
-|最终风险|实际隔离SQLite最终prepare比较R2/R4；手选、0、极小权重和同家族C份额均SUITABILITY_MISMATCH；无订单/占款/现金扣减；银行执行原风险/授权检查保留|
-
-## 5. 数据、依赖、运行与不能伪造的输入
-
-依赖：Python环境安装仓库 requirements；frontend按package-lock `npm ci`；新增main依赖icalendar/recurring-ical-events已声明，集成验证本地补齐。Playwright及浏览器由运行环境指定，工程不写个人绝对路径。
-
-正式资料冻结 data `38005c79535cb83a2d5be663d8a7a1812ba21946fe8f9fa2ab21ca80aea338a9`，daily `e5ce972368c9b735a5fe9ddd64fa0fd81a9194c419cb89ceda255ead71f460d0`。最小运行包是 `.deps/wealth_portfolio_data/snapshots/<data>.json` 与 `<data>.index.json`，索引校核内容SHA，配置和公开证据随代码。来源从既有01缓存只读复用；没恢复采集、没联网补数。资料包不在Git，其他机器须由资料维护方交付同SHA的受控离线包到相对位置。完整审计/重建还需原料及manifest引用，不可仅靠两文件声称可重建。缺包返回PORTFOLIO_DATA_UNAVAILABLE，不自动fixture后备。
-
-当前隔离银行原生MF/MW八产品，与A冻结资料池中的具体产品身份/渠道/份额/产品和披露版本及正文证据不闭合，候选0。现有preload.json及wealth_preload将真实基金标research-only，不能把目录或研究数据当可购买产品；也不能仅改名字/risk或嫁接正文凑7只。
-
-最小解除条件：资料维护方与A/B共同确认至少7个原设计范围的可售具体SKU，逐条提供精确产品/披露/渠道/份额/风险及时点、family与正文（目标/策略/基准/类别）和规则版本；银行当前目录与冻结研究事实可验证一一映射。若需要新的模拟产品定义或设计变更，须由用户明确决定后再版本化，不假称公开金融事实。A核验材料映射与推荐；B维护当前规则与执行。不能删除这些门禁以封板。
-
-## 6. 尚未完成及责任
-
-- J08正式A生成>5合格产品整份确认/统一MFA/受理/结算：**blocked**（上述SKU材料）；由此J09/J10/J12/J19等完整浏览器正向未闭合。B隔离银行单项交易/撤单/赎回/收益通过与此分开。
-- 操作员完整正式浏览器接管/交还/核对及交易后正式A重读仍未完整验收；已有实际HTTP控制检查和前端状态证据不算完整浏览器通过。
-- PostgreSQL：本轮未提供 `BANK_TEST_DATABASE_URL`，相关skip；仅声明SQLite/隔离HTTP，不称双库通过。
-- 01研究：09既有10具体份额、各243个2025 NAV描述记录可复用，非总回报。合格财富指数0；完整分红/拆分/折算/再投资方法与历史时点身份/风险/可售/正文不足，含分红总回报、固定组合和真正样本外仍blocked；责任为A及资料/方法提供方，不由B模拟持仓收益替代。
-- 人工验收待用户实际执行；本轮不代签、不发布、不开展新NLP。03接入门槛仍为必要联合J项闭合，参见 handoff.md 的本轮索引。
-
-实际命令、J逐项状态、失败修复复验和人工步骤见 [wealth_joint_acceptance.md](wealth_joint_acceptance.md)。原工作区、旧检出、验证数据库、失败截图/日志和断点全部保留本地；旧大规模采集已停，不续跑。
-
-## 本地保存与服务状态
-
-本轮代码提交 `82681abc598ca90b45265c6101573b1090908675`。文档在下一本地提交保存；最终SHA见仓库外回传。3013/8013专用服务已核对并关闭，原3010/8010保留；旧3021/3022/8051/8052无监听，旧交付smoke PID已不存在。数据库与失败证据保留。未远端写入，人工待验，禁止据此进入阶段4。
-
-## 2026-10-13 零候选处理：当前工程状态
-
-旧八MF/MW与冻结S/B目录错位、版本/材料读取路径遗漏已修复；默认联合测试server使用已有fixed_payload完整78，不调用旧轮次清理upgrade。完整目录78→46范围内→34合格份额/18家族→0材料家族→0DPP。产品目标/策略/基准正文原定义缺失，等待用户决定新增目标材料；七产品主线/J08和人工验收仍blocked，不能封板。原“PG不可得”只代表前轮：本轮PG51+SQLite51+其他2基线104通过，修复PG19+SQLite19+契约45共83通过；217 A相关回归/66前端状态/类型build通过，3个正式UI阻塞检查通过，不称投资正向。集合不能累加。
-
-具体根因：MF八在原A集里不存在；S/B原不可变metadata有显式份额/family和基准名称，被bank目录读取路径遗漏；当前只读精确版本映射恢复。基准名称不是基准定义，保留name_only/unknown；两份额同家族。B013/B014非开放、B015/B016过期，S052/S056非开放；R5超R4和银行政策不放宽。
-
-当前derived data `c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7` / daily `3aad3d4a16ea0cba70e516b4a6d79c317f358870329975f8fa42c857bcffdc65`，输入捕获 `23b28716bb7e47789c4aa194bc8495072af84353acc265bd1359929b0a358520`。新机器除原固定文件/冻结包外需受控交付该snapshot+index，或以新隔离库执行tests.browser.wealth_joint_diagnose_http取得新当前版本；诊断路由仅测试server注册，不进入正式main API。明确WEALTH_JOINT_CATALOG=fixed-full并指定PORTFOLIO_DATA_VERSION/PORTFOLIO_DAILY_VERSION；普通正式配置不可用fixture后备。
-
-待确认的最小定义：SF001/SF004/SF006/SF007/SF018/SF019/SF020七家族14个A/C，只加investment_objective，三类同目标，不编七套不同文本抬DPP得分。批准后v2版本化，风险/费用/NAV/销售/渠道/family/份额不改；不补保本/快赎，不新建七产品白名单。未生成该新设计。批准后才做七产品整份确认/MFA/交易及完整J/人工。源修复代码 `0abee504fe01ea265ee0b7170d6a2a177f0bafec`，原工作区不变、未远端写入，专用服务已停止。
+当前J08等真实投资正向blocked；操作员整链/非空浏览器、真实七SKU双库仍待前置，不能把录制七笔或全现金算通过。专用服务默认停止，账务及失败证据保留，原3010/8010/5432保留。只有人工反馈及必要联合条件满足，才另轮整合最新main并按规则发布；本轮无远端写入。

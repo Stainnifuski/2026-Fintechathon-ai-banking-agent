@@ -93,3 +93,9 @@ python -m backend.app.services.bank.wealth_migration --rollback
 - 成功样例：正式无金额/期限plan_portfolio读取20,000元并得到全现金Plan，随后可Direct GET（最终结果见联合报告）；**不等于推荐/购买成功**。
 - 失败样例：CandidateGroup status=unavailable/items=[]带产品证据原因；final prepare R2/R4 ->409 SUITABILITY_MISMATCH；客户端risk_level ->422；缺资料包503；closed/版本变更409。Action外层成功状态不能覆盖A业务错误。不要把失败翻译为“已购买”。
 - 03责任仍仅后续统一NLP结构化动作与有据表达；无新模型接入/训练。本轮模型实际新调用0。相关允许操作必须由服务器状态推导，LLM不能制造可购标记、评估或授权。
+
+## 2026-10-13 当前03接入边界
+
+当前代码、双池、正常注册、离线包、性能及必要门禁见portfolio_handoff.md和wealth_joint_acceptance.md。真实基金材料不等于可交易SKU：真实当前映射/资格为0，需要明确真实资料＋比赛模拟风险/交易政策决定，尚未实施、未可封板。七S产品补目标方案不采用。03不得将CandidateGroup unavailable/空候选或全现金Plan表达为推荐/申购成功。
+
+原01 A6历史总回报、固定组合、样本外金融效果已移出本轮运行门禁，保持未完成、不承诺金融效果；B实际持仓收益/四粒度/日历/费用/已赎贡献和J23保持必需。03仍等真实正向必要J闭合后再接新LLM/NLP，不用语言层替代资格、交易、本人确认或MFA。内部fee_rules仅补读已有版本费用，未知仍null；外部ActionV1/Fees/Plan/Selection协议不变。

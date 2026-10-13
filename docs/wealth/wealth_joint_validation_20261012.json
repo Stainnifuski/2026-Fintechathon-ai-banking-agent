@@ -1,94 +1,516 @@
 {
-  "date": "2026-10-12 America/Toronto",
-  "status": "not_sealable",
-  "sources": {
-    "a_head": "5e36e4c48c82c24a088c9f271df7774727d7435f",
-    "b_head": "8b611dd10a6b876c8a3baf50ec1b5d94247dc6b4",
-    "fetched_main": "853569b1b06b3f7fb261e4e62cdf053eb382d47d"
+  "date": "2026-10-13 America/Toronto",
+  "status": "awaiting_real_fund_trade_and_risk_policy_decision_not_sealable",
+  "code_commit": "813894c6a6e670229ad8381a3c6367f3998f5b18",
+  "database_scope": "isolated SQLite and independent PostgreSQL; formal browser SQLite only",
+  "real_chain": {
+    "directory": 27998,
+    "scope_verified": 19265,
+    "matched": 19265,
+    "current_bank_skus": 0,
+    "current_product_versions": 0,
+    "purchase_qualified_shares": 0,
+    "material_fields": {
+      "objective": 40,
+      "strategy": 40,
+      "benchmark": 80,
+      "tracking_target": 7,
+      "issuer_raw": 63
+    },
+    "registered_risk_shares": 5,
+    "registered_family_shares": 6,
+    "exclusion_counts": {
+      "PRODUCT_SOURCE_KIND_MISMATCH": 19265,
+      "PRODUCT_VERSION_UNKNOWN": 19265,
+      "DISCLOSURE_VERSION_UNKNOWN": 19265,
+      "PRODUCT_SHARE_UNKNOWN": 19263,
+      "PRODUCT_RISK_UNKNOWN": 19260,
+      "CURRENT_BANK_PRODUCT_UNAVAILABLE": 19265,
+      "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH": 5
+    },
+    "pipeline_source_mode": "simulated",
+    "channel": "local-competition-bank"
   },
   "checks": {
-    "primary_pytest": {
-      "passed": 495,
-      "skipped": 48
+    "affected_pytest": {
+      "passed": 147,
+      "skipped": 0,
+      "postgresql": 29,
+      "sqlite": 29,
+      "other": 89
     },
-    "shared_actual_pytest": {
-      "passed": 79,
-      "skipped": 14
+    "fee_final_pytest": {
+      "passed": 216,
+      "skipped": 0
     },
-    "latest_lifecycle_pytest": {
-      "passed": 69,
-      "skipped": 12
+    "snapshot_consistency_pytest": {
+      "passed": 116,
+      "skipped": 0
+    },
+    "serialization_pytest": {
+      "passed": 42,
+      "skipped": 0
+    },
+    "immutable_index_pytest": {
+      "passed": 181,
+      "skipped": 0
     },
     "frontend_states": 66,
-    "browser": 20,
-    "browser_runtime_errors": 0,
-    "browser_network_failures": 0,
+    "formal_browser_blocking_only": 3,
     "new_model_calls": 0
   },
-  "sets_overlap": true,
-  "database_scope": "isolated SQLite only; independent PostgreSQL URL not configured",
-  "positive_products": 0,
-  "research": "historical total-return/fixed-portfolio/OOS blocked",
+  "performance": {
+    "plan_three": [
+      {
+        "http": 200,
+        "seconds": 3.169574700004887,
+        "body_kind": "plan"
+      },
+      {
+        "http": 200,
+        "seconds": 2.576286000024993,
+        "body_kind": "plan"
+      },
+      {
+        "http": 200,
+        "seconds": 2.6035987000213936,
+        "body_kind": "plan"
+      }
+    ],
+    "recommend_three": [
+      {
+        "seconds": 1.2454934000270441,
+        "http": 200,
+        "candidate_count": 0,
+        "status": "unavailable"
+      },
+      {
+        "seconds": 1.2266558000119403,
+        "http": 200,
+        "candidate_count": 0,
+        "status": "unavailable"
+      },
+      {
+        "seconds": 1.9581965999677777,
+        "http": 200,
+        "candidate_count": 0,
+        "status": "unavailable"
+      }
+    ],
+    "initialization_separately_seconds": 25.40700000000652,
+    "interned_unknown_fields": 364029,
+    "positive_real_fund_path_verified": false
+  },
+  "reproducibility": {
+    "offline_import_validated": true,
+    "directory": 28076,
+    "snapshot_sha256": "0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8",
+    "gzip_sha256": "c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c",
+    "gzip_bytes": 2053835,
+    "install_validation_seconds": 20.333108799997717,
+    "public_files_verified": 88,
+    "tamper_rejected": true,
+    "missing_rejected": true,
+    "source_dates_renewed": false,
+    "raw_reconstruction_claimed": false
+  },
+  "normal_startup": {
+    "normal_lifespan": true,
+    "recorded_source": false,
+    "database": "new isolated SQLite normal_bank.db",
+    "health_http": 200,
+    "login_http": 200,
+    "assets_http": 200,
+    "snapshot_http": 200,
+    "asset_summary_snapshot_same": true,
+    "total_assets_fen": 5000000,
+    "new_model_calls": 0
+  },
+  "positive_real_fund_families": 0,
+  "research": "historical total-return/fixed-portfolio/OOS unfinished and removed from runtime seal gate; B actual returns still mandatory",
+  "human_acceptance": "not_ready_for_positive_manual_acceptance",
   "remote_writes": 0,
-  "human_acceptance": "pending",
+  "simulated_seven_family_objective_proposal": "not_implemented_superseded",
   "j_report": "wealth_joint_acceptance.md",
-  "integrated_code_commit": "82681abc598ca90b45265c6101573b1090908675",
-  "owned_test_services": "stopped after acceptance; original 3010/8010 retained",
-  "latest_followup": {
+  "history": [
+    {
+      "date": "2026-10-13 America/Toronto",
+      "status": "awaiting_real_fund_trade_and_risk_policy_decision_not_sealable",
+      "code_commit": "ada2a48bde9be07c77638b46d5b3cf093cc1bee6",
+      "database_scope": "isolated SQLite and independent PostgreSQL; formal browser SQLite only",
+      "real_chain": {
+        "directory": 27998,
+        "scope_verified": 19265,
+        "matched": 19265,
+        "current_bank_skus": 0,
+        "current_product_versions": 0,
+        "purchase_qualified_shares": 0,
+        "material_fields": {
+          "objective": 40,
+          "strategy": 40,
+          "benchmark": 80,
+          "tracking_target": 7,
+          "issuer_raw": 63
+        },
+        "registered_risk_shares": 5,
+        "registered_family_shares": 6,
+        "exclusion_counts": {
+          "PRODUCT_SOURCE_KIND_MISMATCH": 19265,
+          "PRODUCT_VERSION_UNKNOWN": 19265,
+          "DISCLOSURE_VERSION_UNKNOWN": 19265,
+          "PRODUCT_SHARE_UNKNOWN": 19263,
+          "PRODUCT_RISK_UNKNOWN": 19260,
+          "CURRENT_BANK_PRODUCT_UNAVAILABLE": 19265,
+          "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH": 5
+        },
+        "pipeline_source_mode": "simulated",
+        "channel": "local-competition-bank"
+      },
+      "checks": {
+        "affected_pytest": {
+          "passed": 147,
+          "skipped": 0,
+          "postgresql": 29,
+          "sqlite": 29,
+          "other": 89
+        },
+        "fee_final_pytest": {
+          "passed": 216,
+          "skipped": 0
+        },
+        "frontend_states": 66,
+        "formal_browser_blocking_only": 3,
+        "new_model_calls": 0
+      },
+      "performance": {
+        "plan_three": [
+          {
+            "http": 200,
+            "seconds": 2.0526492000208236,
+            "body_kind": "plan"
+          },
+          {
+            "http": 200,
+            "seconds": 2.7851955000078306,
+            "body_kind": "plan"
+          },
+          {
+            "http": 200,
+            "seconds": 1.9983405999955721,
+            "body_kind": "plan"
+          }
+        ],
+        "recommend_three": [
+          {
+            "seconds": 1.2454934000270441,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          },
+          {
+            "seconds": 1.2266558000119403,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          },
+          {
+            "seconds": 1.9581965999677777,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          }
+        ],
+        "initialization_separately_seconds": 23.75,
+        "positive_real_fund_path_verified": false
+      },
+      "reproducibility": {
+        "offline_import_validated": true,
+        "directory": 28076,
+        "snapshot_sha256": "0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8",
+        "gzip_sha256": "c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c",
+        "gzip_bytes": 2053835,
+        "install_validation_seconds": 20.333108799997717,
+        "public_files_verified": 88,
+        "tamper_rejected": true,
+        "missing_rejected": true,
+        "source_dates_renewed": false,
+        "raw_reconstruction_claimed": false
+      },
+      "normal_startup": {
+        "normal_lifespan": true,
+        "recorded_source": false,
+        "database": "new isolated SQLite normal_bank.db",
+        "health_http": 200,
+        "login_http": 200,
+        "assets_http": 200,
+        "snapshot_http": 200,
+        "asset_summary_snapshot_same": true,
+        "total_assets_fen": 5000000,
+        "new_model_calls": 0
+      },
+      "positive_real_fund_families": 0,
+      "research": "historical total-return/fixed-portfolio/OOS unfinished and removed from runtime seal gate; B actual returns still mandatory",
+      "human_acceptance": "not_ready_for_positive_manual_acceptance",
+      "remote_writes": 0,
+      "simulated_seven_family_objective_proposal": "not_implemented_superseded",
+      "j_report": "wealth_joint_acceptance.md",
+      "latest": {
+        "date": "2026-10-13 America/Toronto",
+        "status": "awaiting_real_fund_trade_and_risk_policy_decision_not_sealable",
+        "code_commit": "ada2a48bde9be07c77638b46d5b3cf093cc1bee6",
+        "database_scope": "isolated SQLite and independent PostgreSQL; formal browser SQLite only",
+        "real_chain": {
+          "directory": 27998,
+          "scope_verified": 19265,
+          "matched": 19265,
+          "current_bank_skus": 0,
+          "current_product_versions": 0,
+          "purchase_qualified_shares": 0,
+          "material_fields": {
+            "objective": 40,
+            "strategy": 40,
+            "benchmark": 80,
+            "tracking_target": 7,
+            "issuer_raw": 63
+          },
+          "registered_risk_shares": 5,
+          "registered_family_shares": 6,
+          "exclusion_counts": {
+            "PRODUCT_SOURCE_KIND_MISMATCH": 19265,
+            "PRODUCT_VERSION_UNKNOWN": 19265,
+            "DISCLOSURE_VERSION_UNKNOWN": 19265,
+            "PRODUCT_SHARE_UNKNOWN": 19263,
+            "PRODUCT_RISK_UNKNOWN": 19260,
+            "CURRENT_BANK_PRODUCT_UNAVAILABLE": 19265,
+            "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH": 5
+          },
+          "pipeline_source_mode": "simulated",
+          "channel": "local-competition-bank"
+        },
+        "checks": {
+          "affected_pytest": {
+            "passed": 147,
+            "skipped": 0,
+            "postgresql": 29,
+            "sqlite": 29,
+            "other": 89
+          },
+          "fee_final_pytest": {
+            "passed": 216,
+            "skipped": 0
+          },
+          "frontend_states": 66,
+          "formal_browser_blocking_only": 3,
+          "new_model_calls": 0
+        },
+        "performance": {
+          "plan_three": [
+            {
+              "http": 200,
+              "seconds": 2.0526492000208236,
+              "body_kind": "plan"
+            },
+            {
+              "http": 200,
+              "seconds": 2.7851955000078306,
+              "body_kind": "plan"
+            },
+            {
+              "http": 200,
+              "seconds": 1.9983405999955721,
+              "body_kind": "plan"
+            }
+          ],
+          "recommend_three": [
+            {
+              "seconds": 1.2454934000270441,
+              "http": 200,
+              "candidate_count": 0,
+              "status": "unavailable"
+            },
+            {
+              "seconds": 1.2266558000119403,
+              "http": 200,
+              "candidate_count": 0,
+              "status": "unavailable"
+            },
+            {
+              "seconds": 1.9581965999677777,
+              "http": 200,
+              "candidate_count": 0,
+              "status": "unavailable"
+            }
+          ],
+          "initialization_separately_seconds": 23.75,
+          "positive_real_fund_path_verified": false
+        },
+        "reproducibility": {
+          "offline_import_validated": true,
+          "directory": 28076,
+          "snapshot_sha256": "0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8",
+          "gzip_sha256": "c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c",
+          "gzip_bytes": 2053835,
+          "install_validation_seconds": 20.333108799997717,
+          "public_files_verified": 88,
+          "tamper_rejected": true,
+          "missing_rejected": true,
+          "source_dates_renewed": false,
+          "raw_reconstruction_claimed": false
+        },
+        "normal_startup": {
+          "normal_lifespan": true,
+          "recorded_source": false,
+          "database": "new isolated SQLite normal_bank.db",
+          "health_http": 200,
+          "login_http": 200,
+          "assets_http": 200,
+          "snapshot_http": 200,
+          "asset_summary_snapshot_same": true,
+          "total_assets_fen": 5000000,
+          "new_model_calls": 0
+        },
+        "positive_real_fund_families": 0,
+        "research": "historical total-return/fixed-portfolio/OOS unfinished and removed from runtime seal gate; B actual returns still mandatory",
+        "human_acceptance": "not_ready_for_positive_manual_acceptance",
+        "remote_writes": 0,
+        "simulated_seven_family_objective_proposal": "not_implemented_superseded",
+        "j_report": "wealth_joint_acceptance.md"
+      }
+    }
+  ],
+  "latest": {
     "date": "2026-10-13 America/Toronto",
-    "code_commit": "0abee504fe01ea265ee0b7170d6a2a177f0bafec",
-    "status": "awaiting_product_objective_definition_decision",
-    "legacy_counts_before": {
-      "bank_directory": 8,
-      "bank_ids_in_a": 0,
-      "in_scope": 0,
-      "qualified_shares": 0,
-      "qualified_families": 0,
-      "material_complete_families": 0,
-      "dpp_returned": 0
+    "status": "awaiting_real_fund_trade_and_risk_policy_decision_not_sealable",
+    "code_commit": "813894c6a6e670229ad8381a3c6367f3998f5b18",
+    "database_scope": "isolated SQLite and independent PostgreSQL; formal browser SQLite only",
+    "real_chain": {
+      "directory": 27998,
+      "scope_verified": 19265,
+      "matched": 19265,
+      "current_bank_skus": 0,
+      "current_product_versions": 0,
+      "purchase_qualified_shares": 0,
+      "material_fields": {
+        "objective": 40,
+        "strategy": 40,
+        "benchmark": 80,
+        "tracking_target": 7,
+        "issuer_raw": 63
+      },
+      "registered_risk_shares": 5,
+      "registered_family_shares": 6,
+      "exclusion_counts": {
+        "PRODUCT_SOURCE_KIND_MISMATCH": 19265,
+        "PRODUCT_VERSION_UNKNOWN": 19265,
+        "DISCLOSURE_VERSION_UNKNOWN": 19265,
+        "PRODUCT_SHARE_UNKNOWN": 19263,
+        "PRODUCT_RISK_UNKNOWN": 19260,
+        "CURRENT_BANK_PRODUCT_UNAVAILABLE": 19265,
+        "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH": 5
+      },
+      "pipeline_source_mode": "simulated",
+      "channel": "local-competition-bank"
     },
-    "legacy_counts_after": {
-      "bank_directory": 8,
-      "bank_ids_in_a": 8,
-      "in_scope": 5,
-      "qualified_shares": 5,
-      "qualified_families": 5,
-      "material_complete_families": 0,
-      "dpp_returned": 0
+    "checks": {
+      "affected_pytest": {
+        "passed": 147,
+        "skipped": 0,
+        "postgresql": 29,
+        "sqlite": 29,
+        "other": 89
+      },
+      "fee_final_pytest": {
+        "passed": 216,
+        "skipped": 0
+      },
+      "snapshot_consistency_pytest": {
+        "passed": 116,
+        "skipped": 0
+      },
+      "serialization_pytest": {
+        "passed": 42,
+        "skipped": 0
+      },
+      "immutable_index_pytest": {
+        "passed": 181,
+        "skipped": 0
+      },
+      "frontend_states": 66,
+      "formal_browser_blocking_only": 3,
+      "new_model_calls": 0
     },
-    "full_current_counts": {
-      "bank_directory": 78,
-      "bank_ids_in_a": 78,
-      "in_scope": 46,
-      "qualified_shares": 34,
-      "qualified_families": 18,
-      "material_complete_families": 0,
-      "dpp_returned": 0
+    "performance": {
+      "plan_three": [
+        {
+          "http": 200,
+          "seconds": 3.169574700004887,
+          "body_kind": "plan"
+        },
+        {
+          "http": 200,
+          "seconds": 2.576286000024993,
+          "body_kind": "plan"
+        },
+        {
+          "http": 200,
+          "seconds": 2.6035987000213936,
+          "body_kind": "plan"
+        }
+      ],
+      "recommend_three": [
+        {
+          "seconds": 1.2454934000270441,
+          "http": 200,
+          "candidate_count": 0,
+          "status": "unavailable"
+        },
+        {
+          "seconds": 1.2266558000119403,
+          "http": 200,
+          "candidate_count": 0,
+          "status": "unavailable"
+        },
+        {
+          "seconds": 1.9581965999677777,
+          "http": 200,
+          "candidate_count": 0,
+          "status": "unavailable"
+        }
+      ],
+      "initialization_separately_seconds": 25.40700000000652,
+      "interned_unknown_fields": 364029,
+      "positive_real_fund_path_verified": false
     },
-    "data_version": "c1e4e964d09cf088e558be8f18c53e84fda75bdf32fcaf0ec1e1d6f3fcbcafa7",
-    "daily_version": "3aad3d4a16ea0cba70e516b4a6d79c317f358870329975f8fa42c857bcffdc65",
-    "input_capture_sha256": "23b28716bb7e47789c4aa194bc8495072af84353acc265bd1359929b0a358520",
-    "pg_baseline": {
-      "passed": 104,
-      "postgresql": 51,
-      "sqlite": 51,
-      "other": 2,
-      "skipped": 0
+    "reproducibility": {
+      "offline_import_validated": true,
+      "directory": 28076,
+      "snapshot_sha256": "0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8",
+      "gzip_sha256": "c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c",
+      "gzip_bytes": 2053835,
+      "install_validation_seconds": 20.333108799997717,
+      "public_files_verified": 88,
+      "tamper_rejected": true,
+      "missing_rejected": true,
+      "source_dates_renewed": false,
+      "raw_reconstruction_claimed": false
     },
-    "repairs": {
-      "passed": 83,
-      "postgresql": 19,
-      "sqlite": 19,
-      "contract": 45,
-      "skipped": 0
+    "normal_startup": {
+      "normal_lifespan": true,
+      "recorded_source": false,
+      "database": "new isolated SQLite normal_bank.db",
+      "health_http": 200,
+      "login_http": 200,
+      "assets_http": 200,
+      "snapshot_http": 200,
+      "asset_summary_snapshot_same": true,
+      "total_assets_fen": 5000000,
+      "new_model_calls": 0
     },
-    "a_regression": 217,
-    "frontend_states": 66,
-    "browser_blocking_checks": 3,
-    "positive_investment_acceptance": false,
-    "new_product_design_implemented": false,
-    "j08": "blocked",
-    "new_model_calls": 0,
-    "remote_writes": 0
+    "positive_real_fund_families": 0,
+    "research": "historical total-return/fixed-portfolio/OOS unfinished and removed from runtime seal gate; B actual returns still mandatory",
+    "human_acceptance": "not_ready_for_positive_manual_acceptance",
+    "remote_writes": 0,
+    "simulated_seven_family_objective_proposal": "not_implemented_superseded",
+    "j_report": "wealth_joint_acceptance.md"
   }
 }
