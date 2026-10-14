@@ -183,6 +183,39 @@ class PortfolioLifecycle:
         await self._fresh(record,context_id,False)
         return record.plan.model_copy(deep=True)
 
+    async def get_for_execution(self,user_id: str,portfolio_id: str,context_id: str) -> PortfolioPlan:
+        """Selected-code freshness for execution, never a cached permission.
+
+        A full-directory fingerprint belongs to recommendation. Execution binds
+        the same live asset/assessment/access facts and freshly reads every
+        selected or advised code, including zero targets and existing holdings.
+        """
+        record=await self.store.read(portfolio_id,user_id)
+        if context_id!=record.plan.context_id:raise CandidateError('PORTFOLIO_CONTEXT_STALE')
+        grant=await self._access(user_id,context_id,True,portfolio_id)
+        if access_binding(grant)!=access_binding(record.access):raise CandidateError('PORTFOLIO_CONTEXT_STALE')
+        facts,index,now,asset=await self.provider._facts(user_id)
+        old=deepcopy(record.metadata['snapshot']);current=snapshot_content(asset.snapshot)
+        old.pop('as_of',None)
+        from zoneinfo import ZoneInfo
+        old['business_at']=datetime.fromisoformat(old['business_at']).astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()
+        # Scoped offers have a different catalogue digest. All selected rules
+        # are checked below; data/daily and all dynamic snapshot facts remain.
+        old['data_versions'].pop('offers_version',None)
+        current['data_versions'].pop('offers_version',None)
+        if current!=old:raise CandidateError('PORTFOLIO_FACTS_STALE')
+        original=record.metadata['validation_contract']['qualification_context']
+        original=original.model_dump(mode='json') if hasattr(original,'model_dump') else original
+        present=version_context(facts).model_dump(mode='json')
+        for key in ('user_id','source_id','mode','channel','data_version','daily_version','assessment_id','assessment_version'):
+            if present.get(key)!=original.get(key):raise CandidateError('PORTFOLIO_FACTS_STALE')
+        refs=[ShareReference.model_validate(r) for r in record.metadata['validation_contract']['selected_references']]
+        self._qualify(user_id,refs,facts,index,now)
+        for row in record.plan.advised_positions:
+            if row.account_ids and qualify_purchase(index.products[row.product_id],facts,user_id,now).holding_allowed is not True:
+                raise CandidateError('PORTFOLIO_HOLDING_PERMISSION_STALE')
+        return record.plan.model_copy(deep=True)
+
     @staticmethod
     def _fen(text: str,total: int,original_fen: int | None=None) -> int:
         if original_fen is not None and Decimal(text)==Decimal(original_fen)/Decimal(total):return original_fen

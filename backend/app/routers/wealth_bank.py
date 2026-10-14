@@ -31,6 +31,7 @@ class Subject(StrictRequest):
 class CatalogueSubject(Subject):
     facts_only: bool = Field(default=False,strict=True)
     policy_references: bool = Field(default=False,strict=True)
+    product_ids: list[str] | None = Field(default=None,max_length=256)
 
 
 from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
@@ -340,7 +341,7 @@ async def asset_summary(request: Subject, db: AsyncSession = Depends(get_db)) ->
 
 @router.post("/catalog")
 async def contextual_catalog(request: CatalogueSubject, db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await bank.products(db, request.subject_user_id,facts_only=request.facts_only,policy_references=request.policy_references)
+    return await bank.products(db, request.subject_user_id,facts_only=request.facts_only,policy_references=request.policy_references,product_ids=request.product_ids)
 
 
 @router.post("/precheck")

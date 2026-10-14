@@ -96,7 +96,11 @@ class PortfolioModelProvider:
         # Real sequential reads finish after the first eligibility timestamp.
         # Recheck at actual completion; never backdate the bank observation.
         initial_context=version_context(facts)
-        facts,index,now=await self.candidates.current(user_id)
+        if hasattr(self.asset_source,'complete_current_round'):
+            facts=await self.asset_source.complete_current_round(user_id,facts)
+            if facts is None:raise ModelError('MODEL_FACTS_CHANGED')
+            now=facts.read_at
+        else:facts,index,now=await self.candidates.current(user_id)
         if version_context(facts)!=initial_context:
             raise ModelError('MODEL_FACTS_CHANGED')
         if hasattr(self.asset_source,'read_from_current'):

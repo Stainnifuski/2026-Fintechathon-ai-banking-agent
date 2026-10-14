@@ -22,6 +22,11 @@ class HttpWealthBankApi(HttpBankApiClient):
         """查询本人事实，外部资产不混入银行现金。"""
         return await self.call("POST", "/assets", {"subject_user_id": user_id})
 
+    async def selected_products(self, user_id: str, product_ids: list[str]) -> list[dict]:
+        """Fresh protected exact-code facts; [] means no products, never full pool."""
+        return await self.call("POST", "/catalog", {"subject_user_id": user_id,
+            "product_ids": sorted(set(product_ids)), "facts_only": True})
+
     async def precheck(self, user_id: str, command: InvestmentCommand) -> dict:
         """可信预览，不扣款。"""
         return await self.call("POST", "/precheck", {"subject_user_id": user_id, "command": command.model_dump()})

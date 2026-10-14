@@ -38,6 +38,9 @@ async def test_full_core_samples_versions_and_final_risk_boundary(store,monkeypa
         from backend.app.integrations.wealth_portfolio_bank_facts import native_product_evidence
         compact=await bank.products(db,'U1',facts_only=True,policy_references=True)
         assert {p['product_id'] for p in compact}==set(chosen)
+        subset=await bank.products(db,'U1',facts_only=True,product_ids=[overlap['product_id'],'missing-code'])
+        assert [p['product_id'] for p in subset]==[overlap['product_id']]
+        assert await bank.products(db,'U1',facts_only=True,product_ids=[])==[]
         for p in compact:
             assert p['execution_policy_sha256']==policy_sha(chosen[p['product_id']]['rules']['execution_policy'])
             assert 'execution_policy' not in p['rules'] and native_product_evidence(p)['rules_complete']
@@ -46,6 +49,8 @@ async def test_full_core_samples_versions_and_final_risk_boundary(store,monkeypa
         missing.disclosure={k:v for k,v in original_disclosure.items() if k!='seller'};await db.flush()
         broken=next(p for p in await bank.products(db,'U1',facts_only=True) if p['product_id']==overlap['product_id'])
         assert not native_product_evidence(broken)['rules_complete']
+        scoped_broken=await bank.products(db,'U1',facts_only=True,product_ids=[overlap['product_id']])
+        assert not native_product_evidence(scoped_broken[0])['rules_complete']
         missing.disclosure=original_disclosure;await db.flush()
         a=await submit_assessment(db,'U1',AssessmentSubmission(questionnaire_version=QUESTIONNAIRE_VERSION,profile_version=1,adult=True,full_capacity=True,answers={k:1 for k,_,_ in QUESTIONS}))
         await confirm_assessment(db,'U1',a['assessment_id']);assert a['capacity_level']==2

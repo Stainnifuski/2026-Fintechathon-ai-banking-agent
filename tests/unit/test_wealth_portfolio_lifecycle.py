@@ -23,6 +23,25 @@ def identity(row):return SelectedShare(product_id=row.product_id,product_version
 def all_items(p):return [SelectionItem(product_id=r.product_id,product_version=r.product_version,share_class=r.share_class,target_ratio_total=str(Decimal(r.target_fen)/p.basis_fen)) for r in p.advised_positions]
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('change',['none','cash','assessment','unavailable','missing','version','expired','control','scope','session'])
+async def test_scoped_execution_freshness_keeps_accepted_plan(change):
+    s,data,facts,bundle,clock=lifecycle_fixture();p=await create(s);before=state(s,p)
+    code=s.store.rows[p.portfolio_id][0].metadata['validation_contract']['selected_references'][0]['product_id']
+    if change=='cash':s.provider.asset_source.bundle['summary']['snapshot_id']='changed'
+    elif change=='assessment':facts.assessment.version=2
+    elif change=='unavailable':facts.offers[code].purchase_allowed=False
+    elif change=='missing':facts.offers.pop(code)
+    elif change=='version':facts.offers[code].product_version+=1
+    elif change=='expired':facts.assessment.expires_at=clock[0]
+    elif change=='control':s.access.grant['can_edit']=False
+    elif change=='scope':s.access.grant['account_ids'].append('not-linked')
+    elif change=='session':s.access.grant['session_ref']='new-session'
+    if change=='none':assert await s.get_for_execution(U,p.portfolio_id,C)==p
+    else:
+        with pytest.raises((CandidateError,ModelError)):await s.get_for_execution(U,p.portfolio_id,C)
+    assert state(s,p)==before
+
+@pytest.mark.asyncio
 async def test_create_read_adjust_preference_copies_original_U():
     s,*_=lifecycle_fixture();p=await create(s,'.625');assert p.version==1 and p.growth_ratio_ex_cash=='0.625' and p.selected_positions==[]
     before=deepcopy(s.store.rows[p.portfolio_id][0].metadata['validation_contract']['calculation'])

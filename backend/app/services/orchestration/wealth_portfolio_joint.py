@@ -32,7 +32,9 @@ DAILY='b82f95d0f9c225f24b0bd91c4552b2674e9b21fa8bd1a1ac7d53b8e275d49bf3'
 
 class ServerReads:
     owns_responses=True # protected HTTP returns request-owned new JSON, never a shared bank cache
-    def __init__(self,db,user,bank,index=None):self.db,self.user,self.bank,self.index=db,user,bank,index
+    def __init__(self,db,user,bank,index=None,product_ids=None):
+        self.db,self.user,self.bank,self.index=db,user,bank,index
+        self.product_ids=product_ids
     async def get(self,path):
         if path=='/api/v1/auth/me':return {'user_id':self.user}
         suffix=path.removeprefix('/api/v1/wealth/')
@@ -40,7 +42,9 @@ class ServerReads:
         if suffix=='products':
             if hasattr(self.bank,'call'):
                 references=getattr(self.index,'policy_references',{})
-                rows=await self.bank.call('POST','/catalog',{'subject_user_id':self.user,'facts_only':True,'policy_references':bool(references)})
+                body={'subject_user_id':self.user,'facts_only':True,'policy_references':bool(references)}
+                if self.product_ids is not None:body['product_ids']=self.product_ids
+                rows=await self.bank.call('POST','/catalog',body)
                 for row in rows:
                     if 'execution_policy_sha256' not in row:continue
                     code=row['product_id'];binding=references.get(code)
@@ -57,13 +61,36 @@ class ServerReads:
 class JointFacts(BankPortfolioFacts):
     """Use B's full summary and explicit lot versions, never the legacy run adapter."""
     completed_read_time=True
+    async def complete_current_round(self,user_id,facts):
+        """Recheck dynamic facts without rereading frozen material in this round.
+
+        A later lifecycle/prepare call creates a new protected product read.
+        No account, assessment, control or permission survives this request.
+        """
+        assets=await self.transport.bank.assets(user_id)
+        assessment=await self.transport.get('/api/v1/wealth/assessments/current')
+        contexts=await self.transport.get('/api/v1/wealth/contexts')
+        values={'assets':assets,'assessment':assessment,'contexts':contexts}
+        if any(business_content(value)!=business_content(self.observations[key]) for key,value in values.items()):return None
+        self.observations.update(values)
+        completed=datetime.now(timezone.utc);facts.read_at=completed
+        if facts.assessment:facts.assessment.read_at=completed
+        for offer in facts.offers.values():
+            if offer.current_simulation:offer.current_simulation.observed_at=completed
+        return facts
     async def read(self,user_id):
         if user_id!=self.transport.user:raise SnapshotError('subject mismatch','FACT_SCOPE_FORBIDDEN',403)
         raw=await self.transport.bank.assets(user_id)
         if 'asset_summary' not in raw:raise SnapshotError('shared summary unavailable','ASSET_SUMMARY_UNAVAILABLE',503)
         assessment=await self.transport.get('/api/v1/wealth/assessments/current')
         contexts=await self.transport.get('/api/v1/wealth/contexts')
-        products=await self.transport.bank.products(user_id)
+        # Explicit lot versions already prove identity. Only legacy lots that
+        # lack a version need protected product resolution; do not scan the
+        # full directory merely to value an empty or small holding set.
+        unresolved=sorted({l['product_id'] for l in raw['lots'] if l.get('product_version') is None})
+        if hasattr(self.transport.bank,'selected_products'):
+            products=await self.transport.bank.selected_products(user_id,unresolved)
+        else:products=await self.transport.bank.products(user_id)
         return self._bundle(raw,assessment,contexts,products)
     async def read_from_current(self,user_id):
         # Used only by _facts between fresh current reads. This bundle is
@@ -157,14 +184,26 @@ class JointPortfolio:
     async def preload(self):
         """Validate the immutable source once at startup; no bank/user caching."""
         import asyncio
+        import time,logging
+        started=time.perf_counter()
         index=await asyncio.to_thread(self.indexes.get,self.data_version)
         if index.daily_version!=self.daily_version:raise CandidateError('DAILY_VERSION_MISMATCH')
+        # The final bank's immutable policy registry is static material too.
+        # Validate/load it before readiness, without any user-specific Plan.
+        from ...domain.wealth_paper_policy import registered_policy_reasons
+        sample=next((p for p in index.products.values() if p.execution_policy),None)
+        if sample:
+            reasons=await asyncio.to_thread(registered_policy_reasons,sample.execution_policy,sample.product_id)
+            if reasons:raise CandidateError(reasons[0],503)
         # Finish collecting the discarded full daily graph during startup,
         # rather than making the first user calculation pay that cost.
         import gc
         await asyncio.to_thread(gc.collect)
+        elapsed=time.perf_counter()-started
+        logging.getLogger(__name__).info('Frozen material ready: %.3fs; directory=%d; policy-bound=%d',elapsed,len(index.products),len(index.policy_references))
         return {'data_version':index.version,'directory':len(index.products),
                 'initialization_seconds':self.indexes.last_load_seconds,
+                'total_preload_seconds':elapsed,
                 'interned_unknown_fields':index.interned_unknown_fields}
     def bind(self,db,user_id,bank):
         facts=JointFacts(ServerReads(db,user_id,bank,self.indexes.cache.get(self.data_version)),self.data_version,self.daily_version)
@@ -178,8 +217,11 @@ class JointPortfolio:
         return result.model_dump(mode='json')
     async def owned_plan(self,db,user_id,portfolio_id):
         record=await invoke(self.store.read(portfolio_id,user_id))
-        _,service=self.bind(db,user_id,self.bank_factory())
-        return (await invoke(service.get(user_id,portfolio_id,record.plan.context_id))).model_dump(mode='json')
+        facts,service=self.bind(db,user_id,self.bank_factory())
+        codes={r['product_id'] for r in record.metadata['validation_contract']['selected_references']}
+        codes.update(r.product_id for r in record.plan.advised_positions)
+        facts.transport.product_ids=sorted(codes)
+        return (await invoke(service.get_for_execution(user_id,portfolio_id,record.plan.context_id))).model_dump(mode='json')
     async def plan(self,*,db,user_id,context_id,bank,params):
         _,service=self.bind(db,user_id,bank)
         return (await invoke(service.create(user_id,PortfolioCreate(context_id=context_id,**{k:v for k,v in params.items() if v is not None})))).model_dump(mode='json')

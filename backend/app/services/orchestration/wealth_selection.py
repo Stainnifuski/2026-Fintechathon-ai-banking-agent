@@ -176,7 +176,12 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     if (snapshot['snapshot_id'] != request.snapshot_id or plan['snapshot_id'] != request.snapshot_id
             or snapshot['asset_scope_id'] != plan['asset_scope_id'] or snapshot['context_id'] != plan['context_id']):
         reject('资产快照或范围已更新，请先重新修订整体目标', 'STALE_SNAPSHOT', 409)
-    facts, products = await bank.assets(user_id), await bank.products(user_id)
+    facts = await bank.assets(user_id)
+    # Include zero/tiny targets and all relevant holdings. The existing loop
+    # below still rejects unavailable or changed selected products explicitly.
+    relevant=sorted({p['product_id'] for p in plan['selected_positions']} |
+                    {p['product_id'] for p in snapshot['positions']})
+    products = await bank.selected_products(user_id,relevant) if hasattr(bank,'selected_products') else await bank.products(user_id)
     real_accounts = {a['account_id']: a for a in facts['cash'] if a['account_type'] != 'credit'}
     if facts['context_id'] != plan['context_id'] or set(snapshot['account_ids']) != set(real_accounts):
         reject('整体资产范围与当前银行环境不一致', 'ACCOUNT_CONTEXT_MISMATCH', 409)

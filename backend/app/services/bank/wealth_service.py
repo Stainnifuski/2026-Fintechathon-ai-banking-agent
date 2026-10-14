@@ -218,29 +218,42 @@ def nav_available_at(price: WealthNavORM) -> datetime:
         price.nav_date,datetime.strptime('18:00','%H:%M').time(),TZ)
 
 
-async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bool=False,policy_references: bool=False) -> list[dict]:
+async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bool=False,policy_references: bool=False,product_ids: list[str] | None=None) -> list[dict]:
     """客观产品查询；未评估也可查询，不伪造缺失数据。"""
     from .wealth_research import selected
     context = await selected(db, user_id) if user_id else None
     now = await business_now(db, context.account_id if context else None)
     result = []
+    if product_ids == []:return result
     # Read current versions in one query; current state is never response-cached.
     compact=bool(facts_only and context and context.dataset_key.startswith('real-public-paper-v1:'))
     if compact:
         from types import SimpleNamespace
         v=WealthProductVersionORM;p=WealthProductORM
         fields=('version','identity','nature','manager','seller','risk','fees','liquidity','holding_period_days','pricing','settlement','cancellation','limitations')
-        from sqlalchemy import and_
+        from sqlalchemy import and_,cast,Text
         required=fields[2:]
-        present=and_(*(func.json_type(v.disclosure,'$.'+k).is_not(None) for k in required)) if db.get_bind().dialect.name=='sqlite' else and_(*(v.disclosure[k].is_not(None) for k in required))
-        raw=(await db.execute(select(p.product_id,p.status,v.version_id,v.version,v.name,v.kind,v.category,v.risk_level,v.rules,
-            *(v.disclosure[k].as_integer() if k in ('version','holding_period_days') else v.disclosure[k].as_string() for k in fields),present).join(v,(v.product_id==p.product_id)&(v.version==p.current_version)).order_by(p.product_id))).all()
-        pairs=[(SimpleNamespace(product_id=r[0],status=r[1]),SimpleNamespace(version_id=r[2],version=r[3],name=r[4],kind=r[5],category=r[6],risk_level=r[7],rules=r[8],disclosure=dict(zip(fields if r[-1] else fields[:2],r[9:-1])))) for r in raw]
+        sqlite=db.get_bind().dialect.name=='sqlite'
+        present=and_(*(v.disclosure[k].is_not(None) for k in required))
+        # SQLite reparses the same JSON for every extract/type expression.
+        # Read its encoded disclosure once and retain only the exact fields;
+        # required key presence (including unknown null values) stays explicit.
+        columns=[cast(v.disclosure,Text)] if sqlite else [*(v.disclosure[k].as_integer() if k in ('version','holding_period_days') else v.disclosure[k].as_string() for k in fields),present]
+        query=select(p.product_id,p.status,v.version_id,v.version,v.name,v.kind,v.category,v.risk_level,v.rules,*columns).join(v,(v.product_id==p.product_id)&(v.version==p.current_version))
+        if product_ids is not None:query=query.where(p.product_id.in_(product_ids))
+        raw=(await db.execute(query.order_by(p.product_id))).all()
+        def compact_disclosure(r):
+            if not sqlite:return dict(zip(fields if r[-1] else fields[:2],r[9:-1]))
+            import json
+            value=json.loads(r[9]);keys=fields if set(required)<=value.keys() else fields[:2]
+            return {k:json.dumps(value.get(k),ensure_ascii=False,separators=(',',':')) if isinstance(value.get(k),(dict,list)) else value.get(k) for k in keys}
+        pairs=[(SimpleNamespace(product_id=r[0],status=r[1]),SimpleNamespace(version_id=r[2],version=r[3],name=r[4],kind=r[5],category=r[6],risk_level=r[7],rules=r[8],disclosure=compact_disclosure(r))) for r in raw]
     else:
-        pairs = (await db.execute(select(WealthProductORM, WealthProductVersionORM).join(
+        query=select(WealthProductORM, WealthProductVersionORM).join(
             WealthProductVersionORM, (WealthProductVersionORM.product_id == WealthProductORM.product_id)
             & (WealthProductVersionORM.version == WealthProductORM.current_version))
-            .order_by(WealthProductORM.product_id))).all()
+        if product_ids is not None:query=query.where(WealthProductORM.product_id.in_(product_ids))
+        pairs=(await db.execute(query.order_by(WealthProductORM.product_id))).all()
     visible = []
     for product, row in pairs:
         dataset_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
@@ -255,7 +268,7 @@ async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bo
         # Explicit publication times and the legacy 18:00 Beijing assumption
         # have the same visibility semantics as latest_nav, including future rows.
         local=now.astimezone(TZ);legacy_day=local.date() if local.hour>=18 else local.date()-timedelta(days=1)
-        if compact:
+        if compact and product_ids is None:
             # Keep the full set in SQL, rather than expanding 14k parameters
             # and copying the same list into every price query.
             dataset_id,dataset_version=context.dataset_key.split(':',1)
@@ -276,7 +289,9 @@ async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bo
         if keys:
             from types import SimpleNamespace
             if compact:
-                rows=(await db.execute(select(WealthResearchProductORM.record_id,WealthResearchProductORM.data['share_class'].as_string()).where(WealthResearchProductORM.dataset_key.in_(keys)))).all()
+                query=select(WealthResearchProductORM.record_id,WealthResearchProductORM.data['share_class'].as_string()).where(WealthResearchProductORM.dataset_key.in_(keys))
+                if product_ids is not None:query=query.where(WealthResearchProductORM.record_id.in_([key+':'+code for key in keys for code in product_ids]))
+                rows=(await db.execute(query)).all()
                 records={rid:share for rid,share in rows}
             else:
                 rows=(await db.execute(select(WealthResearchProductORM.record_id,WealthResearchProductORM.data)
