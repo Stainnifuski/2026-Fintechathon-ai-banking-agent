@@ -29,7 +29,7 @@ export interface Product {
   product_id: string; version: number; name: string; kind: string; category: string;
   product_risk_level: number; status: string; nav: string | null; nav_date: string | null;
   rules: { min_amount_fen: number; holding_days: number; cash_business_days: number; purchase_fee_rate: string;
-    quick_redemption?: {start: string; end: string; daily_limit_fen: number} };
+    sales_service_fee_rate?:string|null; redeem_fee_bands?:{days_lt:number;rate:string}[]; quick_redemption?: {start: string; end: string; daily_limit_fen: number} };
   disclosure: { version: number; nature: string; manager: string; seller: string; risk: string;
     fees: string; liquidity: string; pricing: string; settlement: string; cancellation: string; limitations: string };
 }

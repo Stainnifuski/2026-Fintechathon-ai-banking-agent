@@ -42,9 +42,9 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
             {!share ? <p>当前没有可申购的有效份额，不能选择。</p> : <>
               <div className="picker-share"><span>{share.share_class ? `${share.share_class}类` : '具体代码产品'} · R{share.product_risk_level}</span><small>{share.product_id} · v{share.product_version}</small></div>
               <p className="consumer-note">{candidate.reason}</p>
-              <div className="picker-performance"><strong>{performance?.label}：{performance?.value}</strong><small>{performance?.date}</small><small>资料时点 {share.data_as_of?.slice(0, 10)??'未知'} · {share.data_source === 'contract_fixture_only' ? '虚构样例' : share.data_source}</small></div>
+              <div className="picker-performance">{share.performance.one_year.status==='available'&&performance&&<><strong>{performance.label}：{performance.value}</strong><small>{performance.date}</small></>}<small>资料时点 {share.data_as_of?.slice(0, 10)??'未知'} · {share.data_source === 'contract_fixture_only' ? '虚构样例' : share.data_source}</small></div>
               <p className="picker-fees">起购 {money(share.min_amount_fen)} · 申购 {feeRate(share.fees.purchase_fee_rate)} · 销售服务 {feeRate(share.fees.sales_service_fee_rate)}</p>
-              <p className="consumer-note">赎回费：{share.fees.redemption_fee_rules == null ? '规则未提供' : JSON.stringify(share.fees.redemption_fee_rules)}</p>
+              <p className="consumer-note">赎回费：{share.fees.redemption_fee_rules == null ? '公开规则未齐' : share.fees.redemption_fee_rules.every(r=>Number(r.rate)===0)?'项目模拟赎回费为0':share.fees.redemption_fee_rules.map(r=>`持有少于${r.days_lt}天：${(Number(r.rate)*100).toLocaleString()}%`).join('；')}。本金可能亏损。</p>
               <div className="picker-actions"><button className="secondary" disabled={busy} onClick={() => setDetailId({id:share.product_id,version:share.product_version})}>查看{candidate.name}详情</button></div>
             </>}
           </article>;

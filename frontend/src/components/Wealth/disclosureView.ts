@@ -8,3 +8,5 @@ export const disclosureLabels: Record<string, string> = {
 export const displayDisclosure = (value: unknown): string => value == null ? '未提供' : Array.isArray(value)
   ? value.map(displayDisclosure).join('；') : typeof value === 'object'
     ? Object.entries(value).map(([key, item]) => `${key}：${displayDisclosure(item)}`).join('；') : String(value);
+
+export const visibleDisclosures=(value:Record<string,unknown>)=>Object.entries(value).filter(([key])=>["nature","manager","seller","risk","fees","liquidity","holding_period_days","pricing","settlement","cancellation","limitations","quick_redemption"].includes(key));

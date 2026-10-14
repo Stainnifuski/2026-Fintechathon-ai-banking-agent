@@ -4,7 +4,7 @@ import * as w from '../../services/wealth';
 import type { SecondFactor as Factor } from '../../services/bank';
 import { SecondFactor } from '../SecondFactor';
 import { beijingTime } from '../../utils/time';
-import { disclosureLabels, displayDisclosure } from './disclosureView';
+import { disclosureLabels, displayDisclosure, visibleDisclosures } from './disclosureView';
 
 interface Props { plan:w.Plan; onActivity:()=>void }
 /** Existing plan endpoints and shared second factor; no alternative authority. */
@@ -26,7 +26,7 @@ export default function PlanExecution({plan:initial,onActivity}:Props){
       <strong>{item.product_name} · {item.command.product_id}</strong><p>账户 {item.command.account_id} · {item.command.direction==='purchase'?`申购 ${w.money(item.command.amount_fen)}`:`赎回 ${item.command.units}份`} · 产品 v{item.command.product_version} · 披露 v{item.command.disclosure_version}</p>
       <p>估算费用 {w.money(item.estimate?.fee_fen)} · {item.command.direction==='purchase'?`估算份额 ${item.estimate?.units??'未知'}`:`估算到账 ${w.money(item.estimate?.cash_fen)}`} · 净值日期 {item.estimated_nav_date??'未知'}</p>
       <p>计价 {item.pricing_date} · 确认 {item.confirm_date} · 到账 {item.cash_date} · 预览有效至 {beijingTime(item.expires_at)}</p>
-      <details><summary>完整披露 v{item.command.disclosure_version}</summary>{Object.entries(item.disclosure).map(([key,value])=><p key={key}>{disclosureLabels[key]||key}：{displayDisclosure(value)}</p>)}</details>
+      <details><summary>完整披露 v{item.command.disclosure_version}</summary>{visibleDisclosures(item.disclosure).map(([key,value])=><p key={key}>{disclosureLabels[key]||key}：{displayDisclosure(value)}</p>)}</details>
     </article>)}
       {stage==='PREVIEW'&&<><label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} disabled={busy}/>本人已阅读全部订单与披露，理解本金亏损、费用及流动性，确认采用整份方案</label><button disabled={busy||!consent} onClick={()=>act(async()=>{await w.post(`/plans/${preview.plan_id}/confirm`,{version:preview.version,items:preview.items.map(i=>({authorization_id:i.authorization_id,digest:i.digest,disclosure_version:i.command.disclosure_version,accepted:true}))});setStage('CONFIRMED');})}>一次确认整份方案</button></>}
       {stage==='CONFIRMED'&&<><SecondFactor key={preview.verification_reference_id} purpose="wealth" referenceId={preview.verification_reference_id} factor={factor} onChange={setFactor} disabled={busy}/><label>6位验证码<input aria-label="整份方案验证码" inputMode="numeric" autoComplete="off" maxLength={6} value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,''))} disabled={busy}/></label><button disabled={busy||!factor||code.length!==6} onClick={()=>act(async()=>{if(!factor)return;await w.post(`/plans/${preview.plan_id}/verify`,{version:preview.version,proof:code,method:factor.method,challenge_id:factor.method==='sms'?factor.challengeId:undefined});setCode('');setStage('VERIFIED');await execute();})}>一次验证并提交整份方案</button></>}
