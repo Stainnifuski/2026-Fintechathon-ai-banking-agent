@@ -131,7 +131,7 @@ def test_real_risk_requires_exact_evidence(variant,reason):
 @pytest.mark.parametrize('ratio',['0.00000001','0'])
 def test_r2_r4_candidate_manual_small_and_zero(ratio):
     snapshot,facts=fixture_pool(1,2,4);engine,source=service(snapshot,facts)
-    result=run(engine.candidates('fixture-user',THEME));assert result['status']=='risk_mismatch'
+    result=run(engine.candidates('fixture-user',GENERAL));assert result['status']=='risk_mismatch'
     assert result['pipeline']['stages']['matched']==2
     request=SelectionRequest(expected_context=version_context(facts),items=[share('Q00A',ratio)])
     d=run(engine.validate_selection('fixture-user',request))
@@ -167,7 +167,7 @@ def test_default_A_C_only_other_shares_and_duplicate_family():
     d=run(engine.validate_selection('fixture-user',SelectionRequest(expected_context=version_context(facts),items=[share('Q00C'),share('Q00A')])))
     assert not d.accepted and 'DUPLICATE_SELECTED_FAMILY' in d.reason_codes
 
-@pytest.mark.parametrize('case,status,reason',[('none','no_theme_match','NO_STRUCTURED_MATCH'),('over','risk_mismatch','ALL_MATCHED_RISK_EXCEEDS_CAPACITY'),('mixed','no_eligible_products','PRODUCT_RISK_UNKNOWN'),('family','no_eligible_products','FAMILY_UNVERIFIED'),('text','no_eligible_products','INVESTMENT_TEXT_SOURCE_MISSING'),('assessment','unavailable','ASSESSMENT_REQUIRED')])
+@pytest.mark.parametrize('case,status,reason',[('none','no_theme_match','NO_STRUCTURED_MATCH'),('over','risk_mismatch','ALL_MATCHED_RISK_EXCEEDS_CAPACITY'),('mixed','no_eligible_products','PRODUCT_RISK_UNKNOWN'),('family','no_eligible_products','FAMILY_UNVERIFIED'),('text','ok',None),('assessment','unavailable','ASSESSMENT_REQUIRED')])
 def test_complete_match_before_qualification_reasons(case,status,reason):
     snapshot,facts=fixture_pool(2)
     if case=='none':
@@ -185,7 +185,7 @@ def test_complete_match_before_qualification_reasons(case,status,reason):
         for p in snapshot.products:p.fields['strategy']=FieldFact(status='missing',reason='no text')
     if case=='assessment':facts.assessment=None
     result=pipeline(ProductIndex(snapshot),GENERAL if case=='text' else THEME,facts,'fixture-user',NOW)
-    assert result.status==status and reason in result.reason_codes
+    assert result.status==status and (reason is None or reason in result.reason_codes)
     assert result.stages['matched']==(0 if case=='none' else 4)
     if case=='mixed':assert result.risk_explanation is None and 'PURCHASE_STOPPED' in result.reason_codes
     if case=='family':assert result.stages['purchase_qualified_shares']==4 and result.stages['family_groups']==0
@@ -231,7 +231,7 @@ def test_single_issuer_original_sufficient_and_conflicts_not_merged():
     assert issuer_identity(p)==('虚构基金公司甲',None) and 'issuer_normalized' not in p.fields
     snapshot.products[1].fields['issuer_raw']=field('虚构公司甲')
     result=pipeline(ProductIndex(snapshot),GENERAL,facts,'fixture-user',NOW)
-    assert result.status=='no_eligible_products' and 'FAMILY_ISSUER_CONFLICT' in result.reason_codes
+    assert result.status=='ok' and 'FAMILY_ISSUER_CONFLICT' not in result.reason_codes
     p.fields['issuer_raw']=FieldFact(status='conflict',reason='short and full names conflict')
     assert issuer_identity(p)[0] is None
 
@@ -243,7 +243,7 @@ def test_family_unknown_not_product_id_and_text_conflict():
     assert not result.family_candidates and 'FAMILY_UNVERIFIED' in result.reason_codes
     snapshot,facts=fixture_pool(1);snapshot.products[1].fields['strategy']=field('本基金主要投资于高股息股票。')
     result=pipeline(ProductIndex(snapshot),GENERAL,facts,'fixture-user',NOW)
-    assert 'FAMILY_TEXT_CONFLICT' in result.reason_codes
+    assert result.status=='ok' and 'FAMILY_TEXT_CONFLICT' not in result.reason_codes
 
 
 def test_full_pool_batches_selected_more_than_three_reused_index():

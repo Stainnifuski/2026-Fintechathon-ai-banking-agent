@@ -50,9 +50,11 @@ def adapt_candidate_group(result: dict,index: ProductIndex,filter: CandidateFilt
                 share_class=p.share_class if p.share_class in ('A','C') else None,product_risk_level=decision['product_level'],
                 status='purchase_eligible' if decision['purchase_eligible'] else 'purchase_ineligible',tradable=decision['purchase_eligible'],
                 min_amount_fen=offer.get('minimum_fen'),fees=Fees.model_validate(offer['fee_rules']) if offer.get('fee_rules') else Fees(purchase_fee_rate=None,sales_service_fee_rate=None,redemption_fee_rules=None,missing_fields=['fee_rules']),
-                performance=Performance(one_year=point,latest_day=point.model_copy(update={'metric':'daily_nav_change'})),detail_ref='local:'+p.product_id,data_source='真实公开资料／项目分级／模拟成交与费用' if p.execution_policy else p.source_kind,data_as_of=decision['checked_at']))
+                performance=Performance(one_year=point,latest_day=point.model_copy(update={'metric':'daily_nav_change'})),detail_ref='local:'+p.product_id,
+                data_source='真实货币资料／项目模拟固定1元份额，真实NAV未知' if p.execution_policy and p.execution_policy.get('pricing_mode')=='paper-money-fixed-unit-v1' else '真实公开资料／项目分级／模拟成交与费用' if p.execution_policy else p.source_kind,
+                data_as_of=datetime.fromisoformat(p.execution_policy['quote']['available_at']) if p.execution_policy else decision['checked_at']))
         if shares:items.append(ProductCandidate(family_id=family['family_id'],name=index.products[family['default_share']['product_id']].name,
-            bucket=family['bucket'],reason='核实类别与项目风险等级，当前允许购买；按类别轮转和代码顺序展示，不代表收益或质量排名。',reason_codes=['QUALIFIED_SHARE','DETERMINISTIC_CATEGORY_CODE_ORDER'],
+            bucket=family['bucket'],reason=f"{ {'money_market':'货币','money':'货币','bond':'债券','mixed':'混合','equity':'股票'}.get(family.get('substantive_category'),family.get('substantive_category')) }／项目R{shares[0].product_risk_level}，当前可购；{ {'cash_management':'活钱','stable':'稳健','growth':'成长'}.get(family['bucket'],family['bucket']) }板块候选。类别／代码展示顺序不代表收益或质量排名。",reason_codes=['QUALIFIED_SHARE','DETERMINISTIC_CATEGORY_CODE_ORDER'],
             evidence={'default_share':family['default_share'],'share_decisions':family['shares'],'source_kind':result['source_kind'],'fixture_only':result['fixture_only']},share_classes=shares))
     return CandidateGroup(bucket=filter.bucket,filter=RecommendationFilter.model_validate(filter.model_dump()),status=status,items=items,
         reason_codes=sorted(all_reasons | set(result.get('reason_codes',[]))) if status!='ok' else [],

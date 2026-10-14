@@ -110,6 +110,7 @@ class CandidateService:
         state=self.sessions.get(request.session_id)
         if state is None:raise CandidateError('CANDIDATE_SESSION_NOT_FOUND',404)
         if state.user_id!=user_id:raise CandidateError('CANDIDATE_SESSION_FORBIDDEN',403)
+        if state.filter.mode=='theme':raise CandidateError('THEME_MODE_REMOVED',410)
         if state.version!=request.expected_version:raise CandidateError('CANDIDATE_SESSION_VERSION_STALE')
         return state
 
@@ -223,7 +224,7 @@ class CandidateService:
         async with self.lock:
             state=self._state(user_id,request);facts,index,now=await self._current_for_state(state);self._revalidate_selected(state,facts,index,now)
             result=pipeline(index,state.filter,facts,user_id,now)
-            state.context=result.context;state.pool_version=result.pool_version;state.requires_refresh=False;state.displayed=set();state.version+=1
+            state.context=result.context;state.pool_version=result.pool_version;state.requires_refresh=False;state.displayed=set();state.rotation_position=0;state.version+=1
             batch=self._batch(state,result,facts) if result.status=='ok' else {'status':result.status,'reason_codes':result.reason_codes,'items':[]}
-            return {**batch,'session':self._view(state),'pipeline':result.model_dump(mode='json')}
+            return {**batch,'session':self._view(state),'pipeline':self.pipeline_view(result,facts)}
 

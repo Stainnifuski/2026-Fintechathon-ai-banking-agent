@@ -110,9 +110,9 @@ def normalize_history(records: list[dict], ingested_at: str) -> list[dict]:
     return [rows[d] for d in sorted(rows)]
 
 
-def parse_import(raw: bytes,format: str) -> dict:
+def parse_import(raw: bytes,format: str,*,max_bytes: int=25_000_000) -> dict:
     """接收内容而非路径/URL；管理员CLI读取受控文件，模型不触达。"""
-    if len(raw)>25_000_000: raise ValueError("INPUT_TOO_LARGE")
+    if not 1<=max_bytes<=150_000_000 or len(raw)>max_bytes: raise ValueError("INPUT_TOO_LARGE")
     if format=="json": return json.loads(raw.decode("utf-8-sig"))
     if format!="csv": raise ValueError("FORMAT_UNSUPPORTED")
     rows=list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
