@@ -16,9 +16,8 @@ from .wealth_portfolio_data import (read, canonical, digest, utc, reference, mis
 def product_content(row: dict) -> dict:
     """规则/披露/身份的内容绑定；净值和观察时刻另由当前业务时效检查。"""
     keys=('product_id','version','name','kind','category','product_risk_level','identity',
-          'fund_family_id','dataset_key','rules','disclosure','share_class',
-          'investment_objective','investment_strategy','benchmark','tracking_target','material_origin')
-    return {key:row.get(key) for key in keys}
+          'fund_family_id','dataset_key','rules','share_class')
+    return {**{key:row.get(key) for key in keys},'disclosure_version':row.get('disclosure',{}).get('version')}
 
 
 def register(root: Path, records: list[dict], expected_codes: set[str]) -> dict:
@@ -164,6 +163,7 @@ def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_o
     manifest=json.loads(manifest_path.read_text(encoding='utf-8-sig'))
     real_codes={p.product_id for p in base.products if p.source_kind=='real'}
     entries=[validate_evidence(root,r,manifest['authority_sources'],real_codes) for r in manifest['records']]
+    rows_by_code={r['product_id']:r for r in rows}
     products=[];daily=[d.model_copy(deep=True) for d in base.daily if d.source_kind=='real']
     previous={p.product_id:p for p in base.products}
     old_simulated={p.product_id for p in base.products if p.source_kind=='simulated'}
@@ -172,7 +172,8 @@ def derive(root: Path, base_version: str, bank_path: str, bank_sha256: str, as_o
     for old in base.products:
         if old.source_kind!='real':continue
         product=old.model_copy(deep=True);apply_evidence(product,entries,as_of)
-        row=next((r for r in rows if r['product_id']==old.product_id and r.get('rules',{}).get('execution_policy')),None)
+        row=rows_by_code.get(old.product_id)
+        if row and not row.get('rules',{}).get('execution_policy'):row=None
         if row:
             from ...domain.wealth_paper_policy import validate_policy
             policy=row['rules']['execution_policy']

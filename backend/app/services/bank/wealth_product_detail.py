@@ -4,6 +4,7 @@ from ...models.wealth import WealthProductVersionORM,WealthNavORM
 from ...models.wealth_research import WealthResearchProductORM
 from ...domain.wealth_chart import chart
 from ...domain.time import utc_iso
+from ...domain.wealth_paper_policy import PRICING_MODES,MONEY_PRICING_MODE
 from datetime import datetime
 from . import wealth_service as bank,wealth_research as research
 from .transfer_service import BankError
@@ -27,6 +28,14 @@ async def detail(db,user_id,product_id,period='1y',product_version=None):
                 'data_version':context.dataset_key,'as_of':utc_iso(now),'money_yield':yields,
                 'chart':None,'metric_reason':'MONEY_YIELD_NOT_UNIT_NAV','rules':rules}
         version=metadata.get('product_version');data_version=context.dataset_key
+        if rules.get('pricing_mode')==MONEY_PRICING_MODE:
+            return {'product_id':product_id,'name':metadata['name'],'product_version':version,
+                'identity':'真实货币基金身份与收益资料／项目模拟固定1元份额计价',
+                'underlying_source_kind':'real','execution_source_kind':'simulated','risk_source_kind':'project_policy',
+                'category':'cash','risk_level':1,'data_version':data_version,'as_of':utc_iso(now),
+                'real_unit_nav':None,'latest_nav':None,'simulated_unit_price':'1','price_source':'project_simulated_fixed_one',
+                'money_yield_facts':metadata.get('money_yield_facts'),'chart':None,'rules':rules,
+                'metric_reason':'MONEY_YIELD_NOT_NAV_NO_FABRICATED_RETURN','quick_redemption':False}
     else:
         products=await bank.products(db,user_id);metadata=next((p for p in products if p['product_id']==product_id),None)
         if metadata is None:raise BankError('产品不存在','PRODUCT_NOT_FOUND',404)
@@ -42,7 +51,7 @@ async def detail(db,user_id,product_id,period='1y',product_version=None):
     result=chart(history,as_of=now,period=period,calendar_version=calendar,data_version=data_version,simulated=simulated)
     published=[p for p in history if datetime.fromisoformat(p['available_at'])<=now and p['date']<=now.astimezone(bank.TZ).date().isoformat()]
     latest=max(published,key=lambda p:p['date']) if published else None
-    paper=rules.get('execution_policy') if rules.get('pricing_mode')=='frozen-public-nav-v1' else None
+    paper=rules.get('execution_policy') if rules.get('pricing_mode') in PRICING_MODES else None
     return {'product_id':product_id,'name':metadata['name'],'product_version':version,
         'identity':metadata.get('identity','真实公开基金资料＋比赛模拟交易') if paper else metadata.get('identity','虚构产品与模拟行情') if simulated else '真实基金数据／模拟资金交易环境',
         'underlying_source_kind':'real' if paper or not simulated else 'simulated','execution_source_kind':'simulated',

@@ -123,7 +123,8 @@ class BankPortfolioFacts:
                         or not isinstance(row.get('disclosure', {}), dict) for row in result['products'])))
                 or ('assessment' in result and result['assessment'] is not None and not isinstance(result['assessment'], dict))):
             raise CandidateError('BANK_READ_SCHEMA_INVALID', 503)
-        self.observations.update(deepcopy(result))
+        self.observations.update(result if getattr(self.transport,'owns_responses',False) else deepcopy(result))
+        if 'products' in result:self.current_products_version='adapter:'+digest(result['products'])
         return result
 
     async def observe(self, user_id: str) -> dict:
@@ -267,7 +268,7 @@ class BankPortfolioFacts:
                         if rules.get(key) is None]})
         return CurrentFacts(user_id=user_id, source_id='protected-local-bank', mode='simulated', channel='local-competition-bank',
             read_at=at, data_version=self.data_version, daily_version=self.daily_version,
-            offers_version='adapter:'+digest(value['products']), assessment=assessment,
+            offers_version=self.current_products_version, assessment=assessment,
             latest_assessment_id=assessment.assessment_id if assessment else None,
             latest_assessment_version=assessment.version if assessment else None,
             assessment_current_proven=bool(raw and raw.get('current_profile_verified') is True), offers=offers)

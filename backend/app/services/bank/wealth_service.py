@@ -1,6 +1,7 @@
 """4号理财事实服务；受理、占款、计价、到账与审计事务一致。"""
 
 from dataclasses import asdict
+from ...domain.wealth_paper_policy import PRICING_MODES,MONEY_PRICING_MODE
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
@@ -217,17 +218,29 @@ def nav_available_at(price: WealthNavORM) -> datetime:
         price.nav_date,datetime.strptime('18:00','%H:%M').time(),TZ)
 
 
-async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
+async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bool=False,policy_references: bool=False) -> list[dict]:
     """客观产品查询；未评估也可查询，不伪造缺失数据。"""
     from .wealth_research import selected
     context = await selected(db, user_id) if user_id else None
     now = await business_now(db, context.account_id if context else None)
     result = []
     # Read current versions in one query; current state is never response-cached.
-    pairs = (await db.execute(select(WealthProductORM, WealthProductVersionORM).join(
-        WealthProductVersionORM, (WealthProductVersionORM.product_id == WealthProductORM.product_id)
-        & (WealthProductVersionORM.version == WealthProductORM.current_version))
-        .order_by(WealthProductORM.product_id))).all()
+    compact=bool(facts_only and context and context.dataset_key.startswith('real-public-paper-v1:'))
+    if compact:
+        from types import SimpleNamespace
+        v=WealthProductVersionORM;p=WealthProductORM
+        fields=('version','identity','nature','manager','seller','risk','fees','liquidity','holding_period_days','pricing','settlement','cancellation','limitations')
+        from sqlalchemy import and_
+        required=fields[2:]
+        present=and_(*(func.json_type(v.disclosure,'$.'+k).is_not(None) for k in required)) if db.get_bind().dialect.name=='sqlite' else and_(*(v.disclosure[k].is_not(None) for k in required))
+        raw=(await db.execute(select(p.product_id,p.status,v.version_id,v.version,v.name,v.kind,v.category,v.risk_level,v.rules,
+            *(v.disclosure[k].as_integer() if k in ('version','holding_period_days') else v.disclosure[k].as_string() for k in fields),present).join(v,(v.product_id==p.product_id)&(v.version==p.current_version)).order_by(p.product_id))).all()
+        pairs=[(SimpleNamespace(product_id=r[0],status=r[1]),SimpleNamespace(version_id=r[2],version=r[3],name=r[4],kind=r[5],category=r[6],risk_level=r[7],rules=r[8],disclosure=dict(zip(fields if r[-1] else fields[:2],r[9:-1])))) for r in raw]
+    else:
+        pairs = (await db.execute(select(WealthProductORM, WealthProductVersionORM).join(
+            WealthProductVersionORM, (WealthProductVersionORM.product_id == WealthProductORM.product_id)
+            & (WealthProductVersionORM.version == WealthProductORM.current_version))
+            .order_by(WealthProductORM.product_id))).all()
     visible = []
     for product, row in pairs:
         dataset_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
@@ -242,8 +255,17 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
         # Explicit publication times and the legacy 18:00 Beijing assumption
         # have the same visibility semantics as latest_nav, including future rows.
         local=now.astimezone(TZ);legacy_day=local.date() if local.hour>=18 else local.date()-timedelta(days=1)
+        if compact:
+            # Keep the full set in SQL, rather than expanding 14k parameters
+            # and copying the same list into every price query.
+            dataset_id,dataset_version=context.dataset_key.split(':',1)
+            version_scope=select(WealthProductVersionORM.version_id).join(WealthProductORM,
+                (WealthProductORM.product_id==WealthProductVersionORM.product_id)&(WealthProductORM.current_version==WealthProductVersionORM.version)).where(
+                WealthProductVersionORM.rules['dataset_id'].as_string()==dataset_id,
+                WealthProductVersionORM.rules['dataset_version'].as_string()==dataset_version)
+        else:version_scope=versions
         eligible=select(WealthNavORM.version_id,func.max(WealthNavORM.nav_date).label('nav_date')).where(
-            WealthNavORM.version_id.in_(versions),WealthNavORM.nav_date<=local.date(),
+            WealthNavORM.version_id.in_(version_scope),WealthNavORM.nav_date<=local.date(),
             or_(WealthNavORM.available_at<=now,(WealthNavORM.available_at.is_(None)) & (WealthNavORM.nav_date<=legacy_day)))
         eligible=eligible.group_by(WealthNavORM.version_id).subquery()
         navs=(await db.scalars(select(WealthNavORM).join(eligible,
@@ -253,9 +275,13 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
         keys={key for _,row,key in visible if row.rules.get('dataset_id')}
         if keys:
             from types import SimpleNamespace
-            rows=(await db.execute(select(WealthResearchProductORM.record_id,WealthResearchProductORM.data)
-                .where(WealthResearchProductORM.dataset_key.in_(keys)))).all()
-            records={rid:SimpleNamespace(data=data) for rid,data in rows}
+            if compact:
+                rows=(await db.execute(select(WealthResearchProductORM.record_id,WealthResearchProductORM.data['share_class'].as_string()).where(WealthResearchProductORM.dataset_key.in_(keys)))).all()
+                records={rid:share for rid,share in rows}
+            else:
+                rows=(await db.execute(select(WealthResearchProductORM.record_id,WealthResearchProductORM.data)
+                    .where(WealthResearchProductORM.dataset_key.in_(keys)))).all()
+                records={rid:SimpleNamespace(data=data) for rid,data in rows}
             ds=(await db.scalars(select(WealthDatasetORM).where(WealthDatasetORM.dataset_key.in_(keys)))).all()
             datasets={r.dataset_key:r for r in ds}
     for product,row,dataset_key in visible:
@@ -264,7 +290,7 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
         if fixture.get('no_match'): continue
         if fixture.get('source_unavailable'): price=None
         from .wealth_material import current_material
-        material = await current_material(db, row,records=records,datasets=datasets)
+        material = {'share_class':records.get(dataset_key+':'+product.product_id),'source_product_code':product.product_id} if compact else await current_material(db, row,records=records,datasets=datasets)
         result.append({"product_id": product.product_id, "version": row.version, "name": row.name,
             "kind": row.kind, "category": row.category, "product_risk_level": row.risk_level,
             "product_risk_source":"project_policy" if row.rules.get('execution_policy') else "original_simulation",
@@ -273,13 +299,23 @@ async def products(db: AsyncSession, user_id: str | None = None) -> list[dict]:
             "execution_source_kind":"simulated",
             "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,
             "nav": price.price if price else None, "nav_date": price.nav_date.isoformat() if price else None,
+            "price_source":"project_simulated_fixed_one" if row.rules.get('pricing_mode')==MONEY_PRICING_MODE else "real_public_frozen_NAV" if row.rules.get('pricing_mode') in PRICING_MODES else "original_simulated_NAV",
+            "real_unit_nav":None if row.rules.get('pricing_mode')==MONEY_PRICING_MODE else price.price if price else None,
             "available_at":utc_iso(nav_available_at(price)) if price else None,
             "fund_family_id": row.rules.get("fund_family_id", product.product_id),
             "identity": row.disclosure.get('identity', '虚构产品与模拟行情'),
             "dataset_key": dataset_key if context else "legacy-v1",
             "purchase_open": (now.astimezone(TZ).date()-date(2026,9,30)).days % row.rules.get('open_interval_days',1) == 0,
-            "data_stale": bool(context and price and row.rules.get('pricing_mode')!='frozen-public-nav-v1' and now.astimezone(TZ).date()>advance_business(price.nav_date,3,row.rules['calendar_version'])),
+            "data_stale": bool(context and price and row.rules.get('pricing_mode') not in PRICING_MODES and now.astimezone(TZ).date()>advance_business(price.nav_date,3,row.rules['calendar_version'])),
             "notice": "比赛模拟环境／模拟资金；历史净值不代表未来收益", **material})
+    if compact and policy_references:
+        from ...domain.wealth_paper_policy import policy_sha
+        for item in result:
+            # Hash the actual current DB policy. A may dereference only an
+            # exact match in its already validated immutable source index.
+            policy=item['rules'].get('execution_policy')
+            item['execution_policy_sha256']=policy_sha(policy)
+            item['rules']={k:v for k,v in item['rules'].items() if k!='execution_policy'}
     return result
 
 
@@ -332,7 +368,7 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     estimate = None
     suitability = None
     price = await latest_nav(db, row.version_id, now)
-    paper=row.rules.get('pricing_mode')=='frozen-public-nav-v1'
+    paper=row.rules.get('pricing_mode') in PRICING_MODES
     if paper:
         from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons
         category='money' if row.category=='cash' else row.category
@@ -569,13 +605,14 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
     account = await db.get(AccountORM, row.account_id, populate_existing=True)
     if row.status != "PENDING_CASH":
         row.status = "PENDING_PRICING"
-        if version.rules.get('pricing_mode')=='frozen-public-nav-v1':
+        if version.rules.get('pricing_mode') in PRICING_MODES:
             quote=version.rules['execution_policy']['quote']
             price=await db.get(WealthNavORM,f"{row.version_id}:{quote['date']}")
             if price is not None and (str(price.price)!=quote['value'] or utc_iso(nav_available_at(price))!=utc_iso(datetime.fromisoformat(quote['available_at']))):
                 raise BankError('受理版本公开价格指纹不一致','PAPER_PRICE_MISMATCH',409)
             row.details={**row.details,'underlying_source_kind':'real','execution_source_kind':'simulated',
-                'source_nav_date':quote['date'],'simulated_pricing_date':row.pricing_date.isoformat(),
+                'source_nav_date':None if version.rules.get('pricing_mode')==MONEY_PRICING_MODE else quote['date'],
+                'price_source':quote['source'],'simulated_anchor_date':quote['date'] if version.rules.get('pricing_mode')==MONEY_PRICING_MODE else None,'simulated_pricing_date':row.pricing_date.isoformat(),
                 'price_reference_sha256':quote['reference_sha256'],'project_policy_version':version.rules['execution_policy']['version']}
         else:
             price = await db.get(WealthNavORM, f"{row.version_id}:{row.pricing_date.isoformat()}")

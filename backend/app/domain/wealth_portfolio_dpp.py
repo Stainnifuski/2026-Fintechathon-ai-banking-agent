@@ -1,4 +1,4 @@
-"""固定资料特征与稀疏增量DPP；MMR只供同池独立评价。"""
+"""Historical research DPP/MMR only; production uses code/category display order."""
 import math
 import re
 import unicodedata

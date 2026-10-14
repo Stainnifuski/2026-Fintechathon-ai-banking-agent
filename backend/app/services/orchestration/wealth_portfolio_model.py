@@ -11,13 +11,14 @@ from ...schemas.wealth_portfolio_data import AssetModelFacts
 from ...schemas.wealth_portfolio_model import ModelResult
 from ...domain.wealth_portfolio_candidates import ProductIndex,pipeline,reliable_family
 from ...domain.wealth_portfolio_eligibility import qualify_purchase,assessment_reasons,version_context
-from ...domain.wealth_portfolio_dpp import DppSelector,FEATURE_VERSION,ALGORITHM_VERSION
+from ...domain.wealth_portfolio_order import CodeCategorySelector,ORDER_VERSION
+FEATURE_VERSION=ALGORITHM_VERSION=ORDER_VERSION
 from ...domain.wealth_portfolio_allocation import (allocate,problem,validate_adjustment,integer_valid,BUCKETS,ModelError)
 from ...domain.wealth_portfolio_projection import WeightFamily,WeightPart,project_products,validate_manual_products
 from .wealth_portfolio_candidates import CandidateService,CandidateError
 from .wealth_portfolio_data import read_asset_model_facts,digest
 
-PROVIDER_VERSION='portfolio-provider-dpp-geometric-v1'
+PROVIDER_VERSION='portfolio-provider-code-order-geometric-v2'
 
 
 def ratio_strings(amounts: Sequence[int],total: int) -> list[str]:
@@ -51,7 +52,7 @@ def adapt_candidate_group(result: dict,index: ProductIndex,filter: CandidateFilt
                 min_amount_fen=offer.get('minimum_fen'),fees=Fees.model_validate(offer['fee_rules']) if offer.get('fee_rules') else Fees(purchase_fee_rate=None,sales_service_fee_rate=None,redemption_fee_rules=None,missing_fields=['fee_rules']),
                 performance=Performance(one_year=point,latest_day=point.model_copy(update={'metric':'daily_nav_change'})),detail_ref='local:'+p.product_id,data_source='真实公开资料／项目分级／模拟成交与费用' if p.execution_policy else p.source_kind,data_as_of=decision['checked_at']))
         if shares:items.append(ProductCandidate(family_id=family['family_id'],name=index.products[family['default_share']['product_id']].name,
-            bucket=family['bucket'],reason='具体份额资格已核实；依据投资资料特征的DPP贪心选择。',reason_codes=['QUALIFIED_SHARE','DOCUMENT_FEATURE_DIVERSITY'],
+            bucket=family['bucket'],reason='核实类别与项目风险等级，当前允许购买；按类别轮转和代码顺序展示，不代表收益或质量排名。',reason_codes=['QUALIFIED_SHARE','DETERMINISTIC_CATEGORY_CODE_ORDER'],
             evidence={'default_share':family['default_share'],'share_decisions':family['shares'],'source_kind':result['source_kind'],'fixture_only':result['fixture_only']},share_classes=shares))
     return CandidateGroup(bucket=filter.bucket,filter=RecommendationFilter.model_validate(filter.model_dump()),status=status,items=items,
         reason_codes=sorted(all_reasons | set(result.get('reason_codes',[]))) if status!='ok' else [],
@@ -68,13 +69,13 @@ def snapshot_content(snapshot) -> dict:
 
 
 class PortfolioModelProvider:
-    provider_id='portfolio-dpp-projection'
+    provider_id='portfolio-code-order-projection'
     version=PROVIDER_VERSION
 
     def __init__(self,candidates: CandidateService,asset_source: object | None=None) -> None:
         self.candidates=candidates;self.asset_source=asset_source
-        if candidates.selector is None:candidates.selector=DppSelector()
-        if not isinstance(candidates.selector,DppSelector):raise ModelError('FORMAL_DPP_SELECTOR_REQUIRED')
+        if candidates.selector is None:candidates.selector=CodeCategorySelector()
+        if not isinstance(candidates.selector,CodeCategorySelector):raise ModelError('FORMAL_CODE_SELECTOR_REQUIRED')
 
     async def recommend(self,user_id: str,filter: CandidateFilter) -> ModelResult:
         result=await self.candidates.candidates(user_id,filter)
@@ -227,7 +228,7 @@ class PortfolioModelProvider:
         if not product_missing and cash_target is not None:
             plan=PortfolioPlan(schema_version='wealth-portfolio-plan-v1',portfolio_id='calculation-'+digest({'snapshot':s.snapshot_id,'context':version_context(facts).model_dump(mode='json'),'model':model,'products':outputs})[:24],version=1,snapshot_id=s.snapshot_id,asset_scope_id=s.asset_scope_id,context_id=s.context_id,as_of=now,basis_kind=s.basis_kind,basis_status=s.basis_status,basis_fen=T,provider_id=self.provider_id,provider_version=self.version,model_status='fixture' if facts.mode=='fixture' else 'researched_model',buckets=buckets,
                 growth_ratio_ex_cash=None if model['actual_p'] is None else str(model['actual_p']),candidate_groups=group_results,selected_positions=selections,cash_residual_fen=cash_target,
-                data_versions={**s.data_versions,'assessment':facts.assessment.version,'context':version_context(facts).model_dump(mode='json')},missing_fields=[],reasons=['DOCUMENT_DPP_GREEDY','CONVEX_POLICY_PROJECTION','NOT_A_TRADE','FINANCIAL_EFFECT_NOT_EVALUATED'])
+                data_versions={**s.data_versions,'assessment':facts.assessment.version,'context':version_context(facts).model_dump(mode='json')},missing_fields=[],reasons=['DETERMINISTIC_CATEGORY_CODE_ORDER','CONVEX_POLICY_PROJECTION','NOT_A_TRADE','FINANCIAL_EFFECT_NOT_EVALUATED'])
         contract_input=PortfolioInput(schema_version='wealth-portfolio-input-v1',snapshot=s,products=[item for g in group_results for item in g.items],features={'feature_version':FEATURE_VERSION},user_preferences={'growth_ratio_ex_cash':p})
         return ModelResult(status='partial' if product_missing else 'ok',plan=plan,candidate_groups=group_results,missing_fields=sorted(set(product_missing)),metadata={'model':model,'validation_contract':{'calculation':model,'qualification_context':version_context(facts).model_dump(mode='json'),'snapshot_id':s.snapshot_id,'selected_references':[part.evidence['reference'] for group in families.values() for family in group.values() for part in family.parts if part.purchase_eligible and 'reference' in part.evidence],'available':available,'caps':[str(c) for c in caps],'p':p},'product_projections':outputs,'positions':positions,'fixture_only':facts.mode=='fixture','input_schema':contract_input.schema_version,'snapshot':s.model_dump(mode='json'),'qualification_context':version_context(facts).model_dump(mode='json'),'model_input':contract_input.model_dump(mode='json'),'total_assets_fen':T,'available_cash_fen':sum(a.available_fen for a in s.accounts),'receivable_not_payable_fen':s.receivable_fen,'eta_disabled_reasons':asset.disable_eta_reasons,'financial_effect_status':'not_evaluated'})
 

@@ -60,6 +60,7 @@ class CandidateSession:
     selected: dict[str,dict]=field(default_factory=dict)
     cursor: str | None=None
     requires_refresh: bool=False
+    rotation_position: int=0
 
 class CandidateService:
     def __init__(self,source: CandidateFactsSource | None,indexes: SnapshotIndexCache,selector: FamilySelector | None=None,
@@ -144,7 +145,10 @@ class CandidateService:
             return {'status':'unavailable','reason_codes':['FIXTURE_SELECTOR_FORBIDDEN'],'items':[],'algorithm_status':'not_connected'}
         excluded=state.displayed | {entry['family_id'] for entry in state.selected.values()}
         pool={f.family_id:f for f in result.family_candidates};remaining=set(pool)-excluded
-        try:selected=self.selector.select(result.family_candidates,excluded,3)
+        try:
+            if hasattr(self.selector,'select_batch'):
+                selected,state.rotation_position=self.selector.select_batch(result.family_candidates,excluded,3,state.rotation_position)
+            else:selected=self.selector.select(result.family_candidates,excluded,3)
         except ValueError as error:raise CandidateError(str(error),422) from error
         if len(selected)>3 or len(set(selected))!=len(selected) or not set(selected)<=remaining:raise CandidateError('SELECTOR_OUTPUT_INVALID')
         state.displayed.update(selected)
@@ -152,12 +156,20 @@ class CandidateService:
         return {'status':'ok' if selected else 'no_eligible_products','reason_codes':[] if selected else ['POOL_EXHAUSTED'],
             'pool_exhausted':state.cursor is None,'items':[pool[f].model_dump(mode='json') for f in selected],'algorithm_status':'fixture_only' if self.selector.fixture_only else self.selector.version}
 
-    async def candidates(self,user_id: str,filter: CandidateFilter) -> dict:
+    @staticmethod
+    def pipeline_view(result,facts):
+        # Full qualification objects stay in the server calculation; all
+        # excluded codes/reasons and counts remain visible. Do not clone every
+        # bank offer/context into every candidate response on the full pool.
+        return result.model_dump(mode='json',exclude=set() if facts.mode=='fixture' else {'decisions','family_candidates','tags'})
+
+    async def candidates(self,user_id: str,filter: CandidateFilter,*,_current=None) -> dict:
+        if filter.mode=='theme':raise CandidateError('THEME_MODE_REMOVED',410)
         async with self.lock:
-            facts,index,now=await self.current(user_id)
+            facts,index,now=_current if _current is not None else await self.current(user_id)
             try:result=pipeline(index,filter,facts,user_id,now)
             except ValueError as error:raise CandidateError(str(error),422) from error
-            base={'pipeline':result.model_dump(mode='json'),'source_kind':facts.mode,'fixture_only':facts.mode=='fixture'}
+            base={'pipeline':self.pipeline_view(result,facts),'source_kind':facts.mode,'fixture_only':facts.mode=='fixture'}
             if result.status!='ok':return {**base,'status':result.status,'reason_codes':result.reason_codes,'items':[],'session':None}
             state=CandidateSession(secrets.token_urlsafe(24),user_id,filter,result.context,result.pool_version)
             batch=self._batch(state,result,facts)
@@ -165,16 +177,17 @@ class CandidateService:
             self.sessions[state.session_id]=state
             return {**base,**batch,'session':self._view(state)}
 
-    async def next_batch(self,user_id: str,request: NextBatchRequest) -> dict:
+    async def next_batch(self,user_id: str,request: NextBatchRequest,*,_current=None) -> dict:
         async with self.lock:
-            state=self._state(user_id,request);facts,index,now=await self._current_for_state(state)
+            state=self._state(user_id,request);facts,index,now=_current if _current is not None else await self._current_for_state(state)
             self._check_binding(state,facts,index,now)
             result=pipeline(index,state.filter,facts,user_id,now)
             if result.pool_version!=state.pool_version:state.requires_refresh=True;state.cursor=None;raise CandidateError('CANDIDATE_POOL_STALE',409,self._view(state))
             if state.cursor is None:return {'status':'no_eligible_products','reason_codes':['POOL_EXHAUSTED'],'pool_exhausted':True,'items':[],'session':self._view(state)}
             if request.cursor!=state.cursor:raise CandidateError('CANDIDATE_CURSOR_STALE')
             batch=self._batch(state,result,facts);state.version+=1
-            return {**batch,'session':self._view(state),'pipeline_stages':result.stages}
+            return {**batch,'session':self._view(state),'pipeline_stages':result.stages,
+                    'pipeline':self.pipeline_view(result,facts)}
 
     async def select(self,user_id: str,request: SessionSelectionRequest) -> dict:
         async with self.lock:

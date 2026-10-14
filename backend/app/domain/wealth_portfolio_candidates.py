@@ -128,6 +128,8 @@ class ProductIndex:
             for family in families:
                 self.family_members[family].append(p)
         self.directory_counts=dict(Counter(p.scope_status for p in snapshot.products))
+        from .wealth_paper_policy import policy_sha
+        self.policy_references={p.product_id:(policy_sha(p.execution_policy),p.execution_policy) for p in snapshot.products if p.execution_policy} if immutable_source else {}
 
     @property
     def content_fingerprint(self):
@@ -174,19 +176,12 @@ def family_candidates(index: ProductIndex,matched: list[ProductFact],decisions: 
         # 不挑其中一个主体/策略强行拼家族，已知共同资料冲突阻断排序。
         conflicts=[]
         if len({p.substantive_category for p in members if p.substantive_category})>1:conflicts.append('FAMILY_CATEGORY_CONFLICT')
-        issuer_values={issuer_identity(p)[0] for p in members if issuer_identity(p)[0]}
-        if len(issuer_values)>1:conflicts.append('FAMILY_ISSUER_CONFLICT')
-        for field in ('objective','strategy','benchmark','tracking_target'):
-            values={sourced_value(p,field)[0] for p in members if sourced_value(p,field)[0]}
-            if len(values)>1 or any(p.fields.get(field) and p.fields[field].status=='conflict' for p in members):conflicts.append('FAMILY_TEXT_CONFLICT')
-        if any(issuer_identity(p)[1]=='ISSUER_CONFLICT' for p in members):conflicts.append('FAMILY_ISSUER_CONFLICT')
+        # Optional issuer/body evidence does not gate code-based selection.
         enough=[];details={}
         for p in shares:
             reasons=list(conflicts);issuer,problem=issuer_identity(p)
-            if problem:reasons.append(problem)
             if not p.substantive_category or p.bucket is None:reasons.append('SUBSTANTIVE_CATEGORY_UNPROVEN')
             texts={field:sourced_value(p,field)[0] for field in ('objective','strategy','benchmark','tracking_target')}
-            if not any(texts.values()):reasons.append('INVESTMENT_TEXT_SOURCE_MISSING')
             if reasons:exclusions[p.product_id]=list(dict.fromkeys(reasons))
             else:enough.append(p);details[p.product_id]={'issuer':issuer,'texts':texts}
         if not enough:continue

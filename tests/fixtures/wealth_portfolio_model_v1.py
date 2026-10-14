@@ -2,7 +2,7 @@
 from copy import deepcopy
 from tests.fixtures.wealth_portfolio_candidates_v1 import fixture_pool,field,NOW,FixtureSource
 from backend.app.domain.wealth_portfolio_candidates import ProductIndex
-from backend.app.domain.wealth_portfolio_dpp import DppSelector
+from backend.app.domain.wealth_portfolio_order import CodeCategorySelector
 from backend.app.services.orchestration.wealth_portfolio_candidates import CandidateService,SnapshotIndexCache
 from backend.app.services.orchestration.wealth_portfolio import FixtureSnapshotSource
 from backend.app.services.orchestration.wealth_portfolio_model import PortfolioModelProvider
@@ -25,6 +25,6 @@ def model_fixture(level=4,holding=False):
         b['summary'].update(cash_balance_fen=200000,held_fen=10000,available_cash_fen=190000,positions_market_value_fen=800000,total_assets_fen=1000000)
         b['lots']=[{'lot_id':'model-lot-stable','account_id':'fixture-account','product_id':'Q01A','product_version':1,'category':'bond','units':'3000.0000','redeemable_units':'3000.0000','market_value_fen':300000,'nav':'1','nav_date':'2026-10-09'},
                    {'lot_id':'model-lot-growth','account_id':'fixture-account','product_id':'Q03A','product_version':1,'category':'equity','units':'5000.0000','redeemable_units':'5000.0000','market_value_fen':500000,'nav':'1','nav_date':'2026-10-09'}]
-    source=FixtureSource(facts);assets=FixtureSnapshotSource(b);selector=DppSelector()
+    source=FixtureSource(facts);assets=FixtureSnapshotSource(b);selector=CodeCategorySelector()
     engine=CandidateService(source,SnapshotIndexCache(lambda v:ProductIndex(data)),selector,enable_fixture=True,clock=lambda:NOW)
     return PortfolioModelProvider(engine,assets),data,facts,b

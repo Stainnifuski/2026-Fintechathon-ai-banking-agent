@@ -22,7 +22,9 @@ ROOT=Path(__file__).resolve().parents[2]
 BASE=datetime(2026,10,13,6,tzinfo=timezone.utc)
 
 async def initialized(db):
-    payload=json.loads((ROOT/'config/wealth/paper_products.json').read_text(encoding='utf8'))
+    # Historical 38-product ledger regression stays bound to its immutable
+    # original versions; it does not prove current full-pool acceptance.
+    payload=json.loads((ROOT/'config/wealth/paper_products_legacy_v1.json').read_text(encoding='utf8'))
     result=await import_dataset(db,payload)
     assert result['ok'],result
     ctx=await initialize(db,'U1','normal',dataset_key=result['dataset_key'])

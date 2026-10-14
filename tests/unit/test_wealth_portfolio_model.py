@@ -123,10 +123,10 @@ def test_cash_component_receivable_and_specific_share_no_increase():
     assert next(p for p in product['parts'] if p['product_id']=='C')['target_fen']<=200
 
 
-@pytest.mark.parametrize('filter',[CandidateFilter(mode='general'),CandidateFilter(mode='category',category='bond_fund'),CandidateFilter(mode='theme',theme_key='high_dividend')])
-def test_formal_DPP_provider_independent_recommendation(filter):
+@pytest.mark.parametrize('filter',[CandidateFilter(mode='general'),CandidateFilter(mode='category',category='bond_fund')])
+def test_formal_code_order_provider_independent_recommendation(filter):
     provider,_,_,_=model_fixture();r=run(provider.recommend('fixture-user',filter));assert r.status=='ok' and len(r.candidate_groups[0].items)>=1
-    assert r.metadata['selection']['algorithm']=='portfolio-greedy-cholesky-v1' and r.metadata['fixture_only']
+    assert r.metadata['selection']['algorithm']=='portfolio-code-category-round-robin-v1' and r.metadata['fixture_only']
 
 
 @pytest.mark.parametrize('level',[1,2,4])
@@ -147,12 +147,12 @@ def test_missing_source_no_fixture_fallback():
     with pytest.raises(CandidateError,match='ASSESSMENT_SOURCE_UNAVAILABLE'):run(provider.plan('fixture-user'))
 
 
-def test_versions_corpus_reused_across_batches_rebuilt_on_data():
+def test_selected_retained_across_deterministic_batches():
     provider,_,_,_=model_fixture();engine=provider.candidates
-    result=run(engine.candidates('fixture-user',CandidateFilter(mode='general')));s=result['session'];version=engine.selector.last_result['corpus_version']
+    result=run(engine.candidates('fixture-user',CandidateFilter(mode='general')));s=result['session'];version=s['pool_version']
     selected=run(engine.select('fixture-user',SessionSelectionRequest(session_id=s['session_id'],expected_version=s['version'],items=[share(f'Q{i:02d}A') for i in range(6)])));s=selected['session'];assert len(s['selected'])==6
     nxt=run(engine.next_batch('fixture-user',NextBatchRequest(session_id=s['session_id'],expected_version=s['version'],cursor=s['cursor'])))
-    assert engine.selector.last_result['corpus_version']==version and engine.selector.builds==1 and len(nxt['session']['selected'])==6
+    assert nxt['session']['pool_version']==version and len(nxt['session']['selected'])==6
 
 def test_asset_missing_zero_unclassified_and_F08_F18_F10_preserved():
     from backend.app.services.orchestration.wealth_portfolio import FixtureSnapshotSource,build_snapshot

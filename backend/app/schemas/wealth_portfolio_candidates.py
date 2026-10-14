@@ -161,7 +161,7 @@ class FamilyCandidate(DTO):
     bucket: str
     data_version: str | None = None
     substantive_category: str | None = None
-    issuer_identity: str
+    issuer_identity: str | None
     text_evidence: dict
 
 class PipelineResult(DTO):

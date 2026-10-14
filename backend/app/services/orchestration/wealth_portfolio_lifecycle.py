@@ -301,6 +301,7 @@ class PortfolioLifecycle:
         return plan.model_copy(deep=True)
 
     async def recommend(self,user_id: str,request: PortfolioRecommendation) -> CandidateGroup:
+        if request.filter.mode=='theme':raise CandidateError('THEME_MODE_REMOVED',410)
         grant=await self._access(user_id,request.context_id,False)
         candidates=self.provider.candidates
         facts,index,now=await candidates.current(user_id)
@@ -310,17 +311,16 @@ class PortfolioLifecycle:
             async with candidates.lock:
                 state=candidates._state(user_id,SessionAction(session_id=binding.session_id,expected_version=binding.expected_version))
                 if self.candidate_contexts.get(binding.session_id)!=access_binding(grant) or state.filter!=request.filter or binding.filter!=request.filter:raise CandidateError('PORTFOLIO_CANDIDATE_BINDING_STALE')
-            raw=await candidates.next_batch(user_id,NextBatchRequest(session_id=binding.session_id,expected_version=binding.expected_version,cursor=request.cursor))
-            from ...domain.wealth_portfolio_candidates import pipeline
-            raw['pipeline']=pipeline(index,request.filter,facts,user_id,now).model_dump(mode='json');raw['source_kind']=facts.mode;raw['fixture_only']=facts.mode=='fixture'
+            raw=await candidates.next_batch(user_id,NextBatchRequest(session_id=binding.session_id,expected_version=binding.expected_version,cursor=request.cursor),_current=(facts,index,now))
+            raw['source_kind']=facts.mode;raw['fixture_only']=facts.mode=='fixture'
         else:
-            raw=await candidates.candidates(user_id,request.filter)
+            raw=await candidates.candidates(user_id,request.filter,_current=(facts,index,now))
             if raw.get('session'):
                 sid=raw['session']['session_id'];self.candidate_contexts[sid]=access_binding(grant)
                 if refs:
                     from ...domain.wealth_portfolio_candidates import reliable_family,pipeline
                     async with candidates.lock:
-                        state=candidates.sessions[sid];state.displayed=set()
+                        state=candidates.sessions[sid];state.displayed=set();state.rotation_position=0
                         state.selected={r.product_id:{'reference':r.model_dump(mode='json'),'family_id':reliable_family(index.products[r.product_id],now)[0],'valid':True,'reason_codes':[]} for r in refs}
                         result=pipeline(index,request.filter,facts,user_id,now)
                         raw.update(candidates._batch(state,result,facts));raw['session']=candidates._view(state)

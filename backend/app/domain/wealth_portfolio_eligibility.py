@@ -1,4 +1,5 @@
 """新购/增购唯一资格函数；不处理金额成交，不处置已有持仓。"""
+from .wealth_paper_policy import PRICING_MODES
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from ..schemas.wealth_portfolio_candidates import CurrentFacts, VersionContext, QualificationDecision, ShareReference
@@ -17,7 +18,7 @@ def current_offer_reasons(offer, facts: CurrentFacts, now: datetime) -> list[str
         or facts.channel!='local-competition-bank' or offer.channel!=facts.channel):
         return ['BANK_FACT_TIME_UNPROVEN']
     reasons=[]
-    if evidence.pricing_mode=='frozen-public-nav-v1':
+    if evidence.pricing_mode in PRICING_MODES:
         from .wealth_paper_policy import validate_policy
         policy=offer.execution_policy
         reasons.extend(validate_policy(policy,offer.product_id,policy.get('category') if policy else None,offer.risk_level,evidence.business_at))
@@ -44,7 +45,7 @@ def current_offer_reasons(offer, facts: CurrentFacts, now: datetime) -> list[str
         else:
             nav(evidence.nav)
             if evidence.nav_date>day or evidence.available_at>evidence.business_at:reasons.append('BANK_FUTURE_DATA')
-            if evidence.pricing_mode!='frozen-public-nav-v1' and advance_business(evidence.nav_date,3,evidence.calendar_version)<day:reasons.append('BANK_DATA_STALE')
+            if evidence.pricing_mode not in PRICING_MODES and advance_business(evidence.nav_date,3,evidence.calendar_version)<day:reasons.append('BANK_DATA_STALE')
     except (ValueError,ArithmeticError,KeyError):reasons.append('BANK_BUSINESS_RULES_UNPROVEN')
     return list(dict.fromkeys(reasons))
 
@@ -53,6 +54,8 @@ def offer_is_current(offer, facts: CurrentFacts, now: datetime) -> bool:
 
 
 def version_context(facts: CurrentFacts) -> VersionContext:
+    sealed=getattr(facts,'_verified_context',None)
+    if sealed is not None:return sealed
     value=facts.model_dump(mode='json');value.pop('read_at')
     if value['assessment']:value['assessment'].pop('read_at')
     for offer in value['offers'].values():
@@ -160,6 +163,9 @@ def qualify_purchase(product: ProductFact | None, facts: CurrentFacts, user_id: 
             if product.source_kind!='simulated' and not paper and offer.valid_from is None and offer.valid_until is None:
                 time_reasons=['BANK_FACT_TIME_UNPROVEN']
             current=not time_reasons
+            # Sale suspension/window closure blocks new purchase, not a
+            # separately proven holding/reduction permission for old assets.
+            holding_current=not [r for r in time_reasons if r not in {'PURCHASE_STOPPED','BANK_PURCHASE_PERIOD_ENDED','BANK_NON_OPEN_DAY'}]
             if not current:reasons.extend(['BANK_FACT_TIME_UNPROVEN',*time_reasons])
             if offer.purchase_allowed is None:reasons.append('PURCHASE_STATUS_UNKNOWN')
             elif not offer.purchase_allowed:reasons.append('PURCHASE_STOPPED')
@@ -169,7 +175,7 @@ def qualify_purchase(product: ProductFact | None, facts: CurrentFacts, user_id: 
             if offer.maximum_fen is not None and offer.minimum_fen is not None and offer.maximum_fen<offer.minimum_fen:reasons.append('PURCHASE_LIMIT_CONFLICT')
             if not offer.risk_current_confirmed:reasons.append('CURRENT_RISK_UNPROVEN')
             if offer.risk_level!=product_level:reasons.append('CURRENT_RISK_CONFLICT')
-            if current and offer.source_id==facts.source_id and offer.channel==facts.channel and offer.product_version==product.product_version and offer.disclosure_version==product.disclosure_version and offer.share_class==product.share_class and offer.product_id==code and offer.source_kind==facts.mode:
+            if holding_current and offer.source_id==facts.source_id and offer.channel==facts.channel and offer.product_version==product.product_version and offer.disclosure_version==product.disclosure_version and offer.share_class==product.share_class and offer.product_id==code and offer.source_kind==facts.mode:
                 hold=offer.holding_allowed;redeem=offer.redemption_allowed
             details['bank_fact']=offer.model_dump(mode='json')
         # 必须真实到达这条比较；失败的评估或未知产品等级不冒称已比较。

@@ -27,16 +27,27 @@ async def invoke(call):
         message=str(error)+('：'+', '.join(r for r in reasons if isinstance(r,str)) if reasons else '')
         raise WealthPolicyError(message,error.code,getattr(error,'status_code',422)) from error
 
-DATA='b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd'
-DAILY='2732304411e02771e334239139049d5b496b491e1106331b32cccd24db3bf938'
+DATA='b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686'
+DAILY='b82f95d0f9c225f24b0bd91c4552b2674e9b21fa8bd1a1ac7d53b8e275d49bf3'
 
 class ServerReads:
-    def __init__(self,db,user,bank):self.db,self.user,self.bank=db,user,bank
+    owns_responses=True # protected HTTP returns request-owned new JSON, never a shared bank cache
+    def __init__(self,db,user,bank,index=None):self.db,self.user,self.bank,self.index=db,user,bank,index
     async def get(self,path):
         if path=='/api/v1/auth/me':return {'user_id':self.user}
         suffix=path.removeprefix('/api/v1/wealth/')
         if suffix=='assets':return await self.bank.assets(self.user)
-        if suffix=='products':return await self.bank.products(self.user)
+        if suffix=='products':
+            if hasattr(self.bank,'call'):
+                references=getattr(self.index,'policy_references',{})
+                rows=await self.bank.call('POST','/catalog',{'subject_user_id':self.user,'facts_only':True,'policy_references':bool(references)})
+                for row in rows:
+                    if 'execution_policy_sha256' not in row:continue
+                    code=row['product_id'];binding=references.get(code)
+                    actual=row.pop('execution_policy_sha256')
+                    row['rules']['execution_policy']=binding[1] if binding and binding[0]==actual else None
+                return rows
+            return await self.bank.products(self.user)
         if suffix=='contexts':return await self.bank.call('POST','/contexts',{'subject_user_id':self.user})
         if suffix=='assessments/current':
             row=await latest_assessment(self.db,self.user)
@@ -74,18 +85,21 @@ class JointFacts(BankPortfolioFacts):
             'context_id':raw['context_id'],'context_epoch':current.get('context_epoch'),
             'assessment':{k:assessment[k] for k in ('assessment_id','capacity_level','purchase_allowed','expires_at','confirmed')} if assessment else None,
             'assessment_provenance':{'source':'protected-local-bank','version':'adapter:'+digest(assessment) if assessment else None},
-            'data_versions':{'data_version':self.data_version,'daily_version':self.daily_version,'offers_version':'adapter:'+digest(business_content(products))}}
+            'data_versions':{'data_version':self.data_version,'daily_version':self.daily_version,'offers_version':self.current_products_version if products is self.observations.get('products') else 'adapter:'+digest(products)}}
     async def read_current(self,user_id,at):
         facts=await super().read_current(user_id,at)
         profile=await self.transport.db.get(WealthProfileORM,user_id)
         row=await latest_assessment(self.transport.db,user_id)
         facts.assessment_current_proven=bool(profile and row and row.profile_version==profile.version)
-        facts.offers_version='adapter:'+digest(business_content(self.observations['products']))
         completed=datetime.now(timezone.utc)
         facts.read_at=completed
         if facts.assessment:facts.assessment.read_at=completed
         for offer in facts.offers.values():
             if offer.current_simulation:offer.current_simulation.observed_at=completed
+        from ...domain.wealth_portfolio_eligibility import version_context
+        # This sealed object belongs to this completed read only. The next
+        # protected read makes a new object and recomputes every binding.
+        object.__setattr__(facts,'_verified_context',version_context(facts))
         return facts
 
 class JointAccess:
@@ -132,8 +146,8 @@ class JointPortfolio:
         self.store=MemoryPortfolioStore(lambda:datetime.now(timezone.utc));self.sessions={};self.candidate_contexts={}
         import asyncio
         self.lock=asyncio.Lock()
-        from ...domain.wealth_portfolio_dpp import DppSelector
-        self.selector=DppSelector()
+        from ...domain.wealth_portfolio_order import CodeCategorySelector
+        self.selector=CodeCategorySelector()
         def load(version):
             from ...domain.wealth_portfolio_candidates import ProductIndex
             try:return ProductIndex(read(self.root,self.root/'.deps/wealth_portfolio_data/snapshots',version),immutable_source=True)
@@ -153,7 +167,7 @@ class JointPortfolio:
                 'initialization_seconds':self.indexes.last_load_seconds,
                 'interned_unknown_fields':index.interned_unknown_fields}
     def bind(self,db,user_id,bank):
-        facts=JointFacts(ServerReads(db,user_id,bank),self.data_version,self.daily_version)
+        facts=JointFacts(ServerReads(db,user_id,bank,self.indexes.cache.get(self.data_version)),self.data_version,self.daily_version)
         candidates=CandidateService(facts,self.indexes,self.selector);candidates.sessions=self.sessions;candidates.lock=self.lock
         service=PortfolioLifecycle(PortfolioModelProvider(candidates,facts),self.store,JointAccess(facts,self.store))
         service.candidate_contexts=self.candidate_contexts
