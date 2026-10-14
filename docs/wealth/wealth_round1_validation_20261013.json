@@ -1,0 +1,291 @@
+{
+  "stage": "round1_core_pool",
+  "code_commit": "72da59637a1becbdfa8862bb72501d21cd2299af",
+  "overall_accepted": false,
+  "performance_accepted": false,
+  "human": "failed_slider_pending_round2",
+  "coverage": {
+    "source_version": "a67bc3e50bb4d7cf2cd6e5f1a51395e13608ce025748792b6e53048e31a3a444",
+    "source_daily_version": "769259aea498ed342e8bc1501ade507ebb2f01b832d88b8edf1712ddae793f59",
+    "directory": 27998,
+    "verified_categories": {
+      "mixed": 9750,
+      "bond": 7417,
+      "equity": 1151,
+      "money_market": 947
+    },
+    "NAV_value_codes": 26395,
+    "status_known_codes": 27476,
+    "status_counts": {
+      "开放申购": 19513,
+      "None": 522,
+      "暂停申购": 2870,
+      "限大额": 3088,
+      "封闭期": 245,
+      "认购期": 61,
+      "场内交易": 1699
+    },
+    "eligible": 13856,
+    "eligible_categories": {
+      "mixed": 8444,
+      "bond": 4093,
+      "equity": 1041,
+      "cash": 278
+    },
+    "risk_subsets": {
+      "1": 278,
+      "2": 4371,
+      "4": 13856
+    },
+    "excluded_main_reasons": {
+      "visible_public_unit_NAV_required": 387,
+      "saved_public_sale_status_not_open": 5022,
+      "verified_substantive_category_required": 8733
+    },
+    "excluded_overlapping_reasons": {
+      "visible_public_unit_NAV_required": 656,
+      "saved_public_sale_status_not_open": 8485,
+      "verified_substantive_category_required": 8733
+    },
+    "exclusion_examples": {
+      "verified_substantive_category_required": [
+        "000042",
+        "000043",
+        "000044",
+        "000051",
+        "000055"
+      ],
+      "visible_public_unit_NAV_required": [
+        "000002",
+        "000012",
+        "000108",
+        "000140",
+        "000154"
+      ],
+      "saved_public_sale_status_not_open": [
+        "000002",
+        "000005",
+        "000012",
+        "000013",
+        "000032"
+      ]
+    },
+    "dataset_version": "b498da40b510a409211716f0",
+    "policy_version": "real-public-paper-core-risk-20261013-v2",
+    "payload_sha256": "02025fb94b0215ff6fc78ec8ad9fc27b579cce2ebfbadf482abde7e08b1e54ba",
+    "payload_bytes": 78113752,
+    "elapsed_seconds": 51.375,
+    "external_fund_requests": 0,
+    "NAV_unit_date_source_pass": 26395,
+    "open_purchase_codes": 19513,
+    "money_status_counts": {
+      "开放申购": 278,
+      "限大额": 542,
+      "暂停申购": 103,
+      "封闭期": 9,
+      "None": 4,
+      "场内交易": 11
+    },
+    "money_eligible": 278,
+    "money_excluded": 669,
+    "money_income_data_codes": 2,
+    "policy_bound": 13856,
+    "repeat_build_identical": true
+  },
+  "bank_mapping": {
+    "bank_imported": 13856,
+    "directory_equal": true,
+    "import_or_idempotent_validation_seconds": 48.75,
+    "bank_catalog_seconds": 2.297,
+    "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686",
+    "daily_version": "b82f95d0f9c225f24b0bd91c4552b2674e9b21fa8bd1a1ac7d53b8e275d49bf3",
+    "capture_sha256": "cca861e4ca6c495f030cf760b0ca8f914615db849ae270d52d78e78664e53182",
+    "context_id": "CTXde47fae015b930ab1b84c0866f85",
+    "account_id": "SA16b32e1980a0a5584c1c15681d0e",
+    "external_fund_requests": 0,
+    "database": ".deps/joint_validation/round1-full-core-v2/joint_bank.db"
+  },
+  "actual_a_scans": [
+    {
+      "source": "protected-local-bank",
+      "mode": "simulated",
+      "fixture": false,
+      "capacity": 4,
+      "stages": {
+        "directory": 27998,
+        "scope_verified": 19265,
+        "matched": 19265,
+        "purchase_qualified_shares": 13856,
+        "family_verified_qualified_shares": 13856,
+        "family_groups": 13855,
+        "material_complete_families": 13855
+      },
+      "status": "ok",
+      "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+    },
+    {
+      "source": "protected-local-bank",
+      "mode": "simulated",
+      "fixture": false,
+      "capacity": 4,
+      "stages": {
+        "directory": 27998,
+        "scope_verified": 19265,
+        "matched": 19265,
+        "purchase_qualified_shares": 13856,
+        "family_verified_qualified_shares": 13856,
+        "family_groups": 13855,
+        "material_complete_families": 13855
+      },
+      "status": "ok",
+      "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+    },
+    {
+      "source": "protected-local-bank",
+      "mode": "simulated",
+      "fixture": false,
+      "capacity": 1,
+      "stages": {
+        "directory": 27998,
+        "scope_verified": 19265,
+        "matched": 19265,
+        "purchase_qualified_shares": 278,
+        "family_verified_qualified_shares": 278,
+        "family_groups": 278,
+        "material_complete_families": 278
+      },
+      "status": "ok",
+      "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+    },
+    {
+      "source": "protected-local-bank",
+      "mode": "simulated",
+      "fixture": false,
+      "capacity": 2,
+      "stages": {
+        "directory": 27998,
+        "scope_verified": 19265,
+        "matched": 19265,
+        "purchase_qualified_shares": 4371,
+        "family_verified_qualified_shares": 4371,
+        "family_groups": 4370,
+        "material_complete_families": 4370
+      },
+      "status": "ok",
+      "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+    }
+  ],
+  "actual_api": [
+    {
+      "level": 4,
+      "http": 200,
+      "seconds": 11.922,
+      "codes": [
+        "000009",
+        "000003",
+        "000001"
+      ]
+    },
+    {
+      "next_http": 200,
+      "codes": [
+        "000008",
+        "000010",
+        "000004"
+      ]
+    },
+    {
+      "level": 1,
+      "http": 200,
+      "seconds": 11.596,
+      "codes": [
+        "000009",
+        "000010",
+        "000198"
+      ]
+    },
+    {
+      "removed_theme_http": 410,
+      "detail": {
+        "code": "THEME_MODE_REMOVED",
+        "message": "THEME_MODE_REMOVED",
+        "issues": []
+      }
+    },
+    {
+      "level": 2,
+      "http": 200,
+      "seconds": 11.811,
+      "codes": [
+        "000009",
+        "000003",
+        "000010"
+      ]
+    }
+  ],
+  "bank_risk": {
+    "http": 409,
+    "detail": {
+      "code": "SUITABILITY_MISMATCH",
+      "message": "产品风险或支付条件不匹配，可保留现金",
+      "issues": []
+    },
+    "product_id": "960000",
+    "user_level": 2,
+    "product_level": 4,
+    "orders": 0,
+    "held_fen": 0
+  },
+  "prepare": {
+    "http": 200,
+    "codes": [
+      "000009",
+      "000003",
+      "014150",
+      "671030"
+    ],
+    "stage": "BUY",
+    "orders": 0,
+    "cash_hold_fen": 0
+  },
+  "performance": {
+    "plan_seconds": [
+      48.742,
+      46.647
+    ],
+    "prepare_seconds": 68.937,
+    "accepted": false
+  },
+  "offline": {
+    "repeat_build_byte_identical": true,
+    "build_dataset_version": "b498da40b510a409211716f0",
+    "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686",
+    "daily_version": "b82f95d0f9c225f24b0bd91c4552b2674e9b21fa8bd1a1ac7d53b8e275d49bf3",
+    "directory": 27998,
+    "execution_policy_codes": 13856,
+    "external_fund_requests": 0,
+    "empty_root_install": true,
+    "archive": ".deps/round1/wealth-core-money-offline-20261013.zip",
+    "archive_sha256": "53e323c334191816596bc76f39b194a0043679c6fc5d4ad8be5bdaec72f3f981",
+    "archive_bytes": 7422335,
+    "contains_env_database_private_raw": false,
+    "seconds": 127.947
+  },
+  "external_fund_requests": 0,
+  "new_model_calls": 0,
+  "remote_writes": 0,
+  "source_and_model_checks": {
+    "passed": 93,
+    "log": "model-final.log"
+  },
+  "pool_checks": {
+    "passed": 146,
+    "log": "pool-tests-final.log"
+  },
+  "cli_dry_run": {
+    "ok": true,
+    "duplicate": true,
+    "written": 0,
+    "http_default_limit_unchanged": true
+  }
+}

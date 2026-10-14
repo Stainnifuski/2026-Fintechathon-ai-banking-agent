@@ -214,7 +214,7 @@ class PortfolioModelProvider:
             if actual<lo-1e-10 or actual>hi+1e-10:raise ModelError('ROUNDED_TARGET_OUTSIDE_INTERVAL')
             buckets.append(BucketTarget(bucket=b,min_ratio=str(max(0.,min(lo,actual))),target_ratio=ratios[i],max_ratio=str(min(1.,max(hi,actual))),target_fen=model['amounts_fen'][i],current_fen=round(h[i]*T) if h else None,reason='固定政策、偏好参考与当前持仓的凸投影；区间属于同一目标损失预算。'))
         group_results=[]
-        # 整体建议已在本次固定事实上运行DPP；不借会话多次读取混合版本。
+        # 当前事实上的确定性板块选品；不借会话多次读取混合版本。
         for bucket in BUCKETS:
             r=pipeline(index,CandidateFilter(mode='general',bucket=bucket),facts,user_id,now,
                        checked_decisions={d.product_id:d for d in eligible.decisions});pool=r.family_candidates

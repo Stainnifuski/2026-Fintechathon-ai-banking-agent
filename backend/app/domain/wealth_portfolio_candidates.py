@@ -173,7 +173,7 @@ def family_candidates(index: ProductIndex,matched: list[ProductFact],decisions: 
     candidates=[]
     for family,shares in groups.items():
         members=[p for p in index.family_members[family] if reliable_family(p,now)[0]==family]
-        # 不挑其中一个主体/策略强行拼家族，已知共同资料冲突阻断排序。
+        # 可靠关系的类别冲突仍阻断；额外主体／正文不是通用门槛。
         conflicts=[]
         if len({p.substantive_category for p in members if p.substantive_category})>1:conflicts.append('FAMILY_CATEGORY_CONFLICT')
         # Optional issuer/body evidence does not gate code-based selection.
