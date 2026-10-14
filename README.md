@@ -63,7 +63,10 @@ docker compose up --build
 
 短信通过 `POST /api/v1/auth/sms/send` 获取，绑定本人及具体授权或整份方案授权集合；默认5分钟有效、单次使用、错误5次锁定。`SMS_PROVIDER=mock` 不真实发送，演示通过 `GET /api/v1/auth/sms/dev-inbox` 查看本人模拟短信。旧点击授权入口已删除，未提交的旧点击证据不能继续成交；已受理订单仍按原规则结算和幂等查询。所有交易为模拟，不声称生产级认证或真实银行接入。详细字段、迁移及限制见[统一理财授权说明](docs/wealth/simulated_authorization.md)。
 
-## 文档导航
+## 文档
+
+- [账单增强：消费追溯、订阅联动、现金流与情景模拟](docs/contracts/账单洞察与现金流_API_v2.md)
+- [三项账单增强自检记录](docs/validation/bill_enhancements_20261014.md)导航
 
 | 需要了解 | 文档 |
 |---|---|

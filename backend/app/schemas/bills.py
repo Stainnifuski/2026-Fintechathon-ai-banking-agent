@@ -55,16 +55,6 @@ class TrendPoint(BaseModel):
     consumption_fen: int
 
 
-class BillTransaction(BaseModel):
-    tx_id: str
-    account_id: str
-    type: str
-    category: str
-    amount_fen: int
-    timestamp: datetime
-    counterparty: str
-    note: str | None
-    status: str
 
 
 class Anomaly(BaseModel):
@@ -73,6 +63,9 @@ class Anomaly(BaseModel):
     reason: str
     tx_ids: list[str] = Field(default_factory=list)
     category: str | None = None
+
+
+from .bill_insights import BillTransaction, ChangeExplanation
 
 
 class BillAnalysis(BaseModel):
@@ -94,6 +87,7 @@ class BillAnalysis(BaseModel):
     anomalies: list[Anomaly]
     report: list[str]
     notices: list[str]
+    change_explanation: ChangeExplanation = Field(default_factory=ChangeExplanation)
 
 
 class BillPage(BaseModel):

@@ -8,7 +8,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表',
   get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情',
   list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
-  preview_card_operation: '卡片操作预览',
+  preview_card_operation: '卡片操作预览', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
 };
 const money = (value: unknown) => typeof value === 'number' ? (value / 100).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) : '暂无';
 function queryRecord(call: NovaReply['tool_calls'][number]): string {
@@ -41,6 +41,11 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
   if (call.name === 'get_financial_overview') text += ` · 储蓄账户可用 ${money(data?.totals?.available_fen)} · 占款 ${money(data?.totals?.held_fen)}`;
   if (call.name === 'get_bill_analysis') text += ` · ${data?.query?.date} · 消费原额 ${money(data?.totals?.consumption_fen)}`;
   if (call.name === 'list_transactions') text += ` · ${data?.query?.date} · 共 ${data?.total} 笔 · 第 ${data?.page} 页${data?.has_more ? '，还有下一页' : ''}`;
+  if (call.name === 'project_cashflow') {
+    const projection = result.data as { days?: number; baseline_end_fen?: number; scenario_end_fen?: number };
+    text += ` · 未来${projection.days}天 · 基准估计 ${money(projection.baseline_end_fen)} · 假设情景 ${money(projection.scenario_end_fen)}`;
+  }
+  if (call.name === 'get_subscription_insights') text += ` · ${data?.total ?? 0}组关联记录，需本人核对`;
   if (call.name === 'get_transaction') text += ` · ${data?.tx_id} · ${data?.counterparty} · ${money(data?.amount_fen)}`;
   if (typeof result.as_of === 'string') text += `\n查询截止：${new Date(result.as_of).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}（北京时间）`;
   return text;

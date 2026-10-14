@@ -213,7 +213,14 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
         top = increased[0]
         report.append(f"增加最多的类别是{top['label']}，比上期多 {money(top['change_fen'])}；这说明支出构成变化，不代表已知购买原因。")
     report.append(f"发现 {len(anomalies)} 条待核对提示，具体依据见下方明细。" if anomalies else "本期未触发已配置的异常规则；这不代表所有交易均无异常。")
-    return dict(**b, totals=current, previous_totals=previous, change_fen=change, change_percent=change_pct,
+    from .bill_explanation import explain_changes
+    explanation = await explain_changes(db, predicates, b)
+    if explanation['total_change_fen'] != change:
+        raise BankError('账单在分析期间发生变化，请重新查询', 'BILL_CHANGED', 409)
+    if explanation['drivers']:
+        driver = explanation['drivers'][0]
+        report.append(f"按商户追溯：{driver['merchant']}（{LABELS[driver['category']]}）变化 {money(driver['change_fen'])}；{driver['explanation']}")
+    return dict(**b, change_explanation=explanation, totals=current, previous_totals=previous, change_fen=change, change_percent=change_pct,
                 categories=categories, trend=points, anomalies=anomalies, report=report, notices=notices)
 
 

@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain.time import utc_iso, utc_now
 from ...schemas.bills import BillQuery, BillAnalysis, BillPage
+from ...schemas.bill_insights import CashflowScenario, CashflowProjection, SubscriptionInsights
+from ..bank.bill_subscriptions import subscription_insights
+from ..bank.bill_cashflow import project_cashflow
 from ...schemas.nova import StrictModel, BillFilters, PageContext
 from ..bank import bill_service, nova_reads
 from .calendar_tools import calendar_tools
@@ -67,6 +70,10 @@ async def analysis(arguments: AnalysisArguments, context: ToolContext) -> dict:
     data['anomalies'] = data['anomalies'][:20]
     data['anomalies_total'] = total
     data['anomalies_has_more'] = total > 20
+    drivers = data['change_explanation']['drivers']
+    data['change_explanation']['drivers_total'] = len(drivers)
+    data['change_explanation']['drivers_has_more'] = len(drivers) > 10
+    data['change_explanation']['drivers'] = drivers[:10]
     return envelope("bills.analysis", data, data['as_of'])
 
 
@@ -102,8 +109,32 @@ async def transaction(arguments: TransactionArguments, context: ToolContext) -> 
     return envelope("bills.transaction", await nova_reads.transaction_detail(context.db, context.user_id, key))
 
 
+async def subscription_analysis(arguments: AnalysisArguments, context: ToolContext) -> dict:
+    data = SubscriptionInsights.model_validate(await subscription_insights(
+        context.db, context.user_id, query_from(arguments, context))).model_dump(mode='json')
+    total = len(data['items'])
+    data['items'] = data['items'][:20]
+    data.update(total=total, has_more=total > 20)
+    return envelope('bills.subscription_insights', data, data['as_of'])
+
+
+async def cashflow(arguments: CashflowScenario, context: ToolContext) -> dict:
+    request = arguments
+    if 'account_id' not in arguments.model_fields_set and context.page.filters:
+        request = arguments.model_copy(update={'account_id': context.page.filters.account_id})
+    data = CashflowProjection.model_validate(await project_cashflow(context.db, context.user_id, request)).model_dump(mode='json')
+    total = len(data['events'])
+    data['events'] = data['events'][:20]
+    data.update(events_total=total, events_has_more=total > 20)
+    return envelope('bills.cashflow', data, data['as_of'])
+
+
 def business_tools() -> dict:
     entries = [
+        ('get_subscription_insights', AnalysisArguments, subscription_analysis,
+         '只读分析本人订阅扣费增加、疑似重复、计划与实际差异和关联订阅。沿用页面账期和账户，忽略消费分类；仅供核对，取消需本人到订阅页确认。'),
+        ('project_cashflow', CashflowScenario, cashflow,
+         '只读计算从现实现在起1至62天储蓄现金流及情景。可减少某消费类别0至100%或假设排除活跃订阅ID，不执行取消或扣款。省略账户沿用页面账户，null为全部储蓄。金额分，计划/工资及消费估计区分。历史高低线不是置信区间。'),
         ("get_financial_overview", OverviewArguments, overview,
          "查询本人账户余额、可用资金和占款；现金总额仅汇总 savings，与首页一致。无需参数。"),
         ("get_bill_analysis", AnalysisArguments, analysis,
