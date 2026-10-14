@@ -226,9 +226,9 @@ def simulated_product(row: dict, ref: RawReference, bank: bool) -> ProductFact:
     quick=bool(rules.get('quick_redemption'))
     scope='verified';reason=None;bucket=BUCKETS.get(category)
     if bank:
-        if quick and risk==1 and principal is True and row.get('rules_complete') is True:bucket='cash_management'
+        if quick and risk==1 and category=='cash' and row.get('rules_complete') is True:bucket='cash_management'
         elif quick and risk==1:
-            scope='pending';bucket=None;reason='principal_guarantee_or_complete_rules_not_proven'
+            scope='pending';bucket=None;reason='cash_management_or_complete_quick_rules_not_proven'
         elif risk==2 and category=='bond':bucket='stable'
         else:scope='policy_mismatch';bucket=None;reason='original_rating_or_attributes_not_in_two_bank_policy_types'
     elif category not in ('money','bond','mixed','equity'):

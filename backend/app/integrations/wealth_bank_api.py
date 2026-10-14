@@ -1,6 +1,6 @@
 """5号及页面服务访问4号理财能力的HTTP契约；禁止银行ORM依赖。"""
 
-from .bank_api import HttpBankApiClient
+from .bank_api import HttpBankApiClient,BankApiError,BankResponseUnknown
 from ..schemas.wealth import InvestmentCommand
 
 
@@ -8,8 +8,13 @@ class HttpWealthBankApi(HttpBankApiClient):
     """仅模拟银行连接器，没有真实资金切换开关。"""
     async def call(self, method: str, suffix: str, body: dict | None = None) -> dict | list:
         """统一保留超时/5xx未知语义，不自动换号或重试写入。"""
-        response = await self._request(method, f"/api/v1/internal/bank/wealth{suffix}",
-                                       **({"json": body} if body is not None else {}))
+        options={"json":body} if body is not None else {}
+        readonly=suffix in {'/catalog','/products','/product-detail','/assets','/asset-summary','/contexts'}
+        if readonly:options['timeout']=30.0 if suffix!='/product-detail' else 15.0
+        try:response = await self._request(method, f"/api/v1/internal/bank/wealth{suffix}",**options)
+        except BankResponseUnknown as error:
+            if not readonly:raise
+            raise BankApiError('产品资料读取暂未完成，请稍后重新查询；已选方案保留。','BANK_READ_UNAVAILABLE',503) from error
         if response.is_error:
             raise self._error(response)
         return response.json()

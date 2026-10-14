@@ -324,7 +324,7 @@ async def verify_plan(plan_id: str, request: PlanVerification,http_request: Requ
 async def products(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
     """鉴权客观产品探索。"""
     try:
-        return await bank.products(user["user_id"])
+        return await bank.call('POST','/catalog',{'subject_user_id':user['user_id'],'facts_only':True,'policy_references':True})
     except BankApiError as error:
         fail(error)
 
@@ -337,7 +337,7 @@ async def compare(product_ids: str, user: dict = Depends(get_current_user),
     if not 2 <= len(keys) <= 4 or len(set(keys)) != len(keys):
         raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至4个不同产品"})
     try:
-        rows = [row for row in await bank.products(user["user_id"]) if row["product_id"] in keys]
+        rows = await bank.selected_products(user['user_id'],keys)
         if len(rows) != len(keys):
             raise HTTPException(404, detail={"code": "PRODUCT_UNAVAILABLE", "message": "部分产品不存在"})
         return rows

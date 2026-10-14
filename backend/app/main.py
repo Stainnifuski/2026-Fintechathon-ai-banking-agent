@@ -142,4 +142,5 @@ app.include_router(calendar_router)
 @app.get("/health", tags=["system"])
 async def health_check() -> dict:
     """健康检查接口。"""
-    return {"status": "ok", "service": "AI Banking Agent API", "version": "0.1.0"}
+    return {"status": "ok", "service": "AI Banking Agent API", "version": "0.1.0",
+        "portfolio_ready":bool(getattr(app.state.wealth_portfolio_source,'ready',False))}

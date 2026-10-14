@@ -215,6 +215,11 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     executable,payment_account_id=execution_targets(plan,snapshot,request.payment_account_id)
     actions = difference_actions(executable, snapshot)
     catalog = {p['product_id']: p for p in products}
+    # The preceding reads are detached facts. End their SQLite read snapshot
+    # before acquiring the existing writer lock; another prepare/revision may
+    # have committed in the meantime. The locked post-precheck reread below
+    # still rejects changed plans, assets and execution mappings.
+    await db.rollback()
     await lock_profile(db,user_id)
     for item in executable['selected_positions']:
         product = catalog.get(item['product_id'])

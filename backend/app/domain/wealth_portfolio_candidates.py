@@ -98,6 +98,13 @@ def reliable_family(product: ProductFact, now: datetime) -> tuple[str | None,lis
             and e.share_classes[product.product_id]==product.share_class and e.family_id=='bank-sku:'+product.product_id]
         if identities:return 'bank-sku:'+product.product_id,[]
     if not records:
+        if (product.source_kind=='simulated' and product.scope_status=='verified'
+                and type(product.product_version) is int and type(product.disclosure_version) is int
+                and any(r.function=='simulation_config' and r.sha256 for r in product.references)):
+            # A frozen explicit SKU is an operational identity. This does not
+            # invent a multi-code fund family or independent financial risk.
+            # Current bank identity, grade, rules and scope are still qualified.
+            return 'exact-simulation-code:'+product.product_id,[]
         if product.source_kind=='real' and product.execution_policy and product.scope_status=='verified':
             # Operational identity only. This does not assert a fund family
             # or independent financial risk when a relationship is unknown.

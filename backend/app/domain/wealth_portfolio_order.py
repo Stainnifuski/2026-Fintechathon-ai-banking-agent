@@ -12,7 +12,7 @@ class CodeCategorySelector:
     def select_batch(self, pool, excluded, limit=3, position=0):
         queues = {category: [] for category in ORDER}
         for item in sorted(pool, key=lambda x: x.default_share.product_id):
-            category = 'money_market' if item.substantive_category == 'money' else item.substantive_category
+            category = 'money_market' if item.substantive_category in {'money','cash'} else item.substantive_category
             if item.family_id not in excluded and category in queues:
                 queues[category].append(item.family_id)
         selected = []

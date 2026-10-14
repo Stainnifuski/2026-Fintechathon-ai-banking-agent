@@ -35,6 +35,11 @@ BASE=datetime(2026,10,12,6,0,tzinfo=timezone.utc)
 if os.environ.get('WEALTH_JOINT_CATALOG')=='real-paper':BASE=datetime(2026,10,13,6,0,tzinfo=timezone.utc)
 
 async def test_clock(db,account_id=None):
+    if account_id:
+        from backend.app.models.wealth_research import WealthContextORM
+        context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==account_id))).one_or_none()
+        if context and context.data.get('joint_manual_clock') is True:
+            return datetime.fromisoformat(context.data['business_at'])
     row=await db.get(WealthClockORM,'mock')
     return row.business_at.replace(tzinfo=timezone.utc) if row.business_at.tzinfo is None else row.business_at
 
@@ -93,17 +98,17 @@ class Advance(BaseModel):days:int=Field(ge=0,le=60)
 class Diagnose(BaseModel):derive_current:bool=False
 @app.post('/api/v1/joint-test/diagnose')
 async def diagnosis(request:Diagnose,user:dict=Depends(get_current_user),db=Depends(get_db),bank_api=Depends(get_wealth_bank)):
-    assert user['user_id']=='U1'
+    assert user['user_id'] in {'U1','ROUND2'}
     from tests.browser.wealth_joint_diagnosis import diagnose
     return await diagnose(db,user['user_id'],app.state.wealth_portfolio_source,bank_api,derive_current=request.derive_current)
 @app.post('/api/v1/joint-test/advance')
 async def advance(request:Advance,user:dict=Depends(get_current_user)):
-    assert user['user_id']=='U1'
+    assert user['user_id'] in {'U1','ROUND2'}
     async with AsyncSessionLocal() as db:
         current=await test_clock(db);new=BASE+timedelta(days=request.days)
         assert new>=current,'Clock cannot move backwards'
         row=await db.get(WealthClockORM,'mock');row.business_at=new;await db.commit()
-        orders=list(await db.scalars(select(WealthOrderORM).where(WealthOrderORM.user_id=='U1')))
+        orders=list(await db.scalars(select(WealthOrderORM).where(WealthOrderORM.user_id==user['user_id'])))
         for order in orders:
             if order.status not in {'CANCELLED','SETTLED','REJECTED'}:await bank.settle(db,order.operation_id)
     return {'source':'isolated-joint-bank','days':request.days,'orders_checked':len(orders)}

@@ -137,6 +137,9 @@ class PortfolioLifecycle:
                 group.status='ok'
         plan.model_view=PortfolioModelView(initial_ratios=[str(x) for x in model['continuous_solution']],slider_bounds=None if model['slider'] is None else [str(v) for v in model['slider']],
             available_cash_fen=meta['available_cash_fen'],receivable_fen=meta['receivable_not_payable_fen'],held_fen=sum(a['held_fen'] for a in snap['accounts']),snapshot=snap)
+        from ...domain.wealth_portfolio_slider import executable_slider
+        slider=executable_slider(plan,meta,decisions)
+        plan.model_view.slider_bounds=slider['bounds'];plan.model_view.slider_step=slider['step'];plan.model_view.slider_reason=slider['reason']
         return PortfolioPlan.model_validate(plan.model_dump())
 
     async def create(self,user_id: str,request: PortfolioCreate) -> PortfolioPlan:
@@ -287,26 +290,8 @@ class PortfolioLifecycle:
         chosen={r.product_id for r in explicit}
         plan.selected_positions=[SelectionItem(product_id=code,product_version=index.products[code].product_version,share_class=index.products[code].share_class if index.products[code].share_class in ('A','C') else None,target_ratio_total=str(Decimal(value)/T)) for code,value in targets.items() if code in chosen]
         plan=self._decorate(plan,changed,explicit,facts,index,now)
-        # 后续滑块固定当前活钱，界限仍围绕原x*/U，仅重新取该固定c截面。
-        star=calc['continuous_solution'];fixed=amounts[0]/T
-        if amounts[0]!=T:
-            # 凸有效集的固定现金截面，两端二分并逐点用原validator检查。
-            lo,hi=0.,1.
-            def valid(p: float) -> bool:return validate_adjustment(P,star,[fixed,(1-fixed)*(1-p),(1-fixed)*p])['accepted']
-            center=amounts[2]/(T-amounts[0])
-            for side in (0,1):
-                a,b=(0.,center) if side==0 else (center,1.)
-                for _ in range(55):
-                    mid=(a+b)/2
-                    if valid(mid):
-                        if side==0:b=mid
-                        else:a=mid
-                    elif side==0:a=mid
-                    else:b=mid
-                if side==0:lo=b
-                else:hi=a
-            plan.model_view.slider_bounds=[str(lo),str(hi)]
-        else:plan.model_view.slider_bounds=None
+        # _decorate returned the original U's fixed-cash, product-executable
+        # decimal lattice. Never overwrite it with outward floating endpoints.
         return plan,changed,explicit
 
     async def revise(self,user_id: str,portfolio_id: str,request: PortfolioSelection) -> PortfolioPlan:

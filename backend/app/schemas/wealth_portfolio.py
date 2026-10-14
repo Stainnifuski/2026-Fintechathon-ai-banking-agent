@@ -389,6 +389,8 @@ class AdvisedPosition(DTO):
 class PortfolioModelView(DTO):
     initial_ratios: list[str]
     slider_bounds: list[str] | None
+    slider_step: str | None = None
+    slider_reason: str | None = None
     available_cash_fen: Fen
     receivable_fen: Fen
     held_fen: Fen

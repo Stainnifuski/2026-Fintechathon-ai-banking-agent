@@ -17,7 +17,7 @@ async def enrich(db, lots, orders, now):
         published = [p for p in navs if p.version_id == version.version_id and nav_available_at(p) <= now]
         latest = published[0] if published else None
         previous = published[1] if len(published) > 1 else None
-        applicable = version.category != 'cash'
+        applicable = not (version.category == 'cash' and version.kind == 'open_fund')
         status = 'ok' if applicable and previous else 'unavailable' if applicable else 'not_applicable'
         metadata[version.version_id] = {
             'product_id': version.product_id, 'product_version': version.version,

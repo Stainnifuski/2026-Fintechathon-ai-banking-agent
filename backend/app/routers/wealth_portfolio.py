@@ -87,3 +87,27 @@ async def revise_plan(portfolio_id: str,request: PortfolioSelection,user: dict=D
 @router.post('/recommendations',response_model=CandidateGroup)
 async def recommendations(request: PortfolioRecommendation,user: dict=Depends(get_current_user),service: PortfolioLifecycle=Depends(get_portfolio_lifecycle)) -> CandidateGroup:
     return await _invoke(service.recommend(user['user_id'],request))
+
+@router.get('/products/{product_id}',response_model=CandidateGroup)
+async def exact_product(product_id:str,context_id:str,user:dict=Depends(get_current_user),service:PortfolioLifecycle=Depends(get_portfolio_lifecycle)):
+    """Manual exact-code choice uses the same current qualification, not a whitelist."""
+    async def read():
+        from ..domain.wealth_portfolio_eligibility import qualify_purchase
+        from ..domain.wealth_portfolio_candidates import family_candidates
+        from ..schemas.wealth_portfolio_candidates import CandidateFilter
+        from ..services.orchestration.wealth_portfolio_model import adapt_candidate_group
+        await service._access(user['user_id'],context_id,False)
+        source=service.provider.candidates.source
+        source.transport.product_ids=[product_id]
+        facts,index,now=await service.provider.candidates.current(user['user_id'])
+        product=index.products.get(product_id)
+        if product is None:raise CandidateError('PRODUCT_NOT_FOUND',404)
+        decision=qualify_purchase(product,facts,user['user_id'],now)
+        if not decision.purchase_eligible:raise CandidateError('PRODUCT_SELECTION_REJECTED',422,{'reason_codes':decision.reason_codes})
+        families,excluded,_=family_candidates(index,[product],[decision],facts,now)
+        group=adapt_candidate_group({'status':'ok','source_kind':facts.mode,'fixture_only':facts.mode=='fixture',
+            'pipeline':{'reason_codes':[],'exclusions':excluded,'risk_explanation':None},
+            'items':[f.model_dump(mode='json') for f in families]},index,CandidateFilter(mode='general'))
+        if not group.items:raise CandidateError('PRODUCT_SELECTION_REJECTED',422)
+        return group
+    return await _invoke(read())

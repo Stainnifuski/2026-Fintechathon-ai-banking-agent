@@ -237,7 +237,7 @@ class BankPortfolioFacts:
             evidence = None
             if (native['rules_complete'] and isinstance(business,dict) and business.get('business_at')
                 and selected and business.get('context_id')==contexts.get('selected')
-                and row.get('dataset_key')==(selected.get('dataset_key') if contexts['selected']!='legacy-v1' else 'legacy-v1')
+                and row.get('dataset_key') in ({selected.get('dataset_key'),*selected.get('additional_dataset_keys',[])} if contexts['selected']!='legacy-v1' else {'legacy-v1'})
                 and type(row.get('purchase_open')) is bool and type(row.get('data_stale')) is bool
                 and row.get('version') is not None and disclosure.get('version') is not None):
                 evidence = CurrentSimulationEvidence(provenance='protected-local-bank-current-products',

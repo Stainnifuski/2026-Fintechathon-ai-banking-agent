@@ -19,6 +19,8 @@ def export(root,version,out):
     public=[root/'config/wealth/portfolio_evidence_manifest.json',
             *sorted((root/'config/wealth/portfolio_public_evidence').glob('*.txt'))]
     public.extend(sorted((root/'config/wealth').glob('paper_products*.json')))
+    supplement=root/'config/wealth/portfolio_bank_supplement.json'
+    if supplement.exists():public.append(supplement)
     manifest={'schema_version':'wealth-portfolio-offline-package-v1','data_version':version,
         'daily_version':snapshot.daily_version,'snapshot_sha256':index['sha256'],
         'gzip_sha256':sha(packed),'file':version+'.snapshot.json.gz',

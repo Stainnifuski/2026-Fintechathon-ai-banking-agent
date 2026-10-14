@@ -257,7 +257,8 @@ async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bo
     visible = []
     for product, row in pairs:
         dataset_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
-        if context and dataset_key != context.dataset_key:
+        from ...domain.wealth_bank_portfolio_bundle import authorized_dataset_keys
+        if context and dataset_key not in authorized_dataset_keys(context):
             continue
         if not context and row.rules.get("dataset_id"):
             continue
@@ -271,11 +272,12 @@ async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bo
         if compact and product_ids is None:
             # Keep the full set in SQL, rather than expanding 14k parameters
             # and copying the same list into every price query.
-            dataset_id,dataset_version=context.dataset_key.split(':',1)
+            from ...domain.wealth_bank_portfolio_bundle import authorized_dataset_keys
+            allowed=authorized_dataset_keys(context)
             version_scope=select(WealthProductVersionORM.version_id).join(WealthProductORM,
                 (WealthProductORM.product_id==WealthProductVersionORM.product_id)&(WealthProductORM.current_version==WealthProductVersionORM.version)).where(
-                WealthProductVersionORM.rules['dataset_id'].as_string()==dataset_id,
-                WealthProductVersionORM.rules['dataset_version'].as_string()==dataset_version)
+                or_(*[(WealthProductVersionORM.rules['dataset_id'].as_string()==k.split(':',1)[0]) &
+                    (WealthProductVersionORM.rules['dataset_version'].as_string()==k.split(':',1)[1]) for k in allowed]))
         else:version_scope=versions
         eligible=select(WealthNavORM.version_id,func.max(WealthNavORM.nav_date).label('nav_date')).where(
             WealthNavORM.version_id.in_(version_scope),WealthNavORM.nav_date<=local.date(),
@@ -371,7 +373,8 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     same_run = bool(context and active and context.user_id==active.user_id and
         context.data.get('disposable') is True and active.data.get('disposable') is True and
         context.data.get('run_id',context.context_id)==active.data.get('run_id',active.context_id))
-    if ((context and (active is None or not same_run or product_key != context.dataset_key))
+    from ...domain.wealth_bank_portfolio_bundle import authorized_dataset_keys
+    if ((context and (active is None or not same_run or product_key not in authorized_dataset_keys(context)))
             or (not context and (active is not None or row.rules.get("dataset_id")))):
         raise BankError("产品与当前资金上下文不一致，请重新预览", "DATASET_MISMATCH", 409)
     now = await business_now(db, command.account_id)

@@ -67,7 +67,12 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
     catalog=None
     async def products():
         nonlocal catalog
-        if catalog is None:catalog=await bank.products(user_id)
+        if catalog is None:
+            codes=([ref.rsplit(':',1)[0] for ref in selection.ids] if selection and selection.object_type=='products' else
+                   p.get('product_ids') if action=='compare_products' else [p['product_id']] if action=='show_product_detail' and p.get('product_id') else None)
+            if codes is not None and hasattr(bank,'selected_products'):catalog=await bank.selected_products(user_id,codes)
+            elif hasattr(bank,'call'):catalog=await bank.call('POST','/catalog',{'subject_user_id':user_id,'facts_only':True,'policy_references':True})
+            else:catalog=await bank.products(user_id)
         return catalog
     if selection:
         if selection.object_type=='orders':valid={x['operation_id'] for x in facts['orders']}

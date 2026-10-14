@@ -44,7 +44,9 @@ class ServerReads:
                 references=getattr(self.index,'policy_references',{})
                 body={'subject_user_id':self.user,'facts_only':True,'policy_references':bool(references)}
                 if self.product_ids is not None:body['product_ids']=self.product_ids
-                rows=await self.bank.call('POST','/catalog',body)
+                from ...integrations.bank_api import BankApiError
+                try:rows=await self.bank.call('POST','/catalog',body)
+                except BankApiError as error:raise CandidateError(error.code,error.status_code) from error
                 for row in rows:
                     if 'execution_policy_sha256' not in row:continue
                     code=row['product_id'];binding=references.get(code)
@@ -168,8 +170,12 @@ class JointPortfolio:
     def __init__(self,root,*,data_version=None,daily_version=None,bank_factory=None):
         from ...integrations.wealth_bank_api import HttpWealthBankApi
         self.bank_factory=bank_factory or HttpWealthBankApi
+        self.ready=False
         self.root=Path(root);self.data_version=data_version or os.getenv('PORTFOLIO_DATA_VERSION',DATA)
         self.daily_version=daily_version or os.getenv('PORTFOLIO_DAILY_VERSION',DAILY)
+        from ...domain.wealth_bank_portfolio_bundle import FILE,versions
+        augmented=(self.root/FILE).is_file() and self.data_version==DATA and self.daily_version==DAILY
+        if augmented:self.data_version,self.daily_version=versions(DATA,DAILY,self.root)
         self.store=MemoryPortfolioStore(lambda:datetime.now(timezone.utc));self.sessions={};self.candidate_contexts={}
         import asyncio
         self.lock=asyncio.Lock()
@@ -177,7 +183,12 @@ class JointPortfolio:
         self.selector=CodeCategorySelector()
         def load(version):
             from ...domain.wealth_portfolio_candidates import ProductIndex
-            try:return ProductIndex(read(self.root,self.root/'.deps/wealth_portfolio_data/snapshots',version),immutable_source=True)
+            try:
+                snapshot=read(self.root,self.root/'.deps/wealth_portfolio_data/snapshots',DATA if augmented and version==self.data_version else version)
+                if augmented and version==self.data_version:
+                    from ...domain.wealth_bank_portfolio_bundle import augment
+                    snapshot=augment(snapshot,self.root)
+                return ProductIndex(snapshot,immutable_source=True)
             except (OSError,ValueError) as error:raise CandidateError('PORTFOLIO_DATA_UNAVAILABLE',503) from error
         self.indexes=SnapshotIndexCache(load)
         self.indexes.async_load=True
@@ -200,6 +211,7 @@ class JointPortfolio:
         import gc
         await asyncio.to_thread(gc.collect)
         elapsed=time.perf_counter()-started
+        self.ready=True
         logging.getLogger(__name__).info('Frozen material ready: %.3fs; directory=%d; policy-bound=%d',elapsed,len(index.products),len(index.policy_references))
         return {'data_version':index.version,'directory':len(index.products),
                 'initialization_seconds':self.indexes.last_load_seconds,
