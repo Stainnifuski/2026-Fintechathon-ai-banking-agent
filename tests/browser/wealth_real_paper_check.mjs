@@ -56,6 +56,3 @@ try{
  assert.equal(http.filter(h=>h.path.includes('/messages')).length,0);mark('J12 no new NLP calls',0);assert.equal(runtime.length,0);assert.equal(network.length,0);
 }catch(e){mark('failure',{message:String(e)});await writeFile(out+'/page.txt',await page.locator('body').innerText());await page.screenshot({path:out+'/failure.png',fullPage:true});throw e;}
 finally{await writeFile(out+'/browser_results.json',JSON.stringify({source:'formal-real-public-paper-A-B',checks,http,runtime,network},null,2));await browser.close();console.log(JSON.stringify({checks:checks.length,runtime:runtime.length,network:network.length}));}
-
-
-

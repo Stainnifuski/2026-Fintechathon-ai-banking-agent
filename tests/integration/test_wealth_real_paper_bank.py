@@ -126,4 +126,3 @@ async def test_saved_real_paper_cancel_releases_hold_without_refund(store,monkey
         assert (await db.get(AccountORM,ctx['account_id'])).balance_fen==2000000
         assert await db.scalar(select(func.count()).select_from(WealthCashHoldORM).where(WealthCashHoldORM.status=='HELD'))==0
         assert await db.scalar(select(func.count()).select_from(TransactionORM).where(TransactionORM.type.like('investment%')))==0
-

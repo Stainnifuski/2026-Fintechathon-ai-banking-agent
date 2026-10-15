@@ -133,4 +133,3 @@ def diversity(corpus: Corpus, selected: list[str]) -> dict:
     distances = [1-dot(corpus.vectors[a], corpus.vectors[b]) for i,a in enumerate(selected) for b in selected[i+1:]]
     return {'ILAD': math.fsum(distances)/len(distances) if distances else None,
             'ILMD': min(distances) if distances else None}
-

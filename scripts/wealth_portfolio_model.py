@@ -83,4 +83,3 @@ def main() -> None:
     print(json.dumps({'evidence':str(out/'evaluation.json'),'fixture_n':evidence.get('fixture',{}).get('n'),'formal_gate':evidence.get('actual',{}).get('formal_gate'),'external_requests':0},ensure_ascii=False))
 
 if __name__=='__main__':main()
-

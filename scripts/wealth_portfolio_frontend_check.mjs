@@ -124,4 +124,3 @@ try{
   await writeFile(out+'/browser_results.json',JSON.stringify({mode:'real Edge headless/local HTTP/no response mocks',checks,matrix,http,runtime,network,consoleErrors},null,2));console.log(JSON.stringify({checks:checks.length,runtime:runtime.length,network:network.length,consoleErrors:consoleErrors.length}));
 }catch(e){await page.screenshot({path:out+'/failure.png',fullPage:true});await writeFile(out+'/browser_failure.json',JSON.stringify({checks,http,runtime,network,consoleErrors,error:String(e),body:await page.locator('body').innerText()},null,2));throw e;}
 finally{await browser.close();}
-

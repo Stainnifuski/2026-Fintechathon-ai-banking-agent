@@ -320,5 +320,3 @@ def test_expired_assessment_and_unknown_fact_source_invalidate_saved_selection()
     engine.clock=lambda:source.facts.assessment.expires_at
     with pytest.raises(CandidateError,match='CANDIDATE_CONTEXT_STALE'):run(engine.next_batch('fixture-user',NextBatchRequest(session_id=s['session_id'],expected_version=s['version'],cursor=s['cursor'])))
     assert not engine.sessions[s['session_id']].selected['Q00A']['valid']
-
-

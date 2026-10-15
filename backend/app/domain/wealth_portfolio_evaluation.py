@@ -40,5 +40,3 @@ def evaluate_weights(outputs: dict,current: dict[str,int],total: int,model: dict
             'equal_status':'available' if eq_ok else 'baseline_infeasible','identity_complete':identity_complete,
             'preference_error':abs(model['actual_p']-float(p_user)) if model['actual_p'] is not None and p_user is not None else None,
             'metric_boundary':'document_diversity_and_amount_adjustment_proxy; not_return_or_fee'}
-
-

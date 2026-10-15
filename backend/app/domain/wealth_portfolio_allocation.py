@@ -215,6 +215,3 @@ def allocate(level: int, total: int, h: Sequence[float] | None, available: Seque
             'constraints':P.constraints,'request_constraints':P.request_constraints,'continuous_solution':star,
             'objective':P.loss(star),'tolerance':TOL,'integer_constraint_tolerance_fen':0,'converged':True,
             'P_valid':P.valid([star[0],star[2]],True),'U_valid':True,'solver_method':'active_constraints_ellipse_geometry','sum_residual':abs(math.fsum(star)-1),'max_request_constraint_violation':max(0.,max(a*star[0]+b*star[2]-d for a,b,d in P.request_constraints)),'optimality_min_directional_derivative':min((metric([star[0]-P.center[0],star[2]-P.center[1]],[v[0]-star[0],v[1]-star[2]]) for v in vertices(P.request_constraints)),default=0.),'integer_U_residual':P.loss(amounts['actual_ratios'])-P.loss(star)-DELTA,**ranges,**amounts}
-
-
-

@@ -111,5 +111,3 @@ def validate_manual_products(families: Sequence[WeightFamily], targets: dict[str
     for f in families:
         if f.cap_fen is not None and targets.get(f.family_id,0)>f.cap_fen:reasons.append('SPECIFIC_SHARE_HOLDING_LIMIT')
     return {'accepted':not reasons,'reason_codes':sorted(set(reasons)),'retained_targets_fen':dict(targets) if not reasons else None}
-
-

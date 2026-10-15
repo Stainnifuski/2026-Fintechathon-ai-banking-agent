@@ -227,4 +227,3 @@ class CandidateService:
             state.context=result.context;state.pool_version=result.pool_version;state.requires_refresh=False;state.displayed=set();state.rotation_position=0;state.version+=1
             batch=self._batch(state,result,facts) if result.status=='ok' else {'status':result.status,'reason_codes':result.reason_codes,'items':[]}
             return {**batch,'session':self._view(state),'pipeline':self.pipeline_view(result,facts)}
-

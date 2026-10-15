@@ -258,7 +258,3 @@ class PortfolioModelProvider:
         for i,b in enumerate(BUCKETS):
             fs=list(families[b].values());d=validate_manual_products(fs,{f.family_id:targets.get(f.family_id,0) for f in fs},bucket_amounts[i],T);reasons.extend(d['reason_codes'])
         return {'accepted':not reasons,'reason_codes':sorted(set(reasons)),'retained_targets_fen':dict(targets) if not reasons else None,'retained_bucket_amounts_fen':list(bucket_amounts) if not reasons else None}
-
-
-
-

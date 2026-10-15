@@ -3,3 +3,6 @@ config/wealth/data/*.json -text
 # These immutable public evidence files are addressed and checked by raw SHA256.
 # Preserve exact bytes on Windows and Unix; do not normalize their line endings.
 config/wealth/portfolio_public_evidence/** -text
+
+# Raw SHA-addressed evidence intentionally preserves source whitespace.
+config/wealth/portfolio_public_evidence/** -whitespace
