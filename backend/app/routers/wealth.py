@@ -321,11 +321,14 @@ async def verify_plan(plan_id: str, request: PlanVerification,http_request: Requ
 
 
 @router.get("/products")
-async def products(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
-    """鉴权客观产品探索。"""
+async def products(request: Request, user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """鉴权客观产品探索，复用已确认的固定比赛材料。"""
     try:
+        source=getattr(request.app.state,'wealth_portfolio_source',None)
+        if source is not None and hasattr(source,'display_products'):
+            return await source.display_products(db,user['user_id'],bank)
         return await bank.call('POST','/catalog',{'subject_user_id':user['user_id'],'facts_only':True,'policy_references':True})
-    except BankApiError as error:
+    except (BankApiError,policy.WealthPolicyError) as error:
         fail(error)
 
 

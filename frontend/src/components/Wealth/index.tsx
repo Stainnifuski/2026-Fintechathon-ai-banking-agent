@@ -25,6 +25,6 @@ export default function Wealth({revision,onActivity,userId}:Props){
     <button disabled={busy||!adult||Object.keys(answers).length!==9} onClick={()=>void act(async()=>{setAssessment(await w.post<w.Assessment>('/assessments',{questionnaire_version:questionnaire?.version,profile_version:questionnaire?.profile_version,adult,full_capacity:adult,answers}));})}>提交本人答案</button>
    </details>{assessment&&!assessment.confirmed&&<button disabled={busy} onClick={()=>void act(async()=>{await w.post(`/assessments/${assessment.assessment_id}/confirm`,{});changed();})}>本人确认上述评估结果并继续原需求</button>}
   </details>
-  <StructuredActionPanel key={`${userId}:${contexts?.selected??'legacy-v1'}`} userId={userId} revision={revision+localRevision} onActivity={changed}/>
+  {contexts&&<StructuredActionPanel key={`${userId}:${contexts?.selected??'legacy-v1'}`} userId={userId} revision={revision+localRevision} onActivity={changed}/>}
  </section>;
 }

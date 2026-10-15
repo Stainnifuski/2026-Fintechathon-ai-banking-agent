@@ -34,11 +34,19 @@ class ServerReads:
     owns_responses=True # protected HTTP returns request-owned new JSON, never a shared bank cache
     frozen_catalogues={}
     catalogue_reads=0
+    catalogue_locks={}
     def __init__(self,db,user,bank,index=None,product_ids=None):
         self.db,self.user,self.bank,self.index=db,user,bank,index
         self.product_ids=product_ids
         self.selected_response=None
     async def get(self,path):
+        if path!='/api/v1/wealth/products':return await self._get(path)
+        # Coalesce concurrent initial UI/A reads, keeping every scope check live.
+        import asyncio
+        key=(id(self.db.get_bind()),os.getenv('BANK_API_BASE_URL'))
+        async with self.catalogue_locks.setdefault(key,asyncio.Lock()):
+            return await self._get(path)
+    async def _get(self,path):
         if path=='/api/v1/auth/me':return {'user_id':self.user}
         suffix=path.removeprefix('/api/v1/wealth/')
         if suffix=='assets':return await self.bank.assets(self.user)
@@ -312,6 +320,11 @@ class JointPortfolio:
         service=PortfolioLifecycle(PortfolioModelProvider(candidates,facts),self.store,JointAccess(facts,self.store))
         service.candidate_contexts=self.candidate_contexts
         return facts,service
+    async def display_products(self,db,user_id,bank):
+        facts,_=self.bind(db,user_id,bank)
+        rows=await invoke(facts.transport.get('/api/v1/wealth/products'))
+        # Only fixed display material; live permissions/quotes use scoped facts.
+        return [{**r,'rules':{k:v for k,v in r['rules'].items() if k!='execution_policy'}} for r in rows]
     async def snapshot(self,db,user_id,context_id,bank):
         facts,_=self.bind(db,user_id,bank);result=build_snapshot(await facts.read(user_id))
         if result.context_id!=context_id:raise CandidateError('PORTFOLIO_CONTEXT_STALE')

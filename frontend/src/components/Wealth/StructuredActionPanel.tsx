@@ -58,6 +58,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   // Catalogue labels are static display data, never purchase permission.
   // Every action still uses current server risk/rules/scope and bank facts.
   const displayCatalogue=useRef<{user:string;context:string;products:w.Product[]}|null>(null);
+  const catalogueRequest=useRef<{scope:string;promise:Promise<w.Product[]>}|null>(null);
   const client=useRef(new WealthActionSession(sendAction));const latestRequest=useRef(0);
   useEffect(()=>()=>client.current.setContext(null),[]);
   const [detailView,setDetailView]=useState<{id:string;version:number}|null>(null);const [compareView,setCompareView]=useState(false);
@@ -75,7 +76,12 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   },[orderState.selected,positionState.selected,inputMode,value,revision,reload]);
   useEffect(()=>{let active=true;++latestRequest.current;setPending(null);setReading(true);setCancelView(null);setRedemptionRows(null);setReturnView(null);setError('');void Promise.all([w.get<w.Assets>('/assets'),w.get<{items:w.WealthTask[]}>('/tasks')]).then(async([assets,tasks])=>{
     const context=assets.context_id??'legacy-v1';const cached=displayCatalogue.current;
-    const products=cached?.user===userId&&cached.context===context?cached.products:await w.get<w.Product[]>('/products');
+    const requestScope=userId+':'+context;
+    if(!(cached?.user===userId&&cached.context===context) && catalogueRequest.current?.scope!==requestScope){
+      const promise=w.get<w.Product[]>('/products').catch(e=>{if(catalogueRequest.current?.scope===requestScope)catalogueRequest.current=null;throw e;});
+      catalogueRequest.current={scope:requestScope,promise};
+    }
+    const products=cached?.user===userId&&cached.context===context?cached.products:await catalogueRequest.current!.promise;
     if(!active)return;
     displayCatalogue.current={user:userId,context,products};
     manualDrafts.bind(draftScope(userId,assets.context_id??'legacy-v1',assets.cash.map(a=>a.account_id)),assets.context_id??'legacy-v1');

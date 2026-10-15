@@ -63,7 +63,32 @@ def test_protected_policy_reference_requires_exact_current_db_hash(matches):
     policy={'product_id':'000009','risk_level':1,'classification_status':'verified'}
     class Bank:
         async def call(self,*args):
+            if args[1]=='/contexts':return {'selected':'test','items':[{'context_id':'test'}]}
             return [{'product_id':'000009','rules':{},'execution_policy_sha256':policy_sha(policy) if matches else 'f'*64}]
     index=SimpleNamespace(policy_references={'000009':(policy_sha(policy),policy)})
-    rows=asyncio.run(ServerReads(None,'U1',Bank(),index).get('/api/v1/wealth/products'))
+    rows=asyncio.run(ServerReads(SimpleNamespace(get_bind=lambda:'isolated-bank'), 'U1',Bank(),index).get('/api/v1/wealth/products'))
     assert rows[0]['rules']['execution_policy']==(policy if matches else None)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_display_and_A_reuse_one_scope_proven_catalogue():
+    import asyncio
+    from backend.app.services.orchestration.wealth_portfolio_joint import ServerReads,JointPortfolio
+    calls={'catalog':0,'contexts':0,'assets':0}
+    class Bank:
+        async def call(self,method,path,body):
+            if path=='/contexts':
+                calls['contexts']+=1
+                return {'selected':'owned','items':[{'context_id':'owned','dataset_key':'real-public-paper-v1:isolated'}]}
+            assert path=='/catalog';calls['catalog']+=1;await asyncio.sleep(0)
+            return [{'product_id':'000009','name':'isolated','rules':{'open_interval_days':1}}]
+        async def assets(self,user):
+            calls['assets']+=1
+            return {'business_at':'2026-10-13T06:00:00+00:00'}
+    db=SimpleNamespace(get_bind=lambda:'coalescing-test-engine');bank=Bank()
+    ServerReads.frozen_catalogues.clear()
+    a=ServerReads(db,'U1',bank);b=ServerReads(db,'U1',bank)
+    first,second=await asyncio.gather(a.get('/api/v1/wealth/products'),b.get('/api/v1/wealth/products'))
+    assert first[0]['product_id']==second[0]['product_id']=='000009'
+    assert calls=={'catalog':1,'contexts':2,'assets':1}
+    ServerReads.frozen_catalogues.clear()
