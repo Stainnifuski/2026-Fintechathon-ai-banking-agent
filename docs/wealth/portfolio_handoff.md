@@ -1,66 +1,84 @@
-# 第2轮联合实施回传（2026-10-14）
+# 理财01／02集中收尾交接（2026-10-15北京时间）
 
-## 当前结论
-本轮主要实现和投资、撤单、普通赎回、快赎、T+1/T+2账务主线已实际运行。**尚不能宣布完整联合封板**：当前正式浏览器中人工接管→操作员领取→交还的完整往返还未重新完成；该能力当前双库回归通过；当前UI暂停/继续v1→v2→v3已通过，完整操作员往返仍待补。收益页保留真实缺资料状态，不能据此声称金融历史评价完成。人工验收未通过前不发布。
+## 当前状态与范围
+本轮仅本地集成，不发布main、不创建PR、不接新LLM/NLP、不恢复采集。最终人工验收仍由用户完成；不能将本轮技术检查称为整项目封板、生产认证或金融有效性验证。
 
-## 实现与已关闭问题
-- 静态资料完成加载后才报告portfolio_ready。目录及明确事实只读路径30秒、详情15秒；前端推荐/Plan60秒、代理65秒。交易预检与提交时限不全局扩大、不自动重试写入。只读失败返回可恢复503。
-- 固定活钱、原U、ETA=.25、DELTA=.01及原产品投影保持。服务端计算可执行离散区间和步长；百分数仅转换一次、金额为整数分，调整同步完整产品目标及版本，旧预览移除。
-- prepare结束旧SQLite读快照后获取原有写锁；远端预检后仍锁定重读Plan、资产、版本及映射。最初并行实测出现database locked/500，修复后的正式算例与双库prepare复验通过，不把首次失败隐藏。
-- 删除旧研究工具、基金目录壳及独立理财对话入口；保留正式按钮入口、本人问卷、context选择、现有MFA、任务/操作员及未来03接口。目录标签只在同登录人/context内复用显示；账户/持仓/控制及执行许可仍实时校验。交易后不重复读取完整目录。
-- 清除原始费用JSON、长政策串、空指标及单点曲线。具体代码详情按需历史查询，弹窗切窗口复用本次结果，不全池采集、不新增永久历史缓存。现金管理银行理财的模拟NAV行情与货币收益分开。
-- 不展示保本或保本未知标签；所有产品提示本金可能亏损。活钱银行准入为核实R1现金管理及完整快赎规则；风险、窗口和每日额度保留。
+真实货币基金按最新指令**永久退出**，覆盖此前“保留历史兼容”的要求。删除固定1元计价、收益率专用适配、专用类别接口、清单及样本；不保留其交易兼容分支。真实基金静态质量交集为13,578个具体代码：债券4,093、混合8,444、股票1,041；不是13,578个始终可买的承诺。身份、申赎/报价、风险与交易控制仍逐当前业务条件核对。模拟银行B001—B018及MW002共19个定义保留；活钱为账户现金及符合政策的既有R1模拟快赎，不给普通基金自动赋快赎。本金可能亏损。
 
-## 产品与来源
-真实基金13,856：货币278、债券4,093、混合8,444、股票1,041；原始目录27,998，不缩池。另复用18个B001—B018及原MW002，共19个冻结模拟银行定义。当前R4/20,000元/2026-10-13业务日实测可选B017、B018、MW002；其他12个不符合已确认银行两类政策，B013/14非开放日，B015/16已过申购期。19不等于19个当前可购。
-模拟SKU按冻结配置中的具体身份选择，不额外要求家族登记；已知基金关系继续去重，未知关系不编造或称独立风险来源。银行源配置：config/wealth/portfolio_bank_supplement.json；绑定政策bank-cash-risk-quick-no-guarantee-v2；附加dataset joint-bank-existing-v2:66cbd10c27efcbc79716821d。原风险、净值及快赎合同保留；未增加保本属性。
-全量真实政策仍real-public-paper-core-risk-20261013-v2。货币为项目模拟固定1元/份、真实NAV未知，不把万份收益/七日年化转NAV，亦不自动快赎。真实基金公开更高风险或分类冲突仍拒绝。
+主题/高股息、A/C切换、强制家族证据、文本DPP/MMR、旧对话/研究工具、客服领取交还及另建模式切换均为**范围调整取消**，不写测试通过。已知同基金关系继续去重，未知不编造。保留原宏观模型、产品投影、原U、ETA=.25、DELTA=.01；本人确认、统一高风险MFA、幂等、审计、暂停及跨场景共用权限未删除。
 
-## 固定J02正式证据
-R4由专用用户ROUND2在正式浏览器九题问卷提交、本人确认得到；账户初始借记现金20,000元、持仓/占款/应收0。不传p，选择000003 v2及671030 v2，规则允许5,760—7,040元。
+## 相对00的契约差异
+- 新增：按代码NAV观测和正常银行估值消费；运行计价政策published-nav-by-order-date-20261015-v1；前端整数操作的原U只读校验契约adjustment_contract；运行范围清单competition_runtime_scope.json。
+- 调整：A07手动进取/产品比例仅整数百分比，服务端界限向内取整；自动模型结果和金额保持原精度。示例连续约40.2%—59.8%对应整数41%—59%。校验失败保留旧Plan，合法修改升版本，未提交预览重做，已受理订单不变。
+- 移除：真实货币及上述已取消范围；00中的相应必过项据此取消，不是暂待实现。
+- 保持：全部授权借记账面现金＋持仓市值＋赎回应收；冻结是现金子集，不重复计资。总资产和可支付现金分开。风险上限、期限、窗口、额度、份额及参数绑定不放宽。
 
-|阶段|版本|活钱元|稳健元|进取元|
-|---|---:|---:|---:|---:|
-|初始50%|1|7200|6400|6400|
-|滑块45%|2|7200|7040|5760|
-|滑块55%|3|7200|5760|7040|
-|手动50%|4|7200|6400|6400|
-|离散下限40.2%|5|7200|7654.40|5145.60|
-|离散上限59.8%|6|7200|5145.60|7654.40|
+## 正常接线与动态报价
+A源backend/app/services/orchestration/wealth_portfolio_joint.py，生命周期wealth_portfolio_lifecycle.py，银行wealth_service.py与wealth_quotes.py。正式入口仍是Wealth/index → StructuredActionPanel → ProductPicker / StructuredPortfolioReview / AllocationReview / PortfolioAllocation；交易复用PlanExecution、SingleTradePreview和统一第二因素。
 
-正式API、浏览器均验证上述序列。范围[.402,.598]、步长.001；前端90%拒绝，API .9返回422、版本/目标/订单/占款不变。API初始Plan19.915秒；45% prepare1.388秒，55% prepare1.272秒；二者正确金额、无订单占款。浏览器45/55旧预览移除并重新prepare成功。原U保持有生命周期单测及固定边界证据；不把理论算式当实测。
+GET /api/v1/wealth/portfolio/snapshot；GET /portfolio/products/{code}?context_id=；POST /portfolio/recommendations；POST /portfolio/plans；PUT /portfolio/plans/{id}；POST /portfolio/plans/{id}/prepare。这些路径均相对/api/v1/wealth。B的原plans预览/确认/验证/执行、订单/持仓/赎回/撤单接口保留。货币类别请求不再是合法契约。
 
-## 实际交易与账务
-另选B017/000003/671030的同context三产品方案：1600/6387.20/6412.80元。一次本人确认及现行统一SMS，三笔受理、冻结14400元，无可赎持仓。计价前取消000003释放6387.20元，不生退款；T+1另两笔结算，现金11987.20元，两只可赎持仓。
-普通赎回671030的10份及市值12.34元（2.7893份）分别本人确认和统一验证；受理时占用份额。B017快赎100份即SETTLED，到账105.16元，现金12092.36元，剩1421.4499份，日限额10000元及00:05—23:55窗口绑定。T+1两笔普通赎回应收56.58元，现金不提前增加；T+2各自到账，现金12148.94元、应收0、无占款。全部成交与时钟均在独立测试库，不代表真实交易。
-日/月/年/累计及月日历实际页面已打开；缺有效NAV的期间显示partial/null与原因。公开冻结NAV日期不改成业务日，不能把模拟测试时钟推进日期当真实未来资料。研究历史总回报/样本外金融效果仍未完成。
+静态索引和政策在启动校验加载；银行完整资料在第一次需要全量资格的受保护读取时装载一次，按数据库、固定资料范围缓存。后续不再次从银行传输/解析全目录；账户、正式评估、context、任务控制动态读取。当前展示产品再按具体代码核对报价及资格，动态停售不能被固定模板覆盖。prepare只读取所选及执行相关代码。首次银行资料读取仍有成本，未伪称所有材料在首个用户请求前均已传输完毕。
 
-## 当前验证记录（集合有重叠，不累计）
-- 119通过：生命周期、全池银行、prepare、快赎、赎回输入、联合提供器；SQLite及独立bank_test_* PostgreSQL。
-- 16通过：锁修复后prepare与structured_portfolio双库复验。先前未配置PG的10通过/8跳过记录不算PG通过。
-- 97通过：候选及R1现金管理/无保证政策身份回归。
-- 56通过：双库任务控制、订单/持仓、账单边界及实际收益；12通过为现金管理表格口径修复后的重叠复验。
-- 3通过：最终只读超时/不重试写入及银行准入单元测试；33通过为既有前端选品、配置、表格、资产摘要回归。
-- 类型与正式生产构建通过；存在既有大chunk提示，未另开打包优化。
-- 实际API：普通换批11.665秒、债券9.594秒、快赎7.608秒、银行理财8.031秒，HTTP200。R2手选R4及0/极小权重A422；最终银行0分schema422，1/100000分风险409；订单与占款0、原Plan v1保持。R1全活钱滑块null、其他用户Plan404。
-- 正常backend.app.main生命周期在独立副本实际启动、portfolio_ready=true，冻结资料27.467秒。首次副本U1/U2与正常U001/U002种子手机号冲突而拒绝；仅在第二独立副本分离测试手机号后重验，无改原账户/种子策略。
-- 离线空目录安装、增补28017目录/13856真实池/19银行定义通过，禁网检查外部请求0。包sha256 9e28f1ca8b5db9d9e49e0488a278c7376b88a85f5580c1020441c42fa526b228，.deps/round2/wealth-round2-offline-20261014.zip，不含env/密钥/数据库/私有原始缓存。
-- 原工作区577文件、.env与HEAD哈希核对无改动；3010/8010/5432保留。本轮8015烟测已关闭，3014/8014保留。
+按需范围为当前展示、所选待买、全部实际持仓和处理中的订单代码；去重、单代码请求合并，最多3个并行，观测缓存60秒且最多128代码。使用既有AKShare1.19.1 fund_open_fund_info_em(symbol=具体代码, indicator=单位净值走势)，无全市场接口调用。该上游返回单代码历史；正常估值只持久化最新有效日期及未计价订单所需日期，图表仍点开读取，不全池下载历史。源日期与观测时间分开，未知发布时间保守采用实际观测瞬时作为可用时点，不能把获取时间当NAV日期或倒灌历史。
 
-## 剩余与停止边界
-必须补当前正式UI的完整人工接管、操作员领取/交还往返；双库通过不替代该浏览器证据。普通基金详情的最新上游历史可能失败，正确隐藏不足图表；不能保证上游始终可得。所有必要当前功能未完成前不宣称封板，等待人工审阅及未闭合项复验。不恢复采集、不接新LLM、不远端写入。
+受保护银行/assets及/asset-summary先按实际范围更新观测，再建立一致读快照；持仓、市值、浮盈、总资产、表格、头部与新Plan使用同一NAV表。不改份额、成本、现金和已结算价格。来源失败保留最近可靠值、日期和失败提示；无可靠估值时总资产未知，禁止依赖完整估值的方案确认，但不阻断独立合法推荐。参考NAV不等于最终成交价；真实基金按订单计价日的已公布NAV，未公布保持PENDING_PRICING。模拟银行产品继续用明确标源的原模拟价格/收益/到账规则。
 
-## 本地提交与原始证据
-08aa1bbdd678a9ec524fbc928c172e0f7c1c1fd6 refactor(wealth): simplify formal workspace and synchronize previews
-f22656925560582897c6a4c1ca52c1b3f08bf9e3 fix(wealth): align executable slider and existing bank scope safely
-最终工程文档提交见git log。私有原始日志/截图/运行库仅存集成目录.deps/round2及.deps/joint_validation；不提交。golden-api.json、catalog-api.json、guards-api.json、state-1/2/3.json、state-quick.json、各测试log及normal-compatible.err为实际证据；首次失败日志保留。state-ordinary-accepted.json是失败采集后误复制旧文件，**不是有效赎回证据**；应使用state-ordinary-current.json。
+## 当前证据（不累计有重叠的测试数量）
+- 68通过：受影响SQLite/PostgreSQL报价、全池银行映射、prepare、两表、实际收益、账单排除、快赎；affected-final.log。
+- 6通过：真实响应消费、独立测试报价变化/新Plan、MW00230天合法退出，双库；new-plan-quotes.log。另2通过为追加动态停售反例；live-stop.log。测试报价明确标ISOLATED_TEST_QUOTE_NOT_REAL，不能冒充真实行情。
+- 57通过：生命周期与活钱准入；unit-final.log。目录6通过；directory-v2.log。最初目录旧数量和缺失fixture失败已保留，修正后复验，不用失败前结果算通过。
+- 前端34通过：整数输入（含57%/58%浮点边缘）、选择、表格、资产摘要；frontend-fixed34.log。正式类型/构建结果见build-final.log（最终类型检查及构建，9.31秒）；大chunk提示不等于构建失败。
+- 真实联网取得000003：2026-10-14 NAV=0.947，观测2026-10-15T02:26:48Z；真实响应保留于私有quote_observation.json，服务消费在隔离双库验证。实际671030成功观测入库审计为2026-10-14 NAV=4.0211，正常HTTP资产读取对应市值5777.48元、份额1436.7913、成本6356.24元；当次再请求上游失败，正确显示failed_using_last_reliable。现金12148.94元、份额/成本/历史成交不变，详见real-http-valuation.json；不把该次失败写成当次更新成功。
+- API固定R4/T20,000空持仓/000003＋671030：初始7200/6400/6400；45%=7200/7040/5760；55%=7200/5760/7040。边界41/59、步长1%，90%拒绝，旧版本和零订单/占款不变；golden-api.json。R2在A手选、0/极小权重及最终银行0/1/100000分均拒绝；guards-api.json。另R1全0答案产生禁购是正确适当性结果，不冒充R1可买正向测试。
+- 当前浏览器证据和最终补验结果另记同一联合回传。此前正式九题/本人确认、整份SMS、申购占款、撤单、普通赎回/快赎、收益日历未受影响的有效记录复用.deps/round2的state-1/2/3、state-quick及截图；state-ordinary-accepted.json明确无效，不引用。
 
-## 工程接法与准备
+## 性能实测
+最终静态启动25.016秒；以下最终HTTP实测，不声称满足旧5秒目标。后续批次没有全目录调用；首次正式显示包含一次银行资料初始化，随后推荐复用同一材料。写请求不自动重试，保留加载/防重复和明确失败反馈。
 
-A源为backend/app/services/orchestration/wealth_portfolio_joint.py；正式GET /api/v1/wealth/portfolio/snapshot、GET /products/{code}?context_id=、POST /recommendations、POST /plans、PUT /plans/{id}；B的POST /portfolio/plans/{id}/prepare与现有plans preview/confirm/verify/execute衔接。前端唯一正式Wealth/index挂StructuredActionPanel、ProductPicker、StructuredPortfolioReview、AllocationReview/PortfolioAllocation及原PlanExecution/SingleTradePreview。旧主题410、A/C切换退出。没有新总Agent或LLM路由。
+|请求|耗时|银行全目录调用|银行按代码调用|
+|---|---:|---:|---:|
+|initial_formal_display|4.128秒|1|0|
+|repeat_formal_display_fixed_material|1.066秒|0|0|
+|initial_material_and_exact_000003|5.573秒|0|1|
+|initial_material_and_exact_671030|5.504秒|0|1|
+|recommend_no_prior_plan|12.982秒|0|1|
+|next_batch|12.035秒|0|1|
+|Plan|7.477秒|0|0|
+|prepare|1.819秒|0|5|
 
-准备方式（仓库相对路径）：按scripts/wealth_portfolio_package.py install导入已交付离线包；确认config/wealth/paper_products.json、portfolio_bank_supplement.json及内容指纹一致。设置自己的隔离DATABASE_URL，使用python -m backend.app.services.bank.wealth_data_cli import --file config/wealth/paper_products.json，随后init --user-id <本人合法演示ID> --dataset-key real-public-paper-v1:b498da40b510a409211716f0；再python -m backend.app.services.bank.wealth_bank_supplement_cli --user-id <ID> --context-id <本人已授权模拟context>。附加银行数据只能由服务端受控命令绑定，客户端不能扩大scope；CLI不更改余额/MFA许可。普通启动python -m uvicorn backend.app.main:app --host 127.0.0.1 --port <本地端口>，内部BANK_API_BASE_URL配置对应本地银行服务，原MFA/SMS及数据库依赖沿用工程环境。不得提交.env、OTP、运行库或阶段回传。
+推荐/换批各展示3个代码；prepare核对2个执行产品，内部多个受保护检查复用同一代码观测，不是反复全市场请求。计数来自实际服务日志，不按逻辑任务数估算。首次普通推荐没有旧Plan；正式页面资料与A共用该静态目录。
 
-相对00：增加服务端可执行slider_bounds/slider_step/slider_reason及精确代码资格读取、冻结银行补充和受控context绑定；调整活钱R1现金管理+完整快赎规则准入、去保本显示、当前模型默认具体代码排序；移除旧研究/对话壳及主题/A-C入口；保持全授权资产公式、原U/ETA/DELTA、投影、风险、确认/MFA、有效期、幂等、审计和账务规则。冻结现金不重复计入T，未知估值不补0。01负责配置与材料适配，02继续负责交易/事实与正式接线，03/统一LLM在后续任务；本轮不改02源分支、不发布main。
+## 永久退出清理、数据版本与准备
+先备份当前独立库，实查真实货币订单0、持仓0、关联账务0，未伪称删除不存在的流水。删除278个产品、278个版本、278条NAV、278个研究条目；移除快照947个真实货币身份；全部账户现金及其他订单逐项不变，PRAGMA foreign_key_check无孤立记录。只操作集成目录的专用库，原工作区/原业务库不动。恢复备份仅作为私有回退材料，不是运行兼容入口，也不打入新包。旧含货币包已移出可用目录。
 
-闭合条件：补当前正式UI人工接管往返、核对最终入口稳定性、用户人工主线通过；仅在后续授权发布任务再整合main及处理冲突。研究历史金融效果仍独立记录未完成，不把当前模拟交易通过当金融评价通过。
+为了保留非货币产品和既有订单引用，其规则/产品版本及dataset key未改；本次授权范围清理以独立scope_policy_version记录，并定点勘正本库导入manifest指纹。这不是允许任意覆盖既有不可变版本的通用接口。
+
+基础DATA=bfa4f29d6bfae78f7fe228c24fe3fcdda641107ffa23efadd851af94e831d33b，DAILY=770e273fa9e1a0bfbd8c34286628224ab90788a60a06729d93239efd20922e6f；增补后DATA=105e6e838cc7adb97b6bbe85014beb26b0a4208cbce0e09de131a8cf3024546c，DAILY=09deb6c561fced1cc36531a744835227d37d2fe8323a546ea685f3497b2fa0cb。可用数据包.deps/final_round/wealth-final-offline-20261015-v2.zip，SHA256=c15ec222221820fcaaa2614e812c1d84af6650d786ddb93a33fe6961995a9817；禁网空目录安装通过，包含13,578普通真实基金＋19银行定义，无env/密钥/运行库。原始缓存不发布；所有专属货币功能和可用包条目已退出。
+
+从仓库根目录安装依赖backend/requirements.txt、requirements-market.txt，前端npm ci。解压交付包后使用python scripts/wealth_portfolio_package.py install --manifest <解压目录/package/bfa4f29d6bfae78f7fe228c24fe3fcdda641107ffa23efadd851af94e831d33b.package.json>安装资料包，保持公开配置指纹一致。设置自己隔离DATABASE_URL后：
+
+```shell
+python -m backend.app.services.bank.wealth_data_cli import --import-root . --file config/wealth/paper_products.json
+python -m backend.app.services.bank.wealth_data_cli init --user-id <本人演示ID> --dataset-key real-public-paper-v1:b498da40b510a409211716f0
+python -m backend.app.services.bank.wealth_bank_supplement_cli --user-id <本人ID> --context-id <已授权模拟context>
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port <端口>
+```
+
+BANK_API_BASE_URL指向对应银行服务；统一MFA和内部令牌沿用现有受控配置，不复制本机.env/数据库/凭据。正式frontend npm run dev，BANK_API_BASE_URL指向上述后端。当前3014/8014为独立受控人工环境，3010/8010/5432保留。正常backend.app.main使用独立副本/8015烟测，临时端口结束后关闭，不替代完整业务验收。
+
+## 分工、限制及闭合条件
+01负责配置模型/材料与推荐，02负责共享银行事实、正式交易接线和页面消费，统一LLM/总DAG由后续03/团队接入。本轮只完成既定手动子场景，不开展02新业务或新模型。主要剩余依赖是用户人工验收；上游可能失败，真实基金NAV未公布时必须等待。历史总回报、真正样本外效果、2027预测日历的现实准确性及生产认证均不在本轮通过声明内。客服领取/交还不再是阻塞项，已范围调整取消。
+
+所有原始验证文件在集成目录.deps/final_round和未受影响历史.deps/round2；正式文档不包含密钥、数据库或私有任务书。最终本地SHA与浏览器实测追加在联合回传。没有任何远端写入。用户人工确认后另行授权发布，当前停止。
+
+
+## 本轮最终页面与检查补记
+- 正式浏览器：000003（R2）与671030（R4）比较字段正确；关闭比较仍为同一Plan v1并保留两产品。浏览器初始7200/6400/6400；45%提交v2为7200/7040/5760；55%提交v3为7200/5760/7040。45.5和90按钮禁用。截图见.deps/final_round/browser-compare.jpg、browser-integer.jpg；之后补充明确整数/范围提示，最终构建再通过（build-shared.log，6.86秒（最终代码））。
+- 最终报价补验quote-final-patch.log：SQLite/PostgreSQL共2通过（63.01秒）；契约与字段适配contract-final.log：68通过（3.23秒）。这些与前述集合存在交集，不加总成独立用例数。
+- 真实行情证据：671030的2026-10-14 NAV=4.0211，实际观察时间2026-10-15T02:57:47Z，已入正常NAV表并由实际HTTP估值使用。本次随后HTTP刷新上游失败，正确显示failed_using_last_reliable；不把失败请求冒充成功。000003实际按代码响应成功另见quote_observation.json，双库消费该真实捕获响应属于重放；隔离报价变化明确为测试报价，不冒充真实行情。
+- 最终保全：原有账户行、全部原订单与lot完全保留（新增隔离测试账号单列）；外键无孤立。13800000125现金20,000元、零订单/持仓、未代填问卷；原577文件、.env和HEAD哈希一致。
+- 独立3014/8014正常运行，原3010/8010/5432保留，正常启动烟测8015已关闭。用户人工验收尚未完成；本轮无远端写入。
+- 已闭合首次UI重复资料读取：正式/products与A使用同一个按资料版本及授权scope核定的静态源，并发初读合并；前端等待context并复用同scope初始promise。static-catalogue.log共7通过；benchmark-shared.json真实HTTP首次1次全目录，重复显示及推荐/换批/Plan/prepare全为0，权限/资产/选中产品控制仍动态核验。
+
+最终资料包按当前配置重新生成并禁网空目录安装通过（54.08秒）；文件指纹与当前源码配置匹配。功能本地提交e27d27f0f2b31863c7c6d0c62b123aab5dc56b19、a0d329c（目录共用补修）。当前所有自动检查的已知失败已修复或明确为无效前置，不将取消项/人工未测写成通过。
