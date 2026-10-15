@@ -118,7 +118,7 @@ def history_manifest(root):
     dbfile=root/'.deps/a1_collection/progress.sqlite'
     with sqlite3.connect(dbfile.as_uri()+'?mode=ro',uri=True) as db:
         db.row_factory=sqlite3.Row
-        jobs=[dict(x) for x in db.execute("select function,branch,entity,kwargs,raw_path from jobs where status='success' and function in ('fund_open_fund_info_em','fund_money_fund_info_em','fund_fh_em','fund_cf_em') order by entity,function,branch")]
+        jobs=[dict(x) for x in db.execute("select function,branch,entity,kwargs,raw_path from jobs where status='success' and function in ('fund_open_fund_info_em','fund_fh_em','fund_cf_em') order by entity,function,branch")]
     evidence=[];paths=set()
     for j in jobs:
         path=(root/'.deps/a1_collection'/j['raw_path']).resolve()
@@ -135,7 +135,6 @@ def history_manifest(root):
         branch=j['branch'];is_event=j['function'] in ('fund_fh_em','fund_cf_em') or '分红' in branch
         reason='event_table_without_verified_complete_share_event_adjustment' if is_event else 'return_definition_or_event_adjustment_not_verified'
         if '排名' in branch:reason='ranking_is_not_return'
-        if j['function']=='fund_money_fund_info_em':reason='money_yield_not_verified_reinvested_total_return'
         evidence.append({'function':j['function'],'branch':branch,'product_or_year':j['entity'],'kwargs':json.loads(j['kwargs']),'path':path.relative_to(root).as_posix(),'sha256':hashlib.sha256(data).hexdigest(),
                          'observed_at':raw.get('observed_at'),'columns':raw.get('columns',[]),'rows':len(records),'start':min(dates) if dates else None,'end':max(dates) if dates else None,
                          'net_value_kind':branch,'status':'excluded','reason':reason,'metrics':None})

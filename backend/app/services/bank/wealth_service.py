@@ -1,7 +1,7 @@
 """4号理财事实服务；受理、占款、计价、到账与审计事务一致。"""
 
 from dataclasses import asdict
-from ...domain.wealth_paper_policy import PRICING_MODES,MONEY_PRICING_MODE
+from ...domain.wealth_paper_policy import PRICING_MODES
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
@@ -211,6 +211,14 @@ async def latest_nav(db: AsyncSession, version_id: str, at: datetime) -> WealthN
         WealthNavORM.nav_date <= day).order_by(WealthNavORM.nav_date.desc()))).all()
     return next((price for price in rows if nav_available_at(price)<=at),None)
 
+def effective_disclosure(row):
+    """Current versioned runtime policy, without editing historical bank records."""
+    if row.rules.get('pricing_mode') not in PRICING_MODES:return row.disclosure
+    from .wealth_quotes import POLICY_VERSION
+    return {**row.disclosure,'pricing':'预览使用最近已公布的可靠净值；最终按订单计价日净值，未公布时等待，不使用虚构未来价格。',
+        'limitations':'真实公开基金资料；比赛模拟资金、费用和交易，不代表真实代销或收益保证。',
+        'runtime_pricing_policy_version':POLICY_VERSION}
+
 
 def nav_available_at(price: WealthNavORM) -> datetime:
     """导入证据的可用瞬时；旧模拟种子缺字段按明确18点发布假设保守处理。"""
@@ -314,10 +322,10 @@ async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bo
             "project_policy_version":row.rules.get('execution_policy',{}).get('version'),
             "underlying_source_kind":"real" if row.rules.get('execution_policy') else "simulated",
             "execution_source_kind":"simulated",
-            "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": row.disclosure,
+            "status": product.status, "rules": {**row.rules,'purchase_paused':True} if fixture.get('purchase_paused') and fixture.get('target')==product.product_id else row.rules, "disclosure": effective_disclosure(row),
             "nav": price.price if price else None, "nav_date": price.nav_date.isoformat() if price else None,
-            "price_source":"project_simulated_fixed_one" if row.rules.get('pricing_mode')==MONEY_PRICING_MODE else "real_public_frozen_NAV" if row.rules.get('pricing_mode') in PRICING_MODES else "original_simulated_NAV",
-            "real_unit_nav":None if row.rules.get('pricing_mode')==MONEY_PRICING_MODE else price.price if price else None,
+            "price_source":"real_public_observed_NAV" if row.rules.get('pricing_mode') in PRICING_MODES else "original_simulated_NAV",
+            "real_unit_nav":price.price if price else None,
             "available_at":utc_iso(nav_available_at(price)) if price else None,
             "fund_family_id": row.rules.get("fund_family_id", product.product_id),
             "identity": row.disclosure.get('identity', '虚构产品与模拟行情'),
@@ -389,13 +397,10 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     paper=row.rules.get('pricing_mode') in PRICING_MODES
     if paper:
         from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons
-        category='money' if row.category=='cash' else row.category
+        category=row.category
         reasons=validate_policy(row.rules.get('execution_policy'),row.product_id,category,row.risk_level,now)
         reasons+=registered_policy_reasons(row.rules.get('execution_policy'),row.product_id)
         if reasons:raise BankError('公开资料或项目政策绑定不满足：'+','.join(reasons),'PAPER_POLICY_INVALID',409)
-        quote=row.rules['execution_policy']['quote']
-        if price is None or str(price.price)!=quote['value'] or price.nav_date.isoformat()!=quote['date'] or utc_iso(nav_available_at(price))!=utc_iso(datetime.fromisoformat(quote['available_at'])):
-            raise BankError('冻结公开成交基准不一致','PAPER_PRICE_MISMATCH',409)
     if row.rules.get('dataset_id') and (price is None or (not paper and advance_business(price.nav_date,3,row.rules['calendar_version'])<now.astimezone(TZ).date())):
         raise BankError('净值缺失或过期，请等待可见有效数据','DATA_STALE',409)
     if command.direction == "purchase":
@@ -441,7 +446,7 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     return {"command": command.model_dump(), "digest": command_digest(command),
         "product_name": row.name, "product_risk_level": row.risk_level, "operation_security_level": "RED",
         "suitability": {**suitability, "matched": True} if suitability else None,
-        "disclosure": row.disclosure, "rules": row.rules, "estimate": estimate,
+        "disclosure": effective_disclosure(row), "rules": row.rules, "estimate": estimate,
         "estimated_nav": price.price if price else None, "estimated_nav_date": price.nav_date.isoformat() if price else None,
         "pricing_date": priced.isoformat(), "confirm_date": (priced if command.redemption_mode == "quick" else advance_business(priced, row.rules["confirm_business_days"], row.rules["calendar_version"])).isoformat(),
         "cash_date": (priced if command.redemption_mode == "quick" else advance_business(priced, row.rules["cash_business_days"], row.rules["calendar_version"])).isoformat(),
@@ -504,7 +509,8 @@ async def accept_many(db: AsyncSession, user_id: str,
             details={"preview": preview["estimate"], "estimated_nav": preview["estimated_nav"],
                      "calculation_version": "mock-units-v1", "calendar_version": version.rules['calendar_version'],
                      'dataset_id':version.rules.get('dataset_id','legacy-v1'),'dataset_version':version.rules.get('dataset_version','v1'),
-                     'business_at':now.isoformat()})
+                     'business_at':now.isoformat(),
+                     'runtime_pricing_policy_version':preview['disclosure'].get('runtime_pricing_policy_version')})
         evidence = await db.get(WealthVerificationORM, auth_id)
         row.details = {**row.details, "verification": {
             "method": evidence.method if evidence else "LEGACY_TOTP",
@@ -621,19 +627,16 @@ async def settle(db: AsyncSession, operation_id: str) -> dict:
     day = now.astimezone(TZ).date()
     version = await db.get(WealthProductVersionORM, row.version_id)
     account = await db.get(AccountORM, row.account_id, populate_existing=True)
+    if row.status!='PENDING_CASH' and version.rules.get('pricing_mode') in PRICING_MODES:
+        from .wealth_quotes import refresh
+        await refresh(db,[version.version_id],now,subject_user_id=row.user_id)
     if row.status != "PENDING_CASH":
         row.status = "PENDING_PRICING"
+        price = await db.get(WealthNavORM, f"{row.version_id}:{row.pricing_date.isoformat()}")
         if version.rules.get('pricing_mode') in PRICING_MODES:
-            quote=version.rules['execution_policy']['quote']
-            price=await db.get(WealthNavORM,f"{row.version_id}:{quote['date']}")
-            if price is not None and (str(price.price)!=quote['value'] or utc_iso(nav_available_at(price))!=utc_iso(datetime.fromisoformat(quote['available_at']))):
-                raise BankError('受理版本公开价格指纹不一致','PAPER_PRICE_MISMATCH',409)
             row.details={**row.details,'underlying_source_kind':'real','execution_source_kind':'simulated',
-                'source_nav_date':None if version.rules.get('pricing_mode')==MONEY_PRICING_MODE else quote['date'],
-                'price_source':quote['source'],'simulated_anchor_date':quote['date'] if version.rules.get('pricing_mode')==MONEY_PRICING_MODE else None,'simulated_pricing_date':row.pricing_date.isoformat(),
-                'price_reference_sha256':quote['reference_sha256'],'project_policy_version':version.rules['execution_policy']['version']}
-        else:
-            price = await db.get(WealthNavORM, f"{row.version_id}:{row.pricing_date.isoformat()}")
+                'source_nav_date':price.nav_date.isoformat() if price else None,
+                'price_source':'public_nav_for_order_pricing_date','project_policy_version':version.rules['execution_policy']['version']}
         from ...models.wealth_research import WealthContextORM
         context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==row.account_id))).first()
         if context and context.data.get('fixture',{}).get('missing_pricing_nav'): price=None
@@ -739,7 +742,11 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
         held = int(await db.scalar(select(func.coalesce(func.sum(WealthUnitHoldORM.units_scaled), 0)).where(
             WealthUnitHoldORM.lot_id == lot.lot_id, WealthUnitHoldORM.status == "HELD")) or 0)
         value = int((Decimal(quantity(lot.units_scaled)) * Decimal(price.price) * 100).quantize(Decimal("1"))) if price else None
+        from .wealth_quotes import _cache
+        quote_status=db.info.get('wealth_quote_updates',{}).get(version.product_id,_cache.get(version.product_id,(None,{}))[1])
         lots.append({"lot_id": lot.lot_id, "product_id": version.product_id, "product_name": version.name,
+            'quote_update_status':'failed_using_last_reliable' if quote_status.get('ok') is False and price else 'unavailable' if price is None else 'available',
+            'quote_update_error':quote_status.get('error'),
             "account_id": lot.account_id, "version_id": lot.version_id, "category": version.category,
             'fund_family_id':version.rules.get('fund_family_id',version.product_id),
             "units": quantity(lot.units_scaled), "held_units": quantity(held),
@@ -769,7 +776,7 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
         'concentration':concentration_view,'historical_hypothesis':hypothesis,'actual_return_unavailable_reason':'NO_VERIFIED_COMPLETE_CASHFLOW_RETURN_SERIES',
         "receivable_fen": receivable, "realized_pnl_fen": realized,
         "bank_assets_fen": sum(a["balance_fen"] for a in cash if a["account_type"] != "credit") + receivable
-            + sum(lot["market_value_fen"] or 0 for lot in lots),
+            + sum(lot["market_value_fen"] or 0 for lot in lots) if all(lot["market_value_fen"] is not None for lot in lots) else None,
         "valuation_complete": all(lot["market_value_fen"] is not None for lot in lots),
         "business_at": now.isoformat(), "as_of": utc_now().isoformat(),
         "context_id": context.context_id if context else "legacy-v1",

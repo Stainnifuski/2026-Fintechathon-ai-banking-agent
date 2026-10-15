@@ -262,7 +262,7 @@ class ProductCandidate(DTO):
 
 class RecommendationFilter(DTO):
     mode: Literal['general', 'category', 'theme']
-    category: Literal['quick_redeem', 'bank_wealth', 'money_fund', 'bond_fund', 'mixed_fund', 'equity_fund'] | None = None
+    category: Literal['quick_redeem', 'bank_wealth',  'bond_fund', 'mixed_fund', 'equity_fund'] | None = None
     theme_key: str | None = None
     bucket: Bucket | None = None
 
@@ -391,6 +391,7 @@ class PortfolioModelView(DTO):
     slider_bounds: list[str] | None
     slider_step: str | None = None
     slider_reason: str | None = None
+    adjustment_contract: dict | None = None
     available_cash_fen: Fen
     receivable_fen: Fen
     held_fen: Fen

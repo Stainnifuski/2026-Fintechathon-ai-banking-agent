@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PortfolioPlan, PortfolioSelection, PortfolioSnapshot, PortfolioModelView } from '../../types/wealthPortfolio';
 import styles from './PortfolioAllocation.module.css';
 import { beijingTime } from '../../utils/time';
-import { fenRatio, percentToRatio, ratioToPercent, ratioFen, portfolioExplanation } from '../../services/wealthPortfolio';
+import { fenRatio, percentToRatio, ratioToPercent, ratioFen, portfolioExplanation, isIntegerPercentageRatio } from '../../services/wealthPortfolio';
 export interface PortfolioAllocationProps {
   plan: PortfolioPlan | null; snapshot?: PortfolioSnapshot | null; modelView?: PortfolioModelView | null;
   loading?: boolean; error?: string | null; readOnly?: boolean; controlHint?: string; contextId: string;
@@ -37,7 +37,7 @@ export default function PortfolioAllocation({ plan, snapshot, modelView, assetTo
   const request = async (kind: 'adjustment' | 'preference') => {
     if (disabled || busy.current || !accepted) return;
     const value = kind === 'preference' ? preference : draft;
-    if (!value || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 1) { setFailure('请输入0到1之间的有效比例'); return; }
+    if (!value || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 1 || !isIntegerPercentageRatio(value)) { setFailure('请输入0至100的整数百分比'); return; }
     if(kind==='adjustment'&&(!bounds||Number(value)<Number(bounds[0])||Number(value)>Number(bounds[1])||ratioFen(value,noncash)===null)){setFailure('请输入当前可执行范围内、能表示为整数分的比例');return;}
     busy.current = true; setPending(true); setFailure(null); const stamp = generation.current;
     const selection: PortfolioSelection = { portfolio_id: accepted.portfolio_id, expected_version: accepted.version, snapshot_id: accepted.snapshot_id, context_id: accepted.context_id, items: accepted.selected_positions, revision_kind: kind, growth_ratio_ex_cash: value };
@@ -49,6 +49,7 @@ export default function PortfolioAllocation({ plan, snapshot, modelView, assetTo
     finally { if (stamp === generation.current) { busy.current = false; setPending(false); } }
   };
   const ratio = draft || accepted?.growth_ratio_ex_cash || '0';
+  const draftHint = draft && (!isIntegerPercentageRatio(draft) ? '请输入整数百分比，小数不能提交。' : bounds && (Number(draft)<Number(bounds[0]) || Number(draft)>Number(bounds[1])) ? '请输入当前可执行范围内的整数百分比。' : null);
   const applyProducts = async () => {
     if (disabled || busy.current || !accepted) return;
     const stamp = generation.current; busy.current = true; setPending(true); setFailure(null);
@@ -73,9 +74,9 @@ export default function PortfolioAllocation({ plan, snapshot, modelView, assetTo
       <p>当前已接受方案 v<span data-testid="version">{accepted.version}</span>。</p>
       <table><thead><tr><th>板块</th><th>当前资产</th><th>初始基准</th><th>已接受目标</th><th>允许区间</th></tr></thead><tbody>{accepted.buckets.map((b, i) => <tr key={b.bucket}><td>{names[b.bucket]}</td><td>{b.current_fen === null ? '未知' : `${yuan(b.current_fen)}（${percent(b.current_fen / accepted.basis_fen)}）`}</td><td>{view ? percent(view.initial_ratios[i]) : '未知'}</td><td>{yuan(b.target_fen)}（{percent(b.target_ratio)}）<div className={styles.bar} style={{ width: percent(b.target_ratio) }} /></td><td>{percent(b.min_ratio)}–{percent(b.max_ratio)}</td></tr>)}</tbody></table>
       <p>各项范围不能任意组合，最终以服务端对整个方案的校验为准。</p>
-      <h3>稳健／进取联动</h3>
-      {allowed ? <><p>已接受进取比例（扣除活钱）<strong data-testid="accepted-p">{percent(accepted.growth_ratio_ex_cash!)}</strong></p><label>待提交进取比例<input className={styles.slider} aria-label="待提交进取比例" type="range" min={bounds![0]} max={bounds![1]} step={view?.slider_step??'0.001'} value={ratio} disabled={disabled} onChange={e => setDraft(e.target.value)} /></label><label>待提交进取百分比<input aria-label="待提交进取百分比" type="number" min={ratioToPercent(bounds![0])} max={ratioToPercent(bounds![1])} step={ratioToPercent(view?.slider_step??'0.001')} value={ratioToPercent(ratio)} disabled={disabled} onChange={e=>{try{setDraft(e.target.value?percentToRatio(e.target.value):'');}catch{setFailure('请输入有效百分比');}}}/> %</label><p>可执行范围 {percent(bounds![0])}—{percent(bounds![1])}，分母为总资产减活钱，步长 {percent(view?.slider_step??'0.001')}。</p><p data-testid="draft">草稿：稳健 {percent(1 - Number(ratio))}／进取 {percent(ratio)}；整体稳健 {percent(noncash * (1 - Number(ratio)) / accepted.basis_fen)}／进取 {percent(noncash * Number(ratio) / accepted.basis_fen)}。活钱保持 {yuan(accepted.buckets[0].target_fen)}。</p><button disabled={disabled || !draft} onClick={() => void request('adjustment')}>应用本页调整</button></> : <p>{noncash?'当前规则或整数分精度没有可调整步长，不能应用比例调整。':'当前为全活钱配置，稳健／进取比例不适用。'}</p>}
-      <div><label>明确重新设置进取偏好（0–1）<input aria-label="重新设置进取偏好" value={preference} onChange={e => setPreference(e.target.value)} disabled={disabled || !allowed} /></label><button disabled={disabled || !allowed || !preference} onClick={() => void request('preference')}>重新计算偏好</button></div>
+      <h3>稳健／进取联动</h3>{draftHint && <p role="status">{draftHint}</p>}
+      {allowed ? <><p>已接受进取比例（扣除活钱）<strong data-testid="accepted-p">{percent(accepted.growth_ratio_ex_cash!)}</strong></p><label>待提交进取比例<input className={styles.slider} aria-label="待提交进取比例" type="range" min={bounds![0]} max={bounds![1]} step={view?.slider_step??'0.01'} value={ratio} disabled={disabled} onChange={e => setDraft(e.target.value)} /></label><label>待提交进取百分比<input aria-label="待提交进取百分比" type="number" min={ratioToPercent(bounds![0])} max={ratioToPercent(bounds![1])} step={ratioToPercent(view?.slider_step??'0.01')} value={ratioToPercent(ratio)} disabled={disabled} onChange={e=>{try{setDraft(e.target.value?percentToRatio(e.target.value):'');}catch{setFailure('请输入有效百分比');}}}/> %</label><p>可执行范围 {percent(bounds![0])}—{percent(bounds![1])}，分母为总资产减活钱，步长 {percent(view?.slider_step??'0.01')}。</p><p data-testid="draft">草稿：稳健 {percent(1 - Number(ratio))}／进取 {percent(ratio)}；整体稳健 {percent(noncash * (1 - Number(ratio)) / accepted.basis_fen)}／进取 {percent(noncash * Number(ratio) / accepted.basis_fen)}。活钱保持 {yuan(accepted.buckets[0].target_fen)}。</p><button disabled={disabled || !draft || !isIntegerPercentageRatio(draft) || !bounds || Number(draft)<Number(bounds[0]) || Number(draft)>Number(bounds[1])} onClick={() => void request('adjustment')}>应用本页调整</button></> : <p>{noncash?'当前原U及产品规则内没有可行的整数百分比，保留已接受方案。':'当前为全活钱配置，稳健／进取比例不适用。'}</p>}
+      <div><label>明确重新设置进取偏好（整数百分比）<input aria-label="重新设置进取偏好" type="number" step="1" min="0" max="100" value={preference?ratioToPercent(preference):''} onChange={e => {try{setPreference(e.target.value?percentToRatio(e.target.value):'');}catch{setFailure('请输入整数百分比');}}} disabled={disabled || !allowed} /></label><button disabled={disabled || !allowed || !preference || !isIntegerPercentageRatio(preference)} onClick={() => void request('preference')}>重新计算偏好</button></div>
       {pending && <p role="status">修订中，成功后更新已接受值…</p>}
       {(['advice', 'selected', 'holding'] as const).map(role => <div key={role}><h3>{{ advice: '建议产品目标（尚未选择）', selected: '显式新选目标（已有持仓的明确调整见下）', holding: '已有持仓维持／拟减持目标' }[role]}</h3>{(accepted.advised_positions??[]).filter(r => r.role === role).map(r => <p key={r.product_id}>{r.name} · {r.product_id} {r.original_share_class ?? ''} · 目标 {yuan(r.target_fen)} · 当前 {yuan(r.current_fen)}{r.account_ids.length ? ` · 账户 ${r.account_ids.join(', ')}` : ''}{r.role === 'holding' && accepted.selected_positions.some(s => s.product_id === r.product_id) ? ' · 已明确选择此持仓目标' : ''}{r.holding_cap_fen !== null ? ` · 仅持有上限 ${yuan(r.holding_cap_fen)}` : ''} · 费用与成交价格以银行确认页为准</p>)}</div>)}
       <p>保留现金目标 {yuan(accepted.cash_residual_fen)}；配置中应收或冻结资金不代表可立即购买。</p>

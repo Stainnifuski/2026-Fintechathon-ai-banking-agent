@@ -24,21 +24,21 @@ async def compose(db, config_dir=CONFIG):
         code=entry['code']; identity=await db.get(Directory,code)
         if identity is None or identity.name!=entry['expected_name']:
             rejected.append({'code':code,'reason':'DIRECTORY_IDENTITY_CHANGED'});continue
-        kind='money_yield' if entry['category']=='money' else 'history'
+        kind='history'
         cached=await db.get(Cache,code+':'+kind)
         if cached is None or not cached.data.get('observations'):
             rejected.append({'code':code,'reason':'NO_SUCCESSFUL_OBSERVATIONS'});continue
         points=cached.data['observations']
         status=await db.get(Cache,code+':status'); fees=await db.get(Cache,code+':fees')
         p={'product_id':'R'+code,'source_product_code':code,'name':identity.name,'source':'akshare',
-            'identity':'真实基金数据','category':{'money':'cash','bond':'bond','broad_index':'index','sector_index':'equity','active':'mixed'}[entry['category']],
+            'identity':'真实基金数据','category':{'bond':'bond','broad_index':'index','sector_index':'equity','active':'mixed'}[entry['category']],
             'group':entry['category'],'subtype':identity.fund_type,'fund_family_id':entry.get('family_id'),
             'share_class':entry.get('share_class'), 'family_evidence_url':entry.get('family_evidence_url'),
             'rules_complete':False,'risk_level':None,'issuer_risk':None,'seller_risk':None,'rules_version':'research-only-v1',
             'source_url':cached.data['source_url'],'ingested_at':cached.data['available_at'],'published_at':None,
             'missing_rules':['reviewed_risk','full_rules'],'status_evidence':status.data if status else None,'fee_evidence':fees.data if fees else None,
-            'history':points if kind=='history' else [],'money_yield':points if kind=='money_yield' else [],
-            'quality_flags':['publication_time_unknown','money_yield_not_nav' if kind=='money_yield' else 'unit_nav_not_total_return']+
+            'history':points,
+            'quality_flags':['publication_time_unknown','unit_nav_not_total_return']+
                 (['last_refresh_failed_retained_success'] if cached.status=='FAILED' else [])+
                 (['family_unverified'] if not entry.get('family_id') else [])}
         products.append(p)

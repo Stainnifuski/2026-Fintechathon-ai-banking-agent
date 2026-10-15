@@ -86,7 +86,7 @@ async def run(args):
                 identity = await db.get(funds.Directory, code)
                 if identity is None:
                     results.append({'code': code, 'status': 'NOT_IN_DIRECTORY'}); continue
-                kinds = ['money_yield' if '货币' in identity.fund_type else 'history']
+                kinds = ['history']
                 if args.rules: kinds += ['status', 'fees']
                 if getattr(args, 'data_type', None): kinds = [args.data_type]
             for kind in kinds:
@@ -102,7 +102,7 @@ async def run(args):
                 print(json.dumps(results[-1], ensure_ascii=False), flush=True)
         failures = [{'code':r['code'],'data_type':k,'status':v['status'],'error_code':v['error_code']}
             for r in results for k,v in r.get('evidence',{}).items() if v['status'] != 'READY']
-        valid_history = all(any(k in {'history','money_yield'} and v['status']=='READY' for k,v in r.get('evidence',{}).items()) for r in results)
+        valid_history = all(any(k == 'history' and v['status']=='READY' for k,v in r.get('evidence',{}).items()) for r in results)
         result = {'products':results,'ok':valid_history,'partial':bool(failures),'source_failures':failures,
             'acceptance_basis':'successful_history; transaction rules still unreviewed'}
     if args.output:
@@ -119,7 +119,7 @@ def main():
     parser.add_argument('--interval', type=int, default=3600); parser.add_argument('--once', action='store_true')
     parser.add_argument('--live', action='store_true'); parser.add_argument('--force', action='store_true')
     parser.add_argument('--rules', action='store_true'); parser.add_argument('--code')
-    parser.add_argument('--data-type', choices=['history','money_yield','status','fees'])
+    parser.add_argument('--data-type', choices=['history','status','fees'])
     parser.add_argument('--query', default=''); parser.add_argument('--fund-type'); parser.add_argument('--page', type=int, default=1)
     parser.add_argument('--timeout', type=int, default=90)
     parser.add_argument('--manifest', default='config/wealth/preload.json'); parser.add_argument('--output')

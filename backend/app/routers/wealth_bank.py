@@ -248,7 +248,7 @@ async def fund_detail(request: FundDetail, background: BackgroundTasks, db: Asyn
         identity = await db.get(funds.Directory, request.code)
         if identity is None: raise ValueError('FUND_NOT_IN_DIRECTORY')
         if request.fetch_missing and os.getenv('WEALTH_FUND_ON_DEMAND_ENABLED') == 'true':
-            for kind in ['money_yield' if '货币' in identity.fund_type else 'history', 'status', 'fees']:
+            for kind in ['history', 'status', 'fees']:
                 if await funds.claim(db, request.code, kind):
                     background.add_task(funds.refresh, async_sessionmaker(db.bind, expire_on_commit=False), request.code, kind)
         result = await funds.detail(db, request.code)
@@ -328,6 +328,8 @@ async def products(db: AsyncSession = Depends(get_db)) -> list[dict]:
 async def assets(request: AssetSubject, db: AsyncSession = Depends(get_db)) -> dict:
     """内部本人银行资产事实。"""
     from ..services.bank.wealth_asset_summary import begin_read
+    from ..services.bank.wealth_quotes import refresh_scope
+    await refresh_scope(db,request.subject_user_id,account_id=request.account_id)
     await begin_read(db)
     return await bank.assets(db, request.subject_user_id, request.account_id)
 
@@ -335,12 +337,19 @@ async def assets(request: AssetSubject, db: AsyncSession = Depends(get_db)) -> d
 @router.post('/asset-summary')
 async def asset_summary(request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
     from ..services.bank.wealth_asset_summary import read
+    from ..services.bank.wealth_quotes import refresh_scope
+    await refresh_scope(db,request.subject_user_id)
     try: return await read(db, request.subject_user_id)
     except BankError as error: fail(error)
 
 
 @router.post("/catalog")
 async def contextual_catalog(request: CatalogueSubject, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    import logging
+    logging.getLogger(__name__).info('Catalogue read: full=%s; selected_codes=%d',request.product_ids is None,len(request.product_ids or []))
+    if request.product_ids:
+        from ..services.bank.wealth_quotes import refresh_scope
+        await refresh_scope(db,request.subject_user_id,codes=request.product_ids)
     return await bank.products(db, request.subject_user_id,facts_only=request.facts_only,policy_references=request.policy_references,product_ids=request.product_ids)
 
 
@@ -348,6 +357,8 @@ async def contextual_catalog(request: CatalogueSubject, db: AsyncSession = Depen
 async def precheck(request: Precheck, db: AsyncSession = Depends(get_db)) -> dict:
     """服务器重算估算和资格，不修改余额。"""
     try:
+        from ..services.bank.wealth_quotes import refresh_scope
+        await refresh_scope(db,request.subject_user_id,codes=[request.command.product_id],account_id=request.command.account_id)
         return await bank.precheck(db, request.subject_user_id, request.command)
     except (BankError, WealthPolicyError) as error:
         fail(error)

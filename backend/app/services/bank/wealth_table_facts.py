@@ -28,7 +28,7 @@ async def enrich(db, lots, orders, now):
                 'date': latest.nav_date.isoformat() if latest else None,
                 'previous_date': previous.nav_date.isoformat() if previous else None,
                 'reason': None if status == 'ok' else '缺少两个已公布净值' if applicable else '此类产品不适用单位净值日涨跌',
-                'source': 'simulated_bank_published_nav'},
+                'source': 'public_observed_nav' if version.rules.get('execution_policy') else 'simulated_bank_published_nav'},
         }
     for row in [*lots, *orders]:
         row.update(metadata.get(row['version_id'], {}))

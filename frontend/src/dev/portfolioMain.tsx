@@ -6,10 +6,10 @@ import type { CandidateReference, CandidateSession, PortfolioCandidate, Portfoli
 import styles from '../components/Wealth/PortfolioAllocation.module.css';
 declare const __PORTFOLIO_FIXTURE__: boolean;
 const fixture = __PORTFOLIO_FIXTURE__;
-const categories = ['quick_redeem', 'bank_wealth', 'money_fund', 'bond_fund', 'mixed_fund', 'equity_fund'] as const;
+const categories = ['quick_redeem', 'bank_wealth',  'bond_fund', 'mixed_fund', 'equity_fund'] as const;
 const themes = ['high_dividend', 'bond_income', 'broad_market'];
 const themeNames: Record<string, string> = { high_dividend: '高股息／红利', bond_income: '债券收益', broad_market: '宽基市场' };
-const categoryNames: Record<string, string> = { quick_redeem: '快赎理财', bank_wealth: '银行理财', money_fund: '货币基金', bond_fund: '债券基金', mixed_fund: '混合基金', equity_fund: '股票基金' };
+const categoryNames: Record<string, string> = { quick_redeem: '快赎理财', bank_wealth: '银行理财', bond_fund: '债券基金', mixed_fund: '混合基金', equity_fund: '股票基金' };
 const statusNames: Record<string, string> = { ok: '本批候选资格已核实', no_theme_match: '当前资料无主题匹配', no_category_match: '当前范围无类别匹配', no_eligible_products: '当前没有满足资格的产品', risk_mismatch: '匹配产品均超出本人风险等级', unavailable: '推荐资格或来源证据不足，暂不可用' };
 const scenarios = ['R1', 'R2', 'R4', 'F18', 'only-C', 'single-share', 'holding-only', 'missing-valuation', 'source-unavailable', 'version-conflict'];
 const message = (e: unknown) => e instanceof Error ? e.message : '请求失败';
@@ -149,4 +149,3 @@ function Dev() {
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<React.StrictMode><Dev /></React.StrictMode>);
-

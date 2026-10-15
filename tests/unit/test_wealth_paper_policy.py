@@ -11,7 +11,7 @@ def policy(category='bond'):
         'classification_sha256':'a'*64,'material_sha256':'b'*64,'approved_at':'2026-10-13T00:00:00+00:00',
         'public_ratings':[],'quote':{'date':'2026-09-30','value':'1.208','available_at':'2026-10-07T00:00:00+00:00','reference_sha256':'c'*64}}
 
-@pytest.mark.parametrize('category,level',[('money_market',1),('money',1),('bond',2),('mixed',3),('equity',4)])
+@pytest.mark.parametrize('category,level',[('bond',2),('mixed',3),('equity',4)])
 def test_independent_project_grade_has_no_thirty_day_expiry(category,level):
     p=policy(category)
     assert validate_policy(p,'000015',category,level,NOW)==[]

@@ -7,7 +7,7 @@ from sqlalchemy import select, func, or_, update
 from ...models.wealth_research import WealthFundDirectoryORM as Directory, WealthFundCacheORM as Cache
 from .wealth_provider import normalize_history, AKShareProvider, SOURCE_URL
 
-TTL = {'history': 86400, 'money_yield': 86400, 'status': 21600, 'fees': 604800}
+TTL = {'history': 86400, 'status': 21600, 'fees': 604800}
 LIMIT = asyncio.Semaphore(2)
 
 
@@ -15,28 +15,9 @@ def utc(value):
     return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
 
 
-def normalize_money(records, available_at):
-    result = {}
-    for row in records:
-        if not {'净值日期', '每万份收益', '7日年化收益率'} <= row.keys():
-            raise ValueError('MONEY_SCHEMA_DRIFT')
-        date = str(row['净值日期'])[:10]
-        datetime.fromisoformat(date)
-        if date > available_at[:10] or date in result:
-            raise ValueError('MONEY_DATE_INVALID')
-        values = {}
-        for source, target in [('每万份收益', 'income_per_10000'), ('7日年化收益率', 'seven_day_annualized_percent')]:
-            number = None if row[source] is None else Decimal(str(row[source]))
-            if number is not None and not number.is_finite(): raise ValueError('MONEY_VALUE_INVALID')
-            values[target] = str(number) if number is not None else None
-        result[date] = {'date': date, **values, 'published_at': None, 'available_at': available_at}
-    if not result: raise ValueError('EMPTY_MONEY_HISTORY')
-    return [result[k] for k in sorted(result)]
-
-
 async def import_directory(db, raw):
     if not raw.get('ok'): return {'ok': False, 'error_code': raw.get('error_type', 'SOURCE_UNAVAILABLE')}
-    rows = raw['records']; codes = set()
+    rows = [r for r in raw['records'] if '货币' not in str(r.get('基金类型',''))]; codes = set()
     # Validate the complete source before changing the retained directory.
     for r in rows:
         code = str(r.get('基金代码', ''))
@@ -84,8 +65,6 @@ async def claim(db, code, data_type, force=False):
     if not re.fullmatch(r'\d{6}', code) or data_type not in TTL: raise ValueError('INVALID_FUND_REQUEST')
     directory = await db.get(Directory, code)
     if not directory: raise ValueError('FUND_NOT_IN_DIRECTORY')
-    if (data_type == 'money_yield') != ('货币' in directory.fund_type) and data_type in {'history', 'money_yield'}:
-        raise ValueError('INCOMPATIBLE_HISTORY_TYPE')
     now = datetime.now(timezone.utc); key = code+':'+data_type
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
     from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -104,7 +83,6 @@ async def claim(db, code, data_type, force=False):
 
 def fetch_evidence(provider, code, data_type):
     if data_type == 'history': raw = provider.fetch('fund_open_fund_info_em', symbol=code, indicator='单位净值走势')
-    elif data_type == 'money_yield': raw = provider.fetch('fund_money_fund_info_em', symbol=code)
     elif data_type == 'status': raw = provider.fetch('fund_fee_em', symbol=code, indicator='交易状态')
     else:
         # Fee, amount and settlement fields remain individually auditable. Partial success is retained.
@@ -118,7 +96,6 @@ def fetch_evidence(provider, code, data_type):
         'source_url': f'https://fundf10.eastmoney.com/{"jjfl" if data_type=="status" else "jjjz"}_{code}.html',
         'available_at': raw['finished_at'], 'published_at': None, 'rules_complete': False, 'data_type': data_type}
     if data_type == 'history': result['observations'] = normalize_history(raw['records'], raw['finished_at'])
-    elif data_type == 'money_yield': result['observations'] = normalize_money(raw['records'], raw['finished_at'])
     else: result.update(records=raw['records'], columns=raw['columns'])
     return result
 

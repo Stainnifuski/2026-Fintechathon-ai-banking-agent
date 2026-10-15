@@ -19,7 +19,7 @@ async def test_full_core_samples_versions_and_final_risk_boundary(store,monkeypa
     payload=json.loads((ROOT/'config/wealth/paper_products.json').read_bytes())
     legacy=json.loads((ROOT/'config/wealth/paper_products_legacy_v1.json').read_bytes())
     samples=[]
-    for category in ('cash','bond','mixed','equity'):
+    for category in ('bond','mixed','equity'):
         group=sorted([p for p in payload['products'] if p['category']==category],key=lambda p:p['product_id'])
         samples.extend([group[0],group[len(group)//2],group[-1]])
     legacy_one=legacy['products'][0]
@@ -69,20 +69,4 @@ async def test_full_core_samples_versions_and_final_risk_boundary(store,monkeypa
         with pytest.raises(BankError):await bank.precheck(db,'U1',cmd)
         assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
         assert await db.scalar(select(func.count()).select_from(WealthCashHoldORM))==0
-        money=next(p for p in samples if p['category']=='cash')
-        assert money['real_unit_nav'] is None and money['price_source']=='project_simulated_fixed_one'
-        assert money['rules']['execution_policy']['quote']['value']=='1' and money['risk_level']==1
-        assert money['rules']['quick_redemption'] is False
-        money_cmd=InvestmentCommand(operation_id='core-money',direction='purchase',product_id=money['product_id'],product_version=money['product_version'],disclosure_version=money['disclosure_version'],account_id=ctx['account_id'],amount_fen=100000)
-        preview=await bank.precheck(db,'U1',money_cmd)
-        assert preview['disclosure']['real_unit_nav'] is None
-        assert preview['rules']['cash_business_days']==1
-        from tests.integration.test_wealth_bank import authorize
-        from datetime import timedelta
-        auth=await authorize(db,money_cmd)
-        await bank.accept_many(db,'U1',[(money_cmd,auth)])
-        async def next_day(db,account_id=None):return datetime(2026,10,14,6,tzinfo=timezone.utc)
-        monkeypatch.setattr(bank,'business_now',next_day)
-        done=await bank.settle(db,money_cmd.operation_id)
-        assert done['status']=='SETTLED' and done['details']['source_nav_date'] is None
-        assert done['details']['price_source']=='project_simulated_fixed_one'
+        assert not any(p['category']=='cash' for p in payload['products'])

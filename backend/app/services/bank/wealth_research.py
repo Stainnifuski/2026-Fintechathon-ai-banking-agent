@@ -1,6 +1,6 @@
 """4号数据集导入/资金上下文；不可变版本，不覆盖既有资金事实。"""
 import json
-from ...domain.wealth_paper_policy import PRICING_MODES,MONEY_PRICING_MODE
+from ...domain.wealth_paper_policy import PRICING_MODES
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from sqlalchemy import select, update
@@ -31,6 +31,7 @@ def validate(payload: dict) -> list[dict]:
             if not isinstance(pid,str) or not 1<=len(pid)<=32 or pid in seen: raise ValueError("IDENTITY_DUPLICATE")
             seen.add(pid)
             if not p.get("name") or p.get("source") not in {"synthetic","akshare","admin_import"}: raise ValueError("SOURCE_MISSING")
+            if p.get("source")=="akshare" and p.get("category") not in {"bond","mixed","equity","index"}: raise ValueError("UNSUPPORTED_REAL_FUND_CATEGORY")
             if p.get('rules_complete'):
                 rules=p['rules']
                 for field in ('currency','min_amount_fen','max_amount_fen','purchase_fee_rate','redeem_fee_bands','holding_days','confirm_business_days','cash_business_days','calendar_version','rules_source','cutoff','cancel_before_pricing','purchase_paused','redeem_paused'): rules[field]
@@ -42,7 +43,7 @@ def validate(payload: dict) -> list[dict]:
                 for field in ('kind','product_version','disclosure_version'): p[field]
                 if rules.get('pricing_mode') in PRICING_MODES:
                     from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons
-                    failures=validate_policy(rules.get('execution_policy'),pid,'money' if p['category']=='cash' else p['category'],p['risk_level'])
+                    failures=validate_policy(rules.get('execution_policy'),pid,p['category'],p['risk_level'])
                     failures+=registered_policy_reasons(rules.get('execution_policy'),pid)
                     if failures:raise ValueError(','.join(failures))
             last=None
@@ -53,17 +54,7 @@ def validate(payload: dict) -> list[dict]:
                 if not nav.is_finite() or nav<=0: raise ValueError("NAV_NONPOSITIVE")
                 available=datetime.fromisoformat(point["available_at"])
                 if available.tzinfo is None: raise ValueError("AVAILABILITY_TIME_REQUIRED")
-            if not p["history"] and not (p.get('source')=='akshare' and p.get('money_yield') and not p.get('rules_complete')): raise ValueError("EMPTY_HISTORY")
-            last_money = None
-            for point in p.get('money_yield', []):
-                day = date.fromisoformat(point['date'])
-                available = datetime.fromisoformat(point['available_at'])
-                if available.tzinfo is None or day > available.date(): raise ValueError('INVALID_MONEY_AVAILABILITY')
-                if last_money is not None and day <= last_money: raise ValueError('MONEY_DATES_UNSORTED_OR_DUPLICATE')
-                last_money = day
-                for field in ('income_per_10000', 'seven_day_annualized_percent'):
-                    value = point.get(field)
-                    if value is not None and not Decimal(str(value)).is_finite(): raise ValueError('INVALID_MONEY_VALUE')
+            if not p["history"]: raise ValueError("EMPTY_HISTORY")
         except (KeyError,TypeError,ValueError,ArithmeticError) as exc:
             errors.append({"row":n,"code":str(exc)[:80]})
     if not payload.get("products"): errors.append({"row":0,"code":"EMPTY_PRODUCTS"})
@@ -116,7 +107,7 @@ async def import_dataset(db: AsyncSession, payload: dict, dry_run: bool=False) -
             "seller":"比赛模拟银行","risk":"本金可能亏损；风险等级为项目模拟分级","fees":"年度费用已含净值；申赎费用单独计算，不重复扣费",
             "liquidity":"按版本化模拟营业日确认到账","holding_period_days":p["rules"]["holding_days"],
             "pricing":"只用指定计价日可见净值；缺失等待","settlement":"按模拟规则确认和到账，不是发行人承诺",
-            "cancellation":"计价截止前且未计价可撤销","limitations":"不连接真实交易；货币类为净值等价模型，不实现真实份额结转",
+            "cancellation":"计价截止前且未计价可撤销","limitations":"不连接真实交易；模拟资金与真实公开资料分别标源",
             "dataset_id":payload["dataset_id"],"dataset_version":payload["dataset_version"],"data_source":p["source"],"rules_source":p["rules"]["rules_source"]}
         if p.get('official_reference'):
             disclosure.update(identity=p['identity'], official_reference=p['official_reference'],
@@ -127,14 +118,10 @@ async def import_dataset(db: AsyncSession, payload: dict, dry_run: bool=False) -
                 underlying_source_kind='real',execution_source_kind='simulated',source_product_code=pid,
                 project_policy_version=policy['version'],issuer_risk_rating=p.get('public_risk_rating'),
                 risk='项目风险分级独立于发行人评级；可靠公开更高等级或分类冲突停止申购；不承诺保本',
-                pricing='使用本版本冻结的最后公开NAV作为模拟成交基准，公开NAV日期与模拟计价日分别记录',
+                pricing='预览使用最近已公布可靠NAV，最终按订单计价日NAV；未公布则等待',
                 fees='项目模拟申购和赎回费用为0，无额外销售服务费；公开费用原值另存，未知不补零',
-                limitations='真实资料不代表真实代销或真实成交；价格冻结，不填未来行情',
+                limitations='真实资料不代表真实代销或真实成交；不填未来行情',
                 public_sources=p.get('public_sources',[]),public_fields=p.get('public_fields',{}))
-            if p['rules'].get('pricing_mode')==MONEY_PRICING_MODE:
-                disclosure.update(pricing='项目模拟固定1元/份；真实单位净值未知；万份收益及七日年化不是NAV且不转换为NAV',
-                    real_unit_nav=None,price_source='project_simulated_fixed_one',
-                    limitations='真实身份、类别与已有收益资料；项目模拟份额计价；缺收益不计造收益；普通货币申赎，不是快赎')
         if p['rules'].get('quick_redemption'):
             disclosure.update(quick_redemption=p['rules']['quick_redemption'],
                 cancellation='普通申购/赎回仅计价日15:30前全撤；模拟快赎成功受理后不可撤',
@@ -247,11 +234,10 @@ async def catalog(db: AsyncSession,dataset_key: str | None=None,as_of: datetime 
     for row in rows:
         visible=[p for p in row.history if datetime.fromisoformat(p["available_at"])<=at and p["date"]<=at.astimezone(BEIJING).date().isoformat()]
         latest=visible[-1] if visible else None
-        money_visible=[point for point in row.data.get('money_yield',[]) if datetime.fromisoformat(point['available_at'])<=at and point['date']<=at.astimezone(BEIJING).date().isoformat()]
-        result.append({**row.data,"money_yield":money_visible,"dataset_key":key,"nav":latest["nav"] if latest else None,"nav_date":latest["date"] if latest else money_visible[-1]['date'] if money_visible else None,
+        result.append({**row.data,"dataset_key":key,"nav":latest["nav"] if latest else None,"nav_date":latest["date"] if latest else None,
                        "available_at":latest["available_at"] if latest else None,"published_at":latest.get("published_at") if latest else None,
                        "history_count":len(visible),"history":visible,"quality_flags":row.data.get("quality_flags",[]),
-                       "trade_eligible":bool(row.data.get("rules_complete")),"unavailable_reason":None if visible or money_visible else "NO_VISIBLE_HISTORY"})
+                       "trade_eligible":bool(row.data.get("rules_complete")),"unavailable_reason":None if visible else "NO_VISIBLE_HISTORY"})
     return result
 
 

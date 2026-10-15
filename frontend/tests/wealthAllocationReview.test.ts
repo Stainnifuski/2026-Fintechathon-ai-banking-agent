@@ -2,9 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { percentageRatio, collectPortfolioSelection, selectionKey } from '../src/components/Wealth/allocationSelection.ts';
 import { recordedF11Plan, recordedF11Selection, recordedRevision, recordedPrepare } from '../src/components/Wealth/FixtureProductProvider.ts';
+import {isIntegerPercentageRatio} from '../src/utils/wealthPercent.ts';
+
+test('integer percentage check avoids binary 57/58 percent rejection',()=>{
+  for(let p=0;p<=100;p++)assert.equal(isIntegerPercentageRatio((p/100).toFixed(2)),true);
+  for(const p of ['0.451','0.598','NaN','1.01'])assert.equal(isIntegerPercentageRatio(p),false);
+});
 
 test('percentages are exact ratio strings; invalid/over-precise input is rejected',()=>{
-  assert.equal(percentageRatio('15.25'),'0.1525');
+  assert.equal(percentageRatio('15'),'0.1500');
+  assert.throws(()=>percentageRatio('15.25'));
   assert.equal(percentageRatio('100'),'1.0000');
   for(const text of ['-1','101','15.001','NaN','1e2',''])assert.throws(()=>percentageRatio(text));
 });

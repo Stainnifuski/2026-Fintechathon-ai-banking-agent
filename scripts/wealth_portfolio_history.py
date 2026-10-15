@@ -102,7 +102,7 @@ def inventory(root):
             if nums:
                 numeric[field]={'numeric':len(nums),'missing_or_nonnumeric':len(vs)-len(nums),'nonfinite':sum(not math.isfinite(v) for v in nums),'nonpositive':sum(v<=0 for v in nums),'unit':('CNY_per_share' if field in ('单位净值','累计净值') else 'unproven' if field=='累计收益率' else 'field_specific_not_return')}
         code=s['kwargs'].get('symbol');codes.add(code) if code else None
-        kind=('unit_nav' if s['branch']=='单位净值走势' else 'accumulated_nav' if s['branch']=='累计净值走势' else 'cumulative_return_unproved' if s['branch']=='累计收益率走势' else 'ranking' if '排名' in s['branch'] else 'money_yield' if s['function']=='fund_money_fund_info_em' else 'events')
+        kind=('unit_nav' if s['branch']=='单位净值走势' else 'accumulated_nav' if s['branch']=='累计净值走势' else 'cumulative_return_unproved' if s['branch']=='累计收益率走势' else 'ranking' if '排名' in s['branch'] else 'events')
         rows.append({**s,'kind':kind,'date_columns':dates,'numeric_columns':numeric,'fingerprint_verified':True,'event_completeness':'unproved','publication_times':'unknown','exact_share_code':code})
     return {'logical_jobs':len(rows),'unique_responses':len(set(r['path'] for r in rows)),'exact_symbol_codes':len(codes),'kind_counts':dict(Counter(r['kind'] for r in rows)),'samples':rows,'previous_manifest':reference(root,previous_path)}
 

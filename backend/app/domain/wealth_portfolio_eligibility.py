@@ -22,9 +22,6 @@ def current_offer_reasons(offer, facts: CurrentFacts, now: datetime) -> list[str
         from .wealth_paper_policy import validate_policy
         policy=offer.execution_policy
         reasons.extend(validate_policy(policy,offer.product_id,policy.get('category') if policy else None,offer.risk_level,evidence.business_at))
-        quote=policy.get('quote',{}) if policy else {}
-        if not isinstance(quote,dict) or (quote.get('value'),quote.get('date'))!=(evidence.nav,str(evidence.nav_date)):
-            reasons.append('PAPER_PRICE_MISMATCH')
     if ((evidence.product_id,evidence.product_version,evidence.disclosure_version)
         !=(offer.product_id,offer.product_version,offer.disclosure_version)):
         reasons.append('BANK_CURRENT_EVIDENCE_MISMATCH')

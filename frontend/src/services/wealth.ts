@@ -50,9 +50,10 @@ export interface Assets {
   lots: { lot_id: string; product_id: string; product_name: string; account_id: string;
     units: string; redeemable_units: string; locked_units: string; held_units: string;
     cost_fen: number; market_value_fen: number | null; unrealized_pnl_fen: number | null; nav_date: string | null;
+    quote_update_status?: string; quote_update_error?: string | null;
     version_id?: string; product_version?: number; disclosure_version?: number; share_class?: string | null;
     nav?: string | null; acquired_date?: string; unlock_date?: string; daily_metric?: DailyMetric }[];
-  orders: Order[]; receivable_fen: number; realized_pnl_fen: number; bank_assets_fen: number; business_at: string;
+  orders: Order[]; receivable_fen: number; realized_pnl_fen: number; bank_assets_fen: number | null; business_at: string;
   as_of?: string; context_id?: string; scope?: 'ordinary' | 'disposable_simulation'; valuation_complete?: boolean;
 }
 export interface AssetSummary {

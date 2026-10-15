@@ -27,19 +27,37 @@ async def invoke(call):
         message=str(error)+('：'+', '.join(r for r in reasons if isinstance(r,str)) if reasons else '')
         raise WealthPolicyError(message,error.code,getattr(error,'status_code',422)) from error
 
-DATA='b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686'
-DAILY='b82f95d0f9c225f24b0bd91c4552b2674e9b21fa8bd1a1ac7d53b8e275d49bf3'
+DATA='bfa4f29d6bfae78f7fe228c24fe3fcdda641107ffa23efadd851af94e831d33b'
+DAILY='770e273fa9e1a0bfbd8c34286628224ab90788a60a06729d93239efd20922e6f'
 
 class ServerReads:
     owns_responses=True # protected HTTP returns request-owned new JSON, never a shared bank cache
+    frozen_catalogues={}
+    catalogue_reads=0
     def __init__(self,db,user,bank,index=None,product_ids=None):
         self.db,self.user,self.bank,self.index=db,user,bank,index
         self.product_ids=product_ids
+        self.selected_response=None
     async def get(self,path):
         if path=='/api/v1/auth/me':return {'user_id':self.user}
         suffix=path.removeprefix('/api/v1/wealth/')
         if suffix=='assets':return await self.bank.assets(self.user)
         if suffix=='products':
+            if self.selected_response is not None and self.product_ids is not None:
+                return self.selected_response
+            # Competition rules are immutable; scope is proven anew on every
+            # request. Cache no assessment, balance, authorization or control.
+            contexts=await self.bank.call('POST','/contexts',{'subject_user_id':self.user})
+            scope=next((c for c in contexts['items'] if c['context_id']==contexts['selected']),{})
+            key=(id(self.db.get_bind()),os.getenv('BANK_API_BASE_URL'),contexts['selected'] if not scope.get('dataset_key') else scope['dataset_key'],
+                tuple(sorted(scope.get('additional_dataset_keys',[]))))
+            cached=self.frozen_catalogues.get(key) if self.product_ids is None and scope.get('dataset_key','').startswith('real-public-paper-v1:') else None
+            if cached is not None:
+                from datetime import date
+                from zoneinfo import ZoneInfo
+                current=await self.bank.assets(self.user)
+                day=datetime.fromisoformat(current['business_at']).astimezone(ZoneInfo('Asia/Shanghai')).date()
+                return [{**row,'purchase_open':(day-date(2026,9,30)).days%row['rules'].get('open_interval_days',1)==0} for row in cached]
             if hasattr(self.bank,'call'):
                 references=getattr(self.index,'policy_references',{})
                 body={'subject_user_id':self.user,'facts_only':True,'policy_references':bool(references)}
@@ -52,6 +70,9 @@ class ServerReads:
                     code=row['product_id'];binding=references.get(code)
                     actual=row.pop('execution_policy_sha256')
                     row['rules']['execution_policy']=binding[1] if binding and binding[0]==actual else None
+                if self.product_ids is None and scope.get('dataset_key','').startswith('real-public-paper-v1:'):
+                    self.frozen_catalogues[key]=rows
+                    type(self).catalogue_reads+=1
                 return rows
             return await self.bank.products(self.user)
         if suffix=='contexts':return await self.bank.call('POST','/contexts',{'subject_user_id':self.user})
@@ -63,6 +84,23 @@ class ServerReads:
 class JointFacts(BankPortfolioFacts):
     """Use B's full summary and explicit lot versions, never the legacy run adapter."""
     completed_read_time=True
+    frozen_offers={}
+    async def quote_cards(self,user_id,group,index):
+        codes=sorted({s.product_id for card in group.items for s in card.share_classes})
+        if codes and hasattr(self.transport.bank,'selected_products'):
+            rows=await self.transport.bank.selected_products(user_id,codes)
+            old_ids=self.transport.product_ids
+            self.transport.product_ids=codes;self.transport.selected_response=rows
+            try:fresh=await self.read_current(user_id,datetime.now(timezone.utc))
+            finally:self.transport.product_ids=old_ids;self.transport.selected_response=None
+            from ...domain.wealth_portfolio_eligibility import qualify_purchase
+            prices={r['product_id']:r for r in rows if r.get('nav') is not None and r['product_id'] in index.products and
+                qualify_purchase(index.products.get(r['product_id']),fresh,user_id,fresh.read_at).purchase_eligible}
+            group.items=[card for card in group.items if all(s.product_id in prices for s in card.share_classes)]
+            for card in group.items:
+                card.evidence['current_quotes']={s.product_id:{k:prices[s.product_id].get(k) for k in ('nav','nav_date','price_source','available_at')} for s in card.share_classes}
+            if not group.items:group.status='unavailable';group.reason_codes=['CURRENT_DISPLAY_QUALIFICATION_UNAVAILABLE']
+        return group
     async def complete_current_round(self,user_id,facts):
         """Recheck dynamic facts without rereading frozen material in this round.
 
@@ -116,7 +154,44 @@ class JointFacts(BankPortfolioFacts):
             'assessment_provenance':{'source':'protected-local-bank','version':'adapter:'+digest(assessment) if assessment else None},
             'data_versions':{'data_version':self.data_version,'daily_version':self.daily_version,'offers_version':self.current_products_version if products is self.observations.get('products') else 'adapter:'+digest(products)}}
     async def read_current(self,user_id,at):
-        facts=await super().read_current(user_id,at)
+        # Only immutable catalogue templates are reused. Every observation of
+        # identity, assessment, scope, business time and assets remains fresh.
+        from ...schemas.wealth_portfolio_candidates import FormalAssessment,CurrentFacts,VersionContext
+        contexts=await self.transport.get('/api/v1/wealth/contexts')
+        scope=next((c for c in contexts['items'] if c['context_id']==contexts['selected']),{})
+        key=(id(self.transport.db.get_bind()),os.getenv('BANK_API_BASE_URL'),scope.get('dataset_key'),tuple(sorted(scope.get('additional_dataset_keys',[]))))
+        template=self.frozen_offers.get(key) if self.transport.product_ids is None and scope.get('dataset_key','').startswith('real-public-paper-v1:') else None
+        if template is None:
+            facts=await super().read_current(user_id,at)
+            if self.transport.product_ids is None and scope.get('dataset_key','').startswith('real-public-paper-v1:'):
+                self.frozen_offers[key]=facts
+        else:
+            raw=await self.transport.get('/api/v1/wealth/assessments/current')
+            assets=await self.transport.bank.assets(user_id)
+            products=await self.transport.get('/api/v1/wealth/products')
+            self.observations={'assessment':raw,'assets':assets,'contexts':contexts,'products':products}
+            self.current_products_version=template.offers_version
+            assessment=FormalAssessment(user_id=user_id,assessment_id=raw['assessment_id'],version='adapter:'+digest(raw),
+                source_id='protected-local-bank',source_kind='simulated',capacity_level=raw['capacity_level'],
+                confirmed=raw['confirmed'],purchase_allowed=raw['purchase_allowed'],expires_at=raw['expires_at'],read_at=at) if raw else None
+            business=datetime.fromisoformat(assets['business_at'])
+            offers={}
+            for code,offer in template.offers.items():
+                evidence=offer.current_simulation
+                if evidence:
+                    from ...domain.wealth import TZ,advance_business
+                    from ...domain.wealth_paper_policy import PRICING_MODES
+                    day=business.astimezone(TZ).date()
+                    from datetime import date
+                    opened=(day-date(2026,9,30)).days%evidence.open_interval_days==0
+                    stale=evidence.pricing_mode not in PRICING_MODES and evidence.nav_date is not None and advance_business(evidence.nav_date,3,evidence.calendar_version)<day
+                    evidence=evidence.model_copy(update={'business_at':business,'observed_at':at,'purchase_open':opened,'data_stale':stale})
+                allowed=not(evidence.status!='on_sale' or evidence.purchase_paused or not evidence.purchase_open or evidence.data_stale) if evidence else offer.purchase_allowed
+                offers[code]=offer.model_copy(update={'current_simulation':evidence,'purchase_allowed':allowed})
+            facts=CurrentFacts.model_construct(user_id=user_id,source_id=template.source_id,mode=template.mode,channel=template.channel,
+                read_at=at,data_version=template.data_version,daily_version=template.daily_version,offers_version=template.offers_version,
+                assessment=assessment,latest_assessment_id=assessment.assessment_id if assessment else None,
+                latest_assessment_version=assessment.version if assessment else None,assessment_current_proven=False,offers=offers)
         profile=await self.transport.db.get(WealthProfileORM,user_id)
         row=await latest_assessment(self.transport.db,user_id)
         facts.assessment_current_proven=bool(profile and row and row.profile_version==profile.version)
@@ -128,7 +203,16 @@ class JointFacts(BankPortfolioFacts):
         from ...domain.wealth_portfolio_eligibility import version_context
         # This sealed object belongs to this completed read only. The next
         # protected read makes a new object and recomputes every binding.
-        object.__setattr__(facts,'_verified_context',version_context(facts))
+        if self.transport.product_ids is None and scope.get('dataset_key','').startswith('real-public-paper-v1:'):
+            business=self.observations['assets']['business_at'][:10]
+            binding=VersionContext(user_id=user_id,source_id=facts.source_id,mode=facts.mode,channel=facts.channel,
+                data_version=facts.data_version,daily_version=facts.daily_version,
+                assessment_id=facts.assessment.assessment_id if facts.assessment else None,
+                assessment_version=facts.assessment.version if facts.assessment else None,offers_version=facts.offers_version,
+                facts_fingerprint=digest({'frozen_offers':facts.offers_version,'business_day':business,
+                    'assessment':facts.assessment.version if facts.assessment else None,'user_id':user_id}))
+        else:binding=version_context(facts)
+        object.__setattr__(facts,'_verified_context',binding)
         return facts
 
 class JointAccess:
@@ -199,6 +283,11 @@ class JointPortfolio:
         started=time.perf_counter()
         index=await asyncio.to_thread(self.indexes.get,self.data_version)
         if index.daily_version!=self.daily_version:raise CandidateError('DAILY_VERSION_MISMATCH')
+        import json
+        from collections import Counter
+        runtime=json.loads((self.root/'config/wealth/competition_runtime_scope.json').read_text(encoding='utf8'))
+        counts=Counter(p.execution_policy['category'] for p in index.products.values() if p.execution_policy and p.execution_policy.get('category') in runtime['categories'])
+        if dict(counts)!=runtime['categories']:raise CandidateError('COMPETITION_POOL_COUNT_MISMATCH',503)
         # The final bank's immutable policy registry is static material too.
         # Validate/load it before readiness, without any user-specific Plan.
         from ...domain.wealth_paper_policy import registered_policy_reasons
@@ -245,7 +334,9 @@ class JointPortfolio:
             matching=[s for s in self.sessions.values() if s.user_id==user_id and s.cursor==p['cursor']]
             if len(matching)!=1:raise CandidateError('PORTFOLIO_CANDIDATE_BINDING_STALE')
             state=matching[0];p['candidate_binding']={'session_id':state.session_id,'expected_version':state.version,'filter':state.filter.model_dump()}
-        return (await invoke(service.recommend(user_id,PortfolioRecommendation(context_id=context_id,**p)))).model_dump(mode='json')
+        group=await invoke(service.recommend(user_id,PortfolioRecommendation(context_id=context_id,**p)))
+        codes=sorted({s.product_id for card in group.items for s in card.share_classes})
+        return group.model_dump(mode='json')
     async def revise(self,*,db,user_id,context_id,bank,params):
         _,service=self.bind(db,user_id,bank);selection=PortfolioSelection.model_validate(params['selection'])
         return (await invoke(service.revise(user_id,selection.portfolio_id,selection))).model_dump(mode='json')

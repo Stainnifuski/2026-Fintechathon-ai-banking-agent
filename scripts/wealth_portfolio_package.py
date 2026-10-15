@@ -21,6 +21,8 @@ def export(root,version,out):
     public.extend(sorted((root/'config/wealth').glob('paper_products*.json')))
     supplement=root/'config/wealth/portfolio_bank_supplement.json'
     if supplement.exists():public.append(supplement)
+    scope=root/'config/wealth/competition_runtime_scope.json'
+    if scope.exists():public.append(scope)
     manifest={'schema_version':'wealth-portfolio-offline-package-v1','data_version':version,
         'daily_version':snapshot.daily_version,'snapshot_sha256':index['sha256'],
         'gzip_sha256':sha(packed),'file':version+'.snapshot.json.gz',

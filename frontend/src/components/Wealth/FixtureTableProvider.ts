@@ -17,7 +17,7 @@ export const recordedTableDetail:ProductDetailLoader=async(id,period,version)=>{
   if(!observation)return {...base,identity:'F23契约样例 · 虚构数据'};
   const points=structuredClone(observation.points);
   return {...base,identity:'F23契约样例 · 虚构数据',as_of:recording.assets.as_of,
-    latest_nav:{nav:points[1].nav,date:points[1].date},money_yield:[],chart:{points,window_start:points[0].date,window_end:points[1].date,
+    latest_nav:{nav:points[1].nav,date:points[1].date},chart:{points,window_start:points[0].date,window_end:points[1].date,
       quality_flags:[],notice:'F23明确录制的两个虚构观察点，与本表资料时点一致；不是实际基金行情或本人收益。',
       metrics:{nav_change:{value_percent:observation.value_percent,reason:null},max_drawdown:{value_percent:null,reason:'样例未提供'},volatility:{value_percent:null,reason:'样例未提供'}}}};
 };

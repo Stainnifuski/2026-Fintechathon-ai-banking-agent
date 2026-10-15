@@ -1,4 +1,4 @@
-"""Fixed-cash executable decimal lattice; original P/U and projection unchanged."""
+"""Fixed-cash whole-percentage executable lattice; original P/U and projection unchanged."""
 import math
 from decimal import Decimal
 from .wealth_portfolio_allocation import problem,validate_adjustment,integer_valid,BUCKETS,ModelError
@@ -6,7 +6,7 @@ from .wealth_portfolio_projection import WeightFamily,WeightPart,project_product
 
 def executable_slider(plan,metadata,decisions):
     total=plan.basis_fen;cash=plan.buckets[0].target_fen;noncash=total-cash
-    empty={'bounds':None,'step':None,'reason':'NO_EXECUTABLE_STEP'}
+    empty={'bounds':None,'step':None,'reason':'NO_FEASIBLE_INTEGER_PERCENTAGE'}
     if noncash<=0 or metadata['model']['h'] is None:return empty
     contract=metadata['validation_contract'];calc=contract['calculation']
     level=next((q.user_level for q in decisions.values() if q.user_level is not None),None)
@@ -24,13 +24,11 @@ def executable_slider(plan,metadata,decisions):
         if b>0:hi=min(hi,(d-a*c)/b)
         elif b<0:lo=max(lo,(d-a*c)/b)
         elif a*c>d+1e-12:return empty
-    # Decimal ratios must produce integer cents. Use at most 0.1 percentage
-    # points, and coarsen only when this denominator cannot represent cents.
-    power=0;n=noncash
-    while n%10==0 and power<3:power+=1;n//=10
-    denominator=10**power
-    low=max(0,math.ceil(lo/(1-c)*denominator+1e-9))
-    high=min(denominator,math.floor(hi/(1-c)*denominator-1e-9))
+    # Whole percentage points must also produce exact integer cents.
+    # Endpoints are rounded inward; model targets keep their original precision.
+    denominator=100 # whole percentage points; model/initial targets stay exact
+    low=max(0,math.ceil(lo/(1-c)*denominator-1e-9))
+    high=min(denominator,math.floor(hi/(1-c)*denominator+1e-9))
     families={b:[] for b in BUCKETS}
     current={p.product_id:p.current_fen for p in plan.advised_positions}
     for bucket,projection in metadata['product_projections'].items():
@@ -45,6 +43,7 @@ def executable_slider(plan,metadata,decisions):
             families[bucket].append(WeightFamily(row['family_id'],bucket,held,parts,row['cash']))
     valid=[]
     for tick in range(low,high+1):
+        if noncash*tick%denominator:continue
         g=noncash*tick//denominator;amounts=[cash,noncash-g,g]
         if not integer_valid(P,amounts,total,request=False) or not validate_adjustment(P,star,[a/total for a in amounts])['accepted']:continue
         try:
@@ -65,6 +64,5 @@ def executable_slider(plan,metadata,decisions):
     start=end=nearest;available=set(valid)
     while start-1 in available:start-=1
     while end+1 in available:end+=1
-    if start==end:return empty
     return {'bounds':[str(Decimal(start)/denominator),str(Decimal(end)/denominator)],
             'step':str(Decimal(1)/denominator),'reason':None}

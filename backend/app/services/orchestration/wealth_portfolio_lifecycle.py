@@ -140,6 +140,11 @@ class PortfolioLifecycle:
         from ...domain.wealth_portfolio_slider import executable_slider
         slider=executable_slider(plan,meta,decisions)
         plan.model_view.slider_bounds=slider['bounds'];plan.model_view.slider_step=slider['step'];plan.model_view.slider_reason=slider['reason']
+        contract=meta['validation_contract'];calc=contract['calculation']
+        P=problem(facts.assessment.capacity_level,calc['h'],contract['available'],contract['caps'],contract['p'])
+        plan.model_view.adjustment_contract={'b':P.b,'h':P.h,'eta':P.eta,
+            'loss_limit':P.loss(calc['continuous_solution'])+calc['delta'],'constraints':P.constraints,
+            'limits':{code:{'minimum_fen':q.minimum_fen,'maximum_fen':q.maximum_fen} for code,q in facts.offers.items() if code in {p.product_id for p in plan.advised_positions}}}
         return PortfolioPlan.model_validate(plan.model_dump())
 
     async def create(self,user_id: str,request: PortfolioCreate) -> PortfolioPlan:
@@ -231,6 +236,8 @@ class PortfolioLifecycle:
         P=problem(facts.assessment.capacity_level,calc['h'],contract['available'],contract['caps'],contract['p'])
         same_items=[i.model_dump() for i in request.items]==[i.model_dump() for i in old.selected_positions]
         slider=request.growth_ratio_ex_cash is not None and same_items and request.cash_residual_fen is None
+        if request.growth_ratio_ex_cash is not None and Decimal(request.growth_ratio_ex_cash)*100%1:
+            raise CandidateError('INTEGER_PERCENT_REQUIRED',422)
         if slider:
             c=old.buckets[0].target_fen;noncash=T-c
             if not noncash or facts.assessment.capacity_level==1:raise ModelError('PREFERENCE_NOT_APPLICABLE_R1' if facts.assessment.capacity_level==1 else 'PREFERENCE_NONCASH_UNAVAILABLE')
@@ -254,6 +261,10 @@ class PortfolioLifecycle:
                     if q.holding_allowed is not True or value>original.current_fen:raise CandidateError('PORTFOLIO_HOLDING_CAP_EXCEEDED',422)
                 else:
                     self._qualify(record.user_id,[ref],facts,index,now);explicit.append(ref)
+                # Preserve exact model-generated values on an unchanged roundtrip.
+                # Only an actual manual edit must be a whole percentage point.
+                if Decimal(item.target_ratio_total)*100%1 and (original_row is None or value!=original_row.target_fen):
+                    raise CandidateError('INTEGER_PERCENT_REQUIRED',422)
                 targets[item.product_id]=value
             self._qualify(record.user_id,explicit,facts,index,now)
             cash=T-sum(targets.values())
@@ -299,6 +310,8 @@ class PortfolioLifecycle:
         record=await self.store.read(portfolio_id,user_id)
         if request.expected_version!=record.plan.version:raise CandidateError('PORTFOLIO_VERSION_STALE')
         if request.snapshot_id!=record.plan.snapshot_id:raise CandidateError('PORTFOLIO_SNAPSHOT_STALE')
+        if request.growth_ratio_ex_cash is not None and Decimal(request.growth_ratio_ex_cash)*100%1:
+            raise CandidateError('INTEGER_PERCENT_REQUIRED',422)
         facts,index,now,asset=await self._fresh(record,request.context_id,True)
         if request.revision_kind=='preference':
             if request.growth_ratio_ex_cash is None:raise CandidateError('PORTFOLIO_PREFERENCE_REQUIRED',422)
@@ -347,4 +360,6 @@ class PortfolioLifecycle:
             raise CandidateError('PORTFOLIO_CONTEXT_STALE')
         # 同协议可读会话引用，不替换CandidateGroup或创建额外结果DTO。
         group.session_binding=raw.get('session')
+        source=candidates.source
+        if hasattr(source,'quote_cards'):group=await source.quote_cards(user_id,group,index)
         return group

@@ -11,10 +11,9 @@ from functools import lru_cache
 LEGACY_POLICY_VERSION='real-public-paper-risk-20261013-v1'
 POLICY_VERSION='real-public-paper-core-risk-20261013-v2'
 POLICY_VERSIONS={LEGACY_POLICY_VERSION,POLICY_VERSION}
-LEVELS={'money_market':1,'money':1,'bond':2,'mixed':3,'equity':4}
+LEVELS={'bond':2,'mixed':3,'equity':4}
 PRICING_MODE='frozen-public-nav-v1'
-MONEY_PRICING_MODE='paper-money-fixed-unit-v1'
-PRICING_MODES={PRICING_MODE,MONEY_PRICING_MODE}
+PRICING_MODES={PRICING_MODE}
 
 @lru_cache(maxsize=4)
 def _registered_files(signature):
@@ -73,8 +72,6 @@ def validate_policy(policy,code,category,risk,at=None):
         price=Decimal(quote['value'])
         if available.tzinfo is None or not price.is_finite() or price<=0 or not quote.get('reference_sha256'):raise ValueError()
         if at is not None and (available>at or day>at.date()):reasons.append('PAPER_FUTURE_PRICE')
-        if policy.get('pricing_mode')==MONEY_PRICING_MODE and (category not in ('money','money_market') or price!=1 or quote.get('source')!='project_simulated_fixed_one' or policy.get('real_unit_nav') is not None):
-            reasons.append('PAPER_MONEY_PRICE_SOURCE_CONFLICT')
     except (KeyError,ValueError,TypeError,ArithmeticError):reasons.append('PAPER_PRICE_UNBOUND')
     # Explicit version, no artificial 30-day expiration.
     if 'expires_at' in policy:reasons.append('UNAPPROVED_POLICY_EXPIRY')

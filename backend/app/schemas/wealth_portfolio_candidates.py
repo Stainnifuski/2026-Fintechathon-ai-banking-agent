@@ -95,7 +95,7 @@ class VersionContext(DTO):
 
 class CandidateFilter(DTO):
     mode: Literal['general','category','theme']
-    category: Literal['quick_redeem','bank_wealth','money_fund','bond_fund','mixed_fund','equity_fund'] | None = None
+    category: Literal['quick_redeem','bank_wealth','bond_fund','mixed_fund','equity_fund'] | None = None
     bucket: Literal['cash_management','stable','growth'] | None = None
     theme_key: str | None = None
     theme_keys: list[str] = Field(default_factory=list)
@@ -201,5 +201,3 @@ class SessionSelectionRequest(SessionAction):
 class SwitchRequest(SessionAction):
     family_id: str
     target: ShareReference
-
-

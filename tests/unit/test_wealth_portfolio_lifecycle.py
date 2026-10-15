@@ -47,8 +47,8 @@ async def test_create_read_adjust_preference_copies_original_U():
     before=deepcopy(s.store.rows[p.portfolio_id][0].metadata['validation_contract']['calculation'])
     read=await s.get(U,p.portfolio_id,C);assert read==p
     read.model_view.initial_ratios[0]='fake';assert (await s.get(U,p.portfolio_id,C)).model_view.initial_ratios[0]!='fake'
-    p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.626'))
-    p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.627'))
+    p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.63'))
+    p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.64'))
     assert p.version==3 and s.store.rows[p.portfolio_id][0].metadata['validation_contract']['calculation']==before
     p=await s.revise(U,p.portfolio_id,edit(p,revision_kind='preference',growth_ratio_ex_cash='.65'))
     assert p.version==4 and p.growth_ratio_ex_cash=='0.65'
@@ -63,7 +63,7 @@ async def test_concurrent_same_version_controlled_CAS():
         if arrived==2:barrier.set()
         await asyncio.wait_for(barrier.wait(),3);await replace(record,version)
     s.store.replace=controlled
-    result=await asyncio.gather(s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.626')),s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.627')),return_exceptions=True)
+    result=await asyncio.gather(s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.63')),s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.64')),return_exceptions=True)
     assert sum(not isinstance(r,Exception) for r in result)==1
     assert [r.code for r in result if isinstance(r,CandidateError)]==['PORTFOLIO_VERSION_STALE']
     assert (await s.get(U,p.portfolio_id,C)).version==2
@@ -72,13 +72,10 @@ async def test_concurrent_same_version_controlled_CAS():
 async def test_manual_100_fen_preserved_and_omitted_holdings_not_zero():
     s,*_=lifecycle_fixture();p=await create(s,'.625');items=all_items(p);a=next(r for r in items if r.product_id=='Q02A');b=next(r for r in items if r.product_id=='Q06A')
     a.target_ratio_total=str(Decimal(a.target_ratio_total)+Decimal('0.0001'));b.target_ratio_total=str(Decimal(b.target_ratio_total)-Decimal('0.0001'))
-    p2=await s.revise(U,p.portfolio_id,edit(p,items=items,cash_residual_fen=p.cash_residual_fen))
-    assert next(r for r in p2.advised_positions if r.product_id=='Q02A').target_fen==next(r for r in p.advised_positions if r.product_id=='Q02A').target_fen+100
-    assert sum(r.target_fen for r in p2.advised_positions)+p2.cash_residual_fen==p2.basis_fen
-    # 未在完整新购集合重写的原持仓仍保留服务端目标。
-    items=[r for r in p2.selected_positions if r.product_id not in {'Q01A','Q03A'}]
-    p3=await s.revise(U,p.portfolio_id,edit(p2,items=items))
-    assert {r.product_id:r.target_fen for r in p3.advised_positions if r.current_fen}=={r.product_id:r.target_fen for r in p2.advised_positions if r.current_fen}
+    before=state(s,p)
+    with pytest.raises(CandidateError,match='INTEGER_PERCENT_REQUIRED'):
+        await s.revise(U,p.portfolio_id,edit(p,items=items,cash_residual_fen=p.cash_residual_fen))
+    assert state(s,p)==before # one hundred fen is not a whole percent here
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('kind',['old_version','snapshot','context','path','precision','overallocate','cash','preference','compound_U','growth_mismatch'])
@@ -125,7 +122,7 @@ async def test_current_facts_change_or_expiry_refuses_old_draft(change):
     elif change=='expired':facts.assessment.expires_at=clock[0]
     elif change=='offer_expired':facts.offers['Q00A'].valid_until=clock[0]
     else:s.access.grant['can_edit']=False
-    with pytest.raises((CandidateError,ModelError)):await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.526'))
+    with pytest.raises((CandidateError,ModelError)):await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.53'))
     assert state(s,p)==before
     if change!='control':
         with pytest.raises((CandidateError,ModelError)):await s.get(U,p.portfolio_id,C)
@@ -136,7 +133,7 @@ async def test_read_at_advance_valid_without_extending_expiry_and_idle_cleanup()
     clock[0]+=timedelta(minutes=5);assert (await s.get(U,p.portfolio_id,C)).version==1
     b=s.provider.asset_source.bundle;b['summary']['as_of']=(clock[0]).isoformat();b['summary']['business_at']=clock[0].isoformat();b['assessment_provenance']['read_at']=clock[0].isoformat()
     assert (await s.get(U,p.portfolio_id,C)).version==1
-    p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.526'));assert p.version==2
+    p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.53'));assert p.version==2
     clock[0]+=timedelta(minutes=30)
     with pytest.raises(CandidateError,match='PORTFOLIO_NOT_FOUND'):await s.get(U,p.portfolio_id,C)
 
@@ -192,7 +189,7 @@ async def test_facts_change_during_compute_rejected_before_store_replace():
     def changing(*args):
         result=original(*args);s.provider.candidates.source.facts.offers['Q00A'].purchase_allowed=False;return result
     s._manual=changing
-    with pytest.raises(CandidateError,match='PORTFOLIO_FACTS_STALE'):await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.626'))
+    with pytest.raises(CandidateError,match='PORTFOLIO_FACTS_STALE'):await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.63'))
     assert state(s,p)==before
 
 @pytest.mark.asyncio
@@ -266,7 +263,7 @@ async def test_lifecycle_has_no_network_or_asset_order_mutations(monkeypatch):
     def forbidden(*args,**kwargs):raise AssertionError('external socket connection forbidden')
     monkeypatch.setattr(socket.socket,'connect',forbidden)
     s,*_=lifecycle_fixture();original=deepcopy(s.provider.asset_source.bundle)
-    p=await create(s,'.625');p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.626'))
+    p=await create(s,'.625');p=await s.revise(U,p.portfolio_id,edit(p,growth_ratio_ex_cash='.63'))
     p=await s.revise(U,p.portfolio_id,edit(p,revision_kind='preference',growth_ratio_ex_cash='.65'))
     assert (await s.get(U,p.portfolio_id,C)).version==3
     assert s.provider.asset_source.bundle==original

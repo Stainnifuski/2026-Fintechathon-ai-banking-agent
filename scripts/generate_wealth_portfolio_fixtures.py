@@ -98,7 +98,7 @@ def generate() -> dict:
         {'mode': 'theme', 'theme_key': 'high_dividend'}, {'mode': 'category', 'category': 'equity_fund'}]},
         {'no_text_parser': True}, 'A_contract_B_actions_future')
     add(15, {'llm_enabled': False}, {'model_call_count': 0, 'full_manual_flow_required': True}, 'A_contract_B_execution_future')
-    add(16, {'filters': [{'mode': 'category', 'category': 'money_fund'}, {'mode': 'category', 'category': 'mixed_fund'}],
+    add(16, {'filters': [{'mode': 'category', 'category': 'bond_fund'}, {'mode': 'category', 'category': 'mixed_fund'}],
         'page': 2, 'market_value_fen': 123456}, {'parameter_driven': True}, 'A2_B_future')
     add(17, {'old_schema': 'wealth-subtask-v1', 'new_schema': 'wealth-action-v1'}, {'not_interchangeable': True}, 'B')
     multi = bundle(); multi['summary'].update(account_ids=['fixture-account', 'fixture-account-2'],

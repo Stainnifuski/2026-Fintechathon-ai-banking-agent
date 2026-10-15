@@ -2,7 +2,6 @@ import {useEffect,useState} from 'react';
 import * as w from '../../services/wealth';
 import type {Account} from '../../services/bank';
 import StructuredActionPanel from './StructuredActionPanel';
-import OperatorPanel from './OperatorPanel';
 import './styles.css';
 interface Props {accounts:Account[];revision:number;onActivity:()=>void;userId:string;developmentManual?:boolean}
 interface Contexts {selected:string;version:number;items:{context_id:string;label:string;mode:string}[]}
@@ -27,6 +26,5 @@ export default function Wealth({revision,onActivity,userId}:Props){
    </details>{assessment&&!assessment.confirmed&&<button disabled={busy} onClick={()=>void act(async()=>{await w.post(`/assessments/${assessment.assessment_id}/confirm`,{});changed();})}>本人确认上述评估结果并继续原需求</button>}
   </details>
   <StructuredActionPanel key={`${userId}:${contexts?.selected??'legacy-v1'}`} userId={userId} revision={revision+localRevision} onActivity={changed}/>
-  <OperatorPanel userId={userId} revision={revision+localRevision} onActivity={changed}/>
  </section>;
 }

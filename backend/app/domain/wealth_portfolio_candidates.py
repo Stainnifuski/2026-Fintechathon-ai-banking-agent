@@ -151,7 +151,7 @@ class ProductIndex:
             p=self.products[code]
             if filter.bucket and p.bucket!=filter.bucket:continue
             if filter.mode=='category':
-                expected={'money_fund':{'money','money_market'},'bond_fund':{'bond'},'mixed_fund':{'mixed'},'equity_fund':{'equity'}}
+                expected={'bond_fund':{'bond'},'mixed_fund':{'mixed'},'equity_fund':{'equity'}}
                 bank=p.source_kind=='simulated' and (p.product_id.startswith('B') or p.forms.get('kind')=='bank_wealth')
                 if filter.category=='bank_wealth':
                     if not bank:continue
@@ -233,5 +233,3 @@ def pipeline(index: ProductIndex,filter: CandidateFilter,facts: CurrentFacts,use
         'material_complete_families':len(families)},matched_codes=[p.product_id for p in matched],decisions=decisions,
         tags={p.product_id:index.tags[p.product_id] for p in matched if index.tags[p.product_id]},exclusions=exclusions,family_candidates=families,
         pool_version=pool_version,context=version_context(facts),risk_explanation=risk_explanation)
-
-

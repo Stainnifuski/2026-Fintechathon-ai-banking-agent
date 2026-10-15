@@ -69,7 +69,6 @@ export const recordedDetail: ProductDetailLoader = async (id, period) => {
     chart: candidate.bucket === 'cash_management' ? null : { points, window_start:points[0]?.date ?? null, window_end:points[points.length - 1]?.date ?? null,
       notice: 'F09虚构观察点，仅用于详情交互检查；不是实际基金行情或本人收益。', quality_flags:[],
       metrics: {nav_change:metric,max_drawdown:{value_percent:null,reason:'样例未提供'},volatility:{value_percent:null,reason:'样例未提供'}} },
-    money_yield: candidate.bucket === 'cash_management' ? [{ date:'2026-09-30', income_per_10000:null, seven_day_annualized_percent:'4.20' }] : [],
   };
 };
 export const recordedComparison: ComparisonLoader = async ids => {

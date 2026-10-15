@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import * as w from '../../services/wealth';
 import type { ProductSelectionState } from './productSelection';
-import { collectPortfolioSelection, selectionKey } from './allocationSelection';
+import { collectPortfolioSelection, selectionKey, draftIssue } from './allocationSelection';
 import PortfolioAllocation from './PortfolioAllocation';
+import {ratioToPercent} from '../../services/wealthPortfolio';
 import PlanExecution from './PlanExecution';
 import './allocationReview.css';
 
-const percentage = (ratio:string) => String(Number((Number(ratio)*100).toFixed(2)));
+const percentage = (ratio:string) => ratioToPercent(ratio);
 const errorMessage = (error:unknown) => (error as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message || (error instanceof Error ? error.message : '操作失败，请保留当前方案核对');
 interface Props {
   plan: w.PortfolioPlan; snapshot: w.PortfolioSnapshot; selection: ProductSelectionState;
@@ -25,13 +26,15 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
   const [localPercentages,setPercentages]=useState<Record<string,string>>(()=>Object.fromEntries(selection.items.map(({share})=>[
     share.product_id,percentage(initial.selected_positions.find(p=>p.product_id===share.product_id)?.target_ratio_total ?? '0')])));
   const percentages=draftPercentages??localPercentages;
-  const [validatedKey,setValidatedKey]=useState<string|null>(null);
+  const [validatedKey,setValidatedKey]=useState<string|null>(()=>selectionKey({items:initial.selected_positions}));
   const [prepared,setPrepared]=useState<w.PreparedPortfolio|null>(null);
   const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('');
   const [paymentAccount,setPaymentAccount]=useState('');
   let draft:w.PortfolioSelection|null=null;
   try { draft=collectPortfolioSelection(plan,selection,percentages); } catch { /* Explain invalid input when submitted. */ }
-  const clean=!!draft && validatedKey===selectionKey(draft);
+  const clean=validatedKey===selectionKey({items:plan.selected_positions}) || !!draft && validatedKey===selectionKey(draft);
+  const draftError=draftIssue(plan,selection,percentages);
+  const integerDraft=!draftError;
   const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(e){setNotice(errorMessage(e));}finally{setBusy(false);}};
   const change=(id:string,value:string)=>{const next={...percentages,[id]:value};setPercentages(next);onPercentagesChange?.(next);setPrepared(null);setValidatedKey(null);};
   return <section className="allocation-review" aria-label="整体配置核对">
@@ -43,23 +46,23 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
       {selection.items.map(({candidate,share})=>{const target=plan.advised_positions?.find(p=>p.product_id===share.product_id&&p.product_version===share.product_version);
         const current=snapshot.positions.filter(p=>p.product_id===share.product_id&&p.product_version===share.product_version).reduce((sum,p)=>sum+(p.market_value_fen??0),0);
         return <tr key={share.product_id}><td>{candidate.name}{share.share_class && ` · ${share.share_class}类`}<small>{share.product_id} · 产品 v{share.product_version} · 披露 v{share.disclosure_version}</small></td>
-          <td><label><span className="allocation-input-label">{candidate.name}整体占比</span><input aria-label={`${share.product_id}整体占比`} type="number" min="0" max="100" step="0.01" value={percentages[share.product_id]??''} onChange={e=>change(share.product_id,e.target.value)} disabled={busy}/> %</label></td>
+          <td><label><span className="allocation-input-label">{candidate.name}整体占比</span><input aria-label={`${share.product_id}整体占比`} type="number" min="0" max="100" step="1" value={percentages[share.product_id]??''} onChange={e=>change(share.product_id,e.target.value)} disabled={busy}/> %</label></td>
           <td>{target?w.money(target.target_fen):'待配置服务校验'}</td><td>{snapshot.valuation_complete?w.money(current):'缺少完整估值'}</td></tr>;})}
     </tbody></table></div>
-    {onPropose?<button disabled={busy||!selection.items.length} onClick={()=>act(async()=>{onPropose(collectPortfolioSelection(plan,selection,percentages));setNotice('已整理比例调整建议，未修改方案。交还后由本人重新校验。');})}>整理比例调整建议</button>:<button disabled={busy||!selection.items.length} onClick={()=>act(async()=>{
+    {onPropose?<button disabled={busy||!selection.items.length||!integerDraft} onClick={()=>act(async()=>{onPropose(collectPortfolioSelection(plan,selection,percentages));setNotice('已整理比例调整建议，未修改方案。交还后由本人重新校验。');})}>整理比例调整建议</button>:<button disabled={busy||!selection.items.length||!integerDraft} onClick={()=>act(async()=>{
       const input=collectPortfolioSelection(plan,selection,percentages);
       const revised=await onRevise(input);
       if(revised.portfolio_id!==plan.portfolio_id || revised.snapshot_id!==snapshot.snapshot_id || revised.asset_scope_id!==snapshot.asset_scope_id || revised.context_id!==plan.context_id || revised.version<plan.version) throw new Error('配置服务返回了旧版本、不同范围或快照，请重新读取方案');
       setPlan(revised);setValidatedKey(selectionKey({items:revised.selected_positions}));setPrepared(null);
       setNotice('已收到配置服务校验结果，请核对板块与目标后再准备差额。');
     })}>校验所选产品与比例</button>}
-    <PortfolioAllocation plan={plan} snapshot={snapshot} contextId={plan.context_id??'legacy-v1'} showProductEditor={false} loading={busy} readOnly={!!onPropose||fixtureOnly}
+    <p role="status">{!integerDraft?draftError:'产品合计、板块边界及风险由配置服务复核，失败保留原方案。'}</p><PortfolioAllocation plan={plan} snapshot={snapshot} contextId={plan.context_id??'legacy-v1'} showProductEditor={false} loading={busy} readOnly={!!onPropose||fixtureOnly}
       onAdjust={onRevise} onPreferenceChange={onRevise} onAccepted={next=>{
         const values=Object.fromEntries(next.selected_positions.map(p=>[p.product_id,percentage(p.target_ratio_total)]));
         setPlan(next);setPercentages(values);onPercentagesChange?.(values);setPrepared(null);
         // The editable two-decimal percentage is a display draft. Prepare uses
         // the returned Plan's exact integer targets, never these rounded values.
-        setValidatedKey(selectionKey(collectPortfolioSelection(next,selection,values)));
+        setValidatedKey(selectionKey({items:next.selected_positions}));
       }}/>
     {plan.selected_positions.length===0&&plan.candidate_groups.every(group=>group.items.length===0)&&<p role="note">当前没有合格产品候选。此图仅显示账户现金及受候选不足限制的配置基准，尚未完成可投资产品配置；未发生申购。</p>}
     <p>已校验保留现金 {w.money(plan.cash_residual_fen)} · 赎回应收 {w.money(snapshot.receivable_fen)}（到账前不可用于买入）</p>

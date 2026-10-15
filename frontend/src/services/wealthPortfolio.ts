@@ -69,6 +69,7 @@ export function ratioToPercent(text: string): string {
   const tail = digits.slice(split).replace(/0+$/, '');
   return (digits.slice(0, split).replace(/^0+(?=\d)/, '') || '0') + (tail ? '.' + tail : '');
 }
+export {isIntegerPercentageRatio} from '../utils/wealthPercent';
 export function fenRatio(fen: number, total: number): string {
   if (!Number.isSafeInteger(fen) || !Number.isSafeInteger(total) || total <= 0) throw new Error('金额不是有效整数分');
   if (!fen) return '0'; if (fen === total) return '1';

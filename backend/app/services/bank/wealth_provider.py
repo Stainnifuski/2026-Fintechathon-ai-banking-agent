@@ -23,26 +23,7 @@ def _worker(queue,method,kwargs):
     try:
         import akshare as ak
         if ak.__version__!=AKSHARE_VERSION: raise ValueError("AKSHARE_VERSION_MISMATCH")
-        if method == 'fund_money_fund_info_em':
-            # AKShare 1.19.1 uses 20-row pages for the entire inception history.
-            # Same documented Eastmoney source/fields; bound paging to two 20-row
-            # pages (recent observations). Larger sizes returned empty upstream.
-            import requests
-            import pandas as pd
-            code = kwargs['symbol']; records = []
-            for page in (1, 2):
-                response = requests.get('https://api.fund.eastmoney.com/f10/lsjz',
-                    params={'fundCode': code, 'pageIndex': page, 'pageSize': 20, 'startDate': '', 'endDate': ''},
-                    headers={'Referer': f'https://fundf10.eastmoney.com/jjjz_{code}.html', 'User-Agent': 'Mozilla/5.0'}, timeout=25)
-                response.raise_for_status(); payload = response.json()
-                if not isinstance(payload.get('Data'), dict): raise ValueError('MONEY_SOURCE_SCHEMA_DRIFT')
-                batch = payload['Data']['LSJZList']; records.extend(batch)
-                if len(records) >= int(payload['TotalCount']) or not batch: break
-            frame = pd.DataFrame([{'净值日期': r['FSRQ'], '每万份收益': r['DWJZ'], '7日年化收益率': r['LJJZ'],
-                                   '申购状态': r.get('SGZT'), '赎回状态': r.get('SHZT')} for r in records])
-            for field in ('每万份收益', '7日年化收益率'):
-                frame[field] = pd.to_numeric(frame[field].str.rstrip('%'), errors='coerce')
-        elif method == 'fund_fee_em':
+        if method == 'fund_fee_em':
             # Same AKShare/Eastmoney source. Current headings omit the old
             # "（前端）" suffix; preserve raw tables instead of inventing fees.
             import requests
@@ -73,7 +54,7 @@ class AKShareProvider:
         self.failures=0; self.open_until=0
 
     def fetch(self,method: str,**kwargs) -> dict:
-        allowed={"fund_name_em","fund_purchase_em","fund_open_fund_info_em","fund_money_fund_info_em","fund_fee_em",*MACRO_FIELDS}
+        allowed={"fund_name_em","fund_purchase_em","fund_open_fund_info_em","fund_fee_em",*MACRO_FIELDS}
         if method not in allowed: raise ValueError("PROVIDER_METHOD_DENIED")
         if time.monotonic()<self.open_until: return {"ok":False,"error_type":"CIRCUIT_OPEN","method":method}
         started=datetime.now(timezone.utc).isoformat(); response={}
@@ -90,7 +71,7 @@ class AKShareProvider:
         if not response.get("ok"):
             self.failures+=1
             if self.failures>=3: self.open_until=time.monotonic()+60
-        return {**response,"method":method,"adapter_variant":"bounded_eastmoney_money_paging_v1" if method=='fund_money_fund_info_em' else 'bounded_eastmoney_raw_fee_tables_v1' if method=='fund_fee_em' else 'akshare_function',"provider_version":self.version,"source_url":"https://data.eastmoney.com/cjsj/" if method.startswith("macro_") else SOURCE_URL,
+        return {**response,"method":method,"adapter_variant":'bounded_eastmoney_raw_fee_tables_v1' if method=='fund_fee_em' else 'akshare_function',"provider_version":self.version,"source_url":"https://data.eastmoney.com/cjsj/" if method.startswith("macro_") else SOURCE_URL,
                 "started_at":started,"finished_at":datetime.now(timezone.utc).isoformat(),"attempts":attempt+1}
 
 
