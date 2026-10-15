@@ -1,26 +1,5 @@
 import type { CandidateActionResult, CandidateReference, PortfolioCandidateGroup, PortfolioCreate, PortfolioPlan, PortfolioRecommendation, PortfolioSelection, PortfolioSnapshot } from '../types/wealthPortfolio';
-// Display only: original server codes remain available in the evidence details.
-export function portfolioExplanation(raw: string): string {
-  const explanations: [string, string][] = [
-    ['ASSESSMENT_CURRENT_VERSION_UNPROVEN', '当前评估与画像版本的匹配尚未充分证明'],
-    ['WRITE_CONTROL_UNPROVEN', '相关会话写控制尚未充分证明，不能创建或修改方案'],
-    ['RISK_EXCEEDS_CAPACITY', '产品风险等级超过本人正式评估等级，不能新增购买目标'],
-    ['VERSION_STALE', '方案版本已变化，请读取最新方案'],
-    ['STALE', '事实或资格版本已变化，请刷新后重新核对'],
-    ['VALUATION_INCOMPLETE', '持仓估值缺失，总资产与目标保持未知'],
-    ['ASSET_SUMMARY_UNAVAILABLE', '资产来源暂不可用，不能生成方案'],
-    ['HOLDING_CAP', '仅持有仓位不能增持，原方案保留'],
-    ['UNKNOWN_THEME_KEY', '主题未登记，请选择已有主题'],
-    ['PURCHASE_STOPPED', '产品当前暂停申购'],
-    ['PRODUCT_', '具体产品的份额、版本、风险或来源证据尚未充分证明'],
-    ['DISCLOSURE_', '产品披露版本尚未充分证明'],
-    ['BANK_', '银行产品的业务时点或当前可售规则尚未满足'],
-    ['NO_STRUCTURED_MATCH', '当前资料没有匹配此主题的产品'],
-    ['PREFERENCE', '进取偏好不符合当前允许范围，原方案保留'],
-  ];
-  const matches = [...new Set(explanations.filter(([code]) => raw.includes(code)).map(([, text]) => text))];
-  return matches.length ? matches.join('；') : raw.includes('PORTFOLIO_') ? '方案不满足当前资格、比例或控制条件，请查看具体原因' : /[\u4e00-\u9fff]/.test(raw) ? raw : '请求未能完成，请展开查看服务端原因';
-}
+export {wealthFeedback as portfolioExplanation} from '../utils/wealthFeedback';
 function reasonText(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value;

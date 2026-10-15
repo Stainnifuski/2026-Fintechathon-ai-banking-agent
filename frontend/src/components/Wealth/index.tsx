@@ -1,3 +1,4 @@
+import {wealthFeedback} from '../../utils/wealthFeedback';
 import {useEffect,useState} from 'react';
 import * as w from '../../services/wealth';
 import type {Account} from '../../services/bank';
@@ -26,7 +27,7 @@ export default function Wealth({revision,onActivity,userId}:Props){
  const changed=()=>{setLocalRevision(n=>n+1);onActivity();};
  return <section className="wealth-page"><h1>理财</h1><p>真实基金资料与虚构银行理财分别标源，资金和交易均为比赛模拟。本金可能亏损；低风险和快赎能力不代表本金或收益保证。</p>
   <button className="secondary" disabled={busy} onClick={()=>{changed();}}>刷新银行事实</button>
-  {notice&&<p role="alert">{notice}</p>}
+  {notice&&<p role="alert">{wealthFeedback(notice)}</p>}
   <details><summary>本人风险评估</summary><p>{assessment?`模拟承受能力 R${assessment.capacity_level} · ${assessment.confirmed?'已确认':'待确认'}`:'尚未评估，可先查看客观产品资料'}</p>
    <details><summary>填写／重新评估（本人回答，单日最多2次）</summary>{questionnaire?.questions.map(q=><label key={q.id}>{q.title}<select aria-label={q.title} value={answers[q.id]??''} disabled={busy} onChange={e=>setAnswers(v=>({...v,[q.id]:Number(e.target.value)}))}><option value="" disabled>请选择本人答案</option>{q.options.map((o,i)=><option key={o} value={i}>{o}</option>)}</select></label>)}
     <label><input type="checkbox" checked={adult} disabled={busy} onChange={e=>setAdult(e.target.checked)}/>我是成年、完全民事行为能力的模拟客户，以上由本人回答</label>

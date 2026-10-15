@@ -1,3 +1,4 @@
+import {wealthFeedback} from '../../utils/wealthFeedback';
 import { useState } from 'react';
 import * as w from '../../services/wealth';
 import type { ProductSelectionState } from './productSelection';
@@ -35,7 +36,7 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
   const clean=validatedKey===selectionKey({items:plan.selected_positions}) || !!draft && validatedKey===selectionKey(draft);
   const draftError=draftIssue(plan,selection,percentages);
   const integerDraft=!draftError;
-  const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(e){setNotice(errorMessage(e));}finally{setBusy(false);}};
+  const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(e){setNotice(wealthFeedback(errorMessage(e)));}finally{setBusy(false);}};
   const change=(id:string,value:string)=>{const next={...percentages,[id]:value};setPercentages(next);onPercentagesChange?.(next);setPrepared(null);setValidatedKey(null);};
   return <section className="allocation-review" aria-label="整体配置核对">
     <div className="consumer-card-head"><h2>核对整体配置</h2><span>整体目标 v{plan.version}</span></div>
