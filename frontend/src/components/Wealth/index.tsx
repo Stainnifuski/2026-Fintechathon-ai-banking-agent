@@ -25,8 +25,6 @@ export default function Wealth({revision,onActivity,userId}:Props){
  const act=async(fn:()=>Promise<void>)=>{if(busy)return;setBusy(true);setNotice('');try{await fn();setLocalRevision(n=>n+1);}catch(e){setNotice(explain(e));}finally{setBusy(false);}};
  const changed=()=>{setLocalRevision(n=>n+1);onActivity();};
  return <section className="wealth-page"><h1>理财</h1><p>真实基金资料与虚构银行理财分别标源，资金和交易均为比赛模拟。本金可能亏损；低风险和快赎能力不代表本金或收益保证。</p>
-  <label>资金上下文<select aria-label="资金上下文" disabled={busy} value={contexts?.selected??''} onChange={e=>void act(async()=>{if(!contexts)return;await w.post('/contexts/select',{context_id:e.target.value,version:contexts.version});changed();})}>{contexts?.items.map(c=><option key={c.context_id} value={c.context_id}>{c.label}</option>)}</select></label>
-  <p className="hint">默认使用本人已有授权的当前比赛理财环境，不复制余额。原银行账务与历史记录继续保留在共用银行服务；本页不提供旧环境入口。未初始化时请按准备指南操作。</p>
   <button className="secondary" disabled={busy} onClick={()=>{changed();}}>刷新银行事实</button>
   {notice&&<p role="alert">{notice}</p>}
   <details><summary>本人风险评估</summary><p>{assessment?`模拟承受能力 R${assessment.capacity_level} · ${assessment.confirmed?'已确认':'待确认'}`:'尚未评估，可先查看客观产品资料'}</p>
