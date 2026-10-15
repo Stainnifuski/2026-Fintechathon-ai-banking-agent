@@ -23,6 +23,8 @@ def export(root,version,out):
     if supplement.exists():public.append(supplement)
     scope=root/'config/wealth/competition_runtime_scope.json'
     if scope.exists():public.append(scope)
+    binding=root/'config/wealth/portfolio_content_binding_v2.json'
+    if binding.exists():public.append(binding)
     manifest={'schema_version':'wealth-portfolio-offline-package-v1','data_version':version,
         'daily_version':snapshot.daily_version,'snapshot_sha256':index['sha256'],
         'gzip_sha256':sha(packed),'file':version+'.snapshot.json.gz',

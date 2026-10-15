@@ -213,11 +213,8 @@ async def latest_nav(db: AsyncSession, version_id: str, at: datetime) -> WealthN
 
 def effective_disclosure(row):
     """Current versioned runtime policy, without editing historical bank records."""
-    if row.rules.get('pricing_mode') not in PRICING_MODES:return row.disclosure
-    from .wealth_quotes import POLICY_VERSION
-    return {**row.disclosure,'pricing':'预览使用最近已公布的可靠净值；最终按订单计价日净值，未公布时等待，不使用虚构未来价格。',
-        'limitations':'真实公开基金资料；比赛模拟资金、费用和交易，不代表真实代销或收益保证。',
-        'runtime_pricing_policy_version':POLICY_VERSION}
+    from ...domain.wealth_product_content import effective_disclosure as effective
+    return effective(row.disclosure,row.rules)
 
 
 def nav_available_at(price: WealthNavORM) -> datetime:
@@ -238,23 +235,15 @@ async def products(db: AsyncSession, user_id: str | None = None,*,facts_only: bo
     if compact:
         from types import SimpleNamespace
         v=WealthProductVersionORM;p=WealthProductORM
-        fields=('version','identity','nature','manager','seller','risk','fees','liquidity','holding_period_days','pricing','settlement','cancellation','limitations')
-        from sqlalchemy import and_,cast,Text
-        required=fields[2:]
-        sqlite=db.get_bind().dialect.name=='sqlite'
-        present=and_(*(v.disclosure[k].is_not(None) for k in required))
-        # SQLite reparses the same JSON for every extract/type expression.
-        # Read its encoded disclosure once and retain only the exact fields;
-        # required key presence (including unknown null values) stays explicit.
-        columns=[cast(v.disclosure,Text)] if sqlite else [*(v.disclosure[k].as_integer() if k in ('version','holding_period_days') else v.disclosure[k].as_string() for k in fields),present]
+        from ...domain.wealth_product_content import static_disclosure
+        # Both dialects decode JSON once. Preserve objects, missing keys and
+        # nulls exactly; never stringify nested terms in the compact response.
+        columns=[v.disclosure]
         query=select(p.product_id,p.status,v.version_id,v.version,v.name,v.kind,v.category,v.risk_level,v.rules,*columns).join(v,(v.product_id==p.product_id)&(v.version==p.current_version))
         if product_ids is not None:query=query.where(p.product_id.in_(product_ids))
         raw=(await db.execute(query.order_by(p.product_id))).all()
         def compact_disclosure(r):
-            if not sqlite:return dict(zip(fields if r[-1] else fields[:2],r[9:-1]))
-            import json
-            value=json.loads(r[9]);keys=fields if set(required)<=value.keys() else fields[:2]
-            return {k:json.dumps(value.get(k),ensure_ascii=False,separators=(',',':')) if isinstance(value.get(k),(dict,list)) else value.get(k) for k in keys}
+            return static_disclosure(r[9],r[8])
         pairs=[(SimpleNamespace(product_id=r[0],status=r[1]),SimpleNamespace(version_id=r[2],version=r[3],name=r[4],kind=r[5],category=r[6],risk_level=r[7],rules=r[8],disclosure=compact_disclosure(r))) for r in raw]
     else:
         query=select(WealthProductORM, WealthProductVersionORM).join(

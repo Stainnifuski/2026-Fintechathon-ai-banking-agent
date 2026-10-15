@@ -1,0 +1,170 @@
+{
+  "content_contract": "wealth-static-disclosure-v2",
+  "before_000003": {
+    "stored_v1_binding": "f3b4c804ffacdedf2fbd62a51223f5bbd66e9c9470e43e55394cfa8cc0320f7d",
+    "bank_v1_compact": "f3b4c804ffacdedf2fbd62a51223f5bbd66e9c9470e43e55394cfa8cc0320f7d",
+    "bank_v1_full": "f3b4c804ffacdedf2fbd62a51223f5bbd66e9c9470e43e55394cfa8cc0320f7d",
+    "naive_body_extension_expected_from_old_capture": "15e575816b19b73a1377caf699649be879bb771a2b62c364eda2afbee91be6df",
+    "naive_body_extension_actual_compact": "69aa1a4b00b3ae04c254e5d1524b64fa35a5593c222b3a7f82904ba007795c69",
+    "naive_body_extension_actual_full": "8de21b7edc4042d7c0c34ec4397aa348cae28e3c2b02a586d3b65d839ff64af1",
+    "meaning": "v1 omitted body and masked differences; naive extension compares unlike source representations",
+    "changed_runtime_fields": [
+      {
+        "field": ".limitations",
+        "expected": "真实资料不代表真实代销或真实成交；价格冻结，不填未来行情",
+        "actual": "真实公开基金资料；比赛模拟资金、费用和交易，不代表真实代销或收益保证。"
+      },
+      {
+        "field": ".pricing",
+        "expected": "使用本版本冻结的最后公开NAV作为模拟成交基准，公开NAV日期与模拟计价日分别记录",
+        "actual": "预览使用最近已公布的可靠净值；最终按订单计价日净值，未公布时等待，不使用虚构未来价格。"
+      },
+      {
+        "field": ".runtime_pricing_policy_version",
+        "expected": null,
+        "actual": "published-nav-by-order-date-20261015-v1"
+      }
+    ],
+    "full_only_fields": [
+      ".data_source",
+      ".dataset_id",
+      ".dataset_version",
+      ".execution_source_kind",
+      ".issuer_risk_rating",
+      ".project_policy_version",
+      ".public_fields",
+      ".public_sources",
+      ".rules_source",
+      ".source_product_code",
+      ".underlying_source_kind"
+    ]
+  },
+  "after": [
+    {
+      "code": "000003",
+      "expected_snapshot": "8d7bd18ed3763a1270bed4bc969ea4ad7740eeadb9d0d16acdf0f790e9c711f4",
+      "compact": "8d7bd18ed3763a1270bed4bc969ea4ad7740eeadb9d0d16acdf0f790e9c711f4",
+      "full": "8d7bd18ed3763a1270bed4bc969ea4ad7740eeadb9d0d16acdf0f790e9c711f4",
+      "binding_source": "fixed-real-fund-snapshot"
+    },
+    {
+      "code": "671030",
+      "expected_snapshot": "20d9cfdb94459df13e9a494f14489cc30ae7091d7303b9379c2859c051d5df43",
+      "compact": "20d9cfdb94459df13e9a494f14489cc30ae7091d7303b9379c2859c051d5df43",
+      "full": "20d9cfdb94459df13e9a494f14489cc30ae7091d7303b9379c2859c051d5df43",
+      "binding_source": "fixed-real-fund-snapshot"
+    },
+    {
+      "code": "B017",
+      "expected_snapshot": null,
+      "compact": "04a366bbcdc144c34ddd4bbd881795152db7beb0a237924b56a1249103877e55",
+      "full": "04a366bbcdc144c34ddd4bbd881795152db7beb0a237924b56a1249103877e55",
+      "binding_source": "independent-bank-supplement; no former current_binding"
+    }
+  ],
+  "migration": {
+    "content_contract": "wealth-static-disclosure-v2",
+    "previous_data_version": "bfa4f29d6bfae78f7fe228c24fe3fcdda641107ffa23efadd851af94e831d33b",
+    "data_version": "d59ecfcc2ecb09e6573278d5b5f38524407f2ac72ac0051ebf7e7b63f53ff3e1",
+    "daily_version": "5a1f10fea14d1691fc2341df93536d4550d03e2214f1ed390ddd7ec89dc4b5f8",
+    "previous_bindings_verified": 13578,
+    "capture_sha256": "ca5b14bf80951154f9b04aedfd30130b92e26195def3204e1c8d5ed259f4dd30",
+    "bank_rows": 13578,
+    "database_writes": 0,
+    "external_requests": 0
+  },
+  "offline": {
+    "external_requests": 0,
+    "empty_root_install": true,
+    "real_pool": 13578,
+    "bank_supplement_definitions": 19,
+    "augmented_directory": 27070,
+    "data_version": "e08200a8427a1a80f635bcc993d563c9660dacb4cb590f8c67153ff919ab6e83",
+    "daily_version": "d351efa228b2b9b0d42f77fbded651cd6eaf68463ef5fb1953ff34a85bbc91f9",
+    "archive": ".deps/final_round/wealth-final-offline-20261015-disclosure-v2.zip",
+    "sha256": "63094dcbefbc4e92745859db095458fa6e29a10019844b17fe4bc41bc8655184",
+    "seconds": 56.67,
+    "contains_private_data": false
+  },
+  "http": [
+    {
+      "phase": "initial_formal_display",
+      "http": 200,
+      "seconds": 6.765,
+      "full_catalogue_calls": 1,
+      "scoped_catalogue_calls": 0
+    },
+    {
+      "phase": "repeat_formal_display_fixed_material",
+      "http": 200,
+      "seconds": 1.39,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 0
+    },
+    {
+      "phase": "existing_R1_quick_candidate",
+      "http": 200,
+      "seconds": 0.422,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 1
+    },
+    {
+      "phase": "initial_material_and_exact_000003",
+      "http": 200,
+      "seconds": 7.022,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 1
+    },
+    {
+      "phase": "initial_material_and_exact_671030",
+      "http": 200,
+      "seconds": 7.007,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 1
+    },
+    {
+      "phase": "recommend_no_prior_plan",
+      "http": 200,
+      "seconds": 15.969,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 1,
+      "displayed_codes": [
+        "B017",
+        "000003",
+        "000001"
+      ]
+    },
+    {
+      "phase": "next_batch",
+      "http": 200,
+      "seconds": 11.231,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 1,
+      "displayed_codes": [
+        "000008",
+        "B018",
+        "000004"
+      ]
+    },
+    {
+      "phase": "Plan",
+      "http": 200,
+      "seconds": 7.175,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 0
+    },
+    {
+      "phase": "prepare",
+      "http": 200,
+      "seconds": 2.014,
+      "full_catalogue_calls": 0,
+      "scoped_catalogue_calls": 5
+    },
+    {
+      "phase": "no_trades_or_holds",
+      "orders": 0,
+      "lots": 0,
+      "held_fen": 0
+    }
+  ]
+}

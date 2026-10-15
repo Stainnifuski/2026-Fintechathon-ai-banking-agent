@@ -118,9 +118,11 @@ async def import_dataset(db: AsyncSession, payload: dict, dry_run: bool=False) -
                 underlying_source_kind='real',execution_source_kind='simulated',source_product_code=pid,
                 project_policy_version=policy['version'],issuer_risk_rating=p.get('public_risk_rating'),
                 risk='项目风险分级独立于发行人评级；可靠公开更高等级或分类冲突停止申购；不承诺保本',
-                pricing='预览使用最近已公布可靠NAV，最终按订单计价日NAV；未公布则等待',
+                # Preserve this immutable source version on fresh imports too.
+                # Current pricing is a separately versioned runtime overlay.
+                pricing='使用本版本冻结的最后公开NAV作为模拟成交基准，公开NAV日期与模拟计价日分别记录',
                 fees='项目模拟申购和赎回费用为0，无额外销售服务费；公开费用原值另存，未知不补零',
-                limitations='真实资料不代表真实代销或真实成交；不填未来行情',
+                limitations='真实资料不代表真实代销或真实成交；价格冻结，不填未来行情',
                 public_sources=p.get('public_sources',[]),public_fields=p.get('public_fields',{}))
         if p['rules'].get('quick_redemption'):
             disclosure.update(quick_redemption=p['rules']['quick_redemption'],

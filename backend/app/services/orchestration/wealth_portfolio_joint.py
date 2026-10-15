@@ -27,8 +27,8 @@ async def invoke(call):
         message=str(error)+('：'+', '.join(r for r in reasons if isinstance(r,str)) if reasons else '')
         raise WealthPolicyError(message,error.code,getattr(error,'status_code',422)) from error
 
-DATA='bfa4f29d6bfae78f7fe228c24fe3fcdda641107ffa23efadd851af94e831d33b'
-DAILY='770e273fa9e1a0bfbd8c34286628224ab90788a60a06729d93239efd20922e6f'
+DATA='d59ecfcc2ecb09e6573278d5b5f38524407f2ac72ac0051ebf7e7b63f53ff3e1'
+DAILY='5a1f10fea14d1691fc2341df93536d4550d03e2214f1ed390ddd7ec89dc4b5f8'
 
 class ServerReads:
     owns_responses=True # protected HTTP returns request-owned new JSON, never a shared bank cache

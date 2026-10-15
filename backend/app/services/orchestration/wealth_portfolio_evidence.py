@@ -13,11 +13,7 @@ from .wealth_portfolio_data import (read, canonical, digest, utc, reference, mis
     apply_evidence, simulated_product, coverage, TEXT_FIELDS, ADAPTER_VERSION)
 
 
-def product_content(row: dict) -> dict:
-    """规则/披露/身份的内容绑定；净值和观察时刻另由当前业务时效检查。"""
-    keys=('product_id','version','name','kind','category','product_risk_level','identity',
-          'fund_family_id','dataset_key','rules','share_class')
-    return {**{key:row.get(key) for key in keys},'disclosure_version':row.get('disclosure',{}).get('version')}
+from ...domain.wealth_product_content import product_content
 
 
 def register(root: Path, records: list[dict], expected_codes: set[str]) -> dict:

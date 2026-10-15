@@ -71,7 +71,7 @@
 - 独立3014/8014正常运行，原3010/8010/5432保留，正常启动烟测8015已关闭。用户人工验收尚未完成；本轮无远端写入。
 - 已闭合首次UI重复资料读取：正式/products与A使用同一个按资料版本及授权scope核定的静态源，并发初读合并；前端等待context并复用同scope初始promise。static-catalogue.log共7通过；benchmark-shared.json真实HTTP首次1次全目录，重复显示及推荐/换批/Plan/prepare全为0，权限/资产/选中产品控制仍动态核验。
 
-最终资料包按当前配置重新生成并禁网空目录安装通过（54.08秒）；文件指纹与当前源码配置匹配。功能本地提交e27d27f0f2b31863c7c6d0c62b123aab5dc56b19、a0d329c（目录共用补修）。上述为当时阶段记录；本轮PR追加检查仍有1项既有资料指纹断言未闭合，见后文，不代表全仓全部通过。
+最终资料包按当前配置重新生成并禁网空目录安装通过（54.08秒）；文件指纹与当前源码配置匹配。功能本地提交e27d27f0f2b31863c7c6d0c62b123aab5dc56b19、a0d329c（目录共用补修）。上述是历史阶段记录；当前披露绑定与包版本以下述v2记录为准。
 
 
 ## 正式理财环境入口修正（2026-10-15）
@@ -90,4 +90,16 @@
 已按用户新授权整合aa436b0；4处冲突逐项保留双方功能，96项相关后端、41项前端及构建通过，证据与复现范围见../validation/wealth_main_integration_20261015.md。当前进入PR审阅，未合并main；此前“本轮不远端写入”是原阶段边界，由本次明确PR授权覆盖。人工验收和资料包依赖仍保留。
 
 
-PR补充检查：正常时钟恢复检查通过，银行datetime与NOVA时钟在pytest结束后恢复为真实时钟，.env未变；未改全局业务时钟。历史货币调查配置2条及1个未被普通产品引用的专属资料样本已补清理，63条普通证据记录未改；最终离线包禁网空目录安装通过（54.88秒），SHA256=1f4c5520cf6e682eebf4318b451865fd51dbd57e255d5773de16b63c71deca10。额外资料检查有1项既有未闭合断言（test_current_content_same_version_change_or_unknown_rejected），20项通过。直接扩展披露指纹的尝试因使既有正常产品版本拒绝已撤回；保留原契约和必要校验，不将试验结果算当前通过项。该项在Draft PR明确列出，待版本化修复，未宣称所有验收通过。
+PR补充检查：正常时钟恢复、原配置保全及旧货币专属资料清理的既有证据保留；披露指纹问题已修复，使用下述v2快照和新离线包。
+
+## PR #12 披露指纹闭合（2026-10-15）
+
+- 原失败测试保持原样，现已通过。同版本风险、费用、期限、计价、边界及公开策略正文变更可识别；缺失/不一致绑定继续拒绝。effective披露重复规范化不会掩盖正文篡改。
+- 000003原v1快照、精简、完整指纹均为`f3b4c804ffacdedf2fbd62a51223f5bbd66e9c9470e43e55394cfa8cc0320f7d`，原因是根本没有绑定正文。旧精简捕获只有13个披露字段；完整读取另含dataset/source/project_policy/public_fields等。运行时pricing由“使用本版本冻结的最后公开NAV…”改为“最终按订单计价日净值…”，limitations由“价格冻结…”改为“比赛模拟资金、费用和交易…”，并增加runtime_pricing_policy_version。直接加入整个disclosure同时引入这些差异而误拒。精确值、前后SHA见[字段证据](../validation/wealth_disclosure_fingerprints_20261015.json)。
+- 统一模块`backend/app/domain/wealth_product_content.py`，契约`wealth-static-disclosure-v2`。必要披露正文、原始及effective计价/边界、公开目标/策略/基准语义、项目政策版本、规则均绑定。精简/完整保持相同JSON类型和缺失/null语义，不把嵌套对象转字符串。公开材料原始来源仍由material/classification指纹独立核验。
+- NAV、报价日期、可用/观察时间和execution_policy.quote不进静态内容指纹；行情时效、报价与政策注册校验仍单独保留。没有放宽风险、确认、MFA、控制或现金检查。
+- 同版本原始资料不再因重建库漂移：新导入保留原始冻结计价/边界文本，当前公开NAV计价由独立版本化effective政策表达；没有修改历史数据库记录或成交事实。
+- 已离线逐项验证13,578个旧绑定，生成新不可变资料版本及捕获引用；旧快照保留为历史证据，不是可接受新运行绑定的兼容分支。新DATA=`d59ecfcc2ecb09e6573278d5b5f38524407f2ac72ac0051ebf7e7b63f53ff3e1`，DAILY=`5a1f10fea14d1691fc2341df93536d4550d03e2214f1ed390ddd7ec89dc4b5f8`；补充后DATA=`e08200a8427a1a80f635bcc993d563c9660dacb4cb590f8c67153ff919ab6e83`、DAILY=`d351efa228b2b9b0d42f77fbded651cd6eaf68463ef5fb1953ff34a85bbc91f9`。模拟银行19个定义继续使用独立补充资料版本，不混入普通基金基准。
+- B017、000003、671030实际HTTP选品成功，推荐/换批/Plan/prepare通过；prepare后订单0、持仓0、占款0。推荐/换批/Plan/prepare耗时见字段证据，首次1次全目录，后续全目录0次；业务动态核验继续进行。
+- 最新离线包`.deps/final_round/wealth-final-offline-20261015-disclosure-v2.zip`，SHA256=`63094dcbefbc4e92745859db095458fa6e29a10019844b17fe4bc41bc8655184`；禁网空目录安装通过（56.67秒），普通13578＋银行19，目录27070。公开版本清单`config/wealth/portfolio_content_binding_v2.json`随包校验。原始缓存、数据库、密钥不打包。
+- 验证记录见`docs/validation/wealth_disclosure_fix_20261015.md`。本轮不重新采集、不改算法参数；未受影响的前端41项及正式构建证据复用。人工验收与独立离线资料安装仍为交付条件；保持Draft PR，不合并main。
