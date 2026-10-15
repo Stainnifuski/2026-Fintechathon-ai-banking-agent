@@ -45,6 +45,9 @@ async def db(monkeypatch):
         def now(cls, tz=None):
             return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
     monkeypatch.setattr(bill_service, "datetime", FrozenDatetime)
+    # NOVA and its bank query must observe the same isolated fixture clock.
+    from backend.app.services.ai import nova_tools
+    monkeypatch.setattr(nova_tools, "utc_now", lambda: NOW.astimezone(timezone.utc))
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

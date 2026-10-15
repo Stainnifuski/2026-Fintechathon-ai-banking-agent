@@ -48,3 +48,24 @@ async def messages(request: BillMessage, current_user=Depends(get_current_user),
         return dict(kind="clarification", mode="offline", message=str(error))
     except BankError as error:
         raise bank_error(error) from error
+
+
+from ..schemas.bill_insights import CashflowScenario, CashflowProjection, SubscriptionInsights
+from ..services.bank.bill_subscriptions import subscription_insights
+from ..services.bank.bill_cashflow import project_cashflow
+
+
+@router.get('/subscription-insights', response_model=SubscriptionInsights)
+async def subscriptions_analysis(query: BillQuery = Depends(), current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        return await subscription_insights(db, current_user['user_id'], query)
+    except BankError as error:
+        raise bank_error(error) from error
+
+
+@router.post('/cashflow', response_model=CashflowProjection)
+async def cashflow(request: CashflowScenario, current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        return await project_cashflow(db, current_user['user_id'], request)
+    except BankError as error:
+        raise bank_error(error) from error

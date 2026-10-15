@@ -294,6 +294,21 @@ function App() {
     finally { setIsActing(false); }
   };
 
+  const reviewBillSubscription = async (id: string) => {
+    if (isActing) return;
+    setIsActing(true); setStatus('');
+    try {
+      const subscription = subscriptions.find(item => item.subscription_id === id) || (await bank.listSubscriptions()).find(item => item.subscription_id === id);
+      if (!subscription) throw new Error('订阅已变化，请刷新后重试');
+      const preview = await bank.previewSubscriptionCancellation(subscription);
+      openSection('subscriptions');
+      setSelectedSubscriptionId(id);
+      setPendingChargeSubscription(null); setPendingSubscription(preview.subscription);
+      setSubscriptionCancellationToken(preview.confirmation_token);
+    } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
+  };
+
   const confirmSubscriptionCancellation = async () => {
     if (!pendingSubscription || !subscriptionCancellationToken || isActing) return;
     setIsActing(true); setStatus('');
@@ -302,6 +317,7 @@ function App() {
       setSubscriptions(items => items.map(item => item.subscription_id === updated.subscription_id ? updated : item));
       setPendingSubscription(null); setSubscriptionCancellationToken('');
       setStatus(`已取消 ${updated.merchant_name} 订阅，后续不会再自动扣费`);
+      await load();
     } catch (error) { setStatus(message(error)); }
     finally { setIsActing(false); }
   };
@@ -526,7 +542,8 @@ function App() {
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
         {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
-        {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>让每一笔变化都有解释。</h1><p>账单分析保持只读，不会通过问答直接修改账户。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} /></Suspense></>}
+        {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>让每一笔变化都有解释。</h1><p>账单分析保持只读，不会通过问答直接修改账户。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} /></Suspense></>}
+
         {bankingSection === 'transfer' && <><div className="page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账、收款和任务状态集中在一处。</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="grid">
       <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong>{a.available_fen != null && <small>可用 ¥{(a.available_fen / 100).toFixed(2)} · 占款 ¥{((a.held_fen || 0) / 100).toFixed(2)}</small>}<small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
       <div className="card"><h2>创建转账任务</h2><form onSubmit={submitTransfer}>
