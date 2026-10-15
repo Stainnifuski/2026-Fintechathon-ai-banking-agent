@@ -3,20 +3,30 @@ import * as w from '../../services/wealth';
 import type {Account} from '../../services/bank';
 import StructuredActionPanel from './StructuredActionPanel';
 import './styles.css';
+import {competitionEnvironment,type WealthContexts} from '../../utils/wealthEnvironment';
 interface Props {accounts:Account[];revision:number;onActivity:()=>void;userId:string;developmentManual?:boolean}
-interface Contexts {selected:string;version:number;items:{context_id:string;label:string;mode:string}[]}
-const explain=(e:unknown)=>(e as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message||'读取未完成，请刷新后重试。';
+type Contexts=WealthContexts;
+const explain=(e:unknown)=>(e as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message||(e instanceof Error?e.message:'读取未完成，请刷新后重试。');
 /** Formal manual wealth entry. No research tool shell or separate chat workspace. */
 export default function Wealth({revision,onActivity,userId}:Props){
  const [assessment,setAssessment]=useState<w.Assessment|null>(null),[questionnaire,setQuestionnaire]=useState<w.Questionnaire|null>(null);
  const [contexts,setContexts]=useState<Contexts|null>(null),[answers,setAnswers]=useState<Record<string,number>>({});
  const [adult,setAdult]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[localRevision,setLocalRevision]=useState(0);
- useEffect(()=>{let live=true;setNotice('');void Promise.all([w.get<w.Assessment|null>('/assessments/current'),w.get<w.Questionnaire>('/questionnaire'),w.get<Contexts>('/contexts')]).then(([a,q,c])=>{if(live){setAssessment(a);setQuestionnaire(q);setContexts(c);}}).catch(e=>{if(live)setNotice(explain(e));});return()=>{live=false;};},[userId,revision,localRevision]);
+ useEffect(()=>{let live=true;setNotice('');void Promise.all([w.get<w.Assessment|null>('/assessments/current'),w.get<w.Questionnaire>('/questionnaire'),w.get<Contexts>('/contexts')]).then(async([a,q,c])=>{
+  if(!live)return;
+  const available=competitionEnvironment(c);
+  if(available.selected!==c.selected){
+    const selected=await w.post<{context_id:string;version:number}>('/contexts/select',{context_id:available.selected,version:c.version});
+    available.version=selected.version;
+    if(live)onActivity();
+  }
+  if(live){setAssessment(a);setQuestionnaire(q);setContexts(available);}
+ }).catch(e=>{if(live)setNotice(explain(e));});return()=>{live=false;};},[userId,revision,localRevision]);
  const act=async(fn:()=>Promise<void>)=>{if(busy)return;setBusy(true);setNotice('');try{await fn();setLocalRevision(n=>n+1);}catch(e){setNotice(explain(e));}finally{setBusy(false);}};
  const changed=()=>{setLocalRevision(n=>n+1);onActivity();};
  return <section className="wealth-page"><h1>理财</h1><p>真实基金资料与虚构银行理财分别标源，资金和交易均为比赛模拟。本金可能亏损；低风险和快赎能力不代表本金或收益保证。</p>
-  <label>资金上下文<select aria-label="资金上下文" disabled={busy} value={contexts?.selected??'legacy-v1'} onChange={e=>void act(async()=>{if(!contexts)return;await w.post('/contexts/select',{context_id:e.target.value,version:contexts.version});changed();})}>{contexts?.items.map(c=><option key={c.context_id} value={c.context_id}>{c.label}</option>)}</select></label>
-  <p className="hint">仅选择本人已有授权范围，不复制余额。需要初始化演示账户时，请按工程准备说明使用受控初始化命令；无需产品研究或对话入口。</p>
+  <label>资金上下文<select aria-label="资金上下文" disabled={busy} value={contexts?.selected??''} onChange={e=>void act(async()=>{if(!contexts)return;await w.post('/contexts/select',{context_id:e.target.value,version:contexts.version});changed();})}>{contexts?.items.map(c=><option key={c.context_id} value={c.context_id}>{c.label}</option>)}</select></label>
+  <p className="hint">默认使用本人已有授权的当前比赛理财环境，不复制余额。原银行账务与历史记录继续保留在共用银行服务；本页不提供旧环境入口。未初始化时请按准备指南操作。</p>
   <button className="secondary" disabled={busy} onClick={()=>{changed();}}>刷新银行事实</button>
   {notice&&<p role="alert">{notice}</p>}
   <details><summary>本人风险评估</summary><p>{assessment?`模拟承受能力 R${assessment.capacity_level} · ${assessment.confirmed?'已确认':'待确认'}`:'尚未评估，可先查看客观产品资料'}</p>
@@ -25,6 +35,6 @@ export default function Wealth({revision,onActivity,userId}:Props){
     <button disabled={busy||!adult||Object.keys(answers).length!==9} onClick={()=>void act(async()=>{setAssessment(await w.post<w.Assessment>('/assessments',{questionnaire_version:questionnaire?.version,profile_version:questionnaire?.profile_version,adult,full_capacity:adult,answers}));})}>提交本人答案</button>
    </details>{assessment&&!assessment.confirmed&&<button disabled={busy} onClick={()=>void act(async()=>{await w.post(`/assessments/${assessment.assessment_id}/confirm`,{});changed();})}>本人确认上述评估结果并继续原需求</button>}
   </details>
-  {contexts&&<StructuredActionPanel key={`${userId}:${contexts?.selected??'legacy-v1'}`} userId={userId} revision={revision+localRevision} onActivity={changed}/>}
+  {contexts&&<StructuredActionPanel key={`${userId}:${contexts.selected}`} userId={userId} revision={revision+localRevision} onActivity={changed}/>}
  </section>;
 }

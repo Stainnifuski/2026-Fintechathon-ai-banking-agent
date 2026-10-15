@@ -82,3 +82,9 @@ BANK_API_BASE_URL指向对应银行服务；统一MFA和内部令牌沿用现有
 - 已闭合首次UI重复资料读取：正式/products与A使用同一个按资料版本及授权scope核定的静态源，并发初读合并；前端等待context并复用同scope初始promise。static-catalogue.log共7通过；benchmark-shared.json真实HTTP首次1次全目录，重复显示及推荐/换批/Plan/prepare全为0，权限/资产/选中产品控制仍动态核验。
 
 最终资料包按当前配置重新生成并禁网空目录安装通过（54.08秒）；文件指纹与当前源码配置匹配。功能本地提交e27d27f0f2b31863c7c6d0c62b123aab5dc56b19、a0d329c（目录共用补修）。当前所有自动检查的已知失败已修复或明确为无效前置，不将取消项/人工未测写成通过。
+
+
+## 正式理财环境入口修正（2026-10-15）
+“原银行账本（兼容8产品）”实际是legacy-v1哨兵：selected()返回None，资产读取本人不属于模拟context的原账户，产品读取无rules.dataset_id的当前版本。当前独立集成库实查该集合7个产品（MF001—MF005、MW001、MW003），并非固定8个；人工账号原账户ROUND2H-LEGACY余额0，当前比赛账户为SAba7edaba6791dcf182160535d43e，现金20,000元。
+正式页面仅展示本人已有、未归档的real-public-paper-v1比赛context，优先保留当前比赛选择；当前选择为旧环境时经原授权context选择接口切换到已有比赛环境，不创建账户或复制现金。无可用比赛context则明确提示初始化，不回退旧环境。共用银行模块/API、原账户、历史订单/持仓/流水均保留；未新增旧环境兼容能力。
+核验：只读数据库审计.deps/final_round/legacy-entry-audit.json；环境筛选/默认/缺失3个独立检查通过；最终类型及构建见legacy-entry-build.log。正式浏览器核对结果另附当前回传。
