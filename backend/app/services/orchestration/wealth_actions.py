@@ -2,6 +2,7 @@
 from decimal import Decimal
 from copy import deepcopy
 from uuid import uuid4
+from types import SimpleNamespace
 from sqlalchemy import select
 from ...schemas.wealth_action import WealthActionResultV1
 from ...schemas.wealth import InvestmentCommand
@@ -44,7 +45,6 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
     # External bank scope is always checked before replay or object lookup.
     facts=await bank.assets(user_id)
     if facts['context_id']!=request.context_id:reject('资金范围已变化，请刷新','STALE_CONTEXT')
-    await policy.lock_profile(db,user_id)
     key='WA'+fingerprint([user_id,request.request_id]);digest=fingerprint(request.model_dump())
     old=await db.get(WealthChatRequestORM,key)
     if old:
@@ -61,7 +61,14 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
     else:
         row=WealthConversationORM(session_id='WC'+uuid4().hex,user_id=user_id,version=1,
             data={'context_id':request.context_id,'history':[],'structured_actions':True})
-        db.add(row);await db.flush()
+        db.add(row)
+        await db.commit()  # Session identity must be visible to the A access check.
+    # Remote bank reads may persist exact-code NAV observations in a separate
+    # transaction. Do not keep a SQLite writer lock or an uncommitted session
+    # insert while waiting for them. Recheck replay/session under the user lock
+    # immediately before persisting the action result.
+    row=SimpleNamespace(session_id=row.session_id,version=row.version,data=deepcopy(row.data))
+    await db.rollback()
     p=request.params;action=request.action;selection=request.selection_context
     held=positions(facts)
     catalog=None
@@ -181,21 +188,7 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
             else:
                 from .wealth_selection import prepare
                 from ...schemas.wealth_selection import PortfolioPrepare
-                # prepare releases its transaction for remote bank prechecks.
-                # Rollback expires loaded objects and detaches a new conversation;
-                # never increment that old ORM instance after the handler returns.
-                action_session_id,action_session_version,action_session_data=row.session_id,row.version,deepcopy(row.data)
                 data=await prepare(db,user_id,p['portfolio_id'],PortfolioPrepare(expected_version=p['expected_version'],snapshot_id=p['snapshot_id'],payment_account_id=p.get('payment_account_id')),bank,portfolio_source)
-                await policy.lock_profile(db,user_id)
-                row=await db.get(WealthConversationORM,action_session_id,populate_existing=True)
-                if row is None:
-                    if request.session_id:reject('会话已关闭','SESSION_CLOSED')
-                    row=WealthConversationORM(session_id=action_session_id,user_id=user_id,version=action_session_version,data=action_session_data)
-                    db.add(row)
-                else:
-                    if row.user_id!=user_id or row.data.get('closed'):reject('会话已关闭','SESSION_CLOSED')
-                    if row.data.get('context_id','legacy-v1')!=request.context_id:reject('会话资金范围已变化','STALE_CONTEXT')
-                    if row.version!=action_session_version:reject('会话版本已变化，请刷新后重试','STALE_SESSION')
     else:
         if action=='recommend_products' and p['filter'] is None:clarify('filter','请选择普通、类别或主题推荐')
         if action=='revise_portfolio':
@@ -213,6 +206,25 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
                 finally:db.info.pop('wealth_portfolio_action_session',None)
     current=(await bank.call('POST','/contexts',{'subject_user_id':user_id}))['selected']
     if current!=request.context_id:reject('处理期间资金环境已变化，请重新查询','STALE_CONTEXT')
+    await policy.lock_profile(db,user_id)
+    replay=await db.get(WealthChatRequestORM,key,populate_existing=True)
+    if replay:
+        if replay.digest!=digest:reject('请求编号被用于不同参数','IDEMPOTENCY_CONFLICT')
+        replay_session=await db.get(WealthConversationORM,replay.response['session_id'],populate_existing=True)
+        if not replay_session or replay_session.user_id!=user_id or replay_session.data.get('closed'):reject('会话已关闭','SESSION_CLOSED')
+        result=deepcopy(replay.response)
+        await db.rollback()
+        return result
+    stored=await db.get(WealthConversationORM,row.session_id,populate_existing=True)
+    if stored is None:
+        if request.session_id:reject('会话已关闭','SESSION_CLOSED')
+        stored=WealthConversationORM(session_id=row.session_id,user_id=user_id,version=row.version,data=row.data)
+        db.add(stored)
+    else:
+        if stored.user_id!=user_id or stored.data.get('closed'):reject('会话已关闭','SESSION_CLOSED')
+        if stored.data.get('context_id','legacy-v1')!=request.context_id:reject('会话资金范围已变化','STALE_CONTEXT')
+        if stored.version!=row.version:reject('会话版本已变化，请刷新后重试','STALE_SESSION')
+    row=stored
     row.version+=1
     result=WealthActionResultV1(request_id=request.request_id,context_id=request.context_id,session_id=row.session_id,
         session_version=row.version,action=action,status=status,message=message,data=data,required_fields=required,allowed_actions=allowed).model_dump(mode='json')

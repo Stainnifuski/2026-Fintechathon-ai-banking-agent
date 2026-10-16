@@ -258,3 +258,13 @@ async def test_no_public_fixture_or_client_plan_bypass(http_store):
     if hasattr(app.state,'wealth_portfolio_source'):del app.state.wealth_portfolio_source
     response=await client.post('/api/v1/wealth/portfolio/plans/fake/prepare',json={'expected_version':1,'snapshot_id':'fake'})
     assert response.status_code==503 and response.json()['detail']['code']=='PORTFOLIO_PROVIDER_UNAVAILABLE'
+
+
+def test_unadopted_advice_cannot_become_an_implicit_trade():
+    from backend.app.services.orchestration.wealth_selection import execution_targets
+    from backend.app.integrations.wealth_authorization import WealthPolicyError
+    plan={'selected_positions':[], 'advised_positions':[{'product_id':'MF002','product_version':1,'target_fen':10000,'current_fen':0}]}
+    with pytest.raises(WealthPolicyError) as error:
+        execution_targets(plan,{'accounts':[]})
+    assert error.value.code=='PORTFOLIO_SELECTION_REQUIRED'
+    assert '校验所选产品与比例' in error.value.message

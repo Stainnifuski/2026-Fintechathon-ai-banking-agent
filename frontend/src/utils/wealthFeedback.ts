@@ -1,6 +1,7 @@
 /** User-facing explanations; server codes remain in network/audit evidence only. */
 export function wealthFeedback(raw:string):string {
  const rules:[string[],string][]=[
+  [['BANK_UNAVAILABLE','BANK_TIMEOUT','database is locked'],'银行资料或最新报价读取暂未完成，尚未生成交易预览。请稍后再次点击“核对差额与准备预览”；原方案和已受理交易保留。'],
   [['ASSESSMENT_UNCONFIRMED'],'风险评估已填写，但还没有本人确认。请展开上方“本人风险评估”，点击“本人确认上述评估结果并继续原需求”，再重新发起推荐或规划。'],
   [['ASSESSMENT_PURCHASE_FORBIDDEN'],'当前正式风险评估结果不允许申购。请先查看“本人风险评估”中的结果说明；可以继续查询产品、订单和持仓，不能跳过评估限制购买。'],
   [['ASSESSMENT_LIMIT_REACHED'],'已达到风险评估次数限制，请按评估页面提示的可用时间再尝试；现有查询不受影响。'],

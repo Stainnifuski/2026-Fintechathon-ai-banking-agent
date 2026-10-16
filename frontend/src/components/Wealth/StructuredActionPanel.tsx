@@ -118,14 +118,14 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
     client.current.setContext(null);if(ready)client.current.setContext(contextId);
   },[controlKey,contextId]);
   useEffect(()=>{if(ready&&!date)setDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready.assets.business_at)));},[ready,date,setDate]);
-  const run=useCallback(async(action:ActionName,params:Record<string,unknown>,selection?:ActionRequest['selection_context'])=>{
-    if(!ready||reading)return;
+  const run=useCallback(async(action:ActionName,params:Record<string,unknown>,selection?:ActionRequest['selection_context'],throwOnError=false)=>{
+    if(!ready||reading){if(throwOnError)throw new Error('银行事实正在加载，请等待完成后再准备预览。');return;}
     const slot=resultSlot(action);
     const latestDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(ready.assets.business_at));
     if(action==='show_wealth_returns'&&typeof params.anchor_date==='string'&&params.anchor_date>latestDate){fail(slot,'未来还没有发生，不能查询未来收益。');return;}
     const requestNumber=++latestRequest.current;setPending(slot);setActionErrors(current=>({...current,[slot]:''}));
     try{const response=await client.current.request(action,params,selection);
-      if(requestNumber!==latestRequest.current||scope.current!==(ready.assets.context_id??'legacy-v1'))return;
+      if(requestNumber!==latestRequest.current||scope.current!==(ready.assets.context_id??'legacy-v1')){if(throwOnError)throw new Error('账户范围或当前操作已变化，请重新读取方案后再准备预览。');return;}
       if(action==='plan_portfolio'&&response.status==='ok'){
         const plan=readPortfolioPlan(response.data,ready.assets.context_id??'legacy-v1');
         for(const group of plan.candidate_groups)assertCurrentCandidates(group,ready.products);
@@ -148,7 +148,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
         }else setPositionState(current=>currentTableState(current,key,page.table_data.rows as w.PositionRow[],row=>row.position_key));
       }
       setResults(previous=>({...previous,[slot]:response}));return response;
-    }catch(reason){if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??(reason instanceof Error?reason.message:'操作失败，请刷新并核对原请求。'));}finally{if(requestNumber===latestRequest.current)setPending(null);}
+    }catch(reason){const message=(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??(reason instanceof Error?reason.message:'操作失败，请刷新并核对原请求。');if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,message);if(throwOnError)throw new Error(message);}finally{if(requestNumber===latestRequest.current)setPending(null);}
   },[ready,reading]);
   const loadDetail=useCallback<ProductDetailLoader>(async(id,period,version)=>{
     const response=await run('show_product_detail',{product_id:id,product_version:version,period},version?{object_type:'products',ids:[`${id}:${version}`]}:undefined);
@@ -242,7 +242,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
         loadDetail={loadDetail} loadComparison={loadComparison} onContinue={()=>{const selected=candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class}));const keys=(rows:{product_id:string;product_version:number}[])=>rows.map(r=>`${r.product_id}:${r.product_version}`).sort().join(',');if(!portfolio||keys(selected)!==keys(portfolio.selected_positions))void run('plan_portfolio',{selected});else setReviewing(true);}}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。尚无整体方案时，继续操作会先请求配置服务创建方案。</p></>}
       {portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.snapshot_id}:${revision}:${reload}:${controlKey}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={()=>{setActivityNotice('银行操作已返回，请核对更新后的资金、订单与持仓；已受理不等于已结算。');onActivity();}}
         onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)});if(result?.status!=='ok')throw new Error(result?.message??'比例校验未完成，请重新核对。');return readPortfolioPlan(result.data,portfolio.context_id??contextId);}}
-        onPrepare={async (plan,paymentAccountId)=>{const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id,...(paymentAccountId?{payment_account_id:paymentAccountId}:{})});if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}
+        onPrepare={async (plan,paymentAccountId)=>{const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id,...(paymentAccountId?{payment_account_id:paymentAccountId}:{})},undefined,true);if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}
     </fieldset>
     <fieldset disabled={busy||!ready}><legend>订单查询</legend><button onClick={()=>list('orders')}>查询我的订单</button>{renderResult('orders')}</fieldset>
     <fieldset disabled={busy||!ready}><legend>持仓查询</legend><button onClick={()=>list('positions')}>查询我的持仓</button>{renderResult('positions')}</fieldset>

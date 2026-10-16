@@ -40,6 +40,12 @@ def execution_targets(plan,snapshot,payment_account_id=None):
     """
     if plan['selected_positions'] and all('account_id' in p and 'target_fen' in p for p in plan['selected_positions']):
         return plan,None # compatible already-bound legacy provider
+    chosen={(p['product_id'],p['product_version']) for p in plan['selected_positions']}
+    missing=[p for p in plan.get('advised_positions',[]) if
+        (p['product_id'],p['product_version']) not in chosen and p['target_fen']!=p.get('current_fen',0)]
+    if missing:
+        reject('方案中还有未纳入已校验选择的建议产品。请先在推荐结果中勾选需要的产品，点击“校验所选产品与比例”，再准备差额；尚未下单或占款。',
+               'PORTFOLIO_SELECTION_REQUIRED',409)
     accounts={a['account_id']:a for a in snapshot['accounts'] if a['account_type']!='credit'}
     if payment_account_id is not None and payment_account_id not in accounts:
         reject('付款账户不属于当前授权范围','ACCOUNT_CONTEXT_MISMATCH',409)
