@@ -1,0 +1,1168 @@
+{
+  "source_commit": "95b14b21e2fa61c777b57dd8075395aecd958689",
+  "note": "Each value is a standalone JSON Schema document. Strict action-specific params are enforced in code even though OpenAPI params is a generic object.",
+  "envelope": {
+    "$defs": {
+      "SelectionContext": {
+        "additionalProperties": false,
+        "properties": {
+          "object_type": {
+            "enum": [
+              "products",
+              "orders",
+              "positions"
+            ],
+            "title": "Object Type",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 160,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "object_type",
+          "ids"
+        ],
+        "title": "SelectionContext",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "wealth-action-v1",
+        "default": "wealth-action-v1",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "request_id": {
+        "maxLength": 64,
+        "minLength": 8,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "title": "Request Id",
+        "type": "string"
+      },
+      "context_id": {
+        "maxLength": 100,
+        "minLength": 1,
+        "title": "Context Id",
+        "type": "string"
+      },
+      "session_id": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Session Id"
+      },
+      "expected_session_version": {
+        "anyOf": [
+          {
+            "minimum": 1,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Expected Session Version"
+      },
+      "selection_context": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SelectionContext"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "action": {
+        "enum": [
+          "plan_portfolio",
+          "recommend_products",
+          "revise_portfolio",
+          "show_product_detail",
+          "compare_products",
+          "list_orders",
+          "list_positions",
+          "show_wealth_returns",
+          "prepare_purchase",
+          "preview_redemption",
+          "preview_order_cancellation"
+        ],
+        "title": "Action",
+        "type": "string"
+      },
+      "params": {
+        "additionalProperties": true,
+        "title": "Params",
+        "type": "object"
+      }
+    },
+    "required": [
+      "request_id",
+      "context_id",
+      "action"
+    ],
+    "title": "WealthActionV1",
+    "type": "object"
+  },
+  "actions": {
+    "plan_portfolio": {
+      "$defs": {
+        "CandidateBinding": {
+          "additionalProperties": false,
+          "properties": {
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
+            "expected_version": {
+              "minimum": 1,
+              "title": "Expected Version",
+              "type": "integer"
+            },
+            "filter": {
+              "$ref": "#/$defs/CandidateFilter"
+            }
+          },
+          "required": [
+            "session_id",
+            "expected_version",
+            "filter"
+          ],
+          "title": "CandidateBinding",
+          "type": "object"
+        },
+        "CandidateFilter": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "general",
+                "category",
+                "theme"
+              ],
+              "title": "Mode",
+              "type": "string"
+            },
+            "category": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "quick_redeem",
+                    "bank_wealth",
+                    "bond_fund",
+                    "mixed_fund",
+                    "equity_fund"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Category"
+            },
+            "bucket": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "cash_management",
+                    "stable",
+                    "growth"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Bucket"
+            },
+            "theme_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Theme Key"
+            },
+            "theme_keys": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Theme Keys",
+              "type": "array"
+            },
+            "theme_operator": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "AND",
+                    "OR"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Theme Operator"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "title": "CandidateFilter",
+          "type": "object"
+        },
+        "SelectedShare": {
+          "additionalProperties": false,
+          "properties": {
+            "product_id": {
+              "title": "Product Id",
+              "type": "string"
+            },
+            "product_version": {
+              "minimum": 1,
+              "title": "Product Version",
+              "type": "integer"
+            },
+            "share_class": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "A",
+                    "C"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Share Class"
+            }
+          },
+          "required": [
+            "product_id",
+            "product_version",
+            "share_class"
+          ],
+          "title": "SelectedShare",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "selected": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/SelectedShare"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected"
+        },
+        "candidate_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CandidateBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "growth_ratio_ex_cash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Growth Ratio Ex Cash"
+        }
+      },
+      "title": "PlanParams",
+      "type": "object"
+    },
+    "recommend_products": {
+      "$defs": {
+        "CandidateBinding": {
+          "additionalProperties": false,
+          "properties": {
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
+            "expected_version": {
+              "minimum": 1,
+              "title": "Expected Version",
+              "type": "integer"
+            },
+            "filter": {
+              "$ref": "#/$defs/CandidateFilter"
+            }
+          },
+          "required": [
+            "session_id",
+            "expected_version",
+            "filter"
+          ],
+          "title": "CandidateBinding",
+          "type": "object"
+        },
+        "CandidateFilter": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "general",
+                "category",
+                "theme"
+              ],
+              "title": "Mode",
+              "type": "string"
+            },
+            "category": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "quick_redeem",
+                    "bank_wealth",
+                    "bond_fund",
+                    "mixed_fund",
+                    "equity_fund"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Category"
+            },
+            "bucket": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "cash_management",
+                    "stable",
+                    "growth"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Bucket"
+            },
+            "theme_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Theme Key"
+            },
+            "theme_keys": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Theme Keys",
+              "type": "array"
+            },
+            "theme_operator": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "AND",
+                    "OR"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Theme Operator"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "title": "CandidateFilter",
+          "type": "object"
+        },
+        "RecommendationFilter": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "general",
+                "category",
+                "theme"
+              ],
+              "title": "Mode",
+              "type": "string"
+            },
+            "category": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "quick_redeem",
+                    "bank_wealth",
+                    "bond_fund",
+                    "mixed_fund",
+                    "equity_fund"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Category"
+            },
+            "theme_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Theme Key"
+            },
+            "bucket": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "cash_management",
+                    "stable",
+                    "growth"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Bucket"
+            },
+            "theme_keys": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Theme Keys",
+              "type": "array"
+            },
+            "theme_operator": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "AND",
+                    "OR"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Theme Operator"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "title": "RecommendationFilter",
+          "type": "object"
+        },
+        "SelectedShare": {
+          "additionalProperties": false,
+          "properties": {
+            "product_id": {
+              "title": "Product Id",
+              "type": "string"
+            },
+            "product_version": {
+              "minimum": 1,
+              "title": "Product Version",
+              "type": "integer"
+            },
+            "share_class": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "A",
+                    "C"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Share Class"
+            }
+          },
+          "required": [
+            "product_id",
+            "product_version",
+            "share_class"
+          ],
+          "title": "SelectedShare",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "selected": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/SelectedShare"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected"
+        },
+        "candidate_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CandidateBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "filter": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecommendationFilter"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "selected_family_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 160,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Family Ids"
+        }
+      },
+      "title": "RecommendParams",
+      "type": "object"
+    },
+    "revise_portfolio": {
+      "$defs": {
+        "PortfolioSelection": {
+          "additionalProperties": false,
+          "properties": {
+            "portfolio_id": {
+              "title": "Portfolio Id",
+              "type": "string"
+            },
+            "expected_version": {
+              "minimum": 1,
+              "title": "Expected Version",
+              "type": "integer"
+            },
+            "snapshot_id": {
+              "title": "Snapshot Id",
+              "type": "string"
+            },
+            "context_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Context Id"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/SelectionItem"
+              },
+              "title": "Items",
+              "type": "array"
+            },
+            "revision_kind": {
+              "default": "adjustment",
+              "enum": [
+                "adjustment",
+                "preference"
+              ],
+              "title": "Revision Kind",
+              "type": "string"
+            },
+            "cash_residual_fen": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cash Residual Fen"
+            },
+            "growth_ratio_ex_cash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Growth Ratio Ex Cash"
+            }
+          },
+          "required": [
+            "portfolio_id",
+            "expected_version",
+            "snapshot_id",
+            "context_id",
+            "items"
+          ],
+          "title": "PortfolioSelection",
+          "type": "object"
+        },
+        "SelectionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "product_id": {
+              "title": "Product Id",
+              "type": "string"
+            },
+            "product_version": {
+              "minimum": 1,
+              "title": "Product Version",
+              "type": "integer"
+            },
+            "share_class": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "A",
+                    "C"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Share Class"
+            },
+            "target_ratio_total": {
+              "title": "Target Ratio Total",
+              "type": "string"
+            }
+          },
+          "required": [
+            "product_id",
+            "product_version",
+            "share_class",
+            "target_ratio_total"
+          ],
+          "title": "SelectionItem",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PortfolioSelection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ReviseParams",
+      "type": "object"
+    },
+    "show_product_detail": {
+      "additionalProperties": false,
+      "properties": {
+        "product_id": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Id"
+        },
+        "product_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Version"
+        },
+        "period": {
+          "default": "1y",
+          "enum": [
+            "1m",
+            "3m",
+            "1y"
+          ],
+          "title": "Period",
+          "type": "string"
+        }
+      },
+      "title": "DetailParams",
+      "type": "object"
+    },
+    "compare_products": {
+      "additionalProperties": false,
+      "properties": {
+        "product_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 4,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Ids"
+        }
+      },
+      "title": "CompareParams",
+      "type": "object"
+    },
+    "list_orders": {
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "page_size": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Size"
+        }
+      },
+      "title": "ListParams",
+      "type": "object"
+    },
+    "list_positions": {
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "page_size": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Size"
+        }
+      },
+      "title": "ListParams",
+      "type": "object"
+    },
+    "show_wealth_returns": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "default": "all",
+          "enum": [
+            "all",
+            "product"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "product_id": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Id"
+        },
+        "period": {
+          "default": "day",
+          "enum": [
+            "day",
+            "month",
+            "year",
+            "cumulative"
+          ],
+          "title": "Period",
+          "type": "string"
+        },
+        "anchor_date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Date"
+        }
+      },
+      "title": "ReturnsQuery",
+      "type": "object"
+    },
+    "prepare_purchase": {
+      "additionalProperties": false,
+      "properties": {
+        "portfolio_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Portfolio Id"
+        },
+        "expected_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Version"
+        },
+        "snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Id"
+        },
+        "payment_account_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payment Account Id"
+        }
+      },
+      "title": "PrepareParams",
+      "type": "object"
+    },
+    "preview_redemption": {
+      "$defs": {
+        "RedemptionDraft": {
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": "wealth-redemption-request-v1",
+              "default": "wealth-redemption-request-v1",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "context_id": {
+              "title": "Context Id",
+              "type": "string"
+            },
+            "position_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Position Key"
+            },
+            "input_mode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "units",
+                    "market_value",
+                    "holding_ratio"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Input Mode"
+            },
+            "units": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units"
+            },
+            "market_value_fen": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "maximum": 2000000000,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Market Value Fen"
+            },
+            "holding_ratio": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Holding Ratio"
+            },
+            "redemption_mode": {
+              "default": "standard",
+              "enum": [
+                "standard",
+                "quick"
+              ],
+              "title": "Redemption Mode",
+              "type": "string"
+            }
+          },
+          "required": [
+            "context_id"
+          ],
+          "title": "RedemptionDraft",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "redemption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RedemptionDraft"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "RedeemParams",
+      "type": "object"
+    },
+    "preview_order_cancellation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 160,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation Ids"
+        }
+      },
+      "title": "CancelParams",
+      "type": "object"
+    }
+  }
+}
