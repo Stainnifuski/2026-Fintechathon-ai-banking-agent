@@ -156,3 +156,51 @@ async def test_multi_position_amount_clarifies_and_human_task_blocks(store,http_
         task=await db.scalar(select(WealthTaskORM));task.control_mode='HUMAN';await db.commit()
     blocked=await client.post('/api/v1/wealth/actions',json={**single,'request_id':'actions-human-0001'})
     assert blocked.json()['status']=='blocked' and blocked.json()['data']['code']=='TASK_CONTROL_BLOCKED'
+
+
+@pytest.mark.asyncio
+async def test_remote_quote_write_is_not_blocked_by_action_session(store,http_store):
+    """A separate bank transaction must be able to persist a NAV during reads."""
+    import asyncio
+    from datetime import date
+    from backend.app.models.wealth import WealthNavORM,WealthConversationORM
+    client,_,app=http_store
+    writes=[]
+    async def handler(**kwargs):
+        session_id=kwargs['db'].info['wealth_portfolio_action_session']
+        async with store() as bank_db:
+            session=await bank_db.get(WealthConversationORM,session_id)
+            assert session and session.user_id=='U1'
+            # Existing seeds contain trading days only; this past weekend row
+            # is an isolated observation to exercise the real DB writer boundary.
+            bank_db.add(WealthNavORM(nav_id='isolated-action-quote',version_id='MF002:1',
+                nav_date=date(2026,9,27),price='1.01000000'))
+            await asyncio.wait_for(bank_db.commit(),timeout=2)
+            writes.append(session_id)
+        return {'quote_write_committed':True}
+    app.state.wealth_action_handlers={'plan_portfolio':handler}
+    req={**action('plan_portfolio',{}),'request_id':'action-remote-write'}
+    response=await client.post('/api/v1/wealth/actions',json=req)
+    assert response.status_code==200,response.text
+    result=response.json();assert result['data']['quote_write_committed'] is True
+    assert len(writes)==1
+    assert (await client.post('/api/v1/wealth/actions',json=req)).json()==result
+    assert len(writes)==1
+
+@pytest.mark.asyncio
+async def test_session_version_rechecked_after_remote_reads(store,http_store):
+    from backend.app.models.wealth import WealthConversationORM
+    client,_,app=http_store
+    first=(await client.post('/api/v1/wealth/actions',json=action())).json()
+    async def changed(**kwargs):
+        async with store() as concurrent:
+            row=await concurrent.get(WealthConversationORM,first['session_id'])
+            row.version+=1
+            await concurrent.commit()
+        return {'not_accepted_as_current':True}
+    app.state.wealth_action_handlers={'plan_portfolio':changed}
+    request={**action('plan_portfolio',{},session_id=first['session_id'],expected_session_version=first['session_version']),
+             'request_id':'action-concurrent-session'}
+    result=await client.post('/api/v1/wealth/actions',json=request)
+    assert result.status_code==409,result.text
+    assert result.json()['detail']['code']=='STALE_SESSION'

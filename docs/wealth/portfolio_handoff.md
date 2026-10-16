@@ -121,3 +121,11 @@ PR补充检查：正常时钟恢复、原配置保全及旧货币专属资料清
 - 共用账户不允许测试工具重置、调资或删除，正常业务使用当前时间；已受理订单和历史成交不改写。旧“空通用账户404转空列表”前端处理已撤回。
 - 初始化：先import既有paper_products.json，然后执行 `python -m backend.app.services.bank.wealth_data_cli bind-account --user-id <本人ID> --account-id <本人已有借记账户ID> --dataset-key real-public-paper-v1:b498da40b510a409211716f0`，再按原银行补充CLI关联产品。不执行旧init来创建另一份理财资金。
 - 联合核对：登录后通用accounts与理财asset-summary包含同一account_id；对应余额/占款/可用现金相等；同账户理财申购占款后转账受限，合法转账后理财可用现金同步减少。历史隔离资金仍拒绝转账；测试工具拒绝共用账户。
+
+
+### 2026-10-16 差额准备修复
+动作处理不再持有SQLite写锁等待远端银行按代码NAV更新；最终仍在用户锁下复核会话版本/范围与请求幂等。准备失败显示实际中文原因。未采用建议产品不能准备交易：先在推荐结果勾选产品，点击“校验所选产品与比例”，再准备预览，不自动采用。prepare实际成功19.198秒，8个待确认动作，同号结果一致且未下单/占款；详见docs/validation/wealth_prepare_quote_lock_20261016.md。后端重启后内存中的未提交A方案需重新生成，已提交银行事实保留。
+
+
+### 本人风险评估测试限次
+专用wealth_joint_server可用WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT及WEALTH_TEST_DISABLE_ASSESSMENT_YEAR_LIMIT分别临时关闭单日/年度次数限制（值true）。正常服务不读取测试开关，默认2/8；关闭对应开关并重启测试服务恢复。问卷接口以null表示该项暂不限次数，审计记录有效值。仅变更次数，不代填、改等级、删记录或跳过最终风险/MFA校验。验证详见上述20261016差额准备记录的限次附录。

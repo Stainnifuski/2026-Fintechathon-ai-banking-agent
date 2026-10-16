@@ -354,7 +354,9 @@ async def questionnaire(user: dict = Depends(get_current_user), db: AsyncSession
     profile = await db.get(WealthProfileORM, user["user_id"])
     return {"version": QUESTIONNAIRE_VERSION, "profile_version": profile.version if profile else 1,
         "questions": [{"id": key, "title": title, "options": options} for key, title, options in QUESTIONS],
-        "notice": "比赛模拟量表，未经专业效度验证；请本人回答，日2次/滚动12个月8次"}
+        "daily_limit": policy.ASSESSMENT_DAILY_LIMIT or None, "rolling_year_limit": policy.ASSESSMENT_ROLLING_YEAR_LIMIT or None,
+        "notice": "比赛模拟量表，未经专业效度验证；请本人回答。" +
+            (f"单日最多{policy.ASSESSMENT_DAILY_LIMIT}次；" if policy.ASSESSMENT_DAILY_LIMIT else "当前测试服务暂不限单日次数；") + (f"滚动12个月最多{policy.ASSESSMENT_ROLLING_YEAR_LIMIT}次" if policy.ASSESSMENT_ROLLING_YEAR_LIMIT else "当前测试服务暂不限滚动12个月次数")}
 
 
 @router.post("/assessments")

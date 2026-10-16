@@ -15,6 +15,11 @@ from ..models.audit_log import AuditLogORM
 from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalConfirmation
 
 
+# Normal service default; only the dedicated test server may override in memory.
+ASSESSMENT_DAILY_LIMIT = 2
+ASSESSMENT_ROLLING_YEAR_LIMIT = 8
+
+
 class WealthPolicyError(Exception):
     """适当性与授权失败，拒绝执行，保留可恢复意图。"""
     def __init__(self, message: str, code: str, status_code: int = 409) -> None:
@@ -65,8 +70,10 @@ async def submit_assessment(db: AsyncSession, user_id: str, request: AssessmentS
         WealthAssessmentORM.created_at >= now - timedelta(days=365)))).all())
     day = now.astimezone(ZoneInfo("Asia/Shanghai")).date()
     daily = sum(aware(row.created_at).astimezone(ZoneInfo("Asia/Shanghai")).date() == day for row in prior)
-    if daily >= 2 or len(prior) >= 8:
-        raise WealthPolicyError("达到模拟重评次数限制：单日2次、滚动12个月8次", "ASSESSMENT_LIMIT_REACHED")
+    if ASSESSMENT_ROLLING_YEAR_LIMIT > 0 and len(prior) >= ASSESSMENT_ROLLING_YEAR_LIMIT:
+        raise WealthPolicyError(f"达到模拟重评次数限制：滚动12个月最多{ASSESSMENT_ROLLING_YEAR_LIMIT}次", "ASSESSMENT_LIMIT_REACHED")
+    if ASSESSMENT_DAILY_LIMIT > 0 and daily >= ASSESSMENT_DAILY_LIMIT:
+        raise WealthPolicyError(f"达到模拟重评次数限制：单日最多{ASSESSMENT_DAILY_LIMIT}次", "ASSESSMENT_LIMIT_REACHED")
     try:
         result = score(request.answers, adult=request.adult, full_capacity=request.full_capacity)
     except ValueError as error:
@@ -80,7 +87,7 @@ async def submit_assessment(db: AsyncSession, user_id: str, request: AssessmentS
         intent="wealth_assessment", permission_level="yellow", action="investment_assessment_submit",
         params={"assessment_id": row.assessment_id, "profile_version": profile.version,
             "questionnaire_version": QUESTIONNAIRE_VERSION, "score_version": result["score_version"],
-            "capacity_level": result["capacity_level"]}, user_confirmed=True, result="success",
+            "capacity_level": result["capacity_level"], "daily_limit": ASSESSMENT_DAILY_LIMIT or None, "rolling_year_limit": ASSESSMENT_ROLLING_YEAR_LIMIT or None}, user_confirmed=True, result="success",
         decision_chain=["authenticated_subject", "personal_answers", "deterministic_scoring", "rate_limit_checked"]))
     await db.commit()
     return assessment_view(row)

@@ -16,3 +16,10 @@ test('ordinary Chinese success stays unchanged and unknown codes are not display
  assert.equal(wealthFeedback('申购已受理'),'申购已受理');
  assert.doesNotMatch(wealthFeedback('UNRECOGNIZED_SERVER_CODE'),/SERVER_CODE/);
 });
+
+test('bank quote failures explain the preview boundary and next step',()=>{
+ const message=wealthFeedback('BANK_UNAVAILABLE: database is locked');
+ assert.match(message,/尚未生成交易预览/);
+ assert.match(message,/核对差额与准备预览/);
+ assert.doesNotMatch(message,/database is locked|BANK_UNAVAILABLE/);
+});
