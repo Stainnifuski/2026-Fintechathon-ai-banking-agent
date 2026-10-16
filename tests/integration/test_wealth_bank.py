@@ -821,3 +821,32 @@ async def test_verification_failed_attempts_are_limited_without_storing_code(sto
         denied = (await db.scalars(select(AuditLogORM).where(AuditLogORM.result == "failed"))).all()
         assert len(denied) == 5
         assert all("000000" not in str(row.params) and "proof" not in row.params for row in denied)
+
+
+@pytest.mark.asyncio
+async def test_daily_limit_can_be_disabled_without_bypassing_annual_limit(store,monkeypatch):
+    from backend.app.integrations import wealth_authorization as policy
+    from backend.app.models.wealth import WealthAssessmentORM
+    monkeypatch.setattr(policy,'ASSESSMENT_DAILY_LIMIT',0)
+    async with store() as db:
+        for _ in range(3):
+            await assess(db)
+        assert await db.scalar(select(func.count()).select_from(WealthAssessmentORM))==3
+        for _ in range(5):
+            await assess(db)
+        with pytest.raises(WealthPolicyError) as limit:
+            await assess(db)
+        assert limit.value.code=='ASSESSMENT_LIMIT_REACHED'
+        assert '12个月' in limit.value.message
+
+
+@pytest.mark.asyncio
+async def test_test_service_can_disable_both_assessment_limits(store,monkeypatch):
+    from backend.app.integrations import wealth_authorization as policy
+    from backend.app.models.wealth import WealthAssessmentORM
+    monkeypatch.setattr(policy,'ASSESSMENT_DAILY_LIMIT',0)
+    monkeypatch.setattr(policy,'ASSESSMENT_ROLLING_YEAR_LIMIT',0)
+    async with store() as db:
+        for _ in range(9):
+            await assess(db)
+        assert await db.scalar(select(func.count()).select_from(WealthAssessmentORM))==9

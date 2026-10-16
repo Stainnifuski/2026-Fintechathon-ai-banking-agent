@@ -22,3 +22,15 @@
 - 这是实际等待记录，不声称已达到5秒。没有全池补采或写请求自动重试。
 
 本地详细证据：.deps/final_round/prepare-lock-live.json、prepare-lock-selected.json、runtime-quote-lock-20261016.err。原数据库与原服务不变；3014/8014专用服务保持运行。
+
+
+## 临时风险评估限次测试开关（2026-10-16）
+按本人测试要求新增两项独立开关，仅由专用 `tests.browser.wealth_joint_server` 启动器读取：
+- `WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT=true`：当前测试进程关闭单日2次限制。
+- `WEALTH_TEST_DISABLE_ASSESSMENT_YEAR_LIMIT=true`：当前测试进程关闭滚动12个月8次限制。
+
+正常 `backend.app.main` 不读取这两个测试开关，默认仍为2/8；测试服务必须通过既有专用库路径及端口校验。未开启的项目仍执行默认限制。恢复时关闭对应开关并重启专用服务；不需要删评估记录。
+
+问卷接口返回实际daily_limit/rolling_year_limit，关闭时为null，中文说明和页面随服务端设置更新。审计保存本次有效限次值。本人回答、成年/能力确认、评分、结果本人确认、风险适当性及购买MFA完全保留。
+
+实际新增验证：隔离SQLite同日第9次可评估；只关闭单日时年度第9次仍拒绝；正常默认单日及年度拒绝回归保留。4 passed、4个PG参数因未配置跳过。独立正常进程实测默认2/8；当前测试问卷接口实测两个limit均null。未代本人在运行库提交问卷，未删除或改写历史记录。当前专用服务启用两项，配置未写入.env或资料包。

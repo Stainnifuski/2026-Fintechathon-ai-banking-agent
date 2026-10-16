@@ -47,6 +47,9 @@ async def test_clock(db,account_id=None):
 
 @asynccontextmanager
 async def lifespan(application):
+    from backend.app.integrations import wealth_authorization as assessment_policy
+    assessment_policy.ASSESSMENT_DAILY_LIMIT = 0 if os.getenv('WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT') == 'true' else 2
+    assessment_policy.ASSESSMENT_ROLLING_YEAR_LIMIT = 0 if os.getenv('WEALTH_TEST_DISABLE_ASSESSMENT_YEAR_LIMIT') == 'true' else 8
     await application.state.wealth_portfolio_source.preload()
     async with engine.begin() as conn:await conn.run_sync(Base.metadata.create_all)
     bank.business_now=test_clock
