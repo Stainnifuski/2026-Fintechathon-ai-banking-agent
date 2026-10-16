@@ -103,3 +103,11 @@ PR补充检查：正常时钟恢复、原配置保全及旧货币专属资料清
 - B017、000003、671030实际HTTP选品成功，推荐/换批/Plan/prepare通过；prepare后订单0、持仓0、占款0。推荐/换批/Plan/prepare耗时见字段证据，首次1次全目录，后续全目录0次；业务动态核验继续进行。
 - 最新离线包`.deps/final_round/wealth-final-offline-20261015-disclosure-v2.zip`，SHA256=`63094dcbefbc4e92745859db095458fa6e29a10019844b17fe4bc41bc8655184`；禁网空目录安装通过（56.67秒），普通13578＋银行19，目录27070。公开版本清单`config/wealth/portfolio_content_binding_v2.json`随包校验。原始缓存、数据库、密钥不打包。
 - 验证记录见`docs/validation/wealth_disclosure_fix_20261015.md`。本轮不重新采集、不改算法参数；未受影响的前端41项及正式构建证据复用。人工验收与独立离线资料安装仍为交付条件；保持Draft PR，不合并main。
+
+
+## 2026-10-16 共用银行账户修正（覆盖旧沙箱入口说明）
+- 正式理财与其他场景共用本人银行账户；用 wealth_data_cli bind-account 绑定本人现有有效借记账户及已审核比赛资料，不发行、复制或合并余额。历史沙箱仍隔离，不能借此导出测试资金。
+- account_scope=shared_bank 为服务端管理员绑定标记；通用账户、转账、AA、账单/订阅及NOVA查询只排除历史隔离账户，不排除共用理财账户。理财占款继续由 available_funds 与转账共享；申购不能重复花费，赎回回到原account_id。
+- 共用账户不允许测试工具重置、调资或删除，正常业务使用当前时间；已受理订单和历史成交不改写。旧“空通用账户404转空列表”前端处理已撤回。
+- 初始化：先import既有paper_products.json，然后执行 `python -m backend.app.services.bank.wealth_data_cli bind-account --user-id <本人ID> --account-id <本人已有借记账户ID> --dataset-key real-public-paper-v1:b498da40b510a409211716f0`，再按原银行补充CLI关联产品。不执行旧init来创建另一份理财资金。
+- 联合核对：登录后通用accounts与理财asset-summary包含同一account_id；对应余额/占款/可用现金相等；同账户理财申购占款后转账受限，合法转账后理财可用现金同步减少。历史隔离资金仍拒绝转账；测试工具拒绝共用账户。

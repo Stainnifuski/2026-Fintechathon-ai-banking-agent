@@ -38,6 +38,8 @@ async def test_clock(db,account_id=None):
     if account_id:
         from backend.app.models.wealth_research import WealthContextORM
         context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==account_id))).one_or_none()
+        if context and context.data.get('account_scope') == 'shared_bank':
+            return datetime.now(timezone.utc)
         if context and context.data.get('joint_manual_clock') is True:
             return datetime.fromisoformat(context.data['business_at'])
     row=await db.get(WealthClockORM,'mock')

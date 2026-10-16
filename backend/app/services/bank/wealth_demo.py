@@ -39,7 +39,7 @@ async def context_owned(db: AsyncSession, user_id: str, run_id: str, *, archived
             WealthDemoReceiptORM.user_id == user_id, WealthDemoReceiptORM.action == "delete"))).all()
         tombstone = any(run_id in row.result.get('deleted_run_ids', []) for row in receipts)
         raise BankError("轮次已删除或不存在", "GONE" if tombstone else "NOT_FOUND", 410 if tombstone else 404)
-    if context.user_id != user_id or context.data.get("disposable") is not True:
+    if context.user_id != user_id or context.data.get("disposable") is not True or context.data.get("account_scope") == "shared_bank":
         raise BankError("不属于本人可处置测试范围", "DEMO_SCOPE_DENIED", 403)
     if (context.data.get("run_state", "ACTIVE") == "ARCHIVED") != archived:
         raise BankError("轮次状态不符合操作要求", "DEMO_SCOPE_DENIED", 409)

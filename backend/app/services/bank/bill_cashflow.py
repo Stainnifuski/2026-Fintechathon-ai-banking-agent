@@ -1,4 +1,6 @@
 """Read-only projection: plans + evidence-backed estimates + explicit user scenarios."""
+from .account_scope import isolated_account_ids
+
 import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -27,7 +29,7 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
     start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = now + timedelta(days=request.days)
     all_accounts = list((await db.scalars(select(AccountORM).where(
-        AccountORM.user_id == user_id, AccountORM.account_id.not_in(select(WealthContextORM.account_id))))).all())
+        AccountORM.user_id == user_id, AccountORM.account_id.not_in(isolated_account_ids())))).all())
     owned = {a.account_id: a for a in all_accounts}
     if request.account_id and request.account_id not in owned:
         raise BankError('账户不存在或无权访问', 'ACCOUNT_NOT_FOUND', 404)

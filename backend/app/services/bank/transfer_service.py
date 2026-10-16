@@ -1,4 +1,6 @@
 """4号模拟银行：按 operation_id 幂等受理、记账和查询。"""
+from .account_scope import isolated_account_ids
+
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -154,7 +156,7 @@ def _result(operation: BankOperationORM) -> BankOperationResult:
 async def require_ordinary_accounts(db: AsyncSession,account_ids: list[str]) -> None:
     """Investment sandboxes cannot export issued fixture cash into ordinary transfers."""
     from ...models.wealth_research import WealthContextORM
-    if await db.scalar(select(WealthContextORM.context_id).where(WealthContextORM.account_id.in_(account_ids))) is not None:
+    if await db.scalar(isolated_account_ids().where(WealthContextORM.account_id.in_(account_ids))) is not None:
         raise BankError('理财沙箱资金不可用于普通转账或AA','ACCOUNT_CONTEXT_UNSUPPORTED',409)
 
 
@@ -221,7 +223,7 @@ async def resolve_transfer_parties(
             .where(
                 AccountORM.user_id == subject_user_id,
                 AccountORM.status == "active",
-                AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
+                AccountORM.account_id.not_in(isolated_account_ids()),
             )
             .order_by(AccountORM.account_id)
         )
@@ -238,7 +240,7 @@ async def resolve_transfer_parties(
                 UserORM.user_id != subject_user_id,
                 UserORM.status == "active",
                 AccountORM.status == "active",
-                AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
+                AccountORM.account_id.not_in(isolated_account_ids()),
             )
             .order_by(AccountORM.account_id)
         )
@@ -503,7 +505,7 @@ async def transfer_directory(
     if subject is None or subject.status != "active":
         raise BankError("付款用户不可用", "PAYER_INACTIVE", 403)
     payers = (await db.execute(select(AccountORM).where(
-        AccountORM.user_id == subject_user_id, AccountORM.status == "active",AccountORM.account_id.not_in(select(WealthContextORM.account_id))
+        AccountORM.user_id == subject_user_id, AccountORM.status == "active",AccountORM.account_id.not_in(isolated_account_ids())
     ).order_by(AccountORM.account_id))).scalars().all()
 
     users = (await db.execute(select(UserORM).where(
@@ -527,7 +529,7 @@ async def transfer_directory(
     users = [user for user in users if user.status == "active"]
     user_ids = [user.user_id for user in users]
     accounts = (await db.execute(select(AccountORM).where(
-        AccountORM.user_id.in_(user_ids), AccountORM.status == "active",AccountORM.account_id.not_in(select(WealthContextORM.account_id))
+        AccountORM.user_id.in_(user_ids), AccountORM.status == "active",AccountORM.account_id.not_in(isolated_account_ids())
     ).order_by(AccountORM.user_id, AccountORM.account_id))).scalars().all() if user_ids else []
     by_id = {user.user_id: user for user in users}
     return {

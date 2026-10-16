@@ -300,11 +300,11 @@ python scripts/wealth_portfolio_package.py install --manifest "<解压目录>/pa
 
 包包含13,578普通真实基金质量交集及19个模拟银行定义；不含密码、密钥、运行数据库、原始全量缓存或真实货币产品。目录身份总数27,070不等于27,070个可交易产品；13,578也不是永久可买承诺。正文/风险/状态/价格/现金仍须运行核验。
 
-在已完成正常表结构迁移、创建合法本人演示用户并设置独立DATABASE_URL的前提下，按现有CLI初始化比赛数据，不恢复采集/worker：
+在已完成正常表结构迁移、创建合法本人演示用户及其银行账户并设置独立DATABASE_URL的前提下，按现有CLI导入资料并绑定同一银行账户，不恢复采集/worker：
 
 ```shell
 python -m backend.app.services.bank.wealth_data_cli import --import-root . --file config/wealth/paper_products.json
-python -m backend.app.services.bank.wealth_data_cli init --user-id <本人演示ID> --dataset-key real-public-paper-v1:b498da40b510a409211716f0
+python -m backend.app.services.bank.wealth_data_cli bind-account --user-id <本人演示ID> --account-id <本人已有银行借记账户ID> --dataset-key real-public-paper-v1:b498da40b510a409211716f0
 python -m backend.app.services.bank.wealth_bank_supplement_cli --user-id <本人演示ID> --context-id <上一步返回context_id>
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port <后端端口>
 ```

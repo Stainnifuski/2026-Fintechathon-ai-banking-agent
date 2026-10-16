@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from ...models import Base
-from ...models.wealth_research import WealthDatasetORM, WealthSyncJobORM, WealthMacroORM
+from ...models.wealth_research import WealthDatasetORM, WealthSyncJobORM, WealthMacroORM, WealthContextSelectionORM
 from . import wealth_research as research
 
 
@@ -96,6 +96,13 @@ async def run(args):
         if args.action=='scenarios':
             from .wealth_fixtures import initialize_all
             result=await initialize_all(db)
+        elif args.action=="bind-account":
+            if not args.account_id or not args.dataset_key:
+                raise ValueError("ACCOUNT_ID_AND_DATASET_KEY_REQUIRED")
+            result=await research.bind_shared_account(db,args.user_id,args.account_id,args.dataset_key)
+            if not args.dry_run:
+                current=await db.get(WealthContextSelectionORM,args.user_id)
+                await research.select_context(db,args.user_id,result['context_id'],current.version if current else 1)
         elif args.action=="init":
             result=await research.initialize(db,args.user_id,args.scenario,0 if args.scenario=="insufficient_cash" else 2000000,args.dataset_key)
         elif args.action=="import":
@@ -138,10 +145,10 @@ async def run(args):
 
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument("action",choices=["init","scenarios","import","probe","sync","worker","clock","reset"])
+    p=argparse.ArgumentParser(); p.add_argument("action",choices=["bind-account","init","scenarios","import","probe","sync","worker","clock","reset"])
     p.add_argument("--user-id",default="U001"); p.add_argument("--scenario",default="normal"); p.add_argument("--context-id"); p.add_argument("--business-at")
     p.add_argument("--confirm-reset",action="store_true"); p.add_argument("--import-root",default=".deps/wealth-import"); p.add_argument("--file")
-    p.add_argument('--dataset-key',default=None)
+    p.add_argument('--dataset-key',default=None); p.add_argument('--account-id',default=None)
     p.add_argument("--dry-run",action="store_true"); p.add_argument("--live",action="store_true"); p.add_argument("--timeout",type=int,default=35)
     p.add_argument("--interval",type=int,default=3600); p.add_argument("--output",default=".deps/wealth-market/latest-probe.json")
     args=p.parse_args(); asyncio.run(run(args))

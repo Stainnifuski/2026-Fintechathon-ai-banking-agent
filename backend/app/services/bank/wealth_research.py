@@ -181,6 +181,46 @@ async def context_list(db: AsyncSession,user_id: str) -> dict:
             {"context_id":r.context_id,"account_id":r.account_id,"dataset_key":r.dataset_key,**r.data} for r in rows]}
 
 
+async def bind_shared_account(db: AsyncSession, user_id: str, account_id: str, dataset_key: str) -> dict:
+    """Bind a reviewed dataset to the same bank account; never issue or copy cash."""
+    from .audit_service import record_bank_event
+    from .wealth_service import lock_accounts
+    from ...integrations.wealth_authorization import lock_profile
+    await lock_profile(db, user_id)
+    await lock_accounts(db, [account_id])
+    account = await db.get(AccountORM, account_id, populate_existing=True)
+    if account is None or account.user_id != user_id:
+        raise BankError('银行账户不存在或不属于本人', 'ACCOUNT_NOT_FOUND', 404)
+    if account.status != 'active' or account.account_type not in {'savings', 'checking'}:
+        raise BankError('请使用本人有效借记账户', 'CASH_ACCOUNT_REQUIRED', 422)
+    dataset = await db.get(WealthDatasetORM, dataset_key)
+    if dataset is None or not dataset.manifest.get('policy_version'):
+        raise BankError('比赛交易资料未就绪', 'DATASET_MISMATCH', 409)
+    context = await db.scalar(select(WealthContextORM).where(WealthContextORM.account_id == account_id))
+    if context and (context.user_id != user_id or context.dataset_key != dataset_key):
+        raise BankError('账户已有不同资料绑定，不能覆盖历史上下文', 'DATASET_MISMATCH', 409)
+    if context and context.data.get('run_state', 'ACTIVE') != 'ACTIVE':
+        raise BankError('归档上下文不能绑定为当前银行账户', 'ARCHIVED_RUN', 409)
+    created = context is None
+    if created:
+        cid = 'CTX' + fingerprint([user_id, account_id, dataset_key, 'shared_bank'])[:28]
+        context = WealthContextORM(context_id=cid,user_id=user_id,account_id=account_id,
+            dataset_key=dataset_key,version=1,data={})
+        db.add(context)
+    if context.data.get('account_scope') != 'shared_bank':
+        context.data = {**context.data, 'account_scope':'shared_bank', 'disposable':False,
+            'label':'本人银行账户｜真实基金资料与比赛模拟交易'}
+        context.version += 1
+        record_bank_event(db,event_key=context.context_id+':shared-bank',subject_user_id=user_id,
+            action='wealth_bind_shared_bank_account',result='success',
+            facts={'context_id':context.context_id,'account_id':account_id,'dataset_key':dataset_key,
+                'cash_issued_fen':0,'account_id_unchanged':True},
+            decision_chain=['explicit_bank_admin_binding','owner_and_active_debit_checked','no_money_or_order_rewrite'])
+    await db.flush()
+    return {'context_id':context.context_id,'account_id':account_id,'created':created,
+        'account_scope':'shared_bank','cash_issued_fen':0}
+
+
 async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balance_fen: int=2000000,dataset_key: str | None=None) -> dict:
     """管理员显式初始化一次；切换不创建或复制余额。"""
     from ...domain.wealth_scenarios import SCENARIOS

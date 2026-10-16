@@ -1,4 +1,6 @@
 """NOVA 只读 DTO；所有银行 ORM 查询和归属检查保留在银行服务层。"""
+from .account_scope import isolated_account_ids
+
 import re
 
 from sqlalchemy import select
@@ -48,7 +50,7 @@ async def transaction_detail(db, user_id: str, tx_id: str) -> dict:
     row = await db.scalar(select(TransactionORM).join(
         AccountORM, TransactionORM.account_id == AccountORM.account_id).where(
         AccountORM.user_id == user_id,
-        AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
+        AccountORM.account_id.not_in(isolated_account_ids()),
         TransactionORM.tx_id == tx_id, TransactionORM.status == "completed"))
     if row is None:
         raise BankError("流水不存在或无权访问", "TRANSACTION_NOT_FOUND", 404)

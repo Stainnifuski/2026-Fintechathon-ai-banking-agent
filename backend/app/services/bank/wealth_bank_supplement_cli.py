@@ -17,7 +17,7 @@ async def install(db,root,user_id,context_id=None):
         selected=await db.get(WealthContextSelectionORM,user_id)
         context_id=selected.context_id if selected else None
     context=await db.get(WealthContextORM,context_id) if context_id else None
-    if not context or context.user_id!=user_id or context.data.get('disposable') is not True or context.data.get('run_state','ACTIVE')!='ACTIVE':raise ValueError('OWNED_ACTIVE_SIMULATION_CONTEXT_REQUIRED')
+    if not context or context.user_id!=user_id or (context.data.get('disposable') is not True and context.data.get('account_scope') != 'shared_bank') or context.data.get('run_state','ACTIVE')!='ACTIVE':raise ValueError('OWNED_ACTIVE_SIMULATION_CONTEXT_REQUIRED')
     if not context.dataset_key.startswith('real-public-paper-v1:'):raise ValueError('REAL_FUND_CONTEXT_REQUIRED')
     existing=context.data.get('additional_dataset_keys',[])
     if result['dataset_key'] not in existing:
@@ -27,7 +27,7 @@ async def install(db,root,user_id,context_id=None):
         record_bank_event(db,event_key=context.context_id+':'+sha,subject_user_id=user_id,
             action='link_existing_bank_supplement',result='success',facts={'context_id':context.context_id,
                 'dataset_key':result['dataset_key'],'source_sha256':sha,'product_count':len(value['products'])},
-            decision_chain=['owned_active_simulation_context','immutable_original_risks_rules_prices','no_funding_no_mfa_grant'])
+            decision_chain=['owned_active_bank_context','immutable_original_risks_rules_prices','no_funding_no_mfa_grant'])
     await db.commit()
     return {'context_id':context.context_id,'dataset_key':result['dataset_key'],'products':len(value['products']),'cash_changed':False}
 
