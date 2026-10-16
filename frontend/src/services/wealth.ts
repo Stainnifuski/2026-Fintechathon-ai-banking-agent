@@ -76,6 +76,7 @@ export interface PositionTableData { object_type: 'positions'; scope_key: string
 export interface Assessment { assessment_id: string; capacity_level: number; purchase_allowed: boolean; confirmed: boolean; expires_at: string }
 export interface Questionnaire { version: string; profile_version: number; daily_limit?: number|null; rolling_year_limit?: number|null; notice?: string; questions: { id: string; title: string; options: string[] }[] }
 export interface Preview { authorization_id: string; authorization_status: string; command: Command; digest: string;
+  notice?: string; execution_policy?: string|null;
   product_risk_level: number; suitability: { capacity_level: number; expires_at: string; matched: boolean } | null;
   product_name: string; disclosure: Product['disclosure']; estimate: { units?: string; fee_fen: number; cash_fen?: number;
     nav_available_at?:string;daily_used_fen?:number;daily_remaining_fen?:number;
