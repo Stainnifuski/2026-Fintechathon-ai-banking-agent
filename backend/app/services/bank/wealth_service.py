@@ -429,18 +429,32 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     interval = row.rules.get("open_interval_days", 1)
     if interval > 1 and (priced - datetime(2026, 9, 30).date()).days % interval != 0:
         raise BankError("当前不是模拟定期开放日", "NON_OPEN_DAY", 409)
+    from .account_scope import is_shared
+    instant = is_shared(context)
+    # Cash-management products retain their quota/window contract; choosing
+    # ordinary redemption must not create an unlimited immediate-cash bypass.
+    if instant and command.direction == 'redeem' and row.rules.get('quick_redemption') and command.redemption_mode != 'quick':
+        if command.command_version == 2:
+            raise BankError('请重新预览现金管理赎回及额度', 'QUOTE_CHANGED', 409)
+        command = command.model_copy(update={'command_version': 2, 'redemption_mode': 'quick'})
     if command.redemption_mode == "quick":
         from .wealth_quick import preview as quick_preview
         command, estimate = await quick_preview(db, user_id, command, row, context, now, price, lots)
         priced = now.astimezone(TZ).date()
+    elif instant:
+        from .wealth_instant import bind
+        command = bind(command, row, context, price)
+        priced = now.astimezone(TZ).date()
+    from .wealth_instant import POLICY_VERSION, NOTICE
     return {"command": command.model_dump(), "digest": command_digest(command),
         "product_name": row.name, "product_risk_level": row.risk_level, "operation_security_level": "RED",
         "suitability": {**suitability, "matched": True} if suitability else None,
         "disclosure": effective_disclosure(row), "rules": row.rules, "estimate": estimate,
         "estimated_nav": price.price if price else None, "estimated_nav_date": price.nav_date.isoformat() if price else None,
-        "pricing_date": priced.isoformat(), "confirm_date": (priced if command.redemption_mode == "quick" else advance_business(priced, row.rules["confirm_business_days"], row.rules["calendar_version"])).isoformat(),
-        "cash_date": (priced if command.redemption_mode == "quick" else advance_business(priced, row.rules["cash_business_days"], row.rules["calendar_version"])).isoformat(),
-        "notice": "比赛模拟环境／模拟资金；预览为估算，受理不等于结算成功"}
+        "pricing_date": priced.isoformat(), "confirm_date": (priced if instant or command.redemption_mode == "quick" else advance_business(priced, row.rules["confirm_business_days"], row.rules["calendar_version"])).isoformat(),
+        "cash_date": (priced if instant or command.redemption_mode == "quick" else advance_business(priced, row.rules["cash_business_days"], row.rules["calendar_version"])).isoformat(),
+        "execution_policy": POLICY_VERSION if instant else None,
+        "notice": NOTICE if instant else "比赛模拟环境／模拟资金；预览为估算，受理不等于结算成功"}
 
 
 def order_view(row: WealthOrderORM) -> dict:
@@ -485,6 +499,8 @@ async def accept_many(db: AsyncSession, user_id: str,
             results.append(order_view(existing))
             continue
         preview = await precheck(db, user_id, command)
+        if preview['digest'] != command_digest(command):
+            raise BankError('成交规则已更新，请重新预览、本人确认和MFA', 'PREVIEW_REQUIRED', 409)
         authorization = await validate_bank_authorization(db, user_id, auth_id, command)
         now = await business_now(db, command.account_id)
         version = await product_version(db, command)
@@ -500,7 +516,9 @@ async def accept_many(db: AsyncSession, user_id: str,
                      "calculation_version": "mock-units-v1", "calendar_version": version.rules['calendar_version'],
                      'dataset_id':version.rules.get('dataset_id','legacy-v1'),'dataset_version':version.rules.get('dataset_version','v1'),
                      'business_at':now.isoformat(),
-                     'runtime_pricing_policy_version':preview['disclosure'].get('runtime_pricing_policy_version')})
+                     'execution_policy':preview.get('execution_policy'),
+                     'original_product_pricing_policy_version':preview['disclosure'].get('runtime_pricing_policy_version'),
+                     'runtime_pricing_policy_version':preview.get('execution_policy') or preview['disclosure'].get('runtime_pricing_policy_version')})
         evidence = await db.get(WealthVerificationORM, auth_id)
         row.details = {**row.details, "verification": {
             "method": evidence.method if evidence else "LEGACY_TOTP",
@@ -508,7 +526,11 @@ async def accept_many(db: AsyncSession, user_id: str,
             "replacement_required": evidence.replacement_required if evidence else False}}
         db.add(row)
         await db.flush()
-        if command.direction == "purchase":
+        if preview.get('execution_policy') and command.redemption_mode != 'quick':
+            from .wealth_instant import complete
+            account = await owned_account(db, user_id, command.account_id)
+            await complete(db, row, account, command, version, now, preview)
+        elif command.direction == "purchase":
             db.add(WealthCashHoldORM(operation_id=row.operation_id, account_id=row.account_id,
                                      amount_fen=row.amount_fen, status="HELD"))
         else:
@@ -533,7 +555,7 @@ async def accept_many(db: AsyncSession, user_id: str,
                    "verification": row.details["verification"]},
             decision_chain=["subject_checked", "suitability_checked",
                 "bound_confirmation_and_simulated_verification_checked" if evidence and evidence.simulated else "bound_confirmation_and_mfa_checked",
-                "quick_cash_settled_atomically" if command.redemption_mode == "quick" else "funds_or_units_reserved"])
+                "immediate_trade_settled_atomically" if preview.get('execution_policy') else "quick_cash_settled_atomically" if command.redemption_mode == "quick" else "funds_or_units_reserved"])
         await db.flush()
         results.append(order_view(row))
     await db.commit()
