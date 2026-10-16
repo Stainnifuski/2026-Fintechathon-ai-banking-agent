@@ -116,7 +116,16 @@ function App() {
         setBankRevision(value => value + 1);
         return;
       }
-      const [a, r, h, requests, subscriptionItems] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests(), bank.listSubscriptions()]);
+      const ordinaryAccounts = bank.accounts(user.user_id).catch((error: unknown) => {
+        const response = (error as { response?: { status?: number; data?: { detail?: string | { message?: string } } } }).response;
+        const detail = response?.data?.detail;
+        const text = typeof detail === 'string' ? detail : detail?.message;
+        // Dedicated wealth accounts are intentionally excluded by this endpoint.
+        if (response?.status === 404 && text === '未找到该用户的账户信息') return [] as bank.Account[];
+        throw error;
+      });
+      const [a, r, h, requests, subscriptionItems] = await Promise.all([ordinaryAccounts, bank.recipients(), bank.history(), bank.paymentRequests(), bank.listSubscriptions()]);
+      if (a.length === 0) setStatus('当前账户没有通用银行账户。如需使用理财，请点击左侧“理财”；转账等功能需先准备通用银行账户。');
       setAccounts(a); setRecipients(r); setTransactions(h); setPaymentRequests(requests); setSubscriptions(subscriptionItems);
       setBankRevision(value => value + 1);
       const defaultFrom = a.find(acc => acc.account_type === 'savings')?.account_id || a[0]?.account_id || '';
@@ -494,7 +503,7 @@ function App() {
     <label>密码<input required minLength={8} type="password" value={password} onChange={e => setPassword(e.target.value)} /></label>
     <button disabled={isAuthenticating}>{isAuthenticating ? '正在登录…' : loginMode === 'login' ? '登录' : '注册并登录'}</button>
   </form><button className="link" onClick={() => setLoginMode(loginMode === 'login' ? 'register' : 'login')}>{loginMode === 'login' ? '没有账号？注册' : '已有账号？登录'}</button>
-  <p className="hint">演示账户：张三 13800000001 / password123</p>{status && <p className="notice">{status}</p>}</section></main>;
+  <p className="hint">通用初始化示例：13800000001 / password123；独立理财验收请使用验收指南指定账号</p>{status && <p className="notice">{status}</p>}</section></main>;
 
   if (['U007', 'U008'].includes(user.user_id)) return <><BeijingClock /><Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
     <MerchantDashboard user={user} accounts={accounts} transactions={transactions} revision={bankRevision} onRefresh={load} onLogout={logout} />
