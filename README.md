@@ -1,5 +1,3 @@
-> 理财本地集中收尾：13,578个普通真实基金＋既有模拟银行产品；真实货币永久退出。已整合最新main，待PR审阅及人工验收，不自动合并。
-
 # AI Banking Agent
 
 面向银行业务的 AI Agent 比赛演示项目：通过自然语言理解意图、规划任务，在风险分级和用户授权后调用模拟银行，展示可核对的执行结果。后端 FastAPI，前端 React/TypeScript，数据库支持 SQLite 与 PostgreSQL。
@@ -13,7 +11,7 @@
 | NOVA前端工作台 | 登录后统一侧栏、财务概览、业务分区、北京时间时钟、“问NOVA”对话面板及验证器绑定入口 | 统一助手已接通时间、本人账户、账单、日历及店铺只读工具与页面上下文；交易仍在各工作台完成 |
 | 智能转账 | 姓名/手机号转账、备注、多轮修改、定时转账、AA收款及原号恢复 | 聊天处理即时人民币转账；定时/AA走表单；可配置外部模型 |
 | 账单分析 | 月度/年度报告、分类趋势、异常提示、流水下钻及只读问答 | 默认离线，可配置模型理解 |
-| 理财操作 | 独立普通/类别推荐、整体配置与整数调整、跨批多选和详情比较、整份确认/MFA、申赎撤单、双表及收益日历；按代码NAV进入估值 | 13,578普通真实基金静态交集，实时资格另核；真实货币永久退出；不接新LLM/NLP，不宣称金融效果或人工验收通过 |
+| 理财操作 | 独立普通/类别推荐、整体配置与整数调整、跨批多选和详情比较、整份确认/MFA、申赎撤单、双表及收益日历；按代码NAV进入估值 | 13,578普通真实基金静态交集，实时资格另核；真实货币不在产品范围；统一自然语言理财执行接线待完成 |
 | 订阅管理 | 已有订阅记录及相关操作 | NOVA支持本人订阅查询及预计月费汇总；取消/模拟扣费在工作台完成，不等同完成全部自动识别能力 |
 | 卡片管理 | 卡片查询、申请虚拟卡、设置交易限额（黄色确认）；调整信用额度、解锁、挂失（红色：确认＋TOTP或短信验证码） | NOVA支持本人卡片状态/限额查询；申请、修改与验证仍由网页可信面板完成 |
 | 日历 | 月视图、时间点／时间段事件、ICS 上传导入、全天与重复日程、用户隔离和事件删除；NOVA日期/活动查询 | 本地日历，不含提醒推送或外部日历同步 |
@@ -22,13 +20,25 @@
 
 比赛要求至少覆盖3个核心场景，并重视任务完成、安全和交互体验。当前功能入口、限制和证据按上表及下列文档核对；网页演示不自动等同已完成原生APP或IM渠道验收。
 
-## 01／02本地集成：真实基金＋比赛模拟交易
+## 理财场景与数据口径
 
-本地静态质量交集13,578个普通真实基金（债券4,093、混合8,444、股票1,041）及19个既有模拟银行定义。真实货币基金永久退出，专用收益/固定1元功能及可用包条目删除；不保留其交易兼容。项目风险分级独立发行人，可靠公开更高评级或冲突拒绝，运行资格/报价/窗口仍须当前核验，不承诺全部始终可买。
+固定资料包含13,578个普通真实基金（债券4,093、混合8,444、股票1,041）及19个模拟银行定义，不含真实货币基金及其专属固定1元计价功能。项目风险分级独立于发行人评级，可靠公开更高评级或分类冲突会拒绝申购；资格、报价、窗口、额度和现金仍动态核验，不代表全部产品始终可买。活钱板块保留账户现金及符合条件的R1模拟快赎，本金可能亏损。
 
-本人问卷→独立普通/类别推荐→换批多选/可选比较→整体配置与整数百分比→差额→整份本人确认及统一高风险MFA→订单/持仓、申赎撤单和收益日历。动态按代码NAV进入估值和新Plan；参考价与订单日最终价分开，未公布等待，不改现金/份额/成本/历史成交。模拟快赎保留原额度和窗口。主题、高股息、A/C、客服领取交还、旧研究/对话工具已范围调整取消；新LLM/NLP和金融效果研究不在本轮。
+本人问卷→独立普通/类别推荐→换批多选/可选比较→整体配置与整数百分比→差额→整份本人确认及统一高风险MFA→订单/持仓、申赎撤单和收益日历。动态按代码NAV进入估值和新Plan；参考价与订单日最终价分开，未公布等待，不改现金、份额、成本或历史成交。当前不提供主题/高股息筛选、A/C切换或客服领取交还界面。
 
-当前状态、完整DAG及J01—J23证据见[工程交接](docs/wealth/portfolio_handoff.md)、[联合验收](docs/wealth/wealth_joint_acceptance.md)。本轮只本地验证，人工未验，不宣称封板或main已发布。
+接口、工具边界及完整业务DAG见[NLP与执行Agent交接](docs/wealth/nlp_agent_handoff_20261015.md)；运行口径和验收证据见[工程交接](docs/wealth/portfolio_handoff.md)、[联合验收](docs/wealth/wealth_joint_acceptance.md)。
+
+### 固定资料下载与一键安装
+
+大资料包通过[GitHub Release](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/releases/tag/wealth-offline-data-20261015-v2)分发，安装器和文档保存在源码仓库。克隆仓库或下载自动生成的Source code ZIP不包含固定快照。
+
+1. 先克隆项目并安装Python依赖（`backend/requirements.txt`、`requirements-market.txt`）。
+2. 下载[一键交接包](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/releases/download/wealth-offline-data-20261015-v2/wealth-offline-handoff-20261016.zip)，解压后双击`install_wealth_offline.cmd`，选择已克隆的项目目录。包内包含固定资料ZIP、安装器、接口说明、完整DAG和机器schema，不包含项目源码。
+3. 等待“固定离线资料安装成功”，再按项目运行指南配置数据库、演示账户和统一MFA并启动服务。
+
+也可单独下载[固定资料ZIP](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/releases/download/wealth-offline-data-20261015-v2/wealth-final-offline-20261015-disclosure-v2.zip)，在源码根目录双击`install_wealth_offline.cmd`后选择ZIP，或使用[手动安装命令](docs/wealth/nlp_agent_handoff_20261015.md#8-固定资料包队友如何获取与启动)。
+
+固定资料ZIP SHA256：`63094dcbefbc4e92745859db095458fa6e29a10019844b17fe4bc41bc8655184`。安装器校验ZIP、源码公开配置、资料版本及完整快照；重复安装复用同版本，冲突时停止，不覆盖配置或已有不同内容。它只安装固定资料，不安装Python/Node、不修改`.env`或数据库、不创建账户、不启动服务。资料包不含密钥、密码、运行库或原始采集缓存。
 
 ## 当前前端与入口
 
@@ -40,7 +50,7 @@ NOVA 已接通只读 Agent Loop：模型选择工具，服务端校验参数并�
 
 转账执行、卡片变更、订阅取消/扣费和理财操作仍在各业务工作台完成，NOVA没有资金执行、确认或授权工具，也不代表跨场景总DAG已完成。日历是本人保存数据，账户及商店交易是模拟数据；店铺查询不下单、扣款或退款。理财保留唯一当前方案、产品走势图及统一确认验证入口。
 
-本轮包含后端工具和前端交互，标准Docker部署更新后执行 `docker compose up -d --build backend frontend`；仅修改前端时可单独重建frontend。源码开发重启后端并在frontend运行 `npm run dev`。已有独立3010／8010演示环境使用单独构建和数据库，端口不是版本号；不要混用账户数据，也不要删除数据库卷来更新页面。详细步骤见[运行指南](运行指南.md)。
+更新后端工具或前端交互后，标准Docker部署执行 `docker compose up -d --build backend frontend`；仅修改前端时可单独重建frontend。源码开发重启后端并在frontend运行 `npm run dev`。已有独立3010／8010演示环境使用单独构建和数据库，端口不是版本号；不要混用账户数据，也不要删除数据库卷来更新页面。详细步骤见[运行指南](运行指南.md)。
 
 
 ## 快速启动
@@ -58,7 +68,7 @@ docker compose up --build
 
 **理财授权配置**：本人确认后选择验证器TOTP或短信验证码；沿用公共 `MFA_SMS_ENABLED`、`SMS_PROVIDER` 等配置。旧 `WEALTH_DEMO_VERIFICATION_ENABLED` 已移除，不再生效。默认短信 `mock` 为模拟发送，通过本人模拟收件箱读取验证码，仍必须校验。升级前备份数据库，启动自动迁移验证方法约束，保留旧证据和已提交交易。
 
-离线回归初始化合成60份额：`docker compose exec backend python -m app.services.bank.wealth_data_cli init --user-id U001`，在理财“数据集、产品研究与宏观背景”选择新资金上下文。原legacy账本和旧订单保留。模型配置与独立日更命令见[数据说明](docs/wealth/data_sources.md)。
+理财使用上面的固定资料版本；比赛数据导入、本人context及银行补充产品初始化见[交接文档](docs/wealth/nlp_agent_handoff_20261015.md#8-固定资料包队友如何获取与启动)。不要使用旧合成60份额初始化或启动采集worker替代当前资料安装；已有账本及订单保留。
 
 ## 体验与风险授权
 
@@ -66,7 +76,7 @@ docker compose up --build
 - 转账：输入“给手机号13800000002转300元，备注房租”，核对收款人、金额和风险等级，再操作任务卡。
 - 账单：进入账单分析查看报告、异常和流水，使用独立只读问答入口。
 - 卡片：在“卡片管理”选择操作→核对银行返回的变更明细→确认；信用卡调额、解锁、挂失还需输入验证器动态码（先在右上角绑定验证器）。演示信用卡初始为锁定，可先解锁再调额。
-- 理财：查看产品→本人评估→生成订单或配置方案→确认披露→选择TOTP或短信验证码并验证提交→在持仓表查看可赎、冻结及在途状态。刷新、退出重进或新对话从空白开始；银行已受理订单保留。通过自然语言修改投资金额并替换当前未提交方案；点击“一键申购全部”，一次本人确认及整份方案验证码验证，无旧方案列表和逐笔采用表单。详细操作见[理财演示指南](docs/wealth/demo.md)。
+- 理财：本人评估→普通/类别推荐→选品及整体配置→核对差额和披露→整份本人确认及TOTP/短信验证→查看订单、持仓及收益。在持仓表操作普通赎回或合格快赎；已受理订单不会因刷新或改方案被撤销。当前使用结构化工作台；自然语言团队通过[动作接口与DAG](docs/wealth/nlp_agent_handoff_20261015.md)接线，不能把旧聊天接口当成最新版配置入口。
 - 花店／蛋糕店：点击左侧“生活服务”→选择花店或蛋糕店→选择商品并提交订单→返回银行接受收款申请→再次核对并确认付款→回店铺查看“交易完成”。提交订单本身不授权扣款。
 
 产品风险R1—R5、用户风险承受能力和操作权限等级是三个不同概念。绿色查询自动执行，黄色需要本人明确确认，红色需要本人确认及强验证。理财申购、普通赎回、快赎均复用三号的 `verify_second_factor()`，TOTP／短信二选一；整份方案一次验证为每笔订单写入绑定证据，改金额或版本后旧短信挑战不能用于新方案。
@@ -95,7 +105,7 @@ docker compose up --build
 | 理财对话与账务增量（开发中） | [任务/时间/测试轮次契约](docs/wealth/dialogue_tasks_and_time.md)、[当前进度](docs/wealth/dialogue_ledger_progress.md)、[E01–E40验收](docs/validation/dialogue_ledger_20261002.md) |
 | 理财工作台与临时状态 | [当前交互及清理](docs/wealth/workspace_simplification.md)、[C01–C08验收](docs/validation/wealth_workspace_20261004.md) |
 | 理财语义、推荐与子DAG | [子任务接口](docs/wealth/semantic_subtask_contract.md)、[推荐provider](docs/wealth/recommendation_provider.md)、[推荐与详情展示](docs/wealth/recommendation_display.md)、[固定24项验收](docs/validation/wealth_semantic_dag_20261003.md) |
-| 固定行情与本地基线升级 | [价格和日历](docs/wealth/fixed_prices_and_calendar.md)、[备份与归属清理](docs/wealth/baseline_upgrade.md)、[本轮进度](docs/wealth/semantic_dag_progress.md) |
+| 固定行情与本地基线升级 | [价格和日历](docs/wealth/fixed_prices_and_calendar.md)、[备份与归属清理](docs/wealth/baseline_upgrade.md)、[历史开发记录](docs/wealth/semantic_dag_progress.md) |
 | 安全与授权限制 | [理财安全自评](docs/wealth/security.md)、[统一验证及历史证据](docs/wealth/simulated_authorization.md) |
 | 验证证据 | [理财原始验收](docs/validation/wealth_20261001.md)、[统一授权接入验收](docs/validation/wealth_unified_authorization_20261005.md)、[历史点击授权验收](docs/validation/wealth_authorization_demo_20261001.md)、[账单验收](docs/validation/bills_20260930.md) |
 | 开发历史 | [实施进度](implementation_progress.md)、[历史README](docs/archive/README_before_authorization_20261001.md) |
