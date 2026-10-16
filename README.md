@@ -50,19 +50,16 @@ NOVA 已接通只读 Agent Loop：模型选择工具，服务端校验参数并�
 
 转账执行、卡片变更、订阅取消/扣费和理财操作仍在各业务工作台完成，NOVA没有资金执行、确认或授权工具，也不代表跨场景总DAG已完成。日历是本人保存数据，账户及商店交易是模拟数据；店铺查询不下单、扣款或退款。理财保留唯一当前方案、产品走势图及统一确认验证入口。
 
-更新后端工具或前端交互后，标准Docker部署执行 `docker compose up -d --build backend frontend`；仅修改前端时可单独重建frontend。源码开发重启后端并在frontend运行 `npm run dev`。已有独立3010／8010演示环境使用单独构建和数据库，端口不是版本号；不要混用账户数据，也不要删除数据库卷来更新页面。详细步骤见[运行指南](运行指南.md)。
+正式前端只有一套：`frontend/index.html → src/main.tsx → App.tsx`，理财与其他场景共用。旧Docker镜像或本机`dist`不会因GitHub合并而更新；它们不是仓库中的第二套前端。历史01独立验收页只供隔离测试，不是用户入口。请按[当前源码启动步骤](运行指南.md#当前理财入口与源码启动)从同一份最新源码启动前后端。
 
 
 ## 快速启动
 
 已有 `.env` 时保留原文件；首次运行复制 `.env.example`，设置独立的 `JWT_SECRET` 与 `INTERNAL_BANK_TOKEN`，不要提交密钥。无模型密钥时使用有限离线规则；默认 DeepSeek 服务只需填写一次 `LLM_API_KEY`，NOVA、转账、账单与理财共用。需要全局离线时设置 `LLM_MODE=offline`，详见[统一模型配置](docs/setup/model_configuration.md)。
 
-```bash
-cp .env.example .env
-docker compose up --build
-```
+当前推荐前端：[http://127.0.0.1:3014/](http://127.0.0.1:3014/)；对应后端健康检查：[http://127.0.0.1:8014/health](http://127.0.0.1:8014/health)，API：[http://127.0.0.1:8014/docs](http://127.0.0.1:8014/docs)。登录后从左侧“理财”进入。
 
-前端：<http://localhost:3010> <http://localhost:3000>；健康检查：<http://localhost:8000/health>；API：<http://localhost:8000/docs>。本地SQLite、Windows启动及故障排查见[运行指南](运行指南.md)。当前无需Redis。
+这些地址需要本机对应服务已启动；GitHub不会替用户启动localhost。首次使用先安装固定资料、配置自己的数据库和合法演示账户，再按[当前源码启动步骤](运行指南.md#当前理财入口与源码启动)启动。前后端必须来自同一份最新源码，健康响应应为`portfolio_ready=true`；页面打开但资料未就绪不能算理财可用。当前无需Redis。
 
 演示用户：张三 `13800000001`，密码 `password123`；仅用于虚构演示。升级已有数据库先备份并遵循[理财迁移交接](docs/wealth/handoff.md)，不要删除数据卷或混跑旧扣款代码。
 
