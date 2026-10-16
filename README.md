@@ -50,7 +50,7 @@ NOVA 已接通只读 Agent Loop：模型选择工具，服务端校验参数并�
 
 转账执行、卡片变更、订阅取消/扣费和理财操作仍在各业务工作台完成，NOVA没有资金执行、确认或授权工具，也不代表跨场景总DAG已完成。日历是本人保存数据，账户及商店交易是模拟数据；店铺查询不下单、扣款或退款。理财保留唯一当前方案、产品走势图及统一确认验证入口。
 
-本轮包含后端工具和前端交互，标准Docker部署更新后执行 `docker compose up -d --build backend frontend`；仅修改前端时可单独重建frontend。源码开发重启后端并在frontend运行 `npm run dev`。已有独立3010／8010演示环境使用单独构建和数据库，端口不是版本号；不要混用账户数据，也不要删除数据库卷来更新页面。详细步骤见[运行指南](运行指南.md)。
+更新后端工具或前端交互后，标准Docker部署执行 `docker compose up -d --build backend frontend`；仅修改前端时可单独重建frontend。源码开发重启后端并在frontend运行 `npm run dev`。已有独立3010／8010演示环境使用单独构建和数据库，端口不是版本号；不要混用账户数据，也不要删除数据库卷来更新页面。详细步骤见[运行指南](运行指南.md)。
 
 
 ## 快速启动
@@ -105,7 +105,7 @@ docker compose up --build
 | 理财对话与账务增量（开发中） | [任务/时间/测试轮次契约](docs/wealth/dialogue_tasks_and_time.md)、[当前进度](docs/wealth/dialogue_ledger_progress.md)、[E01–E40验收](docs/validation/dialogue_ledger_20261002.md) |
 | 理财工作台与临时状态 | [当前交互及清理](docs/wealth/workspace_simplification.md)、[C01–C08验收](docs/validation/wealth_workspace_20261004.md) |
 | 理财语义、推荐与子DAG | [子任务接口](docs/wealth/semantic_subtask_contract.md)、[推荐provider](docs/wealth/recommendation_provider.md)、[推荐与详情展示](docs/wealth/recommendation_display.md)、[固定24项验收](docs/validation/wealth_semantic_dag_20261003.md) |
-| 固定行情与本地基线升级 | [价格和日历](docs/wealth/fixed_prices_and_calendar.md)、[备份与归属清理](docs/wealth/baseline_upgrade.md)、[本轮进度](docs/wealth/semantic_dag_progress.md) |
+| 固定行情与本地基线升级 | [价格和日历](docs/wealth/fixed_prices_and_calendar.md)、[备份与归属清理](docs/wealth/baseline_upgrade.md)、[历史开发记录](docs/wealth/semantic_dag_progress.md) |
 | 安全与授权限制 | [理财安全自评](docs/wealth/security.md)、[统一验证及历史证据](docs/wealth/simulated_authorization.md) |
 | 验证证据 | [理财原始验收](docs/validation/wealth_20261001.md)、[统一授权接入验收](docs/validation/wealth_unified_authorization_20261005.md)、[历史点击授权验收](docs/validation/wealth_authorization_demo_20261001.md)、[账单验收](docs/validation/bills_20260930.md) |
 | 开发历史 | [实施进度](implementation_progress.md)、[历史README](docs/archive/README_before_authorization_20261001.md) |
