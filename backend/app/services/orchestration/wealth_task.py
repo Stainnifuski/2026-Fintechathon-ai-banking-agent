@@ -143,6 +143,29 @@ async def control(db, user_id, task_id, action, body, *, actor_id=None):
                 plan=await db.get(WealthPlanORM,task.data['plan_id'])
                 if plan and plan.user_id==user_id: plan.status='CANCELLED'
         else: raise WealthPolicyError('控制动作不支持', 'INVALID_REQUEST', 422)
+    if action in {'pause', 'handoff', 'claim', 'release'}:
+        # Changing control invalidates only unsubmitted authorization. Keep accepted/unknown
+        # operations and their settlement observation intact; never undo bank accounting.
+        submitted_refs = {n.operation_id for n in nodes if n.kind == 'SUBMIT'
+            and n.status in {'RUNNING', 'COMPLETED', 'UNKNOWN'}}
+        pending_refs = {n.operation_id for n in nodes if n.kind == 'SUBMIT'
+            and n.operation_id and n.operation_id not in submitted_refs}
+        # Bank acceptance can precede the worker's SUBMIT observation. CONSUMED is
+        # the trusted receipt here; don't reset its already-confirmed dependency nodes.
+        consumed_refs = set(await db.scalars(select(Authorization.operation_id).where(
+            Authorization.user_id == user_id, Authorization.operation_id.in_(pending_refs),
+            Authorization.status == 'CONSUMED')))
+        pending_refs -= consumed_refs
+        await db.execute(update(Authorization).where(Authorization.user_id == user_id,
+            Authorization.operation_id.in_(pending_refs),
+            Authorization.status.in_(['AWAITING_CONFIRMATION', 'AWAITING_MFA', 'VALID'])).values(status='EXPIRED'))
+        for node in nodes:
+            if (node.kind in {'CONFIRM', 'VERIFY'} and node.data.get('operation_ref') in pending_refs
+                    and node.status != 'CANCELLED'):
+                node.status = 'READY'
+                node.lease_version = None
+                node.lease_until = None
+
     task.version += 1
     task.data = {**task.data, 'notes':[*task.data.get('notes', []),
         {'actor_id':actor, 'action':action, 'reason':body.get('reason', ''), 'occurred_at':utc_iso(utc_now())}]}
@@ -191,7 +214,7 @@ async def revise_command(db, user_id, task_id, expected_version, command):
     return await view(db,task)
 
 
-async def register_plan(db, user_id, session_id, context_id, plan):
+async def register_plan(db, user_id, session_id, context_id, plan, *, commit=True):
     """方案逐笔节点持久化；申购仍由可信整份方案原子执行入口提交。"""
     from sqlalchemy import delete
     await lock_profile(db,user_id)
@@ -217,9 +240,9 @@ async def register_plan(db, user_id, session_id, context_id, plan):
     if task:
         old_nodes=(await db.scalars(select(Node).where(Node.task_id==task.task_id))).all()
         if any(n.kind=='SUBMIT' and n.status in {'RUNNING','UNKNOWN','COMPLETED'} for n in old_nodes):
-            buy_gate=next((n for n in old_nodes if n.kind=='BUY_PLAN'),None)
-            reread=next((n for n in old_nodes if n.kind=='REREAD_CASH'),None)
-            settled=[n for n in old_nodes if n.kind=='SETTLEMENT']
+            buy_gate=next((n for n in old_nodes if n.kind=='BUY_PLAN' and n.status!='CANCELLED'),None)
+            reread=next((n for n in old_nodes if n.kind=='REREAD_CASH' and n.status!='CANCELLED'),None)
+            settled=[n for n in old_nodes if n.kind=='SETTLEMENT' and n.status!='CANCELLED']
             continuation=bool(plan['stage']=='BUY' and buy_gate and reread and reread.status=='COMPLETED'
                 and settled and all(n.status=='COMPLETED' for n in settled))
             if not continuation:
@@ -272,7 +295,10 @@ async def register_plan(db, user_id, session_id, context_id, plan):
             status='COMPLETED' if row['kind'] in {'READ_FACTS','PLAN'} else 'READY',attempts=0,
             operation_id=row.get('operation_ref') if row['kind']=='SUBMIT' else None,
             data={k:v for k,v in row.items() if k not in {'node_id','kind','depends_on'}}))
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return await view(db,task)
 
 

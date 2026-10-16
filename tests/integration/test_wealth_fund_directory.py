@@ -14,13 +14,13 @@ def directory():
 @pytest.mark.asyncio
 async def test_directory_full_pagination_unknown_idempotency_and_injection(store, http_store):
     async with store() as db:
-        assert (await funds.import_directory(db, directory()))['source_count'] == 26
-        assert (await funds.import_directory(db, directory()))['retained_count'] == 26
-        assert (await funds.search(db, page=2, page_size=20))['items'][0]['code'] == '000021'
+        assert (await funds.import_directory(db, directory()))['source_count'] == 25
+        assert (await funds.import_directory(db, directory()))['retained_count'] == 25
+        assert (await funds.search(db, page=2, page_size=20))['items'][0]['code'] == '000022'
         assert (await funds.search(db, '000003'))['items'][0]['fund_type'] == '未知'
         assert (await funds.search(db, '%'))['total'] == 0
         assert (await funds.search(db, '债券基金'))['total'] == 24
-        assert (await funds.search(db, '找几只货币型基金'))['items'][0]['code'] == '000009'
+        assert (await funds.search(db, '找几只货币型基金'))['total'] == 0
         assert (await funds.search(db, '契约样本26'))['total'] == 1
         assert (await funds.search(db, '不存在债券基金'))['total'] == 0
         before = await db.scalar(select(func.count()).select_from(funds.Directory))
@@ -59,6 +59,9 @@ async def test_mixed_pool_immutable_import_default_and_source_disclosure(store, 
         assert await funds.claim(db,'000001','history')
     await funds.refresh(store,'000001','history',Provider())
     async with store() as db:
+        import shutil
+        from pathlib import Path
+        shutil.copytree(Path(__file__).resolve().parents[2]/'config/wealth/data',tmp_path/'data')
         payload=await compose(db,tmp_path)
         first=await import_dataset(db,payload)
         from backend.app.services.bank.wealth_preload import bank_products
@@ -99,7 +102,7 @@ async def test_cache_single_claim_retained_failure_and_type_separation(store):
         assert await funds.claim(db, '000001', 'history')
         assert not await funds.claim(db, '000001', 'history')
         with pytest.raises(ValueError): await funds.claim(db, '000009', 'history')
-        with pytest.raises(ValueError): await funds.claim(db, '000001', 'money_yield')
+        with pytest.raises(ValueError): await funds.claim(db, '000001', 'unsupported')
     provider = Provider(); await funds.refresh(store, '000001', 'history', provider)
     async with store() as db:
         assert not await funds.claim(db, '000001', 'history')
@@ -112,10 +115,3 @@ async def test_cache_single_claim_retained_failure_and_type_separation(store):
         assert result['status'] == 'FAILED' and result['error_code'] == 'PROVIDER_TIMEOUT'
         assert result['data'] == first and not result['data'].get('simulated')
         assert await db.scalar(select(func.count()).select_from(funds.Cache)) == 1
-
-
-def test_money_yield_units_unknown_and_date():
-    result = funds.normalize_money([{'净值日期': '2026-09-30', '每万份收益': '-0.12', '7日年化收益率': None}], '2026-10-02T00:00:00+00:00')
-    assert result[0]['income_per_10000'] == '-0.12'
-    assert result[0]['seven_day_annualized_percent'] is None and 'nav' not in result[0]
-    with pytest.raises(ValueError): funds.normalize_money([{'净值日期': '2027-01-01', '每万份收益': '0.1', '7日年化收益率': '1'}], '2026-10-02T00:00:00+00:00')

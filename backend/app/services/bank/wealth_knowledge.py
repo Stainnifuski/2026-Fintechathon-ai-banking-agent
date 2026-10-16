@@ -61,7 +61,7 @@ async def seed_mixed(db, payload):
         names = '、'.join(s['name'] for s in shares)
         if p['source'] == 'akshare':
             body = f"{names}：真实基金数据，仅研究。类别{p['group']}；来源{p['source_url']}。风险等级、完整交易规则尚未审核，不可申赎。"
-            body += '万份收益与七日年化不等于单位净值。' if p.get('money_yield') else '单位净值涨跌不是已验证分红再投资总回报。'
+            body += '单位净值涨跌不是已验证分红再投资总回报。'
             body += '关联份额不作为独立风险来源。' if p.get('fund_family_id') else '家族关联尚未核实，不声称独立分散。'
             source = p['source_url']
         else:

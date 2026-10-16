@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import {changesAssetFacts,invalidateAssetSummary} from './assetSummaryEvents';
 
 /**
  * Axios 实例封装 + 请求/响应拦截器
@@ -29,6 +30,7 @@ apiClient.interceptors.request.use(
 /** 响应拦截器：统一错误处理 */
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
+    if(changesAssetFacts(response.config.method??'get',response.config.url??''))invalidateAssetSummary();
     return response;
   },
   (error: unknown) => {

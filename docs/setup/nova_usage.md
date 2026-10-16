@@ -35,7 +35,7 @@
 | 信息 | 工具 | 数据与口径 |
 |---|---|---|
 | 现实时间 | get_current_time | 默认北京时间，可指定IANA时区 |
-| 本人账户概览 | get_financial_overview | 模拟银行；现金总额仅汇总savings，与首页一致 |
+| 本人账户概览 | get_financial_overview | 模拟银行；普通savings现金小计与当前授权范围AssetSummary分别返回；首页/理财页总资产使用后者，包含持仓与赎回应收，冻结不重复加 |
 | 月度/年度账单 | get_bill_analysis | 模拟银行；完整统计不受流水分页影响 |
 | 已完成流水列表/详情 | list_transactions、get_transaction | 模拟银行；本人账户归属校验 |
 | 本人卡片列表/详情 | list_cards、get_card | 模拟银行；脱敏卡号、状态、限额/上限、已用/可用信用额度、有效期、渠道开关，信用额度不等于现金 |

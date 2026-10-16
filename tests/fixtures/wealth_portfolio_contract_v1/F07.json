@@ -1,0 +1,15 @@
+{
+  "fixture_id": "F07",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "holding_units": "1000.0000",
+    "nav": "2",
+    "units": "200.0000"
+  },
+  "expected": {
+    "holding_ratio": "0.2",
+    "estimated_market_value_fen": 40000
+  }
+}

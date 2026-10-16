@@ -1,0 +1,79 @@
+{
+  "fixture_id": "F03",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A2_future",
+  "input": {
+    "capacity_level": 2,
+    "matched_risks": [
+      2,
+      4
+    ],
+    "group": {
+      "bucket": null,
+      "filter": {
+        "mode": "theme",
+        "theme_key": "high_dividend"
+      },
+      "status": "ok",
+      "items": [
+        {
+          "family_id": "fixture-family",
+          "name": "fixture-family",
+          "bucket": "stable",
+          "reason": "contract fixture only",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": {
+            "source": "fixture_only"
+          },
+          "share_classes": [
+            {
+              "product_id": "fixture-product",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 100,
+              "fees": {
+                "purchase_fee_rate": null,
+                "sales_service_fee_rate": null,
+                "redemption_fee_rules": null,
+                "missing_fields": [
+                  "all_fees"
+                ]
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": null,
+                  "status": "unavailable",
+                  "reason": "fixture has no market history",
+                  "source": "fixture_only"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "status": "unavailable",
+                  "reason": "fixture has no market history",
+                  "source": "fixture_only"
+                }
+              },
+              "detail_ref": "/products/fixture-product/detail",
+              "data_source": "fixture_only",
+              "data_as_of": "2026-10-05T04:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "risk_explanation": null
+    }
+  },
+  "expected": {
+    "status": "ok",
+    "risk_explanation": null
+  }
+}

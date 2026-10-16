@@ -1,0 +1,14 @@
+{
+  "fixture_id": "F20",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "opening_fen": 100000,
+    "invested_fen": 50000,
+    "closing_fen": 150000
+  },
+  "expected": {
+    "pnl_fen": 0
+  }
+}

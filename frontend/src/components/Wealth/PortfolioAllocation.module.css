@@ -1,0 +1,18 @@
+.panel { max-width: 1050px; margin: 24px auto; padding: 24px; background: white; border: 1px solid #cbd5e1; border-radius: 14px; color: #17243b; font: 16px system-ui; overflow-wrap: anywhere; }
+.panel details { margin: 10px 0; }
+.panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.panel button, .panel input { padding: 8px 12px; margin: 6px; }
+.panel button { cursor: pointer; }
+.panel button:disabled { cursor: default; }
+.panel table { width: 100%; border-collapse: collapse; }
+.panel th, .panel td { text-align: left; padding: 9px; border-bottom: 1px solid #e2e8f0; }
+.bar { height: 12px; background: #2563eb; min-width: 0; border-radius: 3px; }
+.summary { display: flex; flex-wrap: wrap; gap: 20px; }
+.error { color: #b91c1c; padding: 10px; background: #fff1f2; }
+.hint { color: #475569; }
+.slider { display: block; width: 90%; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+.card { border: 1px solid #cbd5e1; padding: 14px; border-radius: 10px; overflow-wrap: anywhere; }
+.card p { font-size: 14px; }
+.card pre { max-height: 200px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+.editRow { display: block; padding: 6px; }

@@ -136,7 +136,7 @@ def business_tools() -> dict:
         ('project_cashflow', CashflowScenario, cashflow,
          '只读计算从现实现在起1至62天储蓄现金流及情景。可减少某消费类别0至100%或假设排除活跃订阅ID，不执行取消或扣款。省略账户沿用页面账户，null为全部储蓄。金额分，计划/工资及消费估计区分。历史高低线不是置信区间。'),
         ("get_financial_overview", OverviewArguments, overview,
-         "查询本人账户余额、可用资金和占款；现金总额仅汇总 savings，与首页一致。无需参数。"),
+         "查询本人现金和总资产。totals 仅是普通 savings 现金小计；首页/理财页总资产必须使用 asset_summary，按其授权范围、快照及估值完整性解释。总资产=现金+持仓+赎回应收，冻结不重复加；总资产不是可支付现金，null 不是零。无需参数。"),
         ("get_bill_analysis", AnalysisArguments, analysis,
          "查询本人月度或年度完整账单统计、分类、趋势、上期比较和异常。金额为分。省略字段继承页面已应用筛选，显式 null 清除筛选。date 月度 YYYY-MM/年度 YYYY；不传默认当前账期。"),
         ("list_transactions", TransactionsArguments, transactions,

@@ -1,0 +1,113 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "wealth-asset-summary-v1",
+      "default": "wealth-asset-summary-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "asset_scope_id": {
+      "title": "Asset Scope Id",
+      "type": "string"
+    },
+    "account_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Account Ids",
+      "type": "array"
+    },
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "as_of": {
+      "format": "date-time",
+      "title": "As Of",
+      "type": "string"
+    },
+    "business_at": {
+      "format": "date-time",
+      "title": "Business At",
+      "type": "string"
+    },
+    "cash_balance_fen": {
+      "minimum": 0,
+      "title": "Cash Balance Fen",
+      "type": "integer"
+    },
+    "held_fen": {
+      "minimum": 0,
+      "title": "Held Fen",
+      "type": "integer"
+    },
+    "available_cash_fen": {
+      "minimum": 0,
+      "title": "Available Cash Fen",
+      "type": "integer"
+    },
+    "positions_market_value_fen": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Positions Market Value Fen"
+    },
+    "redemption_receivable_fen": {
+      "minimum": 0,
+      "title": "Redemption Receivable Fen",
+      "type": "integer"
+    },
+    "total_assets_fen": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Total Assets Fen"
+    },
+    "valuation_complete": {
+      "title": "Valuation Complete",
+      "type": "boolean"
+    },
+    "missing_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Fields",
+      "type": "array"
+    },
+    "data_source": {
+      "title": "Data Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset_scope_id",
+    "account_ids",
+    "snapshot_id",
+    "as_of",
+    "business_at",
+    "cash_balance_fen",
+    "held_fen",
+    "available_cash_fen",
+    "positions_market_value_fen",
+    "redemption_receivable_fen",
+    "total_assets_fen",
+    "valuation_complete",
+    "missing_fields",
+    "data_source"
+  ],
+  "title": "AssetSummary",
+  "type": "object"
+}

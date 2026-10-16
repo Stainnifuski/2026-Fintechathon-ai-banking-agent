@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:wealth-picker": "node --experimental-strip-types --test tests/wealthProductSelection.test.ts",
+    "test:wealth-allocation": "node --experimental-strip-types --test tests/wealthAllocationReview.test.ts",
+    "test:wealth-tables": "node --experimental-strip-types --test tests/wealthTables.test.ts",
+    "test:asset-summary": "node --experimental-strip-types --test tests/assetSummary.test.ts"
   },
   "dependencies": {
     "axios": "^1.7.0",

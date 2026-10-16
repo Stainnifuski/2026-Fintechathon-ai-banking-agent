@@ -1,0 +1,21 @@
+{
+  "fixture_id": "F05",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A2_future",
+  "input": {
+    "group": {
+      "bucket": null,
+      "filter": {
+        "mode": "theme",
+        "theme_key": "high_dividend"
+      },
+      "status": "no_theme_match",
+      "items": [],
+      "risk_explanation": null
+    }
+  },
+  "expected": {
+    "status": "no_theme_match"
+  }
+}

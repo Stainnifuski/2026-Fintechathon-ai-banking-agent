@@ -1,5 +1,6 @@
 """4号数据集导入/资金上下文；不可变版本，不覆盖既有资金事实。"""
 import json
+from ...domain.wealth_paper_policy import PRICING_MODES
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from sqlalchemy import select, update
@@ -12,7 +13,7 @@ from ...models.wealth_research import WealthDatasetORM, WealthResearchProductORM
 from .transfer_service import BankError
 from ...domain.time import BEIJING
 
-MAX_IMPORT_BYTES=25_000_000
+MAX_IMPORT_BYTES=150_000_000 # bounded offline full-core dataset, not an HTTP request limit
 
 
 def validate(payload: dict) -> list[dict]:
@@ -30,6 +31,7 @@ def validate(payload: dict) -> list[dict]:
             if not isinstance(pid,str) or not 1<=len(pid)<=32 or pid in seen: raise ValueError("IDENTITY_DUPLICATE")
             seen.add(pid)
             if not p.get("name") or p.get("source") not in {"synthetic","akshare","admin_import"}: raise ValueError("SOURCE_MISSING")
+            if p.get("source")=="akshare" and p.get("category") not in {"bond","mixed","equity","index"}: raise ValueError("UNSUPPORTED_REAL_FUND_CATEGORY")
             if p.get('rules_complete'):
                 rules=p['rules']
                 for field in ('currency','min_amount_fen','max_amount_fen','purchase_fee_rate','redeem_fee_bands','holding_days','confirm_business_days','cash_business_days','calendar_version','rules_source','cutoff','cancel_before_pricing','purchase_paused','redeem_paused'): rules[field]
@@ -39,6 +41,11 @@ def validate(payload: dict) -> list[dict]:
                 if not 0<=Decimal(rules['purchase_fee_rate'])<1: raise ValueError('INVALID_FEE_RULES')
                 if not rules['redeem_fee_bands'] or any(not 0<=Decimal(b['rate'])<1 or b['days_lt']<=0 for b in rules['redeem_fee_bands']): raise ValueError('INVALID_FEE_RULES')
                 for field in ('kind','product_version','disclosure_version'): p[field]
+                if rules.get('pricing_mode') in PRICING_MODES:
+                    from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons
+                    failures=validate_policy(rules.get('execution_policy'),pid,p['category'],p['risk_level'])
+                    failures+=registered_policy_reasons(rules.get('execution_policy'),pid)
+                    if failures:raise ValueError(','.join(failures))
             last=None
             for point in p["history"]:
                 d=date.fromisoformat(point["date"])
@@ -47,17 +54,7 @@ def validate(payload: dict) -> list[dict]:
                 if not nav.is_finite() or nav<=0: raise ValueError("NAV_NONPOSITIVE")
                 available=datetime.fromisoformat(point["available_at"])
                 if available.tzinfo is None: raise ValueError("AVAILABILITY_TIME_REQUIRED")
-            if not p["history"] and not (p.get('source')=='akshare' and p.get('money_yield') and not p.get('rules_complete')): raise ValueError("EMPTY_HISTORY")
-            last_money = None
-            for point in p.get('money_yield', []):
-                day = date.fromisoformat(point['date'])
-                available = datetime.fromisoformat(point['available_at'])
-                if available.tzinfo is None or day > available.date(): raise ValueError('INVALID_MONEY_AVAILABILITY')
-                if last_money is not None and day <= last_money: raise ValueError('MONEY_DATES_UNSORTED_OR_DUPLICATE')
-                last_money = day
-                for field in ('income_per_10000', 'seven_day_annualized_percent'):
-                    value = point.get(field)
-                    if value is not None and not Decimal(str(value)).is_finite(): raise ValueError('INVALID_MONEY_VALUE')
+            if not p["history"]: raise ValueError("EMPTY_HISTORY")
         except (KeyError,TypeError,ValueError,ArithmeticError) as exc:
             errors.append({"row":n,"code":str(exc)[:80]})
     if not payload.get("products"): errors.append({"row":0,"code":"EMPTY_PRODUCTS"})
@@ -81,38 +78,63 @@ async def import_dataset(db: AsyncSession, payload: dict, dry_run: bool=False) -
     manifest.update(fingerprint=digest,product_count=len(payload["products"]),ingested_at=now.isoformat())
     db.add(WealthDatasetORM(dataset_key=key,dataset_id=payload["dataset_id"],version=payload["dataset_version"],mode=payload["mode"],manifest=manifest,ingested_at=now))
     await db.flush()
+    # One immutable catalogue read, not two round trips and two flushes per code.
+    existing_versions={p.version_id:p for p in (await db.scalars(select(WealthProductVersionORM))).all()}
+    existing_products={p.product_id:p for p in (await db.scalars(select(WealthProductORM))).all()}
+    for p in payload['products']:
+        if not p.get('rules_complete') or not p.get('rules'):continue
+        pid=p['product_id'];version=int(p.get('product_version',1))
+        old=existing_versions.get(f'{pid}:{version}')
+        if old and old.rules!=p['rules']:raise BankError('银行规则版本冲突','RULE_VERSION_CHANGED',409)
+        current=existing_products.get(pid)
+        if current is None:
+            current=WealthProductORM(product_id=pid,current_version=version,status='on_sale')
+            db.add(current);existing_products[pid]=current
+        elif version>current.current_version:current.current_version=version
+    await db.flush()
+    nav_rows=[]
     for p in payload["products"]:
         history=p["history"]; metadata={k:v for k,v in p.items() if k!="history"}
         db.add(WealthResearchProductORM(record_id=f'{key}:{p["product_id"]}',dataset_key=key,product_id=p["product_id"],data=metadata,history=history))
         # Only reviewed, complete simulation overlays enter the bank catalogue.
         if not p.get("rules_complete") or not p.get("rules"): continue
         pid=p["product_id"]; version=int(p.get("product_version",1)); vid=f"{pid}:{version}"
-        old=await db.get(WealthProductVersionORM,vid)
+        old=existing_versions.get(vid)
         if old:
             if old.rules!=p["rules"]: raise BankError("银行规则版本冲突","RULE_VERSION_CHANGED",409)
             continue
-        current=await db.get(WealthProductORM,pid)
-        if current is None: db.add(WealthProductORM(product_id=pid,current_version=version,status="on_sale")); await db.flush()
-        elif version>current.current_version: current.current_version=version
         disclosure={"version":version,"nature":"明确模拟规则覆盖的净值型产品","manager":p.get("manager","资料未提供"),
             "seller":"比赛模拟银行","risk":"本金可能亏损；风险等级为项目模拟分级","fees":"年度费用已含净值；申赎费用单独计算，不重复扣费",
             "liquidity":"按版本化模拟营业日确认到账","holding_period_days":p["rules"]["holding_days"],
             "pricing":"只用指定计价日可见净值；缺失等待","settlement":"按模拟规则确认和到账，不是发行人承诺",
-            "cancellation":"计价截止前且未计价可撤销","limitations":"不连接真实交易；货币类为净值等价模型，不实现真实份额结转",
+            "cancellation":"计价截止前且未计价可撤销","limitations":"不连接真实交易；模拟资金与真实公开资料分别标源",
             "dataset_id":payload["dataset_id"],"dataset_version":payload["dataset_version"],"data_source":p["source"],"rules_source":p["rules"]["rules_source"]}
         if p.get('official_reference'):
             disclosure.update(identity=p['identity'], official_reference=p['official_reference'],
                 source_rules=p['source_rules'], rules_adaptations=p['rules_adaptations'])
+        if p['rules'].get('pricing_mode') in PRICING_MODES:
+            policy=p['rules']['execution_policy']
+            disclosure.update(identity='真实公开基金资料＋比赛模拟交易',
+                underlying_source_kind='real',execution_source_kind='simulated',source_product_code=pid,
+                project_policy_version=policy['version'],issuer_risk_rating=p.get('public_risk_rating'),
+                risk='项目风险分级独立于发行人评级；可靠公开更高等级或分类冲突停止申购；不承诺保本',
+                # Preserve this immutable source version on fresh imports too.
+                # Current pricing is a separately versioned runtime overlay.
+                pricing='使用本版本冻结的最后公开NAV作为模拟成交基准，公开NAV日期与模拟计价日分别记录',
+                fees='项目模拟申购和赎回费用为0，无额外销售服务费；公开费用原值另存，未知不补零',
+                limitations='真实资料不代表真实代销或真实成交；价格冻结，不填未来行情',
+                public_sources=p.get('public_sources',[]),public_fields=p.get('public_fields',{}))
         if p['rules'].get('quick_redemption'):
             disclosure.update(quick_redemption=p['rules']['quick_redemption'],
                 cancellation='普通申购/赎回仅计价日15:30前全撤；模拟快赎成功受理后不可撤',
                 settlement='普通按T+1模拟日历；快赎同事务减少份额并即时增加可用现金，无垫资/后续清算',
                 limitations='虚构现金管理理财和净值，不是真实快赎服务；每个产品本人跨账户自然日成功支付累计1万元')
         db.add(WealthProductVersionORM(version_id=vid,product_id=pid,version=version,name=p["name"],kind=p["kind"],category=p["category"],risk_level=p["risk_level"],rules=p["rules"],disclosure=disclosure,created_at=now))
-        await db.flush()
         from ...domain.time import as_utc
-        db.add_all([WealthNavORM(nav_id=f'{vid}:{point["date"]}',version_id=vid,nav_date=date.fromisoformat(point["date"]),price=point["nav"],
+        nav_rows.extend([WealthNavORM(nav_id=f'{vid}:{point["date"]}',version_id=vid,nav_date=date.fromisoformat(point["date"]),price=point["nav"],
             available_at=as_utc(datetime.fromisoformat(point['available_at']))) for point in history])
+    await db.flush()
+    db.add_all(nav_rows)
     await db.flush()
     return {"ok":True,"dataset_key":key,"written":len(payload["products"]),"fingerprint":digest}
 
@@ -170,11 +192,12 @@ async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balanc
         cid='CTX'+fingerprint([user_id,dataset_key,'research'])[:28]
         if await db.get(WealthContextORM,cid): return {'context_id':cid,'created':False}
         aid='SA'+fingerprint([cid,'account'])[:28]
+        paper=dataset.manifest.get('policy_version') is not None
         db.add(AccountORM(account_id=aid,user_id=user_id,account_type='savings',card_number='模拟研究****'+aid[-4:],balance_fen=balance_fen,daily_transfer_used_fen=0,daily_transfer_limit_fen=5000000,status='active'))
         await db.flush()
-        db.add(WealthContextORM(context_id=cid,user_id=user_id,account_id=aid,dataset_key=dataset_key,version=1,data={'label':'真实基金数据｜研究演示｜模拟资金','mode':dataset.mode,'scenario':'research','fixture':{},'disposable':True,'business_at':datetime.now(timezone.utc).isoformat()}))
+        db.add(WealthContextORM(context_id=cid,user_id=user_id,account_id=aid,dataset_key=dataset_key,version=1,data={'label':'真实基金公开资料｜比赛模拟交易｜模拟资金' if paper else '真实基金数据｜研究演示｜模拟资金','mode':dataset.mode,'scenario':'research','fixture':{},'disposable':True,'business_at':datetime.now(timezone.utc).isoformat()}))
         from .audit_service import record_bank_event
-        record_bank_event(db,event_key=cid,subject_user_id=user_id,action='investment_research_sandbox_initialize',result='success',facts={'context_id':cid,'issued_simulated_cash_fen':balance_fen,'dataset_key':dataset_key},decision_chain=['explicit_admin_initialization','new_account_no_balance_copy','research_only_rules_missing'])
+        record_bank_event(db,event_key=cid,subject_user_id=user_id,action='investment_research_sandbox_initialize',result='success',facts={'context_id':cid,'issued_simulated_cash_fen':balance_fen,'dataset_key':dataset_key},decision_chain=['explicit_admin_initialization','new_account_no_balance_copy','approved_real_public_paper_policy' if paper else 'research_only_rules_missing'])
         await db.flush(); return {'context_id':cid,'account_id':aid,'created':True}
     key=f"{DATASET_ID}:{DATASET_VERSION}"
     if await db.get(WealthDatasetORM,key) is None:
@@ -213,11 +236,10 @@ async def catalog(db: AsyncSession,dataset_key: str | None=None,as_of: datetime 
     for row in rows:
         visible=[p for p in row.history if datetime.fromisoformat(p["available_at"])<=at and p["date"]<=at.astimezone(BEIJING).date().isoformat()]
         latest=visible[-1] if visible else None
-        money_visible=[point for point in row.data.get('money_yield',[]) if datetime.fromisoformat(point['available_at'])<=at and point['date']<=at.astimezone(BEIJING).date().isoformat()]
-        result.append({**row.data,"money_yield":money_visible,"dataset_key":key,"nav":latest["nav"] if latest else None,"nav_date":latest["date"] if latest else money_visible[-1]['date'] if money_visible else None,
+        result.append({**row.data,"dataset_key":key,"nav":latest["nav"] if latest else None,"nav_date":latest["date"] if latest else None,
                        "available_at":latest["available_at"] if latest else None,"published_at":latest.get("published_at") if latest else None,
                        "history_count":len(visible),"history":visible,"quality_flags":row.data.get("quality_flags",[]),
-                       "trade_eligible":bool(row.data.get("rules_complete")),"unavailable_reason":None if visible or money_visible else "NO_VISIBLE_HISTORY"})
+                       "trade_eligible":bool(row.data.get("rules_complete")),"unavailable_reason":None if visible else "NO_VISIBLE_HISTORY"})
     return result
 
 

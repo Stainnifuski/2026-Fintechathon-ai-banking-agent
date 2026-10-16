@@ -1,0 +1,28 @@
+{
+  "fixture_id": "F13",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "balance_fen": 800000,
+    "held_fen": 0,
+    "purchase_fen": 100000
+  },
+  "expected": {
+    "preview": [
+      800000,
+      0,
+      800000
+    ],
+    "accepted": [
+      800000,
+      100000,
+      700000
+    ],
+    "cancelled": [
+      800000,
+      0,
+      800000
+    ]
+  }
+}

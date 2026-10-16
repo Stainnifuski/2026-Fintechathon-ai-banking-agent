@@ -1,0 +1,27 @@
+.wealth-returns { min-width:0; margin:20px 0; }
+.returns-heading { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+.returns-heading h2 { margin:0 0 8px; }
+.returns-heading p { margin-top:0; }
+.returns-heading button { white-space:nowrap; }
+.returns-controls { display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:14px; margin:22px 0 16px; }
+.returns-controls label { display:flex; flex-direction:column; gap:8px; min-width:0; font-size:13px; }
+.returns-controls select,.returns-controls input { width:100%; min-width:0; }
+.returns-periods { display:flex; flex-wrap:wrap; gap:8px; }
+.returns-periods button { min-width:60px; }
+.returns-periods button[aria-pressed="true"] { background:#3157e8; color:white; }
+.returns-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:20px 0; }
+.returns-summary > div { padding:16px; background:#f5f7fc; border-radius:12px; }
+.returns-summary dt { color:#667085; font-size:13px; }
+.returns-summary dd { margin:8px 0 0; font-weight:650; font-size:clamp(18px,2vw,28px); overflow-wrap:anywhere; }
+.wealth-returns .returns-note { color:#667085; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+.returns-calendar { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
+.returns-calendar .returns-day { display:flex; flex-direction:column; align-items:flex-start; gap:10px; background:#f4f7fd; color:#23314d; padding:12px 8px; min-width:0; min-height:66px; border:1px solid #e2e7f2; border-radius:8px; }
+.returns-calendar strong { font-size:11px; overflow-wrap:anywhere; }
+.returns-weekday { color:#667085; text-align:center; font-size:12px; padding:8px; }
+.returns-table-scroll { overflow-x:auto; }
+.wealth-returns table { border-collapse:collapse; width:100%; min-width:380px; font-size:13px; }
+.wealth-returns td,.wealth-returns th { text-align:left; padding:12px 8px; border-bottom:1px solid #e2e7f2; vertical-align:top; }
+.wealth-returns th { background:#f8faff; }
+.wealth-returns small { display:block; color:#667085; line-height:1.6; overflow-wrap:anywhere; }
+.wealth-returns .returns-product-link { padding:0; background:transparent; color:#3157e8; text-align:left; font-size:13px; }
+@media(max-width:620px){.returns-controls{grid-template-columns:1fr;}.returns-heading{flex-wrap:wrap;}.returns-calendar .returns-day{padding:8px 4px;}}

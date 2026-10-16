@@ -5,11 +5,13 @@ export interface Totals {
   inflow_fen: number; outflow_fen: number; net_inflow_fen: number;
   consumption_fen: number; refund_fen: number; net_consumption_fen: number;
   transfer_in_fen: number; transfer_out_fen: number; salary_fen: number;
+  /** Compatibility fields: wealth cashflows are excluded from the whole report. */
+  investment_purchase_fen: 0; investment_redemption_fen: 0;
   count: number; consumption_count: number; unknown_count: number;
 }
 export interface Anomaly { kind: 'large' | 'duplicate' | 'increase'; title: string; reason: string; tx_ids: string[]; category?: string | null; }
 export interface BillAnalysis {
-  query: BillQuery; start: string; end_exclusive: string; previous_start: string;
+  query: BillQuery; excluded_transaction_types: string[]; start: string; end_exclusive: string; previous_start: string;
   previous_end_exclusive: string; as_of: string; partial: boolean; totals: Totals; previous_totals: Totals;
   change_fen: number; change_percent: number | null;
   change_explanation: ChangeExplanation;

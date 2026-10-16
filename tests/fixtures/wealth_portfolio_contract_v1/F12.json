@@ -1,0 +1,17 @@
+{
+  "fixture_id": "F12",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "position_keys": [
+      "p1",
+      "p2"
+    ],
+    "market_value_fen": 100000
+  },
+  "expected": {
+    "status": "clarify",
+    "orders_created": 0
+  }
+}

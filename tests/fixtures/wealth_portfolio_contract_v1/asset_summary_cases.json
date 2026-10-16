@@ -1,0 +1,82 @@
+{
+  "F01": {
+    "schema_version": "wealth-asset-summary-v1",
+    "asset_scope_id": "fixture-f01-scope",
+    "account_ids": [
+      "fixture-account"
+    ],
+    "snapshot_id": "fixture-f01-snapshot",
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "business_at": "2026-10-08T12:00:00+08:00",
+    "cash_balance_fen": 1000000,
+    "held_fen": 0,
+    "available_cash_fen": 1000000,
+    "positions_market_value_fen": 0,
+    "redemption_receivable_fen": 0,
+    "total_assets_fen": 1000000,
+    "valuation_complete": true,
+    "missing_fields": [],
+    "data_source": "contract_fixture_only"
+  },
+  "F11": {
+    "schema_version": "wealth-asset-summary-v1",
+    "asset_scope_id": "fixture-f11-scope",
+    "account_ids": [
+      "fixture-account"
+    ],
+    "snapshot_id": "fixture-f11-snapshot",
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "business_at": "2026-10-08T12:00:00+08:00",
+    "cash_balance_fen": 1000000,
+    "held_fen": 0,
+    "available_cash_fen": 1000000,
+    "positions_market_value_fen": 0,
+    "redemption_receivable_fen": 0,
+    "total_assets_fen": 1000000,
+    "valuation_complete": true,
+    "missing_fields": [],
+    "data_source": "contract_fixture_only"
+  },
+  "F18": {
+    "schema_version": "wealth-asset-summary-v1",
+    "asset_scope_id": "fixture-f18-scope",
+    "account_ids": [
+      "fixture-account-1",
+      "fixture-account-2"
+    ],
+    "snapshot_id": "fixture-f18-snapshot",
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "business_at": "2026-10-08T12:00:00+08:00",
+    "cash_balance_fen": 800000,
+    "held_fen": 100000,
+    "available_cash_fen": 700000,
+    "positions_market_value_fen": 150000,
+    "redemption_receivable_fen": 50000,
+    "total_assets_fen": 1000000,
+    "valuation_complete": true,
+    "missing_fields": [],
+    "data_source": "contract_fixture_only"
+  },
+  "F10": {
+    "schema_version": "wealth-asset-summary-v1",
+    "asset_scope_id": "fixture-f10-scope",
+    "account_ids": [
+      "fixture-account-1",
+      "fixture-account-2"
+    ],
+    "snapshot_id": "fixture-f10-snapshot",
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "business_at": "2026-10-08T12:00:00+08:00",
+    "cash_balance_fen": 800000,
+    "held_fen": 100000,
+    "available_cash_fen": 700000,
+    "positions_market_value_fen": null,
+    "redemption_receivable_fen": 50000,
+    "total_assets_fen": null,
+    "valuation_complete": false,
+    "missing_fields": [
+      "positions.fixture-P001.market_value_fen"
+    ],
+    "data_source": "contract_fixture_only"
+  }
+}

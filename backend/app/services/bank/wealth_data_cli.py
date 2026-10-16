@@ -103,7 +103,7 @@ async def run(args):
             root=Path(args.import_root).resolve(); path=(root/args.file).resolve()
             if not path.is_relative_to(root) or path.is_symlink() or not path.is_file(): raise ValueError("CONTROLLED_IMPORT_PATH_REQUIRED")
             if path.stat().st_size>research.MAX_IMPORT_BYTES: raise ValueError("INPUT_TOO_LARGE")
-            result=await research.import_dataset(db,parse_import(path.read_bytes(),path.suffix.lstrip(".")),args.dry_run)
+            result=await research.import_dataset(db,parse_import(path.read_bytes(),path.suffix.lstrip("."),max_bytes=research.MAX_IMPORT_BYTES),args.dry_run)
         else:
             from ...models.wealth_research import WealthContextORM
             row=await db.get(WealthContextORM,args.context_id,with_for_update=True)

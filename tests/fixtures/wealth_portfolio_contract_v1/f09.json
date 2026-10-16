@@ -1,0 +1,1394 @@
+{
+  "fixture_id": "F09",
+  "basis_status": "fixture_only",
+  "description": "默认A、仅C有效、A暂停、无份额分类、换批保留与准确行情口径",
+  "groups": [
+    {
+      "bucket": "cash_management",
+      "filter": {
+        "mode": "general",
+        "bucket": "cash_management"
+      },
+      "status": "ok",
+      "items": [
+        {
+          "family_id": "fixture-CASH",
+          "name": "样例活钱产品",
+          "bucket": "cash_management",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-CASH-P",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": null,
+              "product_risk_level": 1,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "seven_day_annualized",
+                  "value_percent": "4.20",
+                  "start_date": "2026-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-CASH-P",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "next_cursor": null,
+      "risk_explanation": null
+    },
+    {
+      "bucket": "stable",
+      "filter": {
+        "mode": "general",
+        "bucket": "stable"
+      },
+      "status": "ok",
+      "items": [
+        {
+          "family_id": "fixture-S1",
+          "name": "样例青禾债券",
+          "bucket": "stable",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-S1-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S1-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-S1-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S1-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-S2",
+          "name": "样例清岚债券",
+          "bucket": "stable",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-S2-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": null,
+                  "start_date": "2026-08-01",
+                  "end_date": "2026-09-30",
+                  "status": "insufficient_history",
+                  "reason": "样例不足一年",
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S2-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-S3",
+          "name": "样例远山债券",
+          "bucket": "stable",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-S3-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 2,
+              "status": "purchase_paused",
+              "tradable": false,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S3-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-S3-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S3-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "next_cursor": "stable-2",
+      "risk_explanation": null
+    },
+    {
+      "bucket": "growth",
+      "filter": {
+        "mode": "general",
+        "bucket": "growth"
+      },
+      "status": "ok",
+      "items": [
+        {
+          "family_id": "fixture-G1",
+          "name": "样例星河混合",
+          "bucket": "growth",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-G1-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G1-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-G1-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G1-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-G2",
+          "name": "样例云帆权益",
+          "bucket": "growth",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-G2-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "benchmark",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G2-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-G2-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "benchmark",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G2-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-G3",
+          "name": "样例光合指数",
+          "bucket": "growth",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-G3-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": null,
+                  "start_date": "2026-08-01",
+                  "end_date": "2026-09-30",
+                  "status": "insufficient_history",
+                  "reason": "样例不足一年",
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G3-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-G3-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": null,
+                  "start_date": "2026-08-01",
+                  "end_date": "2026-09-30",
+                  "status": "insufficient_history",
+                  "reason": "样例不足一年",
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G3-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "next_cursor": "growth-2",
+      "risk_explanation": null
+    }
+  ],
+  "next_groups": [
+    {
+      "bucket": "stable",
+      "filter": {
+        "mode": "general",
+        "bucket": "stable"
+      },
+      "status": "ok",
+      "items": [
+        {
+          "family_id": "fixture-S4",
+          "name": "样例换批S4",
+          "bucket": "stable",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-S4-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S4-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-S4-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S4-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-S5",
+          "name": "样例换批S5",
+          "bucket": "stable",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-S5-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S5-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-S5-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S5-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-S6",
+          "name": "样例换批S6",
+          "bucket": "stable",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-S6-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S6-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-S6-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 2,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-S6-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "next_cursor": "stable-1",
+      "risk_explanation": null
+    },
+    {
+      "bucket": "growth",
+      "filter": {
+        "mode": "general",
+        "bucket": "growth"
+      },
+      "status": "ok",
+      "items": [
+        {
+          "family_id": "fixture-G4",
+          "name": "样例换批G4",
+          "bucket": "growth",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-G4-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G4-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-G4-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G4-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-G5",
+          "name": "样例换批G5",
+          "bucket": "growth",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-G5-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G5-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-G5-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G5-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "family_id": "fixture-G6",
+          "name": "样例换批G6",
+          "bucket": "growth",
+          "reason": "F09交互样例，不是模型建议",
+          "reason_codes": [
+            "FIXTURE_ONLY"
+          ],
+          "evidence": [
+            "虚构候选与费率，仅用于消费端交互验收"
+          ],
+          "share_classes": [
+            {
+              "product_id": "fixture-G6-A",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "A",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.003",
+                "sales_service_fee_rate": "0.000",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G6-A",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            },
+            {
+              "product_id": "fixture-G6-C",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": "C",
+              "product_risk_level": 3,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0.000",
+                "sales_service_fee_rate": "0.004",
+                "redemption_fee_rules": "样例费率：不足7日1.5%，其后0.1%；实际以披露为准",
+                "missing_reason": null
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "value_percent": "4.20",
+                  "start_date": "2025-09-30",
+                  "end_date": "2026-09-30",
+                  "status": "available",
+                  "reason": null,
+                  "source": "F09虚构观察样例"
+                },
+                "latest_day": {
+                  "metric": "daily_nav_change",
+                  "value_percent": null,
+                  "nav_date": "2026-09-30",
+                  "previous_nav_date": null,
+                  "status": "unavailable",
+                  "reason": "样例缺少前一估值日"
+                }
+              },
+              "detail_ref": "fixture-G6-C",
+              "data_source": "contract_fixture_only",
+              "data_as_of": "2026-09-30T08:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "next_cursor": "growth-1",
+      "risk_explanation": null
+    }
+  ],
+  "risk_group": {
+    "bucket": null,
+    "filter": {
+      "mode": "theme",
+      "bucket": "growth",
+      "theme_key": "high_dividend"
+    },
+    "status": "risk_mismatch",
+    "items": [],
+    "next_cursor": null,
+    "risk_explanation": {
+      "user_level": 2,
+      "product_levels": [
+        3,
+        4
+      ]
+    }
+  },
+  "unavailable_group": {
+    "bucket": "stable",
+    "filter": {
+      "mode": "general",
+      "bucket": "stable"
+    },
+    "status": "unavailable",
+    "items": [
+      {
+        "family_id": "fixture-UNKNOWN",
+        "name": "样例资料不足产品",
+        "bucket": "stable",
+        "reason": "F09交互样例，不是模型建议",
+        "reason_codes": [
+          "FIXTURE_ONLY"
+        ],
+        "evidence": [
+          "虚构候选与费率，仅用于消费端交互验收"
+        ],
+        "share_classes": [
+          {
+            "product_id": "fixture-UNKNOWN-A",
+            "product_version": 1,
+            "disclosure_version": 1,
+            "share_class": "A",
+            "product_risk_level": null,
+            "status": "on_sale",
+            "tradable": false,
+            "min_amount_fen": null,
+            "fees": {
+              "purchase_fee_rate": null,
+              "sales_service_fee_rate": null,
+              "redemption_fee_rules": null,
+              "missing_reason": "样例缺少核对后的费率"
+            },
+            "performance": {
+              "one_year": {
+                "metric": "nav_change",
+                "value_percent": null,
+                "start_date": null,
+                "end_date": null,
+                "status": "unavailable",
+                "reason": "资料缺失",
+                "source": "F09虚构观察样例"
+              },
+              "latest_day": {
+                "metric": "daily_nav_change",
+                "value_percent": null,
+                "nav_date": "2026-09-30",
+                "previous_nav_date": null,
+                "status": "unavailable",
+                "reason": "样例缺少前一估值日"
+              }
+            },
+            "detail_ref": "fixture-S1-A",
+            "data_source": "contract_fixture_only",
+            "data_as_of": "2026-09-30T08:00:00+00:00"
+          }
+        ]
+      }
+    ],
+    "next_cursor": null,
+    "risk_explanation": null
+  },
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A2_B_future",
+  "input": {
+    "family": {
+      "family_id": "fixture-family",
+      "name": "fixture-family",
+      "bucket": "stable",
+      "reason": "contract fixture only",
+      "reason_codes": [
+        "FIXTURE_ONLY"
+      ],
+      "evidence": {
+        "source": "fixture_only"
+      },
+      "share_classes": [
+        {
+          "product_id": "fixture-product",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "share_class": "A",
+          "product_risk_level": 2,
+          "status": "on_sale",
+          "tradable": true,
+          "min_amount_fen": 100,
+          "fees": {
+            "purchase_fee_rate": null,
+            "sales_service_fee_rate": null,
+            "redemption_fee_rules": null,
+            "missing_fields": [
+              "all_fees"
+            ]
+          },
+          "performance": {
+            "one_year": {
+              "metric": "nav_change",
+              "value_percent": null,
+              "status": "unavailable",
+              "reason": "fixture has no market history",
+              "source": "fixture_only"
+            },
+            "latest_day": {
+              "metric": "daily_nav_change",
+              "value_percent": null,
+              "status": "unavailable",
+              "reason": "fixture has no market history",
+              "source": "fixture_only"
+            }
+          },
+          "detail_ref": "/products/fixture-product/detail",
+          "data_source": "fixture_only",
+          "data_as_of": "2026-10-05T04:00:00+00:00"
+        },
+        {
+          "product_id": "fixture-C",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "share_class": "C",
+          "product_risk_level": 2,
+          "status": "on_sale",
+          "tradable": true,
+          "min_amount_fen": 100,
+          "fees": {
+            "purchase_fee_rate": null,
+            "sales_service_fee_rate": null,
+            "redemption_fee_rules": null,
+            "missing_fields": [
+              "all_fees"
+            ]
+          },
+          "performance": {
+            "one_year": {
+              "metric": "nav_change",
+              "value_percent": null,
+              "status": "unavailable",
+              "reason": "fixture has no market history",
+              "source": "fixture_only"
+            },
+            "latest_day": {
+              "metric": "daily_nav_change",
+              "value_percent": null,
+              "status": "unavailable",
+              "reason": "fixture has no market history",
+              "source": "fixture_only"
+            }
+          },
+          "detail_ref": "/products/fixture-C/detail",
+          "data_source": "fixture_only",
+          "data_as_of": "2026-10-05T04:00:00+00:00"
+        }
+      ]
+    },
+    "only_c": {
+      "family_id": "fixture-family",
+      "name": "fixture-family",
+      "bucket": "stable",
+      "reason": "contract fixture only",
+      "reason_codes": [
+        "FIXTURE_ONLY"
+      ],
+      "evidence": {
+        "source": "fixture_only"
+      },
+      "share_classes": [
+        {
+          "product_id": "fixture-C",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "share_class": "C",
+          "product_risk_level": 2,
+          "status": "on_sale",
+          "tradable": true,
+          "min_amount_fen": 100,
+          "fees": {
+            "purchase_fee_rate": null,
+            "sales_service_fee_rate": null,
+            "redemption_fee_rules": null,
+            "missing_fields": [
+              "all_fees"
+            ]
+          },
+          "performance": {
+            "one_year": {
+              "metric": "nav_change",
+              "value_percent": null,
+              "status": "unavailable",
+              "reason": "fixture has no market history",
+              "source": "fixture_only"
+            },
+            "latest_day": {
+              "metric": "daily_nav_change",
+              "value_percent": null,
+              "status": "unavailable",
+              "reason": "fixture has no market history",
+              "source": "fixture_only"
+            }
+          },
+          "detail_ref": "/products/fixture-C/detail",
+          "data_source": "fixture_only",
+          "data_as_of": "2026-10-05T04:00:00+00:00"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "family_seats": 1,
+    "default": "A",
+    "fallback": "C"
+  }
+}

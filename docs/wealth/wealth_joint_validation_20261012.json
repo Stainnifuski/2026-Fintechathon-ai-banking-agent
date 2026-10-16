@@ -1,0 +1,1670 @@
+{
+  "date": "2026-10-13 America/Toronto",
+  "status": "round1_functional_mapping_performance_failed_human_slider_failed_not_released",
+  "code_commit": "52f150d22e7ebde2f4ef397fffdc5579c08d50eb",
+  "database_scope": "actual isolated SQLite browser and independent PostgreSQL tests, no PG browser claim",
+  "real_chain": {
+    "directory": 27998,
+    "scope_verified": 19265,
+    "saved_text_union": 83,
+    "valued_non_money_NAV": 26395,
+    "money_yield_values": 967,
+    "current_paper_products": 38,
+    "material_operational_groups": 36,
+    "category_counts": {
+      "bond": 9,
+      "mixed": 24,
+      "equity": 5
+    },
+    "seven_exact_samples": [
+      "000015",
+      "001286",
+      "005242",
+      "006253",
+      "007331",
+      "016173",
+      "020458"
+    ],
+    "sample_is_not_production_whitelist": true,
+    "independent_family_count": "unknown_not_claimed",
+    "data_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+    "daily_version": "2732304411e02771e334239139049d5b496b491e1106331b32cccd24db3bf938",
+    "dataset_version": "d72fa8d6346fcf8a74b9bfd6",
+    "policy_version": "real-public-paper-risk-20261013-v1"
+  },
+  "checks": {
+    "bank_controls_two_db": 14,
+    "final_affected_two_db_and_unit": 93,
+    "model_units": 232,
+    "pool": 95,
+    "final_lifecycle_and_canonical": 49,
+    "frontend_state": 47,
+    "sets_overlap_do_not_sum": true,
+    "formal_browser": {
+      "browser-final": {
+        "source": "formal-real-public-paper-A-B",
+        "checks": [
+          {
+            "name": "J18 overview before planning",
+            "result": 2000000
+          },
+          {
+            "name": "preserved real confirmed R4 assessment",
+            "result": {
+              "thisRun": false,
+              "evidence": "preserved personal assessment; see this round questionnaire evidence separately, never a default risk result"
+            }
+          },
+          {
+            "name": "J04 real positive general recommendation",
+            "result": 3
+          },
+          {
+            "name": "J05 seven exact real codes across actual batches, no AC switching",
+            "result": [
+              "020458",
+              "000015",
+              "007331",
+              "006253",
+              "001286",
+              "005242",
+              "016173"
+            ]
+          },
+          {
+            "name": "J06 actual detail and selection retention",
+            "result": true
+          },
+          {
+            "name": "J01 seven product Plan through actual A",
+            "result": [
+              {
+                "code": "007331"
+              },
+              {
+                "code": "000015"
+              },
+              {
+                "code": "001286"
+              },
+              {
+                "code": "005242"
+              },
+              {
+                "code": "006253"
+              },
+              {
+                "code": "016173"
+              },
+              {
+                "code": "020458"
+              }
+            ]
+          },
+          {
+            "name": "J07 actual seven delta preview no cash hold yet",
+            "result": 7
+          },
+          {
+            "name": "J08/J09 actual one confirmation + unified SMS, seven held orders",
+            "result": {
+              "orders": 7,
+              "held_fen": 1280000
+            }
+          },
+          {
+            "name": "J11 orders pagination selection retained",
+            "result": true
+          },
+          {
+            "name": "J11 actual seven settled holdings pagination",
+            "result": true
+          },
+          {
+            "name": "J19 unique actual ledger settlement",
+            "result": {
+              "orders": 7,
+              "lots": 7,
+              "cash": 720000
+            }
+          },
+          {
+            "name": "J12 no new NLP calls",
+            "result": 0
+          }
+        ],
+        "runtime": [],
+        "network": [],
+        "raw_evidence_ref": ".deps/real_fund_close/browser-final/browser_results.json",
+        "raw_evidence_sha256": "8c8ec44d764a51e2c23cca0c177f175dc50b10f3cd5618b04a98a2b7e60e7b2d",
+        "http_summary": {
+          "calls": 215,
+          "status_counts": {
+            "200": 212,
+            "403": 3
+          },
+          "action_counts": {
+            "cancel_purchase": 13,
+            "recommend_products": 9,
+            "show_product_detail": 2,
+            "plan_portfolio": 1,
+            "revise_portfolio": 1,
+            "prepare_purchase": 1,
+            "list_orders": 1,
+            "preview_order_cancellation": 18,
+            "list_positions": 1
+          }
+        }
+      },
+      "browser-exits2": {
+        "source": "formal-real-public-paper-exits",
+        "checks": [
+          {
+            "name": "reuse already submitted units redemption",
+            "result": {
+              "code": "000015",
+              "evidence": "previous actual UI response, retained original operation"
+            }
+          },
+          {
+            "name": "J10 actual market_value conversion",
+            "result": {
+              "code": "005242",
+              "text": "核对赎回换算\n\n份额 9.2844 ／总持仓 963.0577 · 比例 0.9641%\n\n舍入后拟赎回市值 ¥12.34 · 净值 1.3291（2026-09-30）\n\n预计费用 ¥0.00 · 预计到账 ¥12.34\n\n12.34元为拟赎回持仓的市值，不代表实际到账金额。实际到账金额以成交净值及扣除赎回费用后的结果为准。\n\n继续本人确认与验证返回修改输入"
+            }
+          },
+          {
+            "name": "J10 redemption accepted, units held, no early cash",
+            "result": {
+              "redemptions": 2,
+              "cash": 720000
+            }
+          },
+          {
+            "name": "J13 authoritative receivable not payable",
+            "result": {
+              "cash": 720000,
+              "receivable": 2443,
+              "total": 2000000
+            }
+          },
+          {
+            "name": "J19 ordinary redemption unique T+2 cash",
+            "result": 722443
+          },
+          {
+            "name": "J15 refresh preserves nine bank orders and holdings",
+            "result": true
+          },
+          {
+            "name": "J22/J23 initial day actual bank returns",
+            "result": true
+          },
+          {
+            "name": "J22/J23 actual 月 returns",
+            "result": {
+              "status": "partial",
+              "missing": [
+                "000015:1：2026-10-14有效净值未公布或缺失",
+                "000015:1：2026-10-15有效净值未公布或缺失",
+                "000015:1：2026-10-16有效净值未公布或缺失",
+                "001286:1：2026-10-14有效净值未公布或缺失",
+                "001286:1：2026-10-15有效净值未公布或缺失",
+                "001286:1：2026-10-16有效净值未公布或缺失",
+                "005242:1：2026-10-14有效净值未公布或缺失",
+                "005242:1：2026-10-15有效净值未公布或缺失",
+                "005242:1：2026-10-16有效净值未公布或缺失",
+                "006253:1：2026-10-14有效净值未公布或缺失",
+                "006253:1：2026-10-15有效净值未公布或缺失",
+                "006253:1：2026-10-16有效净值未公布或缺失",
+                "007331:1：2026-10-14有效净值未公布或缺失",
+                "007331:1：2026-10-15有效净值未公布或缺失",
+                "007331:1：2026-10-16有效净值未公布或缺失",
+                "016173:1：2026-10-14有效净值未公布或缺失",
+                "016173:1：2026-10-15有效净值未公布或缺失",
+                "016173:1：2026-10-16有效净值未公布或缺失",
+                "020458:1：2026-10-14有效净值未公布或缺失",
+                "020458:1：2026-10-15有效净值未公布或缺失",
+                "020458:1：2026-10-16有效净值未公布或缺失",
+                "当前期间尚未结束；收益截至查询业务时点",
+                "所选期间仅覆盖部分日期",
+                "所选期间包含覆盖外日期；只汇总可核实部分"
+              ],
+              "products": 7
+            }
+          },
+          {
+            "name": "J23 actual month calendar rendered",
+            "result": 31
+          },
+          {
+            "name": "J22/J23 actual 年 returns",
+            "result": {
+              "status": "partial",
+              "missing": [
+                "000015:1：2026-10-14有效净值未公布或缺失",
+                "000015:1：2026-10-15有效净值未公布或缺失",
+                "000015:1：2026-10-16有效净值未公布或缺失",
+                "001286:1：2026-10-14有效净值未公布或缺失",
+                "001286:1：2026-10-15有效净值未公布或缺失",
+                "001286:1：2026-10-16有效净值未公布或缺失",
+                "005242:1：2026-10-14有效净值未公布或缺失",
+                "005242:1：2026-10-15有效净值未公布或缺失",
+                "005242:1：2026-10-16有效净值未公布或缺失",
+                "006253:1：2026-10-14有效净值未公布或缺失",
+                "006253:1：2026-10-15有效净值未公布或缺失",
+                "006253:1：2026-10-16有效净值未公布或缺失",
+                "007331:1：2026-10-14有效净值未公布或缺失",
+                "007331:1：2026-10-15有效净值未公布或缺失",
+                "007331:1：2026-10-16有效净值未公布或缺失",
+                "016173:1：2026-10-14有效净值未公布或缺失",
+                "016173:1：2026-10-15有效净值未公布或缺失",
+                "016173:1：2026-10-16有效净值未公布或缺失",
+                "020458:1：2026-10-14有效净值未公布或缺失",
+                "020458:1：2026-10-15有效净值未公布或缺失",
+                "020458:1：2026-10-16有效净值未公布或缺失",
+                "当前期间尚未结束；收益截至查询业务时点",
+                "所选期间仅覆盖部分日期",
+                "所选期间包含覆盖外日期；只汇总可核实部分"
+              ],
+              "products": 7
+            }
+          },
+          {
+            "name": "J22/J23 actual 累计 returns",
+            "result": {
+              "status": "partial",
+              "missing": [
+                "000015:1：2026-10-14有效净值未公布或缺失",
+                "000015:1：2026-10-15有效净值未公布或缺失",
+                "000015:1：2026-10-16有效净值未公布或缺失",
+                "001286:1：2026-10-14有效净值未公布或缺失",
+                "001286:1：2026-10-15有效净值未公布或缺失",
+                "001286:1：2026-10-16有效净值未公布或缺失",
+                "005242:1：2026-10-14有效净值未公布或缺失",
+                "005242:1：2026-10-15有效净值未公布或缺失",
+                "005242:1：2026-10-16有效净值未公布或缺失",
+                "006253:1：2026-10-14有效净值未公布或缺失",
+                "006253:1：2026-10-15有效净值未公布或缺失",
+                "006253:1：2026-10-16有效净值未公布或缺失",
+                "007331:1：2026-10-14有效净值未公布或缺失",
+                "007331:1：2026-10-15有效净值未公布或缺失",
+                "007331:1：2026-10-16有效净值未公布或缺失",
+                "016173:1：2026-10-14有效净值未公布或缺失",
+                "016173:1：2026-10-15有效净值未公布或缺失",
+                "016173:1：2026-10-16有效净值未公布或缺失",
+                "020458:1：2026-10-14有效净值未公布或缺失",
+                "020458:1：2026-10-15有效净值未公布或缺失",
+                "020458:1：2026-10-16有效净值未公布或缺失"
+              ],
+              "products": 7
+            }
+          },
+          {
+            "name": "J21 actual product-specific return lookup",
+            "result": true
+          }
+        ],
+        "runtime": [],
+        "network": [],
+        "raw_evidence_ref": ".deps/real_fund_close/browser-exits2/browser_results.json",
+        "raw_evidence_sha256": "344ad6b35ab95cc4f6b11c9f6abed3d9c096549a109a08beb95656c94ce701e1",
+        "http_summary": {
+          "calls": 199,
+          "status_counts": {
+            "200": 194,
+            "403": 5
+          },
+          "action_counts": {
+            "withdraw_standard_redemption": 9,
+            "cancel_purchase": 21,
+            "list_positions": 3,
+            "preview_redemption": 1,
+            "list_orders": 1,
+            "preview_order_cancellation": 10,
+            "show_wealth_returns": 7
+          }
+        }
+      },
+      "browser-operator3": {
+        "source": "normal-main-real-public-paper-A-B",
+        "checks": [
+          {
+            "name": "J14 customer UI pause/resume/handoff",
+            "result": true
+          },
+          {
+            "name": "J15 customer cannot claim operator role",
+            "result": true
+          },
+          {
+            "name": "J14 actual authorized operator seven-code review/note/release no impersonated consent",
+            "result": true
+          },
+          {
+            "name": "J14 return requires revalidation and no implicit order/hold",
+            "result": true
+          }
+        ],
+        "runtime": [],
+        "network": [],
+        "raw_evidence_ref": ".deps/real_fund_close/browser-operator3/browser_results.json",
+        "raw_evidence_sha256": "e2112e95a8cd603c8e7e50d0300a45f9c34cf8c4541862e19b82897e6fdf63e9",
+        "http_summary": {
+          "calls": 174,
+          "status_counts": {
+            "200": 166,
+            "403": 8
+          },
+          "action_counts": {}
+        }
+      },
+      "browser-cancel-final": {
+        "source": "formal-real-public-paper-cancellation",
+        "checks": [
+          {
+            "name": "actual nine-question personal R4 confirmation",
+            "result": {
+              "thisRun": true
+            }
+          },
+          {
+            "name": "cancel precondition: actual public HTTP unified MFA, not browser purchase",
+            "result": true
+          },
+          {
+            "name": "J09 actual browser cancellation releases held cash, no refund/double balance",
+            "result": true
+          },
+          {
+            "name": "preexisting settled operations preserved",
+            "result": true
+          }
+        ],
+        "runtime": [],
+        "network": [],
+        "raw_evidence_ref": ".deps/real_fund_close/browser-cancel-final/browser_results.json",
+        "raw_evidence_sha256": "05f953c4909182bd4e3232e20a64549f61a3f38ba932bf90083e8e7109ef5ade",
+        "http_summary": {
+          "calls": 84,
+          "status_counts": {
+            "200": 81,
+            "403": 3
+          },
+          "action_counts": {
+            "list_orders": 1,
+            "preview_order_cancellation": 3,
+            "cancel_purchase": 2
+          }
+        }
+      },
+      "browser-comparison": {
+        "source": "formal-real-public-paper-comparison",
+        "checks": [
+          {
+            "name": "J05 actual two-code comparison with separate simulated fee/project risk labels",
+            "result": true
+          },
+          {
+            "name": "read-only comparison preserves seven settled investments",
+            "result": true
+          }
+        ],
+        "runtime": [],
+        "network": [],
+        "raw_evidence_ref": ".deps/real_fund_close/browser-comparison/browser_results.json",
+        "raw_evidence_sha256": "e377d4f8af7cec6f2da5007a89bee5097a6b5555f2a929489418d29d807605dc",
+        "http_summary": {
+          "calls": 51,
+          "status_counts": {
+            "200": 49,
+            "403": 2
+          },
+          "action_counts": {
+            "cancel_purchase": 10,
+            "compare_products": 1
+          }
+        }
+      }
+    },
+    "controls_targeted_successes": [
+      {
+        "name": "J18 overview before planning",
+        "result": 2000000
+      },
+      {
+        "name": "preserved real confirmed R4 assessment",
+        "result": {
+          "thisRun": false,
+          "evidence": "actual UI questionnaire already completed in browser3/browser4 on same preserved bank, no fixture/default"
+        }
+      },
+      {
+        "name": "J04 real positive general recommendation",
+        "result": 3
+      },
+      {
+        "name": "J05 seven exact real codes across actual batches, no AC switching",
+        "result": [
+          "020458",
+          "000015",
+          "007331",
+          "006253",
+          "001286",
+          "005242",
+          "016173"
+        ]
+      },
+      {
+        "name": "J06 actual detail and selection retention",
+        "result": true
+      },
+      {
+        "name": "J01 seven product Plan through actual A",
+        "result": [
+          {
+            "code": "007331"
+          },
+          {
+            "code": "000015"
+          },
+          {
+            "code": "001286"
+          },
+          {
+            "code": "005242"
+          },
+          {
+            "code": "006253"
+          },
+          {
+            "code": "016173"
+          },
+          {
+            "code": "020458"
+          }
+        ]
+      },
+      {
+        "name": "J02 real UI slider preserves cash and original U",
+        "result": true
+      },
+      {
+        "name": "J07 old A revision rejects old preview/confirm/verify/execute before replacement prepare",
+        "result": true
+      }
+    ],
+    "controls_whole_script_failed_locator_then_operator_continuation_passed": true,
+    "actual_normal_risk_and_filters": [
+      {
+        "filter": {
+          "mode": "category",
+          "category": "bond_fund"
+        },
+        "http": 200,
+        "status": "ok",
+        "count": 3,
+        "reasons": []
+      },
+      {
+        "filter": {
+          "mode": "theme",
+          "theme_key": "high_dividend"
+        },
+        "http": 200,
+        "status": "no_theme_match",
+        "count": 0,
+        "reasons": [
+          "NO_STRUCTURED_MATCH"
+        ]
+      },
+      {
+        "filter": {
+          "mode": "category",
+          "category": "money_fund"
+        },
+        "http": 200,
+        "status": "unavailable",
+        "count": 0,
+        "reasons": [
+          "CURRENT_BANK_PRODUCT_UNAVAILABLE",
+          "DISCLOSURE_VERSION_UNKNOWN",
+          "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH",
+          "PRODUCT_RISK_UNKNOWN",
+          "PRODUCT_SOURCE_KIND_MISMATCH",
+          "PRODUCT_VERSION_UNKNOWN"
+        ]
+      },
+      {
+        "A_manual_R2_to_real_R4_ratio": "0",
+        "http": 422,
+        "rejection": {
+          "code": "PORTFOLIO_SELECTION_REJECTED",
+          "message": "PORTFOLIO_SELECTION_REJECTED：RISK_EXCEEDS_CAPACITY",
+          "issues": []
+        }
+      },
+      {
+        "A_manual_R2_to_real_R4_ratio": "0.000001",
+        "http": 422,
+        "rejection": {
+          "code": "PORTFOLIO_SELECTION_REJECTED",
+          "message": "PORTFOLIO_SELECTION_REJECTED：RISK_EXCEEDS_CAPACITY",
+          "issues": []
+        }
+      },
+      {
+        "final_HTTP_R2_to_real_R4_fen": 0,
+        "http": 422,
+        "code": "VALIDATION_ERROR"
+      },
+      {
+        "final_HTTP_R2_to_real_R4_fen": 1,
+        "http": 409,
+        "code": "SUITABILITY_MISMATCH"
+      },
+      {
+        "final_HTTP_R2_to_real_R4_fen": 100000,
+        "http": 409,
+        "code": "SUITABILITY_MISMATCH"
+      },
+      {
+        "negative_balance_unchanged": true,
+        "orders": 0,
+        "held": 0,
+        "retained_A_version": 1
+      },
+      {
+        "other_user_original_A_plan_denied": 404
+      }
+    ]
+  },
+  "performance": {
+    "target_first_seconds": 10,
+    "target_repeat_seconds": 3,
+    "actual": [
+      {
+        "http": 200,
+        "seconds": 2.9585223999456502,
+        "source_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+        "real_selected_codes": [
+          "007331",
+          "000015",
+          "001286",
+          "005242",
+          "006253",
+          "016173",
+          "020458"
+        ],
+        "model_status": "researched_model",
+        "basis_fen": 2000000
+      },
+      {
+        "http": 200,
+        "seconds": 2.434140399971511,
+        "source_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+        "real_selected_codes": [
+          "007331",
+          "000015",
+          "001286",
+          "005242",
+          "006253",
+          "016173",
+          "020458"
+        ],
+        "model_status": "researched_model",
+        "basis_fen": 2000000
+      },
+      {
+        "http": 200,
+        "seconds": 2.9497622000053525,
+        "source_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+        "real_selected_codes": [
+          "007331",
+          "000015",
+          "001286",
+          "005242",
+          "006253",
+          "016173",
+          "020458"
+        ],
+        "model_status": "researched_model",
+        "basis_fen": 2000000
+      }
+    ],
+    "startup_index_seconds": 22.016,
+    "earlier_over_target_record_retained": true
+  },
+  "reproducibility": {
+    "source": "new-empty-relative-root-actual-install",
+    "directory_count": 27998,
+    "current_real_policy_products": 38,
+    "public_files_verified": 89,
+    "snapshot_sha256": "defc17a602a210e888bda70e10a5b967fc8d98549a790e599ab27cff7060edff",
+    "gzip_sha256": "75b2bbe060aa90087242efa8d86aa5e61dc665f020436036aa8b13679d509a0a",
+    "gzip_bytes": 2504223,
+    "seconds": 21.06199999997625,
+    "source_cutoff_preserved": "2026-10-13T14:52:36.050716+00:00",
+    "source_dates_renewed": false,
+    "000015_real_history_points": 3282,
+    "missing_and_tampered_rejected": true
+  },
+  "normal_startup": {
+    "unchanged_main_lifespan": true,
+    "test_source_override": false,
+    "isolated_database": "normal-final-bank.db",
+    "health": 200,
+    "login": 200,
+    "assets": 200,
+    "snapshot": 200,
+    "same_scope_snapshot_T": true,
+    "total_assets_fen": 5000000,
+    "data_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+    "new_NLP_calls": 0
+  },
+  "original_protection": {
+    "baseline_files": 577,
+    "changed_original_files": [],
+    "original_HEAD_unchanged": true,
+    "original_env_unchanged": true,
+    "original_HEAD": "5e36e4c48c82c24a088c9f271df7774727d7435f",
+    "remote_writes": 0
+  },
+  "research": {
+    "A_historical_total_return_fixed_portfolio_OOS": "not_completed_excluded_by_user_from_runtime_gate",
+    "B_actual_account_returns": "verified_real_simulated_ledger_and_missing_data_boundaries"
+  },
+  "human_acceptance": "pending",
+  "remote_writes": false,
+  "new_NLP_calls": 0,
+  "collection_resumed": false,
+  "j_report": [
+    {
+      "id": "J01",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "正式A无预算/期限七具体代码Plan，T=20,000；三板块、原金融参数",
+      "evidence": "browser-final＋model-unit-final",
+      "human": "理财→直接操作→普通推荐，换批勾选七代码→继续核对",
+      "expected": "不问本次金额/期限；不是全现金假正向"
+    },
+    {
+      "id": "J02",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "实际UI滑块50%→50.1%，活钱7,200及原U不变；preference生命周期复验",
+      "evidence": "browser-controls4成功检查＋lifecycle-final2",
+      "human": "调整“待提交进取比例”→应用本页调整",
+      "expected": "目标守恒、可准备；不漂移原区间"
+    },
+    {
+      "id": "J03",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "真实R2→R4手选0/0.000001的A422，最终0/1/100000分HTTP409；两库最终accept亦拒绝",
+      "evidence": "normal-actual-risk-and-filters＋bank-controls-final＋final-affected",
+      "human": "用模拟R2账户只查看风险原因；恶意HTTP由Codex执行",
+      "expected": "无订单/占款/扣款；原Plan v1保留；无切A/C入口"
+    },
+    {
+      "id": "J04",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "普通真实正向3项，债券3项；高股息no_theme_match；货币无映射unavailable；主题AND/OR/风险分类边界复用单测",
+      "evidence": "browser-final＋normal-actual-risk-and-filters＋pool-tests",
+      "human": "推荐类型普通/类别债券/主题高股息→按条件推荐",
+      "expected": "无匹配、缺来源、越风险解释不同；主题证据不编造"
+    },
+    {
+      "id": "J05",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "七具体代码跨批保留；ACUI移除；实际两代码比较＋关闭不改账务",
+      "evidence": "browser-final＋browser-comparison",
+      "human": "换批多选→比较已选产品勾选2–4→关闭",
+      "expected": "具体代码不串；已知同基金去重，未知不称独立"
+    },
+    {
+      "id": "J06",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "真实公开NAV详情/走势图；一历史点不伪造曲线，未知指标null；0000153282点包保留",
+      "evidence": "browser-final＋browser-comparison＋source-path-audit",
+      "human": "已选产品详情→切观察窗口→关闭",
+      "expected": "正确代码/日期；项目等级与模拟费用明确；NAV变化非总回报"
+    },
+    {
+      "id": "J07",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "规范引用/整数分差额；滑块可prepare；旧A修订后preview/confirm/verify/execute均STALE_PORTFOLIO",
+      "evidence": "browser-controls4成功检查＋canonical-unit＋preview-version-guard",
+      "human": "校验比例→准备预览→回修改比例重新校验",
+      "expected": "旧预览不能沿用；失败保留原方案；prepare不占款"
+    },
+    {
+      "id": "J08",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "七真实具体产品一次本人确认＋现行统一SMS，7受理→7结算；双库7产品账务",
+      "evidence": "browser-final＋final-affected",
+      "human": "预览整份→勾本人确认→短信→获取/查看模拟短信→验证整份",
+      "expected": "不漏第6/7笔；不再有原点击授权"
+    },
+    {
+      "id": "J09",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "浏览器计价前撤单释放100元占款/无退款；预览无占款、受理占款、结算只扣一次",
+      "evidence": "browser-cancel-final＋browser-final＋bank-controls-final",
+      "human": "订单表未计价订单→取消→明确确认；另保留七产品用于结算",
+      "expected": "已结算不可撤，现金不虚增；已撤不成持仓"
+    },
+    {
+      "id": "J10",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "00001510份及00524212.34元两种输入真实UI，T+1应收/T+2到账；两库FIFO/精度",
+      "evidence": "browser-exits2＋history-two-db＋final-affected",
+      "human": "持仓表赎回→份额或持仓市值→换算→本人确认/短信",
+      "expected": "冻结与可赎分开，未到账不可买入；赎回不是新购资格"
+    },
+    {
+      "id": "J11",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "7非空持仓/订单分页每页5，跨页选中保持；本页全选/上下文清空前端检查",
+      "evidence": "browser-final＋frontend-final",
+      "human": "两表分别每页5→勾选→下一页→上一页→清选择",
+      "expected": "订单ID/持仓key不混用，scope改变清空"
+    },
+    {
+      "id": "J12",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "本人问卷/按钮/七购买/赎回/收益/接管均无新messages调用；LLM offline",
+      "evidence": "各browser_results与normal-result",
+      "human": "仅按按钮和可信表单操作",
+      "expected": "本轮新LLM/NLP调用0；不以mock模型代通过"
+    },
+    {
+      "id": "J13",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "应收2443分时现金720000、T=2000000，应收未可付；冻结不重复；缺估值两库保护",
+      "evidence": "browser-exits2＋history-two-db＋asset-summary旧有效两库例",
+      "human": "查询资产、在途与可付；缺数场景只核对null",
+      "expected": "不补零，不重复计入冻结/应收"
+    },
+    {
+      "id": "J14",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "实际客户暂停/继续/接管→操作员领取原7项/核对/建议/交还→客户重验；共享回归复用",
+      "evidence": "browser-operator3＋bank-controls-final＋shared-regression历史限定",
+      "human": "未完成任务申请接管→授权操作员登入/领取/读取/说明/交还",
+      "expected": "无代签、交还暂停；旧未提交授权失效，受理订单保留"
+    },
+    {
+      "id": "J15",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "其他合法用户原A Plan404、伪操作员403；刷新旧9订单/7持仓保留；scope/F18两库隔离",
+      "evidence": "normal-actual-risk-and-filters＋browser-operator3＋browser-exits2＋final-affected",
+      "human": "另一账号不能看到原客户Plan；刷新/退出重进",
+      "expected": "主体由JWT，客户端角色/金额不能越权；已提交账务不撤回"
+    },
+    {
+      "id": "J16",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "通用category/theme/general/数量/page和两赎回模式，严格unknown字段/单位测试",
+      "evidence": "normal-actual-risk-and-filters＋pool-tests＋frontend-final",
+      "human": "用不同合法类别/粒度/页数",
+      "expected": "同handler/schema；未知键拒绝，不限定示例关键词"
+    },
+    {
+      "id": "J17",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "正常main注册handler/canonical源/唯一snapshot；03索引/依赖/离线包/本文完整",
+      "evidence": "normal-result＋portfolio_handoff＋handoff最新节",
+      "human": "查接线文档与startup命令",
+      "expected": "不把本轮无NLP理财工作台当统一总Agent全部完成"
+    },
+    {
+      "id": "J18",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "未请求理财前概览T20k，与A同scope/snapshot；正常50k普通源同口径；多账户API",
+      "evidence": "browser-final＋normal-result＋history-two-db",
+      "human": "登录概览→理财查看总资产/可付/应收",
+      "expected": "账面借记现金＋市值＋应收，冻结不重复；多账户API非浏览器"
+    },
+    {
+      "id": "J19",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "最终7产品受理/结算，现金20k→7200、7lot，公开NAV日期≠模拟计价日；赎回应收唯一到账",
+      "evidence": "browser-final＋browser-exits2＋final-affected",
+      "human": "结算后刷新订单/持仓/资金流水",
+      "expected": "investment保留，申购冻结不是已完成支出，撤单不生假退款"
+    },
+    {
+      "id": "J20",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "本期/对比/总数/分类/异常/文字/明细投资排除及正常消费保持，SQLite/PG范围",
+      "evidence": "final-affected test_wealth_bill_boundary＋历史test_bills",
+      "human": "进入账单→本期/比较期/异常/明细，查投资现金流",
+      "expected": "消费统计排除investment；资金流水仍显示投资真实模拟流"
+    },
+    {
+      "id": "J21",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "非空独立双表、整体与000015单产品收益实际UI",
+      "evidence": "browser-final＋browser-exits2",
+      "human": "查询订单/持仓→详情/收益→整体/单产品",
+      "expected": "订单非可赎份额；费用/版本与资金scope一致"
+    },
+    {
+      "id": "J22",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "日/月/年/累计＋日历；本金/到账非盈利、费用一次、全赎贡献/FIFO两库既有实际例",
+      "evidence": "browser-exits2＋history-two-db actual_returns",
+      "human": "切日/月/年/累计及收益月份、已赎贡献",
+      "expected": "不将现金入账当收益；少历史/费用未知不算0"
+    },
+    {
+      "id": "J23",
+      "status": "passed_with_explicit_test_scope",
+      "actual": "真实稀疏行情/缺估值/缺成本返回partial/null并列原因，月日历实际渲染，无模型估收益",
+      "evidence": "browser-exits2＋final-affected＋model-unit-final",
+      "human": "看日期/覆盖/缺失，点月日历日格",
+      "expected": "不填未来/不假0；未完成A金融研究明确保留"
+    }
+  ],
+  "latest": {
+    "stage": "round1_core_pool",
+    "code_commit": "72da59637a1becbdfa8862bb72501d21cd2299af",
+    "overall_accepted": false,
+    "performance_accepted": false,
+    "human": "failed_slider_pending_round2",
+    "coverage": {
+      "source_version": "a67bc3e50bb4d7cf2cd6e5f1a51395e13608ce025748792b6e53048e31a3a444",
+      "source_daily_version": "769259aea498ed342e8bc1501ade507ebb2f01b832d88b8edf1712ddae793f59",
+      "directory": 27998,
+      "verified_categories": {
+        "mixed": 9750,
+        "bond": 7417,
+        "equity": 1151,
+        "money_market": 947
+      },
+      "NAV_value_codes": 26395,
+      "status_known_codes": 27476,
+      "status_counts": {
+        "开放申购": 19513,
+        "None": 522,
+        "暂停申购": 2870,
+        "限大额": 3088,
+        "封闭期": 245,
+        "认购期": 61,
+        "场内交易": 1699
+      },
+      "eligible": 13856,
+      "eligible_categories": {
+        "mixed": 8444,
+        "bond": 4093,
+        "equity": 1041,
+        "cash": 278
+      },
+      "risk_subsets": {
+        "1": 278,
+        "2": 4371,
+        "4": 13856
+      },
+      "excluded_main_reasons": {
+        "visible_public_unit_NAV_required": 387,
+        "saved_public_sale_status_not_open": 5022,
+        "verified_substantive_category_required": 8733
+      },
+      "excluded_overlapping_reasons": {
+        "visible_public_unit_NAV_required": 656,
+        "saved_public_sale_status_not_open": 8485,
+        "verified_substantive_category_required": 8733
+      },
+      "exclusion_examples": {
+        "verified_substantive_category_required": [
+          "000042",
+          "000043",
+          "000044",
+          "000051",
+          "000055"
+        ],
+        "visible_public_unit_NAV_required": [
+          "000002",
+          "000012",
+          "000108",
+          "000140",
+          "000154"
+        ],
+        "saved_public_sale_status_not_open": [
+          "000002",
+          "000005",
+          "000012",
+          "000013",
+          "000032"
+        ]
+      },
+      "dataset_version": "b498da40b510a409211716f0",
+      "policy_version": "real-public-paper-core-risk-20261013-v2",
+      "payload_sha256": "02025fb94b0215ff6fc78ec8ad9fc27b579cce2ebfbadf482abde7e08b1e54ba",
+      "payload_bytes": 78113752,
+      "elapsed_seconds": 51.375,
+      "external_fund_requests": 0,
+      "NAV_unit_date_source_pass": 26395,
+      "open_purchase_codes": 19513,
+      "money_status_counts": {
+        "开放申购": 278,
+        "限大额": 542,
+        "暂停申购": 103,
+        "封闭期": 9,
+        "None": 4,
+        "场内交易": 11
+      },
+      "money_eligible": 278,
+      "money_excluded": 669,
+      "money_income_data_codes": 2,
+      "policy_bound": 13856,
+      "repeat_build_identical": true
+    },
+    "bank_mapping": {
+      "bank_imported": 13856,
+      "directory_equal": true,
+      "import_or_idempotent_validation_seconds": 48.75,
+      "bank_catalog_seconds": 2.297,
+      "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686",
+      "daily_version": "b82f95d0f9c225f24b0bd91c4552b2674e9b21fa8bd1a1ac7d53b8e275d49bf3",
+      "capture_sha256": "cca861e4ca6c495f030cf760b0ca8f914615db849ae270d52d78e78664e53182",
+      "context_id": "CTXde47fae015b930ab1b84c0866f85",
+      "account_id": "SA16b32e1980a0a5584c1c15681d0e",
+      "external_fund_requests": 0,
+      "database": ".deps/joint_validation/round1-full-core-v2/joint_bank.db"
+    },
+    "actual_a_scans": [
+      {
+        "source": "protected-local-bank",
+        "mode": "simulated",
+        "fixture": false,
+        "capacity": 4,
+        "stages": {
+          "directory": 27998,
+          "scope_verified": 19265,
+          "matched": 19265,
+          "purchase_qualified_shares": 13856,
+          "family_verified_qualified_shares": 13856,
+          "family_groups": 13855,
+          "material_complete_families": 13855
+        },
+        "status": "ok",
+        "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+      },
+      {
+        "source": "protected-local-bank",
+        "mode": "simulated",
+        "fixture": false,
+        "capacity": 4,
+        "stages": {
+          "directory": 27998,
+          "scope_verified": 19265,
+          "matched": 19265,
+          "purchase_qualified_shares": 13856,
+          "family_verified_qualified_shares": 13856,
+          "family_groups": 13855,
+          "material_complete_families": 13855
+        },
+        "status": "ok",
+        "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+      },
+      {
+        "source": "protected-local-bank",
+        "mode": "simulated",
+        "fixture": false,
+        "capacity": 1,
+        "stages": {
+          "directory": 27998,
+          "scope_verified": 19265,
+          "matched": 19265,
+          "purchase_qualified_shares": 278,
+          "family_verified_qualified_shares": 278,
+          "family_groups": 278,
+          "material_complete_families": 278
+        },
+        "status": "ok",
+        "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+      },
+      {
+        "source": "protected-local-bank",
+        "mode": "simulated",
+        "fixture": false,
+        "capacity": 2,
+        "stages": {
+          "directory": 27998,
+          "scope_verified": 19265,
+          "matched": 19265,
+          "purchase_qualified_shares": 4371,
+          "family_verified_qualified_shares": 4371,
+          "family_groups": 4370,
+          "material_complete_families": 4370
+        },
+        "status": "ok",
+        "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686"
+      }
+    ],
+    "actual_api": [
+      {
+        "level": 4,
+        "http": 200,
+        "seconds": 11.922,
+        "codes": [
+          "000009",
+          "000003",
+          "000001"
+        ]
+      },
+      {
+        "next_http": 200,
+        "codes": [
+          "000008",
+          "000010",
+          "000004"
+        ]
+      },
+      {
+        "level": 1,
+        "http": 200,
+        "seconds": 11.596,
+        "codes": [
+          "000009",
+          "000010",
+          "000198"
+        ]
+      },
+      {
+        "removed_theme_http": 410,
+        "detail": {
+          "code": "THEME_MODE_REMOVED",
+          "message": "THEME_MODE_REMOVED",
+          "issues": []
+        }
+      },
+      {
+        "level": 2,
+        "http": 200,
+        "seconds": 11.811,
+        "codes": [
+          "000009",
+          "000003",
+          "000010"
+        ]
+      }
+    ],
+    "bank_risk": {
+      "http": 409,
+      "detail": {
+        "code": "SUITABILITY_MISMATCH",
+        "message": "产品风险或支付条件不匹配，可保留现金",
+        "issues": []
+      },
+      "product_id": "960000",
+      "user_level": 2,
+      "product_level": 4,
+      "orders": 0,
+      "held_fen": 0
+    },
+    "prepare": {
+      "http": 200,
+      "codes": [
+        "000009",
+        "000003",
+        "014150",
+        "671030"
+      ],
+      "stage": "BUY",
+      "orders": 0,
+      "cash_hold_fen": 0
+    },
+    "performance": {
+      "plan_seconds": [
+        48.742,
+        46.647
+      ],
+      "prepare_seconds": 68.937,
+      "accepted": false
+    },
+    "offline": {
+      "repeat_build_byte_identical": true,
+      "build_dataset_version": "b498da40b510a409211716f0",
+      "data_version": "b574ef00aa263168fd481cb0569e6745ccfb63972363185de5093f885d486686",
+      "daily_version": "b82f95d0f9c225f24b0bd91c4552b2674e9b21fa8bd1a1ac7d53b8e275d49bf3",
+      "directory": 27998,
+      "execution_policy_codes": 13856,
+      "external_fund_requests": 0,
+      "empty_root_install": true,
+      "archive": ".deps/round1/wealth-core-money-offline-20261013.zip",
+      "archive_sha256": "53e323c334191816596bc76f39b194a0043679c6fc5d4ad8be5bdaec72f3f981",
+      "archive_bytes": 7422335,
+      "contains_env_database_private_raw": false,
+      "seconds": 127.947
+    },
+    "external_fund_requests": 0,
+    "new_model_calls": 0,
+    "remote_writes": 0,
+    "source_and_model_checks": {
+      "passed": 93,
+      "log": "model-final.log"
+    },
+    "pool_checks": {
+      "passed": 146,
+      "log": "pool-tests-final.log"
+    },
+    "cli_dry_run": {
+      "ok": true,
+      "duplicate": true,
+      "written": 0,
+      "http_default_limit_unchanged": true
+    }
+  },
+  "history": [
+    {
+      "date": "2026-10-13 America/Toronto",
+      "status": "awaiting_real_fund_trade_and_risk_policy_decision_not_sealable",
+      "code_commit": "ada2a48bde9be07c77638b46d5b3cf093cc1bee6",
+      "database_scope": "isolated SQLite and independent PostgreSQL; formal browser SQLite only",
+      "real_chain": {
+        "directory": 27998,
+        "scope_verified": 19265,
+        "matched": 19265,
+        "current_bank_skus": 0,
+        "current_product_versions": 0,
+        "purchase_qualified_shares": 0,
+        "material_fields": {
+          "objective": 40,
+          "strategy": 40,
+          "benchmark": 80,
+          "tracking_target": 7,
+          "issuer_raw": 63
+        },
+        "registered_risk_shares": 5,
+        "registered_family_shares": 6,
+        "exclusion_counts": {
+          "PRODUCT_SOURCE_KIND_MISMATCH": 19265,
+          "PRODUCT_VERSION_UNKNOWN": 19265,
+          "DISCLOSURE_VERSION_UNKNOWN": 19265,
+          "PRODUCT_SHARE_UNKNOWN": 19263,
+          "PRODUCT_RISK_UNKNOWN": 19260,
+          "CURRENT_BANK_PRODUCT_UNAVAILABLE": 19265,
+          "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH": 5
+        },
+        "pipeline_source_mode": "simulated",
+        "channel": "local-competition-bank"
+      },
+      "checks": {
+        "affected_pytest": {
+          "passed": 147,
+          "skipped": 0,
+          "postgresql": 29,
+          "sqlite": 29,
+          "other": 89
+        },
+        "fee_final_pytest": {
+          "passed": 216,
+          "skipped": 0
+        },
+        "frontend_states": 66,
+        "formal_browser_blocking_only": 3,
+        "new_model_calls": 0
+      },
+      "performance": {
+        "plan_three": [
+          {
+            "http": 200,
+            "seconds": 2.0526492000208236,
+            "body_kind": "plan"
+          },
+          {
+            "http": 200,
+            "seconds": 2.7851955000078306,
+            "body_kind": "plan"
+          },
+          {
+            "http": 200,
+            "seconds": 1.9983405999955721,
+            "body_kind": "plan"
+          }
+        ],
+        "recommend_three": [
+          {
+            "seconds": 1.2454934000270441,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          },
+          {
+            "seconds": 1.2266558000119403,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          },
+          {
+            "seconds": 1.9581965999677777,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          }
+        ],
+        "initialization_separately_seconds": 23.75,
+        "positive_real_fund_path_verified": false
+      },
+      "reproducibility": {
+        "offline_import_validated": true,
+        "directory": 28076,
+        "snapshot_sha256": "0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8",
+        "gzip_sha256": "c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c",
+        "gzip_bytes": 2053835,
+        "install_validation_seconds": 20.333108799997717,
+        "public_files_verified": 88,
+        "tamper_rejected": true,
+        "missing_rejected": true,
+        "source_dates_renewed": false,
+        "raw_reconstruction_claimed": false
+      },
+      "normal_startup": {
+        "normal_lifespan": true,
+        "recorded_source": false,
+        "database": "new isolated SQLite normal_bank.db",
+        "health_http": 200,
+        "login_http": 200,
+        "assets_http": 200,
+        "snapshot_http": 200,
+        "asset_summary_snapshot_same": true,
+        "total_assets_fen": 5000000,
+        "new_model_calls": 0
+      },
+      "positive_real_fund_families": 0,
+      "research": "historical total-return/fixed-portfolio/OOS unfinished and removed from runtime seal gate; B actual returns still mandatory",
+      "human_acceptance": "not_ready_for_positive_manual_acceptance",
+      "remote_writes": 0,
+      "simulated_seven_family_objective_proposal": "not_implemented_superseded",
+      "j_report": "wealth_joint_acceptance.md",
+      "latest": {
+        "date": "2026-10-13 America/Toronto",
+        "status": "awaiting_real_fund_trade_and_risk_policy_decision_not_sealable",
+        "code_commit": "ada2a48bde9be07c77638b46d5b3cf093cc1bee6",
+        "database_scope": "isolated SQLite and independent PostgreSQL; formal browser SQLite only",
+        "real_chain": {
+          "directory": 27998,
+          "scope_verified": 19265,
+          "matched": 19265,
+          "current_bank_skus": 0,
+          "current_product_versions": 0,
+          "purchase_qualified_shares": 0,
+          "material_fields": {
+            "objective": 40,
+            "strategy": 40,
+            "benchmark": 80,
+            "tracking_target": 7,
+            "issuer_raw": 63
+          },
+          "registered_risk_shares": 5,
+          "registered_family_shares": 6,
+          "exclusion_counts": {
+            "PRODUCT_SOURCE_KIND_MISMATCH": 19265,
+            "PRODUCT_VERSION_UNKNOWN": 19265,
+            "DISCLOSURE_VERSION_UNKNOWN": 19265,
+            "PRODUCT_SHARE_UNKNOWN": 19263,
+            "PRODUCT_RISK_UNKNOWN": 19260,
+            "CURRENT_BANK_PRODUCT_UNAVAILABLE": 19265,
+            "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH": 5
+          },
+          "pipeline_source_mode": "simulated",
+          "channel": "local-competition-bank"
+        },
+        "checks": {
+          "affected_pytest": {
+            "passed": 147,
+            "skipped": 0,
+            "postgresql": 29,
+            "sqlite": 29,
+            "other": 89
+          },
+          "fee_final_pytest": {
+            "passed": 216,
+            "skipped": 0
+          },
+          "frontend_states": 66,
+          "formal_browser_blocking_only": 3,
+          "new_model_calls": 0
+        },
+        "performance": {
+          "plan_three": [
+            {
+              "http": 200,
+              "seconds": 2.0526492000208236,
+              "body_kind": "plan"
+            },
+            {
+              "http": 200,
+              "seconds": 2.7851955000078306,
+              "body_kind": "plan"
+            },
+            {
+              "http": 200,
+              "seconds": 1.9983405999955721,
+              "body_kind": "plan"
+            }
+          ],
+          "recommend_three": [
+            {
+              "seconds": 1.2454934000270441,
+              "http": 200,
+              "candidate_count": 0,
+              "status": "unavailable"
+            },
+            {
+              "seconds": 1.2266558000119403,
+              "http": 200,
+              "candidate_count": 0,
+              "status": "unavailable"
+            },
+            {
+              "seconds": 1.9581965999677777,
+              "http": 200,
+              "candidate_count": 0,
+              "status": "unavailable"
+            }
+          ],
+          "initialization_separately_seconds": 23.75,
+          "positive_real_fund_path_verified": false
+        },
+        "reproducibility": {
+          "offline_import_validated": true,
+          "directory": 28076,
+          "snapshot_sha256": "0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8",
+          "gzip_sha256": "c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c",
+          "gzip_bytes": 2053835,
+          "install_validation_seconds": 20.333108799997717,
+          "public_files_verified": 88,
+          "tamper_rejected": true,
+          "missing_rejected": true,
+          "source_dates_renewed": false,
+          "raw_reconstruction_claimed": false
+        },
+        "normal_startup": {
+          "normal_lifespan": true,
+          "recorded_source": false,
+          "database": "new isolated SQLite normal_bank.db",
+          "health_http": 200,
+          "login_http": 200,
+          "assets_http": 200,
+          "snapshot_http": 200,
+          "asset_summary_snapshot_same": true,
+          "total_assets_fen": 5000000,
+          "new_model_calls": 0
+        },
+        "positive_real_fund_families": 0,
+        "research": "historical total-return/fixed-portfolio/OOS unfinished and removed from runtime seal gate; B actual returns still mandatory",
+        "human_acceptance": "not_ready_for_positive_manual_acceptance",
+        "remote_writes": 0,
+        "simulated_seven_family_objective_proposal": "not_implemented_superseded",
+        "j_report": "wealth_joint_acceptance.md"
+      }
+    },
+    {
+      "date": "2026-10-13 America/Toronto",
+      "status": "awaiting_real_fund_trade_and_risk_policy_decision_not_sealable",
+      "code_commit": "813894c6a6e670229ad8381a3c6367f3998f5b18",
+      "database_scope": "isolated SQLite and independent PostgreSQL; formal browser SQLite only",
+      "real_chain": {
+        "directory": 27998,
+        "scope_verified": 19265,
+        "matched": 19265,
+        "current_bank_skus": 0,
+        "current_product_versions": 0,
+        "purchase_qualified_shares": 0,
+        "material_fields": {
+          "objective": 40,
+          "strategy": 40,
+          "benchmark": 80,
+          "tracking_target": 7,
+          "issuer_raw": 63
+        },
+        "registered_risk_shares": 5,
+        "registered_family_shares": 6,
+        "exclusion_counts": {
+          "PRODUCT_SOURCE_KIND_MISMATCH": 19265,
+          "PRODUCT_VERSION_UNKNOWN": 19265,
+          "DISCLOSURE_VERSION_UNKNOWN": 19265,
+          "PRODUCT_SHARE_UNKNOWN": 19263,
+          "PRODUCT_RISK_UNKNOWN": 19260,
+          "CURRENT_BANK_PRODUCT_UNAVAILABLE": 19265,
+          "PRODUCT_RISK_SHARE_CHANNEL_MISMATCH": 5
+        },
+        "pipeline_source_mode": "simulated",
+        "channel": "local-competition-bank"
+      },
+      "checks": {
+        "affected_pytest": {
+          "passed": 147,
+          "skipped": 0,
+          "postgresql": 29,
+          "sqlite": 29,
+          "other": 89
+        },
+        "fee_final_pytest": {
+          "passed": 216,
+          "skipped": 0
+        },
+        "snapshot_consistency_pytest": {
+          "passed": 116,
+          "skipped": 0
+        },
+        "serialization_pytest": {
+          "passed": 42,
+          "skipped": 0
+        },
+        "immutable_index_pytest": {
+          "passed": 181,
+          "skipped": 0
+        },
+        "frontend_states": 66,
+        "formal_browser_blocking_only": 3,
+        "new_model_calls": 0
+      },
+      "performance": {
+        "plan_three": [
+          {
+            "http": 200,
+            "seconds": 3.169574700004887,
+            "body_kind": "plan"
+          },
+          {
+            "http": 200,
+            "seconds": 2.576286000024993,
+            "body_kind": "plan"
+          },
+          {
+            "http": 200,
+            "seconds": 2.6035987000213936,
+            "body_kind": "plan"
+          }
+        ],
+        "recommend_three": [
+          {
+            "seconds": 1.2454934000270441,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          },
+          {
+            "seconds": 1.2266558000119403,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          },
+          {
+            "seconds": 1.9581965999677777,
+            "http": 200,
+            "candidate_count": 0,
+            "status": "unavailable"
+          }
+        ],
+        "initialization_separately_seconds": 25.40700000000652,
+        "interned_unknown_fields": 364029,
+        "positive_real_fund_path_verified": false
+      },
+      "reproducibility": {
+        "offline_import_validated": true,
+        "directory": 28076,
+        "snapshot_sha256": "0830f7fdb330dd99e8ac7254c3ff80e294dcb66572f3a8c00bec7fb3093b87c8",
+        "gzip_sha256": "c097062ef73d1b48608bf817a2cf6a11f89939085d9adf572042865f1d7cfc2c",
+        "gzip_bytes": 2053835,
+        "install_validation_seconds": 20.333108799997717,
+        "public_files_verified": 88,
+        "tamper_rejected": true,
+        "missing_rejected": true,
+        "source_dates_renewed": false,
+        "raw_reconstruction_claimed": false
+      },
+      "normal_startup": {
+        "normal_lifespan": true,
+        "recorded_source": false,
+        "database": "new isolated SQLite normal_bank.db",
+        "health_http": 200,
+        "login_http": 200,
+        "assets_http": 200,
+        "snapshot_http": 200,
+        "asset_summary_snapshot_same": true,
+        "total_assets_fen": 5000000,
+        "new_model_calls": 0
+      },
+      "positive_real_fund_families": 0,
+      "research": "historical total-return/fixed-portfolio/OOS unfinished and removed from runtime seal gate; B actual returns still mandatory",
+      "human_acceptance": "not_ready_for_positive_manual_acceptance",
+      "remote_writes": 0,
+      "simulated_seven_family_objective_proposal": "not_implemented_superseded",
+      "j_report": "wealth_joint_acceptance.md"
+    }
+  ],
+  "human_environment": {
+    "manual_URL": "http://localhost:3013/",
+    "bank_URL": "http://localhost:8013/health",
+    "fund_count": 38,
+    "cash_fen": 2000000,
+    "held_fen": 0,
+    "orders": 0,
+    "lots": 0,
+    "assessment": "requires_personal_answers",
+    "human_context_id": "CTXcf6e70d02d1d9661a55d5b0d4290",
+    "business_at": "2026-10-13T06:00:00+00:00",
+    "original_services": {
+      "frontend3010": 200,
+      "bank8010": 200
+    },
+    "test_services8014_3014": "stopped_by_verified_owner",
+    "all_previous_databases_preserved": true
+  },
+  "historical_before_round1_latest": {
+    "date": "2026-10-13 America/Toronto",
+    "status": "codex_scoped_joint_passed_human_pending_not_released",
+    "code_commit": "52f150d22e7ebde2f4ef397fffdc5579c08d50eb",
+    "real_chain": {
+      "directory": 27998,
+      "scope_verified": 19265,
+      "saved_text_union": 83,
+      "valued_non_money_NAV": 26395,
+      "money_yield_values": 967,
+      "current_paper_products": 38,
+      "material_operational_groups": 36,
+      "category_counts": {
+        "bond": 9,
+        "mixed": 24,
+        "equity": 5
+      },
+      "seven_exact_samples": [
+        "000015",
+        "001286",
+        "005242",
+        "006253",
+        "007331",
+        "016173",
+        "020458"
+      ],
+      "sample_is_not_production_whitelist": true,
+      "independent_family_count": "unknown_not_claimed",
+      "data_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+      "daily_version": "2732304411e02771e334239139049d5b496b491e1106331b32cccd24db3bf938",
+      "dataset_version": "d72fa8d6346fcf8a74b9bfd6",
+      "policy_version": "real-public-paper-risk-20261013-v1"
+    },
+    "performance": {
+      "target_first_seconds": 10,
+      "target_repeat_seconds": 3,
+      "actual": [
+        {
+          "http": 200,
+          "seconds": 2.9585223999456502,
+          "source_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+          "real_selected_codes": [
+            "007331",
+            "000015",
+            "001286",
+            "005242",
+            "006253",
+            "016173",
+            "020458"
+          ],
+          "model_status": "researched_model",
+          "basis_fen": 2000000
+        },
+        {
+          "http": 200,
+          "seconds": 2.434140399971511,
+          "source_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+          "real_selected_codes": [
+            "007331",
+            "000015",
+            "001286",
+            "005242",
+            "006253",
+            "016173",
+            "020458"
+          ],
+          "model_status": "researched_model",
+          "basis_fen": 2000000
+        },
+        {
+          "http": 200,
+          "seconds": 2.9497622000053525,
+          "source_version": "b06b8fd23996785385ba61fc1c6f311dc0531227cc32c294da10f62434f77fdd",
+          "real_selected_codes": [
+            "007331",
+            "000015",
+            "001286",
+            "005242",
+            "006253",
+            "016173",
+            "020458"
+          ],
+          "model_status": "researched_model",
+          "basis_fen": 2000000
+        }
+      ],
+      "startup_index_seconds": 22.016,
+      "earlier_over_target_record_retained": true
+    },
+    "human_acceptance": "pending",
+    "remote_writes": false,
+    "new_NLP_calls": 0,
+    "collection_resumed": false,
+    "human_environment": {
+      "manual_URL": "http://localhost:3013/",
+      "bank_URL": "http://localhost:8013/health",
+      "fund_count": 38,
+      "cash_fen": 2000000,
+      "held_fen": 0,
+      "orders": 0,
+      "lots": 0,
+      "assessment": "requires_personal_answers",
+      "human_context_id": "CTXcf6e70d02d1d9661a55d5b0d4290",
+      "business_at": "2026-10-13T06:00:00+00:00",
+      "original_services": {
+        "frontend3010": 200,
+        "bank8010": 200
+      },
+      "test_services8014_3014": "stopped_by_verified_owner",
+      "all_previous_databases_preserved": true
+    },
+    "evidence_ref": "checks/j_report/reproducibility/normal_startup/original_protection"
+  }
+}

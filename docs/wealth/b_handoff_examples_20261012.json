@@ -1,0 +1,1149 @@
+{
+  "note": "Documentation only. Explicit isolated fixed-A contracts and actual simulated-bank reads. Two independent test environments; never submit these references to a normal account. No authorization credentials included.",
+  "validated_code_base": "fb92910",
+  "bank_chain": {
+    "source": "test_wealth_b6_manual_chain / b6-reprepare-after-fix; SQLite pass, fixed A provider",
+    "portfolio_plan": {
+      "schema_version": "wealth-portfolio-plan-v1",
+      "portfolio_id": "isolated-portfolio",
+      "version": 10,
+      "snapshot_id": "ad87f7ecd77065fb41e97fdcf77d46190678d81bd15cdf76a8ecdadf58d61249",
+      "context_id": "legacy-v1",
+      "asset_scope_id": "WAS-e02e96a5872738b57160201038f570a624b109f91d67c4559e7de8487b1208cc",
+      "basis_fen": 2000000,
+      "basis_status": "confirmed",
+      "model_status": "fixture",
+      "selected_positions": [
+        {
+          "account_id": "A1",
+          "product_id": "MW001",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MW001",
+          "share_class": null,
+          "bucket": "cash_management",
+          "target_ratio_total": "0.20",
+          "target_fen": 400000,
+          "current_fen": 0
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MW002",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MW002",
+          "share_class": null,
+          "bucket": "stable",
+          "target_ratio_total": "0.10",
+          "target_fen": 200000,
+          "current_fen": 0
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF002",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF002",
+          "share_class": null,
+          "bucket": "stable",
+          "target_ratio_total": "0.10",
+          "target_fen": 200000,
+          "current_fen": 0
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MW003",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MW003",
+          "share_class": null,
+          "bucket": "stable",
+          "target_ratio_total": "0.10",
+          "target_fen": 200000,
+          "current_fen": 0
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF003",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF003",
+          "share_class": null,
+          "bucket": "growth",
+          "target_ratio_total": "0.20",
+          "target_fen": 400000,
+          "current_fen": 0
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF004",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF004",
+          "share_class": null,
+          "bucket": "growth",
+          "target_ratio_total": "0.15",
+          "target_fen": 300000,
+          "current_fen": 0
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF005",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF005",
+          "share_class": null,
+          "bucket": "growth",
+          "target_ratio_total": "0.15",
+          "target_fen": 300000,
+          "current_fen": 0
+        }
+      ],
+      "cash_residual_fen": 0,
+      "missing_fields": [],
+      "buckets": [
+        {
+          "bucket": "cash_management",
+          "min_ratio": "0",
+          "max_ratio": "1",
+          "target_ratio": "0.2",
+          "target_fen": 400000,
+          "current_fen": 0
+        },
+        {
+          "bucket": "stable",
+          "min_ratio": "0",
+          "max_ratio": "1",
+          "target_ratio": "0.3",
+          "target_fen": 600000,
+          "current_fen": 0
+        },
+        {
+          "bucket": "growth",
+          "min_ratio": "0",
+          "max_ratio": "1",
+          "target_ratio": "0.5",
+          "target_fen": 1000000,
+          "current_fen": 0
+        }
+      ],
+      "as_of": "2026-09-30T06:00:00+00:00",
+      "basis_kind": "linked_bank_assets",
+      "provider_id": "b6-recorded",
+      "provider_version": "v1",
+      "candidate_groups": [
+        {
+          "bucket": "cash_management",
+          "status": "ok",
+          "filter": {
+            "mode": "general"
+          },
+          "items": [
+            {
+              "family_id": "MW001",
+              "name": "模拟清泉现金理财",
+              "bucket": "cash_management",
+              "reason": "B6 同契约固定候选，不是模型建议",
+              "reason_codes": [
+                "fixture"
+              ],
+              "evidence": [],
+              "share_classes": [
+                {
+                  "product_id": "MW001",
+                  "product_version": 1,
+                  "disclosure_version": 1,
+                  "share_class": null,
+                  "product_risk_level": 1,
+                  "status": "on_sale",
+                  "tradable": true,
+                  "min_amount_fen": 10000,
+                  "fees": {
+                    "purchase_fee_rate": "0",
+                    "sales_service_fee_rate": null,
+                    "redemption_fee_rules": "按模拟银行规则"
+                  },
+                  "performance": {
+                    "one_year": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "start_date": null,
+                      "end_date": null,
+                      "source": null
+                    },
+                    "latest_day": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "nav_date": null,
+                      "previous_nav_date": null
+                    }
+                  },
+                  "detail_ref": "MW001:1",
+                  "data_source": "isolated_fixture",
+                  "data_as_of": "2026-09-30T06:00:00+00:00"
+                }
+              ]
+            }
+          ],
+          "next_cursor": null,
+          "risk_explanation": null
+        },
+        {
+          "bucket": "stable",
+          "status": "ok",
+          "filter": {
+            "mode": "general"
+          },
+          "items": [
+            {
+              "family_id": "MW002",
+              "name": "模拟远山债券理财",
+              "bucket": "stable",
+              "reason": "B6 同契约固定候选，不是模型建议",
+              "reason_codes": [
+                "fixture"
+              ],
+              "evidence": [],
+              "share_classes": [
+                {
+                  "product_id": "MW002",
+                  "product_version": 1,
+                  "disclosure_version": 1,
+                  "share_class": null,
+                  "product_risk_level": 2,
+                  "status": "on_sale",
+                  "tradable": true,
+                  "min_amount_fen": 10000,
+                  "fees": {
+                    "purchase_fee_rate": "0.002",
+                    "sales_service_fee_rate": null,
+                    "redemption_fee_rules": "按模拟银行规则"
+                  },
+                  "performance": {
+                    "one_year": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "start_date": null,
+                      "end_date": null,
+                      "source": null
+                    },
+                    "latest_day": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "nav_date": null,
+                      "previous_nav_date": null
+                    }
+                  },
+                  "detail_ref": "MW002:1",
+                  "data_source": "isolated_fixture",
+                  "data_as_of": "2026-09-30T06:00:00+00:00"
+                }
+              ]
+            },
+            {
+              "family_id": "MF002",
+              "name": "模拟青石债券基金",
+              "bucket": "stable",
+              "reason": "B6 同契约固定候选，不是模型建议",
+              "reason_codes": [
+                "fixture"
+              ],
+              "evidence": [],
+              "share_classes": [
+                {
+                  "product_id": "MF002",
+                  "product_version": 1,
+                  "disclosure_version": 1,
+                  "share_class": null,
+                  "product_risk_level": 2,
+                  "status": "on_sale",
+                  "tradable": true,
+                  "min_amount_fen": 10000,
+                  "fees": {
+                    "purchase_fee_rate": "0.003",
+                    "sales_service_fee_rate": null,
+                    "redemption_fee_rules": "按模拟银行规则"
+                  },
+                  "performance": {
+                    "one_year": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "start_date": null,
+                      "end_date": null,
+                      "source": null
+                    },
+                    "latest_day": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "nav_date": null,
+                      "previous_nav_date": null
+                    }
+                  },
+                  "detail_ref": "MF002:1",
+                  "data_source": "isolated_fixture",
+                  "data_as_of": "2026-09-30T06:00:00+00:00"
+                }
+              ]
+            },
+            {
+              "family_id": "MW003",
+              "name": "模拟海岚均衡理财",
+              "bucket": "stable",
+              "reason": "B6 同契约固定候选，不是模型建议",
+              "reason_codes": [
+                "fixture"
+              ],
+              "evidence": [],
+              "share_classes": [
+                {
+                  "product_id": "MW003",
+                  "product_version": 1,
+                  "disclosure_version": 1,
+                  "share_class": null,
+                  "product_risk_level": 3,
+                  "status": "on_sale",
+                  "tradable": true,
+                  "min_amount_fen": 10000,
+                  "fees": {
+                    "purchase_fee_rate": "0.005",
+                    "sales_service_fee_rate": null,
+                    "redemption_fee_rules": "按模拟银行规则"
+                  },
+                  "performance": {
+                    "one_year": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "start_date": null,
+                      "end_date": null,
+                      "source": null
+                    },
+                    "latest_day": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "nav_date": null,
+                      "previous_nav_date": null
+                    }
+                  },
+                  "detail_ref": "MW003:1",
+                  "data_source": "isolated_fixture",
+                  "data_as_of": "2026-09-30T06:00:00+00:00"
+                }
+              ]
+            }
+          ],
+          "next_cursor": null,
+          "risk_explanation": null
+        },
+        {
+          "bucket": "growth",
+          "status": "ok",
+          "filter": {
+            "mode": "general"
+          },
+          "items": [
+            {
+              "family_id": "MF003",
+              "name": "模拟星河混合基金",
+              "bucket": "growth",
+              "reason": "B6 同契约固定候选，不是模型建议",
+              "reason_codes": [
+                "fixture"
+              ],
+              "evidence": [],
+              "share_classes": [
+                {
+                  "product_id": "MF003",
+                  "product_version": 1,
+                  "disclosure_version": 1,
+                  "share_class": null,
+                  "product_risk_level": 3,
+                  "status": "on_sale",
+                  "tradable": true,
+                  "min_amount_fen": 10000,
+                  "fees": {
+                    "purchase_fee_rate": "0.008",
+                    "sales_service_fee_rate": null,
+                    "redemption_fee_rules": "按模拟银行规则"
+                  },
+                  "performance": {
+                    "one_year": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "start_date": null,
+                      "end_date": null,
+                      "source": null
+                    },
+                    "latest_day": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "nav_date": null,
+                      "previous_nav_date": null
+                    }
+                  },
+                  "detail_ref": "MF003:1",
+                  "data_source": "isolated_fixture",
+                  "data_as_of": "2026-09-30T06:00:00+00:00"
+                }
+              ]
+            },
+            {
+              "family_id": "MF004",
+              "name": "模拟云帆权益基金",
+              "bucket": "growth",
+              "reason": "B6 同契约固定候选，不是模型建议",
+              "reason_codes": [
+                "fixture"
+              ],
+              "evidence": [],
+              "share_classes": [
+                {
+                  "product_id": "MF004",
+                  "product_version": 1,
+                  "disclosure_version": 1,
+                  "share_class": null,
+                  "product_risk_level": 4,
+                  "status": "on_sale",
+                  "tradable": true,
+                  "min_amount_fen": 10000,
+                  "fees": {
+                    "purchase_fee_rate": "0.01",
+                    "sales_service_fee_rate": null,
+                    "redemption_fee_rules": "按模拟银行规则"
+                  },
+                  "performance": {
+                    "one_year": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "start_date": null,
+                      "end_date": null,
+                      "source": null
+                    },
+                    "latest_day": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "nav_date": null,
+                      "previous_nav_date": null
+                    }
+                  },
+                  "detail_ref": "MF004:1",
+                  "data_source": "isolated_fixture",
+                  "data_as_of": "2026-09-30T06:00:00+00:00"
+                }
+              ]
+            },
+            {
+              "family_id": "MF005",
+              "name": "模拟光合指数基金",
+              "bucket": "growth",
+              "reason": "B6 同契约固定候选，不是模型建议",
+              "reason_codes": [
+                "fixture"
+              ],
+              "evidence": [],
+              "share_classes": [
+                {
+                  "product_id": "MF005",
+                  "product_version": 1,
+                  "disclosure_version": 1,
+                  "share_class": null,
+                  "product_risk_level": 4,
+                  "status": "on_sale",
+                  "tradable": true,
+                  "min_amount_fen": 10000,
+                  "fees": {
+                    "purchase_fee_rate": "0.006",
+                    "sales_service_fee_rate": null,
+                    "redemption_fee_rules": "按模拟银行规则"
+                  },
+                  "performance": {
+                    "one_year": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "start_date": null,
+                      "end_date": null,
+                      "source": null
+                    },
+                    "latest_day": {
+                      "metric": "nav_change",
+                      "status": "unavailable",
+                      "value_percent": null,
+                      "reason": "测试替身未录制历史指标",
+                      "nav_date": null,
+                      "previous_nav_date": null
+                    }
+                  },
+                  "detail_ref": "MF005:1",
+                  "data_source": "isolated_fixture",
+                  "data_as_of": "2026-09-30T06:00:00+00:00"
+                }
+              ]
+            }
+          ],
+          "next_cursor": null,
+          "risk_explanation": null
+        }
+      ],
+      "reasons": [
+        "隔离同契约替身"
+      ],
+      "data_versions": {
+        "fixture": "b6-v1"
+      }
+    },
+    "asset_snapshot_before": {
+      "schema_version": "wealth-asset-snapshot-v1",
+      "context_id": "legacy-v1",
+      "asset_scope_id": "WAS-e02e96a5872738b57160201038f570a624b109f91d67c4559e7de8487b1208cc",
+      "account_ids": [
+        "A1"
+      ],
+      "accounts": [
+        {
+          "account_id": "A1",
+          "account_type": "savings",
+          "balance_fen": 2000000,
+          "held_fen": 0,
+          "available_fen": 2000000
+        }
+      ],
+      "positions": [],
+      "receivable_fen": 0,
+      "basis_fen": 2000000,
+      "total_assets_fen": 2000000,
+      "valuation_complete": true,
+      "snapshot_id": "ad87f7ecd77065fb41e97fdcf77d46190678d81bd15cdf76a8ecdadf58d61249"
+    },
+    "candidate_group": {
+      "bucket": "cash_management",
+      "status": "ok",
+      "filter": {
+        "mode": "general",
+        "category": null,
+        "theme_key": null,
+        "bucket": null
+      },
+      "items": [
+        {
+          "family_id": "MW001",
+          "name": "模拟清泉现金理财",
+          "bucket": "cash_management",
+          "reason": "B6 同契约固定候选，不是模型建议",
+          "reason_codes": [
+            "fixture"
+          ],
+          "evidence": [],
+          "share_classes": [
+            {
+              "product_id": "MW001",
+              "product_version": 1,
+              "disclosure_version": 1,
+              "share_class": null,
+              "product_risk_level": 1,
+              "status": "on_sale",
+              "tradable": true,
+              "min_amount_fen": 10000,
+              "fees": {
+                "purchase_fee_rate": "0",
+                "sales_service_fee_rate": null,
+                "redemption_fee_rules": "按模拟银行规则"
+              },
+              "performance": {
+                "one_year": {
+                  "metric": "nav_change",
+                  "status": "unavailable",
+                  "value_percent": null,
+                  "reason": "测试替身未录制历史指标",
+                  "start_date": null,
+                  "end_date": null,
+                  "source": null
+                },
+                "latest_day": {
+                  "metric": "nav_change",
+                  "status": "unavailable",
+                  "value_percent": null,
+                  "reason": "测试替身未录制历史指标",
+                  "nav_date": null,
+                  "previous_nav_date": null
+                }
+              },
+              "detail_ref": "MW001:1",
+              "data_source": "isolated_fixture",
+              "data_as_of": "2026-09-30T06:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "next_cursor": null,
+      "risk_explanation": null
+    },
+    "revision_action_example_assembled_from_validated_DTO": {
+      "schema_version": "wealth-action-v1",
+      "request_id": "handoff-revision-example-0001",
+      "context_id": "legacy-v1",
+      "selection_context": {
+        "object_type": "products",
+        "ids": [
+          "MW001:1",
+          "MW002:1",
+          "MF002:1",
+          "MW003:1",
+          "MF003:1",
+          "MF004:1",
+          "MF005:1"
+        ]
+      },
+      "action": "revise_portfolio",
+      "params": {
+        "selection": {
+          "portfolio_id": "isolated-portfolio",
+          "snapshot_id": "ad87f7ecd77065fb41e97fdcf77d46190678d81bd15cdf76a8ecdadf58d61249",
+          "context_id": "legacy-v1",
+          "expected_version": 10,
+          "items": [
+            {
+              "product_id": "MW001",
+              "product_version": 1,
+              "share_class": null,
+              "target_ratio_total": "0.20"
+            },
+            {
+              "product_id": "MW002",
+              "product_version": 1,
+              "share_class": null,
+              "target_ratio_total": "0.10"
+            },
+            {
+              "product_id": "MF002",
+              "product_version": 1,
+              "share_class": null,
+              "target_ratio_total": "0.10"
+            },
+            {
+              "product_id": "MW003",
+              "product_version": 1,
+              "share_class": null,
+              "target_ratio_total": "0.10"
+            },
+            {
+              "product_id": "MF003",
+              "product_version": 1,
+              "share_class": null,
+              "target_ratio_total": "0.20"
+            },
+            {
+              "product_id": "MF004",
+              "product_version": 1,
+              "share_class": null,
+              "target_ratio_total": "0.15"
+            },
+            {
+              "product_id": "MF005",
+              "product_version": 1,
+              "share_class": null,
+              "target_ratio_total": "0.15"
+            }
+          ]
+        }
+      }
+    },
+    "asset_summary_before": {
+      "schema_version": "wealth-asset-summary-v1",
+      "asset_scope_id": "WAS-e02e96a5872738b57160201038f570a624b109f91d67c4559e7de8487b1208cc",
+      "account_ids": [
+        "A1"
+      ],
+      "snapshot_id": "WASNAP-e337907bf8e8eeb1676949aa9c006fa1772bd0eb9b4ef6daefd97584ba149854",
+      "as_of": "2026-10-12T10:04:04.926970Z",
+      "business_at": "2026-09-30T06:00:00Z",
+      "cash_balance_fen": 2000000,
+      "held_fen": 0,
+      "available_cash_fen": 2000000,
+      "positions_market_value_fen": 0,
+      "redemption_receivable_fen": 0,
+      "total_assets_fen": 2000000,
+      "valuation_complete": true,
+      "missing_fields": [],
+      "data_source": "simulated_bank"
+    },
+    "asset_summary_after_settlement_and_redemptions": {
+      "schema_version": "wealth-asset-summary-v1",
+      "asset_scope_id": "WAS-e02e96a5872738b57160201038f570a624b109f91d67c4559e7de8487b1208cc",
+      "account_ids": [
+        "A1"
+      ],
+      "snapshot_id": "WASNAP-ab0a2f05d047ef8a7935ef109ca20c68ba57ac9d4fcc3398c0242357ef2bd5ac",
+      "as_of": "2026-10-12T10:04:08.513011Z",
+      "business_at": "2026-10-29T06:00:00Z",
+      "cash_balance_fen": 301996,
+      "held_fen": 0,
+      "available_cash_fen": 301996,
+      "positions_market_value_fen": 1669294,
+      "redemption_receivable_fen": 0,
+      "total_assets_fen": 1971290,
+      "valuation_complete": true,
+      "missing_fields": [],
+      "data_source": "simulated_bank"
+    },
+    "returns_all_month": {
+      "schema_version": "wealth-returns-v1",
+      "asset_scope_id": "WAS-e02e96a5872738b57160201038f570a624b109f91d67c4559e7de8487b1208cc",
+      "snapshot_id": "WRETURN-f810d45dfeb7d0bf83a3623f41c2c0f33aa3eb73a5cfc16bf0c1d2976dac9381",
+      "scope": "all",
+      "product_id": null,
+      "period": "month",
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-31",
+      "as_of": "2026-10-20T14:00:00+08:00",
+      "timezone": "Asia/Shanghai",
+      "coverage_start": "2026-10-20",
+      "status": "partial",
+      "missing_fields": [
+        "MF002:1：2026-10-20有效净值未公布或缺失",
+        "MF003:1：2026-10-20有效净值未公布或缺失",
+        "MF004:1：2026-10-20有效净值未公布或缺失",
+        "MW001:1：2026-10-20有效净值未公布或缺失",
+        "MW002:1：2026-10-20有效净值未公布或缺失",
+        "MW003:1：2026-10-20有效净值未公布或缺失",
+        "当前期间尚未结束；收益截至查询业务时点",
+        "所选期间仅覆盖部分日期",
+        "所选期间包含覆盖外日期；只汇总可核实部分"
+      ],
+      "summary": {
+        "period_pnl_fen": null,
+        "cumulative_pnl_fen": null,
+        "realized_pnl_fen": 0,
+        "unrealized_pnl_fen": null,
+        "fees_fen": 8141
+      },
+      "points": [
+        {
+          "period_start": "2026-10-01",
+          "period_end": "2026-10-01",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-02",
+          "period_end": "2026-10-02",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-03",
+          "period_end": "2026-10-03",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-04",
+          "period_end": "2026-10-04",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-05",
+          "period_end": "2026-10-05",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-06",
+          "period_end": "2026-10-06",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-07",
+          "period_end": "2026-10-07",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-08",
+          "period_end": "2026-10-08",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-09",
+          "period_end": "2026-10-09",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-10",
+          "period_end": "2026-10-10",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-11",
+          "period_end": "2026-10-11",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-12",
+          "period_end": "2026-10-12",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-13",
+          "period_end": "2026-10-13",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-14",
+          "period_end": "2026-10-14",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-15",
+          "period_end": "2026-10-15",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-16",
+          "period_end": "2026-10-16",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-17",
+          "period_end": "2026-10-17",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-18",
+          "period_end": "2026-10-18",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-19",
+          "period_end": "2026-10-19",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-20",
+          "period_end": "2026-10-20",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "MF002:1：2026-10-20有效净值未公布或缺失；MF003:1：2026-10-20有效净值未公布或缺失；MF004:1：2026-10-20有效净值未公布或缺失；MW001:1：2026-10-20有效净值未公布或缺失；MW002:1：2026-10-20有效净值未公布或缺失；MW003:1：2026-10-20有效净值未公布或缺失；当前期间尚未结束；截至查询业务时点"
+        },
+        {
+          "period_start": "2026-10-21",
+          "period_end": "2026-10-21",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-22",
+          "period_end": "2026-10-22",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-23",
+          "period_end": "2026-10-23",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-24",
+          "period_end": "2026-10-24",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-25",
+          "period_end": "2026-10-25",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-26",
+          "period_end": "2026-10-26",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-27",
+          "period_end": "2026-10-27",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-28",
+          "period_end": "2026-10-28",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-29",
+          "period_end": "2026-10-29",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-30",
+          "period_end": "2026-10-30",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        },
+        {
+          "period_start": "2026-10-31",
+          "period_end": "2026-10-31",
+          "pnl_fen": null,
+          "status": "unavailable",
+          "reason": "可核实覆盖范围以外"
+        }
+      ],
+      "products": [
+        {
+          "product_id": "MF002",
+          "product_name": "模拟青石债券基金",
+          "period_pnl_fen": null,
+          "cumulative_pnl_fen": null,
+          "status": "partial",
+          "reason": "MF002:1：2026-10-20有效净值未公布或缺失"
+        },
+        {
+          "product_id": "MF003",
+          "product_name": "模拟星河混合基金",
+          "period_pnl_fen": null,
+          "cumulative_pnl_fen": null,
+          "status": "partial",
+          "reason": "MF003:1：2026-10-20有效净值未公布或缺失"
+        },
+        {
+          "product_id": "MF004",
+          "product_name": "模拟云帆权益基金",
+          "period_pnl_fen": null,
+          "cumulative_pnl_fen": null,
+          "status": "partial",
+          "reason": "MF004:1：2026-10-20有效净值未公布或缺失"
+        },
+        {
+          "product_id": "MW001",
+          "product_name": "模拟清泉现金理财",
+          "period_pnl_fen": null,
+          "cumulative_pnl_fen": null,
+          "status": "partial",
+          "reason": "MW001:1：2026-10-20有效净值未公布或缺失"
+        },
+        {
+          "product_id": "MW002",
+          "product_name": "模拟远山债券理财",
+          "period_pnl_fen": null,
+          "cumulative_pnl_fen": null,
+          "status": "partial",
+          "reason": "MW002:1：2026-10-20有效净值未公布或缺失"
+        },
+        {
+          "product_id": "MW003",
+          "product_name": "模拟海岚均衡理财",
+          "period_pnl_fen": null,
+          "cumulative_pnl_fen": null,
+          "status": "partial",
+          "reason": "MW003:1：2026-10-20有效净值未公布或缺失"
+        }
+      ],
+      "data_source": "simulated_bank_actual_settlements",
+      "valuation_as_of": null,
+      "formula_version": "actual-settlement-replay-v1"
+    }
+  },
+  "operator_browser_reprepare": {
+    "source": "Separate 3012 fixed-A environment; projection of persisted mapping using prepared_view field names, not a complete captured HTTP response; execution_plan omitted deliberately.",
+    "mapping": {
+      "portfolio_id": "isolated-portfolio",
+      "portfolio_version": 10,
+      "execution_plan_id": "WP43f8bc3752e646a4ac209c9fa787586f",
+      "execution_plan_version": 2,
+      "actions": [
+        {
+          "account_id": "A1",
+          "product_id": "MW001",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MW001",
+          "share_class": null,
+          "bucket": "cash_management",
+          "target_ratio_total": "0.20",
+          "target_fen": 400000,
+          "current_fen": 0,
+          "difference_fen": 400000,
+          "direction": "purchase",
+          "amount_fen": 400000,
+          "units": "0.0000",
+          "status": "READY"
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MW002",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MW002",
+          "share_class": null,
+          "bucket": "stable",
+          "target_ratio_total": "0.10",
+          "target_fen": 200000,
+          "current_fen": 0,
+          "difference_fen": 200000,
+          "direction": "purchase",
+          "amount_fen": 200000,
+          "units": "0.0000",
+          "status": "READY"
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF002",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF002",
+          "share_class": null,
+          "bucket": "stable",
+          "target_ratio_total": "0.10",
+          "target_fen": 200000,
+          "current_fen": 0,
+          "difference_fen": 200000,
+          "direction": "purchase",
+          "amount_fen": 200000,
+          "units": "0.0000",
+          "status": "READY"
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MW003",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MW003",
+          "share_class": null,
+          "bucket": "stable",
+          "target_ratio_total": "0.10",
+          "target_fen": 200000,
+          "current_fen": 0,
+          "difference_fen": 200000,
+          "direction": "purchase",
+          "amount_fen": 200000,
+          "units": "0.0000",
+          "status": "READY"
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF003",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF003",
+          "share_class": null,
+          "bucket": "growth",
+          "target_ratio_total": "0.20",
+          "target_fen": 400000,
+          "current_fen": 0,
+          "difference_fen": 400000,
+          "direction": "purchase",
+          "amount_fen": 400000,
+          "units": "0.0000",
+          "status": "READY"
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF004",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF004",
+          "share_class": null,
+          "bucket": "growth",
+          "target_ratio_total": "0.15",
+          "target_fen": 300000,
+          "current_fen": 0,
+          "difference_fen": 300000,
+          "direction": "purchase",
+          "amount_fen": 300000,
+          "units": "0.0000",
+          "status": "READY"
+        },
+        {
+          "account_id": "A1",
+          "product_id": "MF005",
+          "product_version": 1,
+          "disclosure_version": 1,
+          "family_id": "MF005",
+          "share_class": null,
+          "bucket": "growth",
+          "target_ratio_total": "0.15",
+          "target_fen": 300000,
+          "current_fen": 0,
+          "difference_fen": 300000,
+          "direction": "purchase",
+          "amount_fen": 300000,
+          "units": "0.0000",
+          "status": "READY"
+        }
+      ],
+      "stage": "BUY"
+    }
+  }
+}

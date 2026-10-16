@@ -46,7 +46,7 @@ def liquidity_days(product: dict) -> int:
 def allocate(products: list[dict], *, budget_fen: int, reserve_fen: int,
              capacity: int, horizon_days: int, excluded: list[str], purchase_allowed: bool = True,
              exposure_fen: dict[str, int] | None = None, max_items: int = 3, full_investment: bool = False) -> dict:
-    """费用包含在每笔总支出，最多5笔，保留未分配尾款不强制花光。"""
+    """费用包含在每笔总支出，按max_items筛选，保留未分配尾款不强制花光。"""
     if type(budget_fen) is not int or type(reserve_fen) is not int or not 0 <= reserve_fen <= budget_fen:
         raise ValueError("现金保留不能超过本次预算")
     investable = budget_fen - reserve_fen

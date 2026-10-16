@@ -1,0 +1,17 @@
+.allocation-review { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e4e8f0; }
+.allocation-table { overflow-x: auto; margin: 16px 0; }
+.allocation-table table { border-collapse: collapse; width: 100%; min-width: 540px; font-size: 13px; }
+.allocation-table th,.allocation-table td { padding: 12px 8px; border-bottom: 1px solid #e4e8f0; text-align: left; }
+.allocation-table small { display: block; color: #667085; margin-top: 4px; }
+.allocation-table input { max-width: 80px; padding: 8px; }
+.allocation-input-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.allocation-table label input { font-size: 14px; }
+.allocation-buckets { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin: 20px 0; }
+.allocation-buckets article { display: grid; gap: 8px; padding: 14px; background: #f7f9fe; border: 1px solid #e4e8f0; border-radius: 10px; }
+.allocation-buckets small { color: #667085; }
+.plan-execution { margin-top: 20px; padding: 18px; border: 1px solid #dce3f8; border-radius: 12px; }
+.plan-execution button { margin: 8px 8px 8px 0; }
+.plan-execution article { padding: 14px 0; border-top: 1px solid #e4e8f0; }
+.plan-execution label { display: block; margin: 12px 0; }
+.plan-execution input[type=checkbox] { width: auto; margin-right: 8px; }
+@media(max-width:620px) { .allocation-buckets { grid-template-columns: 1fr; } }

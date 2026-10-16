@@ -1,0 +1,28 @@
+{
+  "fixture_id": "F14",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A_contract_B_actions_future",
+  "input": {
+    "filters": [
+      {
+        "mode": "general"
+      },
+      {
+        "mode": "category",
+        "category": "bond_fund"
+      },
+      {
+        "mode": "theme",
+        "theme_key": "high_dividend"
+      },
+      {
+        "mode": "category",
+        "category": "equity_fund"
+      }
+    ]
+  },
+  "expected": {
+    "no_text_parser": true
+  }
+}

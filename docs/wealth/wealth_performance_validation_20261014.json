@@ -1,0 +1,355 @@
+{
+  "code_commit": "afea5032a1d55ddecd8781c2cd02b15b14ce852c",
+  "status": "partial_performance_not_closed",
+  "startup_preload_seconds": 26.096,
+  "interfaces": [
+    {
+      "phase": "recommend",
+      "call": 1,
+      "seconds": 10.284,
+      "http": 200,
+      "pass_5s": false,
+      "codes": [
+        "000009",
+        "000003",
+        "000001"
+      ]
+    },
+    {
+      "phase": "recommend",
+      "call": 2,
+      "seconds": 10.448,
+      "http": 200,
+      "pass_5s": false,
+      "codes": [
+        "000009",
+        "000003",
+        "000001"
+      ]
+    },
+    {
+      "phase": "recommend",
+      "call": 3,
+      "seconds": 10.938,
+      "http": 200,
+      "pass_5s": false,
+      "codes": [
+        "000009",
+        "000003",
+        "000001"
+      ]
+    },
+    {
+      "phase": "plan",
+      "call": 1,
+      "seconds": 19.507,
+      "http": 200,
+      "pass_5s": false,
+      "codes": [
+        "000009",
+        "000003",
+        "014150",
+        "671030"
+      ]
+    },
+    {
+      "phase": "plan",
+      "call": 2,
+      "seconds": 19.863,
+      "http": 200,
+      "pass_5s": false,
+      "codes": [
+        "000009",
+        "000003",
+        "014150",
+        "671030"
+      ]
+    },
+    {
+      "phase": "plan",
+      "call": 3,
+      "seconds": 20.748,
+      "http": 200,
+      "pass_5s": false,
+      "codes": [
+        "000009",
+        "000003",
+        "014150",
+        "671030"
+      ]
+    },
+    {
+      "phase": "prepare",
+      "call": 1,
+      "seconds": 1.888,
+      "http": 200,
+      "pass_5s": true,
+      "targets": [
+        {
+          "code": "000009",
+          "amount_fen": 160000
+        },
+        {
+          "code": "000003",
+          "amount_fen": 640000
+        },
+        {
+          "code": "014150",
+          "amount_fen": 320000
+        },
+        {
+          "code": "671030",
+          "amount_fen": 320000
+        }
+      ]
+    },
+    {
+      "phase": "prepare",
+      "call": 2,
+      "seconds": 1.737,
+      "http": 200,
+      "pass_5s": true,
+      "targets": [
+        {
+          "code": "000009",
+          "amount_fen": 160000
+        },
+        {
+          "code": "000003",
+          "amount_fen": 640000
+        },
+        {
+          "code": "014150",
+          "amount_fen": 320000
+        },
+        {
+          "code": "671030",
+          "amount_fen": 320000
+        }
+      ]
+    },
+    {
+      "phase": "prepare",
+      "call": 3,
+      "seconds": 1.737,
+      "http": 200,
+      "pass_5s": true,
+      "targets": [
+        {
+          "code": "000009",
+          "amount_fen": 160000
+        },
+        {
+          "code": "000003",
+          "amount_fen": 640000
+        },
+        {
+          "code": "014150",
+          "amount_fen": 320000
+        },
+        {
+          "code": "671030",
+          "amount_fen": 320000
+        }
+      ]
+    },
+    {
+      "orders": 0,
+      "held_fen": 0
+    }
+  ],
+  "phase_evidence": [
+    {
+      "catalog_ms": 3189.7,
+      "assets_ms": 118.7,
+      "contexts_ms": 15.4,
+      "precheck_ms": 0,
+      "catalog_calls": 1,
+      "route": "/api/v1/wealth/portfolio/recommendations",
+      "outer_ms": 10281.4,
+      "http": 200
+    },
+    {
+      "catalog_ms": 3092.9,
+      "assets_ms": 44.9,
+      "contexts_ms": 14.7,
+      "precheck_ms": 0,
+      "catalog_calls": 1,
+      "route": "/api/v1/wealth/portfolio/recommendations",
+      "outer_ms": 10445.7,
+      "http": 200
+    },
+    {
+      "catalog_ms": 3726.2,
+      "assets_ms": 75.1,
+      "contexts_ms": 14.1,
+      "precheck_ms": 0,
+      "catalog_calls": 1,
+      "route": "/api/v1/wealth/portfolio/recommendations",
+      "outer_ms": 10934.7,
+      "http": 200
+    },
+    {
+      "catalog_ms": 5828.4,
+      "assets_ms": 89.3,
+      "contexts_ms": 65.7,
+      "precheck_ms": 0,
+      "catalog_calls": 2,
+      "route": "/api/v1/wealth/portfolio/plans",
+      "outer_ms": 19504.3,
+      "http": 200
+    },
+    {
+      "catalog_ms": 6882.0,
+      "assets_ms": 91.4,
+      "contexts_ms": 35.1,
+      "precheck_ms": 0,
+      "catalog_calls": 2,
+      "route": "/api/v1/wealth/portfolio/plans",
+      "outer_ms": 19859.6,
+      "http": 200
+    },
+    {
+      "catalog_ms": 6995.0,
+      "assets_ms": 129.2,
+      "contexts_ms": 31.8,
+      "precheck_ms": 0,
+      "catalog_calls": 2,
+      "route": "/api/v1/wealth/portfolio/plans",
+      "outer_ms": 20742.8,
+      "http": 200
+    },
+    {
+      "catalog_ms": 347.9,
+      "assets_ms": 138.6,
+      "contexts_ms": 48.5,
+      "precheck_ms": 160.4,
+      "catalog_calls": 5,
+      "route": "/api/v1/wealth/portfolio/plans/portfolio-mCI6G6aUCq49ytAMexwJwIfad1M448DB/prepare",
+      "outer_ms": 1884.8,
+      "http": 200
+    },
+    {
+      "catalog_ms": 335.8,
+      "assets_ms": 136.3,
+      "contexts_ms": 41.2,
+      "precheck_ms": 121.4,
+      "catalog_calls": 5,
+      "route": "/api/v1/wealth/portfolio/plans/portfolio-mHpow6Cuu-bbAIrGJGfusZlcuDvu2Ye8/prepare",
+      "outer_ms": 1734.6,
+      "http": 200
+    },
+    {
+      "catalog_ms": 341.0,
+      "assets_ms": 132.2,
+      "contexts_ms": 43.1,
+      "precheck_ms": 117.9,
+      "catalog_calls": 5,
+      "route": "/api/v1/wealth/portfolio/plans/portfolio-ulKc1kcZSTIS898-XJw4IFhywUzJTJ6O/prepare",
+      "outer_ms": 1734.6,
+      "http": 200
+    }
+  ],
+  "phase_limits": "Audit middleware times cover protected bank calls; remaining A DTO/qualification/serialization phases not separately profiled in this budget.",
+  "pool": {
+    "directory": 27998,
+    "eligible": 13856,
+    "cash": 278,
+    "bond": 4093,
+    "mixed": 8444,
+    "equity": 1041,
+    "source": "existing frozen files and protected live bank reads; no fixture"
+  },
+  "tests": [
+    {
+      "log": "targeted-tests.log",
+      "result": "98 passed; overlapping suite, SQLite/PostgreSQL parametrized bank checks plus lifecycle unit checks"
+    },
+    {
+      "log": "final-tests.log",
+      "result": "43 passed; SQLite/PostgreSQL affected bank, joint and prepare checks after SQLite JSON change"
+    },
+    {
+      "log": "coherent-tests.log",
+      "result": "84 passed; joint dual-DB and lifecycle checks after coherent-round reuse"
+    }
+  ],
+  "external_fund_collection_requests": 0,
+  "remote_operations": 0,
+  "remaining": [
+    "recommendation still reads/builds the full protected bank offer DTO graph each request",
+    "Plan still creates full eligibility/family graph and rereads it at lifecycle final validation",
+    "static bank offer/index reuse with live lightweight bank-version proof remains unimplemented"
+  ],
+  "ui_round2": "not started; failed historical slider not suitable for human acceptance",
+  "offline_package": "unchanged configuration/evidence package reused; no repack/import",
+  "actual_risk_http": [
+    {
+      "entry": "A manual",
+      "weight": "0",
+      "http": 422,
+      "risk_refused": true
+    },
+    {
+      "entry": "A manual",
+      "weight": "0.000001",
+      "http": 422,
+      "risk_refused": true
+    },
+    {
+      "entry": "public bank",
+      "amount_fen": 0,
+      "http": 422,
+      "detail": {
+        "code": "VALIDATION_ERROR",
+        "message": "请求参数无效",
+        "issues": [
+          {
+            "loc": [
+              "body"
+            ],
+            "type": "value_error",
+            "message": "Value error, 申购必须提供金额且份额为零"
+          }
+        ]
+      }
+    },
+    {
+      "entry": "public bank",
+      "amount_fen": 1,
+      "http": 409,
+      "detail": {
+        "code": "SUITABILITY_MISMATCH",
+        "message": "产品风险或支付条件不匹配，可保留现金",
+        "issues": []
+      }
+    },
+    {
+      "entry": "public bank",
+      "amount_fen": 100000,
+      "http": 409,
+      "detail": {
+        "code": "SUITABILITY_MISMATCH",
+        "message": "产品风险或支付条件不匹配，可保留现金",
+        "issues": []
+      }
+    },
+    {
+      "old_plan_retained": true,
+      "orders": 0,
+      "held_fen": 0
+    }
+  ],
+  "original_workspace_protection": {
+    "files_checked": 577,
+    "changed_files": [],
+    "env_unchanged": true,
+    "head_unchanged": true
+  },
+  "followup_batch": {
+    "status": "blocked",
+    "precondition_http": 500,
+    "next_batch_not_run": true,
+    "reason": "full catalogue took 12.189 seconds; existing internal bank timeout raised BANK_UNREACHABLE; timeout not enlarged"
+  }
+}

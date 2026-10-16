@@ -1,0 +1,393 @@
+{
+  "fixture_id": "F11",
+  "snapshot": {
+    "schema_version": "wealth-asset-snapshot-v1",
+    "snapshot_id": "fixture-f11-snapshot",
+    "context_id": "fixture-f11",
+    "context_epoch": null,
+    "asset_scope_id": "fixture-f11-scope",
+    "account_ids": [
+      "fixture-account"
+    ],
+    "total_assets_fen": 1000000,
+    "basis_fen": 1000000,
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "business_at": "2026-10-08T12:00:00+08:00",
+    "basis_kind": "linked_bank_assets",
+    "basis_status": "fixture_only",
+    "valuation_complete": true,
+    "accounts": [
+      {
+        "account_id": "fixture-account",
+        "account_type": "savings",
+        "balance_fen": 1000000,
+        "held_fen": 0,
+        "available_fen": 1000000
+      }
+    ],
+    "positions": [],
+    "receivable_fen": 0,
+    "orders": [],
+    "assessment": null,
+    "data_versions": {
+      "contract": "v0.3",
+      "fixture": "v1"
+    },
+    "missing_fields": []
+  },
+  "plan": {
+    "schema_version": "wealth-portfolio-plan-v1",
+    "portfolio_id": "fixture-f11-plan",
+    "version": 2,
+    "snapshot_id": "fixture-f11-snapshot",
+    "asset_scope_id": "fixture-f11-scope",
+    "context_id": "fixture-f11",
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "basis_kind": "linked_bank_assets",
+    "basis_status": "fixture_only",
+    "basis_fen": 1000000,
+    "provider_id": "contract-fixture",
+    "provider_version": "v1",
+    "model_status": "fixture",
+    "buckets": [
+      {
+        "bucket": "cash_management",
+        "min_ratio": "0.15",
+        "target_ratio": "0.20",
+        "max_ratio": "0.25",
+        "target_fen": 200000,
+        "current_fen": 1000000,
+        "reason": "契约F01示例，非模型建议"
+      },
+      {
+        "bucket": "stable",
+        "min_ratio": "0.25",
+        "target_ratio": "0.30",
+        "max_ratio": "0.35",
+        "target_fen": 300000,
+        "current_fen": 0,
+        "reason": "契约F01示例，非模型建议"
+      },
+      {
+        "bucket": "growth",
+        "min_ratio": "0.45",
+        "target_ratio": "0.50",
+        "max_ratio": "0.55",
+        "target_fen": 500000,
+        "current_fen": 0,
+        "reason": "契约F01示例，非模型建议"
+      }
+    ],
+    "growth_ratio_ex_cash": "0.625",
+    "candidate_groups": [],
+    "selected_positions": [
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-CASH",
+        "name": "样例活钱产品",
+        "bucket": "cash_management",
+        "product_id": "fixture-CASH-P",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": null,
+        "target_ratio_total": "0.20",
+        "target_fen": 200000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-S1",
+        "name": "样例青禾债券",
+        "bucket": "stable",
+        "product_id": "fixture-S1-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.10",
+        "target_fen": 100000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-S2",
+        "name": "样例清岚债券",
+        "bucket": "stable",
+        "product_id": "fixture-S2-C",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "target_ratio_total": "0.10",
+        "target_fen": 100000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-S3",
+        "name": "样例远山债券",
+        "bucket": "stable",
+        "product_id": "fixture-S3-C",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "target_ratio_total": "0.10",
+        "target_fen": 100000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-G1",
+        "name": "样例星河混合",
+        "bucket": "growth",
+        "product_id": "fixture-G1-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.20",
+        "target_fen": 200000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-G2",
+        "name": "样例云帆权益",
+        "bucket": "growth",
+        "product_id": "fixture-G2-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.15",
+        "target_fen": 150000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-G3",
+        "name": "样例光合指数",
+        "bucket": "growth",
+        "product_id": "fixture-G3-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.15",
+        "target_fen": 150000,
+        "current_fen": 0
+      }
+    ],
+    "cash_residual_fen": 0,
+    "data_versions": {
+      "contract": "v0.3",
+      "fixture": "v1"
+    },
+    "missing_fields": [],
+    "reasons": [
+      "F11七家族整体目标录制，仅用于消费端核对；不运行配置模型或银行交易。"
+    ]
+  },
+  "revision": {
+    "schema_version": "wealth-portfolio-plan-v1",
+    "portfolio_id": "fixture-f11-plan",
+    "version": 3,
+    "snapshot_id": "fixture-f11-snapshot",
+    "asset_scope_id": "fixture-f11-scope",
+    "context_id": "fixture-f11",
+    "as_of": "2026-10-08T12:00:00+08:00",
+    "basis_kind": "linked_bank_assets",
+    "basis_status": "fixture_only",
+    "basis_fen": 1000000,
+    "provider_id": "contract-fixture",
+    "provider_version": "v1",
+    "model_status": "fixture",
+    "buckets": [
+      {
+        "bucket": "cash_management",
+        "min_ratio": "0.15",
+        "target_ratio": "0.20",
+        "max_ratio": "0.25",
+        "target_fen": 200000,
+        "current_fen": 1000000,
+        "reason": "契约F01示例，非模型建议"
+      },
+      {
+        "bucket": "stable",
+        "min_ratio": "0.25",
+        "target_ratio": "0.30",
+        "max_ratio": "0.35",
+        "target_fen": 300000,
+        "current_fen": 0,
+        "reason": "契约F01示例，非模型建议"
+      },
+      {
+        "bucket": "growth",
+        "min_ratio": "0.45",
+        "target_ratio": "0.50",
+        "max_ratio": "0.55",
+        "target_fen": 500000,
+        "current_fen": 0,
+        "reason": "契约F01示例，非模型建议"
+      }
+    ],
+    "growth_ratio_ex_cash": "0.625",
+    "candidate_groups": [],
+    "selected_positions": [
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-CASH",
+        "name": "样例活钱产品",
+        "bucket": "cash_management",
+        "product_id": "fixture-CASH-P",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": null,
+        "target_ratio_total": "0.20",
+        "target_fen": 200000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-S1",
+        "name": "样例青禾债券",
+        "bucket": "stable",
+        "product_id": "fixture-S1-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.15",
+        "target_fen": 150000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-S2",
+        "name": "样例清岚债券",
+        "bucket": "stable",
+        "product_id": "fixture-S2-C",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "target_ratio_total": "0.05",
+        "target_fen": 50000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-S3",
+        "name": "样例远山债券",
+        "bucket": "stable",
+        "product_id": "fixture-S3-C",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "C",
+        "target_ratio_total": "0.10",
+        "target_fen": 100000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-G1",
+        "name": "样例星河混合",
+        "bucket": "growth",
+        "product_id": "fixture-G1-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.20",
+        "target_fen": 200000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-G2",
+        "name": "样例云帆权益",
+        "bucket": "growth",
+        "product_id": "fixture-G2-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.15",
+        "target_fen": 150000,
+        "current_fen": 0
+      },
+      {
+        "account_id": "fixture-account",
+        "family_id": "fixture-G3",
+        "name": "样例光合指数",
+        "bucket": "growth",
+        "product_id": "fixture-G3-A",
+        "product_version": 1,
+        "disclosure_version": 1,
+        "share_class": "A",
+        "target_ratio_total": "0.15",
+        "target_fen": 150000,
+        "current_fen": 0
+      }
+    ],
+    "cash_residual_fen": 0,
+    "data_versions": {
+      "contract": "v0.3",
+      "fixture": "v1"
+    },
+    "missing_fields": [],
+    "reasons": [
+      "F11七家族整体目标录制，仅用于消费端核对；不运行配置模型或银行交易。"
+    ]
+  },
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A_contract_B_execution_future",
+  "input": {
+    "selection": {
+      "portfolio_id": "fixture-plan",
+      "expected_version": 1,
+      "snapshot_id": "fixture-snapshot",
+      "context_id": "fixture-context",
+      "items": [
+        {
+          "product_id": "fixture-0",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-1",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-2",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-3",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-4",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-5",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        },
+        {
+          "product_id": "fixture-6",
+          "product_version": 1,
+          "share_class": null,
+          "target_ratio_total": "0.1"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "selected_count": 7,
+    "confirmation_count": 1
+  }
+}

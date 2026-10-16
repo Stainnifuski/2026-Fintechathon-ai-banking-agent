@@ -1,6 +1,6 @@
 """理财可信页面入口；银行事实只通过内部HTTP获取。"""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,12 @@ from ..schemas.wealth import AssessmentSubmission, InvestmentCommand, PersonalCo
 from ..services.orchestration import wealth_plan, wealth_profile, wealth_execution
 from ..schemas.wealth import WealthResearchQuery,WealthContextChange,StrictRequest
 from pydantic import Field
+from ..schemas.wealth_selection import PortfolioPrepare
+from ..schemas.wealth_assets import AssetSummary
+from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
+from ..schemas.wealth_redemption import RedemptionRequest
+from ..schemas.wealth_action import WealthActionV1, WealthActionResultV1
+from ..services.orchestration.wealth_portfolio_source import get_portfolio_source
 
 
 router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
@@ -23,6 +29,74 @@ router = APIRouter(prefix="/api/v1/wealth", tags=["wealth"])
 def get_wealth_bank() -> HttpWealthBankApi:
     """可替换HTTP客户端用于隔离集成测试。"""
     return HttpWealthBankApi()
+
+
+async def require_current_portfolio(http_request,db,user_id,plan_id):
+    """Unsubmitted execution cannot authorize a superseded A proposal.
+
+    Submitted/unknown original operations remain recoverable independently of
+    ephemeral conversation/portfolio records; this never cancels bank orders.
+    """
+    row=await wealth_plan.owned_plan(db,user_id,plan_id)
+    if not row.data.get('portfolio_id') or any(i['status']!='AWAITING_CONFIRMATION' for i in row.data.get('items',[])):return
+    source=get_portfolio_source(http_request)
+    current=await source.owned_plan(db,user_id,row.data['portfolio_id'])
+    if (current['version'],current['snapshot_id'])!=(row.data['portfolio_version'],row.data['portfolio_snapshot_id']):
+        raise policy.WealthPolicyError('整体目标已修订，请重新准备并确认','STALE_PORTFOLIO',409)
+
+
+@router.post('/actions', response_model=WealthActionResultV1)
+async def structured_action(request: WealthActionV1, http_request: Request,
+        user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+        bank: HttpWealthBankApi = Depends(get_wealth_bank)):
+    from ..services.orchestration.wealth_actions import dispatch
+    try:
+        return await dispatch(db,user['user_id'],bank,request,
+            getattr(http_request.app.state,'wealth_action_handlers',None),
+            getattr(http_request.app.state,'wealth_portfolio_source',None))
+    except (BankApiError,policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post('/redemptions/preview')
+async def redemption_preview(request: RedemptionRequest,user:dict=Depends(get_current_user),
+        db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from uuid import uuid4
+    try:
+        converted=await bank.call('POST','/redemptions/preview',{
+            **request.model_dump(mode='json'),'subject_user_id':user['user_id'],'operation_id':'WO'+uuid4().hex})
+        view=converted['preview']
+        row=await policy.new_preview_authorization(db,user['user_id'],InvestmentCommand.model_validate(view['command']))
+        await db.commit()
+        converted['preview']={**view,'authorization_id':row.authorization_id,'authorization_status':row.status,
+                              'expires_at':policy.aware(row.expires_at).isoformat()}
+        return converted
+    except (BankApiError,policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.get('/returns', response_model=WealthReturns)
+async def actual_returns(query: ReturnsQuery = Query(), user: dict = Depends(get_current_user),
+                         bank: HttpWealthBankApi = Depends(get_wealth_bank)):
+    try:
+        return await bank.call('POST', '/returns', {**query.model_dump(mode='json'), 'subject_user_id': user['user_id']})
+    except BankApiError as error:
+        fail(error)
+
+
+@router.post('/portfolio/plans/{portfolio_id}/prepare')
+async def prepare_portfolio(portfolio_id: str, request: PortfolioPrepare, http_request: Request,
+        user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+        bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    from ..services.orchestration.wealth_selection import prepare
+    # Resolve inside the handler to preserve the established domain error shape.
+    try:
+        return await prepare(db, user['user_id'], portfolio_id, request, bank, get_portfolio_source(http_request))
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
 
 
 @router.post('/sessions')
@@ -108,9 +182,9 @@ def fail(error: BankApiError | policy.WealthPolicyError) -> None:
 
 
 @router.get('/products/{product_id}/detail')
-async def product_detail(product_id:str,period:str='1y',user:dict=Depends(get_current_user),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+async def product_detail(product_id:str,period:str='1y',product_version:int|None=Query(default=None,ge=1),user:dict=Depends(get_current_user),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
     if period not in {'1m','3m','1y'}:raise HTTPException(422,detail={'code':'INVALID_CHART_RANGE'})
-    try:return await bank.call('POST','/product-detail',{'subject_user_id':user['user_id'],'product_id':product_id,'period':period})
+    try:return await bank.call('POST','/product-detail',{'subject_user_id':user['user_id'],'product_id':product_id,'period':period,'product_version':product_version})
     except BankApiError as error:fail(error)
 
 
@@ -217,8 +291,9 @@ async def verification_mode(user: dict = Depends(get_current_user), bank: HttpWe
 
 
 @router.post("/plans/{plan_id}/preview")
-async def preview_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+async def preview_plan(plan_id: str, request: PlanVersion, http_request: Request,user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:
+        await require_current_portfolio(http_request,db,user['user_id'],plan_id)
         return await wealth_plan.preview_all(db, user["user_id"], plan_id, request.version, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
@@ -226,8 +301,9 @@ async def preview_plan(plan_id: str, request: PlanVersion, user: dict = Depends(
 
 
 @router.post("/plans/{plan_id}/confirm")
-async def confirm_plan(plan_id: str, request: PlanConfirmation, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+async def confirm_plan(plan_id: str, request: PlanConfirmation,http_request: Request, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:
+        await require_current_portfolio(http_request,db,user['user_id'],plan_id)
         return await wealth_plan.confirm_all(db, user["user_id"], plan_id, request, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
@@ -235,8 +311,9 @@ async def confirm_plan(plan_id: str, request: PlanConfirmation, user: dict = Dep
 
 
 @router.post("/plans/{plan_id}/verify")
-async def verify_plan(plan_id: str, request: PlanVerification, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+async def verify_plan(plan_id: str, request: PlanVerification,http_request: Request, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:
+        await require_current_portfolio(http_request,db,user['user_id'],plan_id)
         return await wealth_plan.verify_all(db, user["user_id"], plan_id, request, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
@@ -244,11 +321,14 @@ async def verify_plan(plan_id: str, request: PlanVerification, user: dict = Depe
 
 
 @router.get("/products")
-async def products(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> list[dict]:
-    """鉴权客观产品探索。"""
+async def products(request: Request, user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """鉴权客观产品探索，复用已确认的固定比赛材料。"""
     try:
-        return await bank.products(user["user_id"])
-    except BankApiError as error:
+        source=getattr(request.app.state,'wealth_portfolio_source',None)
+        if source is not None and hasattr(source,'display_products'):
+            return await source.display_products(db,user['user_id'],bank)
+        return await bank.call('POST','/catalog',{'subject_user_id':user['user_id'],'facts_only':True,'policy_references':True})
+    except (BankApiError,policy.WealthPolicyError) as error:
         fail(error)
 
 
@@ -260,7 +340,7 @@ async def compare(product_ids: str, user: dict = Depends(get_current_user),
     if not 2 <= len(keys) <= 4 or len(set(keys)) != len(keys):
         raise HTTPException(422, detail={"code": "INVALID_COMPARISON", "message": "请选择2至4个不同产品"})
     try:
-        rows = [row for row in await bank.products(user["user_id"]) if row["product_id"] in keys]
+        rows = await bank.selected_products(user['user_id'],keys)
         if len(rows) != len(keys):
             raise HTTPException(404, detail={"code": "PRODUCT_UNAVAILABLE", "message": "部分产品不存在"})
         return rows
@@ -304,6 +384,13 @@ async def confirm_assessment(assessment_id: str, user: dict = Depends(get_curren
     except policy.WealthPolicyError as error:
         await db.rollback()
         fail(error)
+
+
+@router.get('/asset-summary', response_model=AssetSummary)
+async def asset_summary(user: dict = Depends(get_current_user), bank: HttpWealthBankApi = Depends(get_wealth_bank)):
+    """Current authorized debit scope; no caller-supplied identity or payment card."""
+    try: return await bank.call('POST', '/asset-summary', {'subject_user_id': user['user_id']})
+    except BankApiError as error: fail(error)
 
 
 @router.get("/assets")
@@ -406,6 +493,12 @@ async def cancel(operation_id: str, request: PersonalConfirmation, user: dict = 
                  bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     """撤单也需明确确认并核对当前订单摘要。"""
     try:
+        facts = await bank.assets(user['user_id'])
+        scoped_order = next((row for row in facts['orders'] if row['operation_id']==operation_id), None)
+        if scoped_order is None:
+            raise policy.WealthPolicyError('订单不属于当前资产范围','ACCOUNT_CONTEXT_MISMATCH',409)
+        if scoped_order.get('disclosure_version') != request.disclosure_version:
+            raise policy.WealthPolicyError('订单披露版本不一致，请重新核对','STALE_PLAN',409)
         current = await bank.query(user["user_id"], operation_id)
         if current["digest"] != request.digest:
             raise policy.WealthPolicyError("订单已变化", "STALE_PLAN")
@@ -466,10 +559,11 @@ async def plan_progress(plan_id: str, user: dict = Depends(get_current_user), db
 
 
 @router.post("/plans/{plan_id}/execute")
-async def execute_plan(plan_id: str, request: PlanVersion, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+async def execute_plan(plan_id: str, request: PlanVersion,http_request: Request, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
                        bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     """逐笔确认和验证全部满足后执行，纯购买批次原子占款。"""
     try:
+        await require_current_portfolio(http_request,db,user['user_id'],plan_id)
         return await wealth_plan.execute(db, user["user_id"], plan_id, request.version, bank)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()

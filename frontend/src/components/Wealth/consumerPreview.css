@@ -1,0 +1,48 @@
+.consumer-preview { max-width: 1240px; margin: 0 auto; padding-bottom: 40px; }
+.consumer-fixture-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; border: 1px solid #ebd7a5; border-radius: 12px; background: #fff9ec; color: #715522; font-size: 13px; }
+.consumer-fixture-banner span { flex: 1; min-width: 200px; }
+.consumer-fixture-banner a { color: #715522; text-decoration: underline; }
+.consumer-heading { display: block; padding: 28px 0 18px; }
+.consumer-heading h1 { margin: 4px 0 10px; font-size: clamp(24px, 3vw, 36px); letter-spacing: -.03em; }
+.consumer-heading > p:last-child { color: #667085; }
+.consumer-columns { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.consumer-columns main { min-width: 0; }
+.consumer-card { padding: 24px; background: white; border: 1px solid #e7e9f0; border-radius: 18px; margin-bottom: 18px; }
+.consumer-card h2 { font-size: 17px; margin: 0 0 16px; }
+.consumer-card p { line-height: 1.65; }
+.consumer-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.consumer-card-head > span { color: #667085; font-size: 12px; }
+.consumer-tag { background: #f1f3fa; padding: 4px 9px; border-radius: 6px; }
+.consumer-total { display: grid; gap: 8px; margin: 4px 0 22px; }
+.consumer-total strong { font-size: 32px; letter-spacing: -.04em; }
+.consumer-total small, .consumer-total span { color: #667085; font-size: 13px; }
+.consumer-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0; }
+.consumer-metrics dt { color: #667085; font-size: 12px; }
+.consumer-metrics dd { margin: 8px 0 0; font-size: 17px; font-weight: 650; }
+.consumer-note { font-size: 12px; color: #667085; }
+.consumer-entry-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.consumer-entry-grid button { display: grid; gap: 6px; text-align: left; border: 1px solid #e7e9f0; background: #fafbfe; color: #344054; padding: 16px; }
+.consumer-entry-grid button[aria-pressed="true"] { border-color: #5572ef; background: #f0f3ff; color: #3157e8; }
+.consumer-entry-grid span { font-size: 12px; font-weight: normal; color: #667085; }
+.consumer-bucket { margin: 20px 0; }
+.consumer-bucket > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.consumer-track { height: 8px; border-radius: 8px; background: #f0f2f7; margin: 10px 0 7px; overflow: hidden; }
+.consumer-track span { display: block; height: 100%; border-radius: 8px; background: #355ce8; }
+.consumer-track .cash_management { background: #31a890; }
+.consumer-track .growth { background: #8962d9; }
+.consumer-bucket small { color: #667085; font-size: 12px; }
+.consumer-sidebar { position: sticky; top: 90px; }
+.consumer-steps { padding: 0; margin: 0; list-style: none; display: grid; gap: 19px; }
+.consumer-steps li { display: flex; gap: 10px; }
+.consumer-steps li > span { width: 26px; height: 26px; border-radius: 50%; background: #f0f3ff; color: #3157e8; display: grid; place-items: center; flex-shrink: 0; font-size: 12px; }
+.consumer-steps strong { font-size: 13px; }
+.consumer-steps small { display: block; color: #667085; font-size: 11px; margin-top: 4px; line-height: 1.5; }
+.consumer-empty { padding: 22px; border: 1px dashed #cbd3e2; border-radius: 10px; color: #667085; }
+.consumer-warning { padding: 12px; background: #fff6e8; color: #8b5917; border-radius: 8px; }
+.consumer-filter-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.consumer-manual-form { padding: 18px; margin: 20px 0; border: 1px solid #dce3f8; border-radius: 12px; background: #f8faff; }
+.consumer-preview .wealth > .wealth-layout { grid-template-columns: 1fr; }
+.consumer-preview .wealth > .wealth-title { align-items: start; }
+.consumer-preview .wealth { box-shadow: none; margin: 0; padding: 0; border: 0; }
+@media (max-width: 1000px) { .consumer-columns { grid-template-columns: 1fr; } .consumer-sidebar { position: static; display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; } }
+@media (max-width: 620px) { .consumer-card { padding: 18px; } .consumer-metrics { grid-template-columns: repeat(2, 1fr); } .consumer-sidebar { display: block; } .consumer-entry-grid { grid-template-columns: 1fr; } }

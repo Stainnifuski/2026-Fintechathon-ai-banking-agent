@@ -1,0 +1,30 @@
+.product-picker { min-width: 0; container-type: inline-size; }
+.picker-group { margin-top: 24px; }
+.picker-group h3, .picker-selection h3 { margin: 0 0 12px; font-size: 15px; }
+.picker-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.picker-card { padding: 16px; border: 1px solid #e0e5ef; border-radius: 12px; min-width: 0; overflow-wrap: anywhere; }
+.picker-card.selected { border-color: #5572ef; background: #f8faff; }
+.picker-check, .picker-compare-options label { display: flex; gap: 8px; align-items: start; cursor: pointer; }
+.picker-check input, .picker-compare-options input { width: auto; margin: 3px 0 0; }
+.picker-check strong { font-size: 14px; }
+.picker-share { margin-top: 12px; display: grid; gap: 4px; }
+.picker-share > span { color: #3157e8; font-size: 13px; }
+.picker-share small, .picker-performance small, .picker-selection small, .picker-comparison small { display: block; color: #667085; font-size: 11px; margin-top: 4px; }
+.picker-performance { padding: 10px; background: #f3f5fa; border-radius: 8px; }
+.picker-performance strong { font-size: 13px; }
+.picker-fees, .picker-class-note { font-size: 12px; line-height: 1.65; }
+.picker-class-note { color: #667085; }
+.picker-class-note summary { cursor: pointer; }
+.picker-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.picker-actions button { font-size: 12px; padding: 8px 10px; }
+.picker-selection { border: 1px solid #d7dff7; padding: 18px; border-radius: 12px; margin-top: 24px; background: #f8faff; }
+.picker-selection ul { padding: 0; list-style: none; }
+.picker-selection li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid #e0e5ef; }
+.picker-selection li strong { font-size: 13px; }
+.picker-selection button { font-size: 12px; }
+.picker-comparison { max-width: 960px !important; }
+.picker-compare-options { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0; }
+.picker-comparison table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.picker-comparison td, .picker-comparison th { padding: 12px; border-bottom: 1px solid #e0e5ef; text-align: left; vertical-align: top; min-width: 135px; }
+@media (max-width: 680px) { .picker-cards { grid-template-columns: 1fr; } .picker-selection li { align-items: start; flex-wrap: wrap; } }
+@container (max-width: 600px) { .picker-cards { grid-template-columns: 1fr; } }

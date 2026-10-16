@@ -59,6 +59,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await init_db()
         logger.info("正在加载种子数据...")
         await seed_data()
+        # Material initialization is separate from request latency. Missing
+        # offline material keeps the ordinary app alive, but A reads fail 503;
+        # there is never a fixture fallback.
+        try:
+            initialized=await app.state.wealth_portfolio_source.preload()
+            logger.info('Portfolio immutable index ready: %s',initialized)
+        except Exception as error:
+            logger.warning('Portfolio material unavailable: %s',type(error).__name__)
         workers.append(asyncio.create_task(
             scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()), name="scheduled-transfer-loop"))
         workers.append(asyncio.create_task(settlement_loop(AsyncSessionLocal), name="wealth-settlement-loop"))
@@ -87,6 +95,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(wealth_tasks_router)
+from .routers.wealth_portfolio import router as portfolio_router
+from .services.orchestration.wealth_portfolio_joint import install as install_portfolio
+from pathlib import Path
+install_portfolio(app,Path(__file__).resolve().parents[2])
+app.include_router(portfolio_router)
 
 # ──────────────────── 中间件 ────────────────────
 
@@ -129,4 +142,5 @@ app.include_router(calendar_router)
 @app.get("/health", tags=["system"])
 async def health_check() -> dict:
     """健康检查接口。"""
-    return {"status": "ok", "service": "AI Banking Agent API", "version": "0.1.0"}
+    return {"status": "ok", "service": "AI Banking Agent API", "version": "0.1.0",
+        "portfolio_ready":bool(getattr(app.state.wealth_portfolio_source,'ready',False))}

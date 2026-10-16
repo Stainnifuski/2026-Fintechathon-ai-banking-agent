@@ -1,0 +1,11 @@
+{
+  "version": "competition-scope-20261015-v1",
+  "real_purchase_pool": 13578,
+  "categories": {"bond": 4093, "mixed": 8444, "equity": 1041},
+  "real_money_purchase": false,
+  "real_money_status": "permanently_removed_including_dedicated_runtime_data",
+  "cash_bucket": "bank_cash_and_qualified_existing_R1_simulated_quick_products",
+  "pricing": "latest_published_observed_NAV_for_valuation; order_date_NAV_for_execution; wait_if_unpublished",
+  "guarantee_labels": false,
+  "notice": "Static evidence intersection is not a promise of runtime purchasability. Current suitability, quote, window, limits and authorization still apply."
+}

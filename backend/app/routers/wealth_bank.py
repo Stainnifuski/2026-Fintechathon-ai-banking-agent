@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.connection import get_db, DATABASE_URL
 from ..domain.wealth import CALENDAR_VERSION
+from ..domain.wealth_limits import MAX_EXECUTION_ITEMS
 from ..integrations.wealth_authorization import WealthPolicyError
 from ..schemas.wealth import StrictRequest, InvestmentCommand, InternalInvestmentSubmission, StrongVerification, PlanVerification
 from ..services.bank import wealth_service as bank
@@ -27,10 +28,49 @@ def fail(error: BankError | WealthPolicyError) -> None:
 class Subject(StrictRequest):
     subject_user_id: str = Field(max_length=32)
 
+class CatalogueSubject(Subject):
+    facts_only: bool = Field(default=False,strict=True)
+    policy_references: bool = Field(default=False,strict=True)
+    product_ids: list[str] | None = Field(default=None,max_length=256)
+
+
+from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
+
+
+class InternalReturns(ReturnsQuery, Subject):
+    pass
+
+
+from ..schemas.wealth_redemption import RedemptionRequest
+
+
+class InternalRedemption(RedemptionRequest, Subject):
+    operation_id: str = Field(min_length=8,max_length=64,pattern=r'^[a-zA-Z0-9_-]+$')
+
+
+@router.post('/redemptions/preview')
+async def redemption_preview(request: InternalRedemption, db: AsyncSession = Depends(get_db)):
+    from ..services.bank.wealth_redemption import convert
+    try:
+        return await convert(db,request.subject_user_id,RedemptionRequest.model_validate(
+            request.model_dump(exclude={'subject_user_id','operation_id'})),request.operation_id)
+    except BankError as error:
+        fail(error)
+
+
+@router.post('/returns', response_model=WealthReturns)
+async def actual_returns(request: InternalReturns, db: AsyncSession = Depends(get_db)):
+    from ..services.bank.wealth_returns import read
+    try:
+        return await read(db, request.subject_user_id, ReturnsQuery.model_validate(request.model_dump(exclude={'subject_user_id'})))
+    except BankError as error:
+        fail(error)
+
 
 class ProductDetail(Subject):
     product_id: str = Field(min_length=1,max_length=32)
     period: str = Field(default='1y',pattern=r'^(1m|3m|1y)$')
+    product_version: int | None = Field(default=None,ge=1,strict=True)
 
 
 class ExternalEvidence(Subject):
@@ -48,7 +88,7 @@ async def external_evidence(request:ExternalEvidence,db:AsyncSession=Depends(get
 @router.post('/product-detail')
 async def product_detail(request:ProductDetail,db:AsyncSession=Depends(get_db)):
     from ..services.bank.wealth_product_detail import detail
-    try:return await detail(db,request.subject_user_id,request.product_id,request.period)
+    try:return await detail(db,request.subject_user_id,request.product_id,request.period,request.product_version)
     except BankError as error:fail(error)
 
 
@@ -128,11 +168,11 @@ class Verify(Subject, StrongVerification):
 
 
 class Batch(Subject):
-    submissions: list[InternalInvestmentSubmission] = Field(min_length=1, max_length=5)
+    submissions: list[InternalInvestmentSubmission] = Field(min_length=1, max_length=MAX_EXECUTION_ITEMS)
 
 
 class VerifyBatch(Subject, PlanVerification):
-    authorization_ids: list[str] = Field(min_length=1, max_length=5)
+    authorization_ids: list[str] = Field(min_length=1, max_length=MAX_EXECUTION_ITEMS)
     plan_id: str = Field(max_length=64)
 
 
@@ -208,7 +248,7 @@ async def fund_detail(request: FundDetail, background: BackgroundTasks, db: Asyn
         identity = await db.get(funds.Directory, request.code)
         if identity is None: raise ValueError('FUND_NOT_IN_DIRECTORY')
         if request.fetch_missing and os.getenv('WEALTH_FUND_ON_DEMAND_ENABLED') == 'true':
-            for kind in ['money_yield' if '货币' in identity.fund_type else 'history', 'status', 'fees']:
+            for kind in ['history', 'status', 'fees']:
                 if await funds.claim(db, request.code, kind):
                     background.add_task(funds.refresh, async_sessionmaker(db.bind, expire_on_commit=False), request.code, kind)
         result = await funds.detail(db, request.code)
@@ -287,18 +327,38 @@ async def products(db: AsyncSession = Depends(get_db)) -> list[dict]:
 @router.post("/assets")
 async def assets(request: AssetSubject, db: AsyncSession = Depends(get_db)) -> dict:
     """内部本人银行资产事实。"""
+    from ..services.bank.wealth_asset_summary import begin_read
+    from ..services.bank.wealth_quotes import refresh_scope
+    await refresh_scope(db,request.subject_user_id,account_id=request.account_id)
+    await begin_read(db)
     return await bank.assets(db, request.subject_user_id, request.account_id)
 
 
+@router.post('/asset-summary')
+async def asset_summary(request: Subject, db: AsyncSession = Depends(get_db)) -> dict:
+    from ..services.bank.wealth_asset_summary import read
+    from ..services.bank.wealth_quotes import refresh_scope
+    await refresh_scope(db,request.subject_user_id)
+    try: return await read(db, request.subject_user_id)
+    except BankError as error: fail(error)
+
+
 @router.post("/catalog")
-async def contextual_catalog(request: Subject, db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await bank.products(db, request.subject_user_id)
+async def contextual_catalog(request: CatalogueSubject, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    import logging
+    logging.getLogger(__name__).info('Catalogue read: full=%s; selected_codes=%d',request.product_ids is None,len(request.product_ids or []))
+    if request.product_ids:
+        from ..services.bank.wealth_quotes import refresh_scope
+        await refresh_scope(db,request.subject_user_id,codes=request.product_ids)
+    return await bank.products(db, request.subject_user_id,facts_only=request.facts_only,policy_references=request.policy_references,product_ids=request.product_ids)
 
 
 @router.post("/precheck")
 async def precheck(request: Precheck, db: AsyncSession = Depends(get_db)) -> dict:
     """服务器重算估算和资格，不修改余额。"""
     try:
+        from ..services.bank.wealth_quotes import refresh_scope
+        await refresh_scope(db,request.subject_user_id,codes=[request.command.product_id],account_id=request.command.account_id)
         return await bank.precheck(db, request.subject_user_id, request.command)
     except (BankError, WealthPolicyError) as error:
         fail(error)

@@ -58,7 +58,7 @@ async def message(db: AsyncSession, user_id: str, bank: HttpWealthBankApi,
         from .wealth_dialogue import message as respond
         return await respond(db,user_id,bank,text,session_id,version,client_message_id or uuid4().hex)
     if re.search(r"验证码|TOTP|口令|密码|忽略.*(风控|授权|规则)|绕过.*验证|代答|替我.*(问卷|评估)|提高.*等级", text, re.I) or re.fullmatch(r"\d{6}", text.strip()):
-        return {"mode": "offline", "kind": "clarification", "message": "请通过可信验证组件操作；理财对话不接收凭据或绕过安全规则。"}
+        return {"mode": "offline", "kind": "refusal", "message": "请通过可信验证组件操作；理财对话不接收凭据或绕过安全规则。"}
     session = await db.get(WealthConversationORM, session_id) if session_id else None
     if session_id and (session is None or session.user_id != user_id):
         raise WealthPolicyError("会话不存在", "NOT_FOUND", 404)

@@ -1,0 +1,13 @@
+{
+  "fixture_id": "F15",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "A_contract_B_execution_future",
+  "input": {
+    "llm_enabled": false
+  },
+  "expected": {
+    "model_call_count": 0,
+    "full_manual_flow_required": true
+  }
+}

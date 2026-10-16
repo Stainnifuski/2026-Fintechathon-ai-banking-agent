@@ -32,8 +32,8 @@ class Totals(BaseModel):
     transfer_in_fen: int = 0
     transfer_out_fen: int = 0
     salary_fen: int = 0
-    investment_purchase_fen: int = 0
-    investment_redemption_fen: int = 0
+    investment_purchase_fen: Literal[0] = Field(default=0, description="兼容字段；理财申购不参与账单报告，恒为0")
+    investment_redemption_fen: Literal[0] = Field(default=0, description="兼容字段；理财赎回不参与账单报告，恒为0")
     count: int = 0
     consumption_count: int = 0
     unknown_count: int = 0
@@ -70,6 +70,7 @@ from .bill_insights import BillTransaction, ChangeExplanation
 
 class BillAnalysis(BaseModel):
     query: BillQuery
+    excluded_transaction_types: list[str] = Field(default_factory=list, description="不参与本期、对比期、统计、异常、明细和报告文本的银行业务类型")
     timezone: str = "Asia/Shanghai"
     currency: str = "CNY"
     start: datetime

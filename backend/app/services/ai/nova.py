@@ -218,7 +218,8 @@ async def offline_business(message: str, context: ToolContext | None) -> dict | 
             return {'reply': '请在现金流情景面板设置减少比例或排除的订阅，或明确说“情景减少餐饮20%”。', 'mode': 'offline', 'tool_calls': []}
     elif re.search(r"订阅.*(?:问题|分析|异常|涨|重复)|扣费.*(?:问题|涨|重复)", message):
         name = 'get_subscription_insights'
-    elif re.search(r"余额|可用资金|可用余额|占款|账户概览|多少钱可以用", message):
+    elif re.search(r"总资产|余额|可用资金|可用余额|占款|账户概览|多少钱可以用", message):
+
         name = "get_financial_overview"
     elif re.search(r"这笔|选中.*流水", message):
         name = "get_transaction"
@@ -239,6 +240,13 @@ async def offline_business(message: str, context: ToolContext | None) -> dict | 
         totals = result['data']['totals']
         reply = (f"模拟银行储蓄账户：账面余额 ¥{totals['balance_fen'] / 100:,.2f}，"
                  f"可用资金 ¥{totals['available_fen'] / 100:,.2f}，占款 ¥{totals['held_fen'] / 100:,.2f}。")
+        summary = result['data']['asset_summary']
+        total = summary['total_assets_fen']
+        total_text = '估值资料不完整，暂不能完整计算' if total is None else f"¥{total / 100:,.2f}"
+        reply += (f"\n首页/理财页当前授权范围总资产：{total_text}；"
+                  f"其中可用现金 ¥{summary['available_cash_fen'] / 100:,.2f}。"
+                  "总资产含持仓与赎回应收，不等于可支付现金；冻结不重复相加。"
+                  "上方储蓄现金小计与当前授权资产范围可能不同。")
     elif name == 'project_cashflow':
         data = result['data']
         reply = (f"模拟银行只读现金流：未来 {data['days']} 天，可用现金 ¥{data['opening_available_fen']/100:,.2f}，"
@@ -246,6 +254,7 @@ async def offline_business(message: str, context: ToolContext | None) -> dict | 
                  f"情景差额 ¥{data['scenario_saving_fen']/100:,.2f}。\n" + '\n'.join(data['notices']))
     elif name == 'get_subscription_insights':
         reply = '模拟银行订阅核对：\n' + '\n'.join(f"{item['merchant']}：{'；'.join(item['explanations'])}" for item in result['data']['items'])
+
     elif name == 'get_bill_analysis':
         reply = '模拟银行账单：\n' + '\n'.join(result['data']['report'])
     elif name == 'get_transaction':

@@ -1,0 +1,16 @@
+{
+  "fixture_id": "F21",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "opening_position_fen": 100000,
+    "closing_receivable_fen": 110000,
+    "next_period_cash_fen": 110000
+  },
+  "expected": {
+    "pricing_pnl_fen": 10000,
+    "arrival_pnl_fen": 0,
+    "cumulative_pnl_fen": 10000
+  }
+}

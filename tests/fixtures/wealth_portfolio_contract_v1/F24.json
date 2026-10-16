@@ -1,0 +1,14 @@
+{
+  "fixture_id": "F24",
+  "contract_version": "00-v0.3",
+  "data_status": "fixture_only",
+  "owner": "B",
+  "input": {
+    "history_cost_missing": true,
+    "daily_valuation": null
+  },
+  "expected": {
+    "daily_pnl_fen": null,
+    "status": "partial"
+  }
+}

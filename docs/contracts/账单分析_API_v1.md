@@ -12,7 +12,8 @@
 
 - 仅 completed 流水计入统计和分析明细；pending/failed/cancelled 不计入。
 - 金额字段为整数分，CNY，不使用浮点金额求和；展示时转换为元。
-- 流入：salary/transfer_in/refund/investment_redemption；流出：purchase/subscription/transfer_out/investment_purchase。投资申购和赎回只计资金流，不计消费原额或消费分类。
+- 报告流入：salary/transfer_in/refund；报告流出：purchase/subscription/transfer_out。
+- 理财申购／赎回（investment_purchase/investment_redemption）在银行账单公共查询入口排除：不参与本期或对比期的金额、净额、笔数、未知笔数、分类、趋势、异常、分析明细及报告文本。原资金流水history／单笔读取保留真实记录。以银行业务类型识别，不按备注关键词或把所有purchase消费一并排除。
 - 消费原额：purchase + subscription；净消费：消费原额减本期退款，允许为负。退款无原交易关联，不抵扣分类或历史消费；分类占比分母为消费原额。
 - 订阅交易归入订阅类别，未知消费类别归入其他。未知交易类型只计笔数，不猜测收支方向，并提示限制。
 - 全账户汇总排除能由对手账户 ID 确认的本人互转；单账户保留。历史对手仅为姓名时不推断归属。
@@ -28,15 +29,17 @@
 
 参数：period=month|year（默认 month）、date=YYYY-MM|YYYY（默认当前月／年）、account_id（可选）、category（可选 dining/shopping/transport/entertainment/subscription/other）。年份从 2000 起，不允许未来账期。
 
-返回 query、start/end_exclusive、previous_start/previous_end_exclusive、as_of、partial、timezone/currency、totals/previous_totals、change_fen/change_percent、categories、trend、anomalies、report、notices。
+返回 query、excluded_transaction_types、start/end_exclusive、previous_start/previous_end_exclusive、as_of、partial、timezone/currency、totals/previous_totals、change_fen/change_percent、categories、trend、anomalies、report、notices。excluded_transaction_types当前为investment_purchase和investment_redemption，指整个报告的排除范围。
 
 totals 含 inflow_fen、outflow_fen、net_inflow_fen、consumption_fen、refund_fen、net_consumption_fen、transfer_in_fen、transfer_out_fen、salary_fen、count、consumption_count、unknown_count。分类含金额、笔数、占比、上期金额、差额、增长率。趋势对区间内无消费的日／月补零。
+
+为旧客户端保留investment_purchase_fen／investment_redemption_fen，schema限定为0，明确不参与账单报告；这不表示原资金流水不存在或已删除。前端以“报告流入／报告流出／报告净流入”“报告内已完成明细”区分全资金流水，并提供原流水入口。
 
 ### GET /api/v1/bills/transactions
 
 相同筛选参数，另加 page>=1（默认 1）、page_size=1..100（默认 20）、tx_ids（可选，逗号分隔的异常证据 ID）、as_of（可选，带时区且不晚于现在）。前端传分析结果的 as_of，使明细使用相同时间上限。
 
-返回 items/total/page/page_size。按 timestamp、tx_id 倒序稳定排列。tx_ids 仍受用户、账户、账期和分类过滤，不会绕过权限。
+返回 items/total/page/page_size。按 timestamp、tx_id 倒序稳定排列。tx_ids 仍受用户、账户、账期、业务类型排除和分类过滤，不会绕过权限或让理财记录回到报告明细。过滤在计数／分页之前完成。
 
 ### POST /api/v1/bills/messages
 
@@ -86,3 +89,5 @@ cd frontend && npm run build
 覆盖超过 500 笔、整数分、金额分解、退款超过消费、本人互转、未知类型、非完成状态、用户隔离、北京时区边界、闰年、月末夹取、零基期、分类下钻、异常证据、模型输出校验与回退、接口鉴权和只读性。PostgreSQL 聚合分支需在可用 PostgreSQL 环境单独验证，不将 SQLite 测试视为 PostgreSQL 验证。
 
 as_of 是交易时间上限，不是不可变账本快照；回填或更正数据会改变再次查询结果。暂不含导入、导出、持久化报告、实时欺诈检测。
+
+2026-10-09理财B3c变更与验证见[阶段记录](../wealth/manual_flow_b3c.md)：F19资金流水保留三笔，账单只计一笔消费；同时核对受理／撤单无完成流水、真实结算／到账原号幂等。后续如银行实际新增分红／独立费用交易类型，需同步公共排除集合和契约；当前没有为统计补造此类业务。
