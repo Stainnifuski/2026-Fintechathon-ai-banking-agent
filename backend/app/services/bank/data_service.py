@@ -3,6 +3,8 @@
 银行所有表只能在 ``backend.app.services.bank`` 包内被直接查询或修改。
 外层 HTTP 路由只接收普通 DTO，不得接触银行会话或 ORM。
 """
+from .account_scope import isolated_account_ids
+
 
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
@@ -85,7 +87,7 @@ async def _list_accounts(session: AsyncSession, user_id: str) -> list[dict]:
     accounts = (
         await session.execute(
             select(AccountORM)
-            .where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
+            .where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(isolated_account_ids()))
             .order_by(AccountORM.account_type.desc(), AccountORM.account_id)
         )
     ).scalars().all()
@@ -105,7 +107,7 @@ async def _list_accounts(session: AsyncSession, user_id: str) -> list[dict]:
 async def list_balances(
     user_id: str, account_type: str | None = None
 ) -> list[dict]:
-    statement = select(AccountORM).where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
+    statement = select(AccountORM).where(AccountORM.user_id == user_id,AccountORM.account_id.not_in(isolated_account_ids()))
     if account_type:
         statement = statement.where(AccountORM.account_type == account_type)
     async with AsyncSessionLocal() as session:
@@ -133,7 +135,7 @@ async def list_recipients(subject_user_id: str) -> list[dict]:
                     UserORM.user_id != subject_user_id,
                     UserORM.status == "active",
                     AccountORM.status == "active",
-                    AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
+                    AccountORM.account_id.not_in(isolated_account_ids()),
                 )
                 .order_by(
                     UserORM.name, AccountORM.account_type.desc(), AccountORM.account_id
@@ -466,7 +468,7 @@ async def list_transactions(user_id: str, limit: int = 50) -> list[dict]:
                 select(TransactionORM)
                 .join(AccountORM)
                 .where(AccountORM.user_id == user_id,
-                    AccountORM.account_id.not_in(select(WealthContextORM.account_id)))
+                    AccountORM.account_id.not_in(isolated_account_ids()))
                 .order_by(TransactionORM.timestamp.desc())
                 .limit(limit)
             )

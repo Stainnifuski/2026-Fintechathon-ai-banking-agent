@@ -1,4 +1,6 @@
 """Bank-owned, authenticated billing reads; no ledger mutations or model calls."""
+from .account_scope import isolated_account_ids
+
 import calendar
 import re
 from collections import defaultdict
@@ -88,7 +90,7 @@ def bounds(query: BillQuery, now: datetime | None = None) -> dict:
 async def scope(db: AsyncSession, user_id: str, query: BillQuery):
     from ...models.wealth_research import WealthContextORM
     accounts = list((await db.scalars(select(AccountORM.account_id).where(
-        AccountORM.user_id == user_id, AccountORM.account_id.not_in(select(WealthContextORM.account_id))))).all())
+        AccountORM.user_id == user_id, AccountORM.account_id.not_in(isolated_account_ids())))).all())
     if query.account_id and query.account_id not in accounts:
         raise BankError("账户不存在或无权访问", "ACCOUNT_NOT_FOUND", 404)
     predicates = [Tx.account_id.in_([query.account_id] if query.account_id else accounts),

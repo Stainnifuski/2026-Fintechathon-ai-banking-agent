@@ -1,4 +1,6 @@
 """Subscription charge evidence. Links only by owned debit account and exact merchant."""
+from .account_scope import isolated_account_ids
+
 from collections import defaultdict
 from sqlalchemy import select
 from ...models.subscription import SubscriptionORM
@@ -25,7 +27,7 @@ async def subscription_insights(db, user_id, query: BillQuery, *, now=None):
     from ...models.wealth_research import WealthContextORM
     subs = (await db.scalars(select(SubscriptionORM).join(AccountORM, AccountORM.account_id == SubscriptionORM.debit_account_id).where(
         SubscriptionORM.user_id == user_id, AccountORM.user_id == user_id,
-        AccountORM.account_id.not_in(select(WealthContextORM.account_id)),
+        AccountORM.account_id.not_in(isolated_account_ids()),
         *([AccountORM.account_id == query.account_id] if query.account_id else [])))).all()
     for sub in subs:
         groups[(sub.debit_account_id, sub.merchant_name)]['subscriptions'].append(sub)

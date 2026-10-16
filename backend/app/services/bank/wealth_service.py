@@ -368,8 +368,9 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     active = await selected(db, user_id)
     product_key = f'{row.rules.get("dataset_id")}:{row.rules.get("dataset_version")}'
     same_run = bool(context and active and context.user_id==active.user_id and
-        context.data.get('disposable') is True and active.data.get('disposable') is True and
-        context.data.get('run_id',context.context_id)==active.data.get('run_id',active.context_id))
+        ((context.data.get('account_scope') == 'shared_bank' and active.context_id == context.context_id) or
+         (context.data.get('disposable') is True and active.data.get('disposable') is True and
+          context.data.get('run_id',context.context_id)==active.data.get('run_id',active.context_id))))
     from ...domain.wealth_bank_portfolio_bundle import authorized_dataset_keys
     if ((context and (active is None or not same_run or product_key not in authorized_dataset_keys(context)))
             or (not context and (active is not None or row.rules.get("dataset_id")))):
@@ -708,9 +709,13 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
     else:
         context = await selected(db, user_id)
     now = await business_now(db, context.account_id if context else None)
-    sandbox_accounts = set((await db.scalars(select(WealthContextORM.account_id).where(WealthContextORM.user_id == user_id))).all())
+    from .account_scope import isolated_account_ids, is_shared
+    sandbox_accounts = set((await db.scalars(isolated_account_ids().where(WealthContextORM.user_id == user_id))).all())
     group_accounts = {context.account_id} if context else set()
-    if context:
+    if is_shared(context):
+        group_accounts = {a.account_id for a in (await db.scalars(select(AccountORM).where(
+            AccountORM.user_id == user_id, AccountORM.account_id.not_in(isolated_account_ids())))).all()}
+    elif context:
         peers=(await db.scalars(select(WealthContextORM).where(WealthContextORM.user_id==user_id))).all()
         run_scope=context.data.get('run_id',context.context_id)
         group_accounts={peer.account_id for peer in peers if peer.data.get('disposable') is True and
@@ -769,7 +774,7 @@ async def assets(db: AsyncSession, user_id: str, account_id: str | None = None) 
         "valuation_complete": all(lot["market_value_fen"] is not None for lot in lots),
         "business_at": now.isoformat(), "as_of": utc_now().isoformat(),
         "context_id": context.context_id if context else "legacy-v1",
-        "scope": "disposable_simulation" if context else "ordinary",
+        "scope": "disposable_simulation" if context and not is_shared(context) else "ordinary",
         "notice": "比赛模拟环境／模拟资金；外部资产不计入银行可交易资金"}
     if account_id is None:
         from .wealth_asset_summary import build
