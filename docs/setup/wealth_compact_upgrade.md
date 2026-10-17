@@ -18,7 +18,7 @@
 
 Docker环境自动设置`WEALTH_CATALOG_AUTO_UPGRADE=true`。原生Python环境需要安装依赖、提供备份工具，并显式配置该开关。固定资料安装器本身不改数据库，启动时的银行升级才修改数据库。运行配置中的DATABASE_URL不被升级器改写。
 
-本机私有SQLite覆盖仍继续使用已选账本；这不代表队友的PostgreSQL会被切换为SQLite。私有`.deps/bank-runtime.override.yml`若存在，启动器会明确复用；不要把它发送给队友。
+本机已按用户确认迁移到独立PostgreSQL合并副本，3000不再使用SQLite。原PG账户本金为准，SQLite有效理财记录及占款映射到原用户/账户，研究初始化本金不叠加。原PG库及SQLite备份保留，详见`docs/validation/postgres_cutover_20261017.md`。私有`.deps/bank-runtime.override.yml`由启动器复用，不发送给队友；队友继续使用自己的原PG库及正常增量升级。
 
 ## 保护与拒绝条件
 

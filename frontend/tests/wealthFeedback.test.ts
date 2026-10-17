@@ -1,6 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {wealthFeedback} from '../src/utils/wealthFeedback.ts';
+import {wealthFeedback,wealthRequestFailure} from '../src/utils/wealthFeedback.ts';
+import {isSessionAuthenticationFailure} from '../src/utils/sessionAuthentication.ts';
+
+test('expired login is an actionable authentication error, not a ratio failure',()=>{
+ const error={response:{status:401,data:{detail:'无效的认证令牌'}}};
+ assert.equal(isSessionAuthenticationFailure(error),true);
+ assert.match(wealthRequestFailure(error),/登录已过期.*重新登录/);
+ assert.doesNotMatch(wealthRequestFailure(error),/比例校验未完成|原方案保留/);
+});
+
+test('invalid MFA is not mistaken for an expired login session',()=>{
+ const error={response:{status:401,data:{detail:{code:'TOTP_INVALID',message:'验证码不正确，请重新输入'}}}};
+ assert.equal(isSessionAuthenticationFailure(error),false);
+ assert.match(wealthRequestFailure(error),/验证码不正确/);
+});
+
+test('request errors preserve actual Chinese boundary and stale-version explanations',()=>{
+ assert.match(wealthRequestFailure({response:{status:422,data:{detail:'进取比例须在41%至59%之间'}}}),/41%至59%/);
+ assert.match(wealthRequestFailure({response:{status:409,data:{detail:{code:'STALE_PLAN'}}}}),/重新核对当前方案/);
+});
 test('missing assessment explains the required questionnaire and personal confirmation',()=>{
  const message=wealthFeedback('FORMAL_ASSESSMENT_UNAVAILABLE：ASSESSMENT_REQUIRED');
  assert.match(message,/回答9题并提交/);assert.match(message,/本人确认/);assert.doesNotMatch(message,/ASSESSMENT/);

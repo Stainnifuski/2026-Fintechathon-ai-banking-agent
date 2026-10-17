@@ -43,3 +43,17 @@ test('unexpected response scope never updates the session',async()=>{
   client.setContext('one');await assert.rejects(client.request('show_product_detail',{}),/资金范围/);
   await client.request('list_positions',{});assert.equal(requests[1].session_id,undefined);
 });
+
+test('bucket-only slider revision omits empty optional selection context',async()=>{
+ const requests:ActionRequest[]=[];
+ const client=new WealthActionSession(async request=>{requests.push(request);return result(request,2);});
+ client.setContext('one');
+ const selection={portfolio_id:'plan-one',expected_version:1,snapshot_id:'snapshot-one',context_id:'one',
+   revision_kind:'adjustment',growth_ratio_ex_cash:'0.8',items:[]};
+ await client.request('revise_portfolio',{selection},{object_type:'products',ids:[]});
+ assert.equal(requests[0].selection_context,undefined);
+ assert.deepEqual(requests[0].params.selection,selection);
+ // Actual selected product identities still travel unchanged for server checks.
+ await client.request('revise_portfolio',{selection},{object_type:'products',ids:['000003:4']});
+ assert.deepEqual(requests[1].selection_context,{object_type:'products',ids:['000003:4']});
+});

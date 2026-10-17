@@ -18,7 +18,7 @@ class ExistingPortfolioAccess:
     async def resolve(self,user_id: str,context_id: str,*,write: bool,portfolio_id: str | None=None) -> dict:
         from sqlalchemy import select
         from ...models.wealth import WealthTaskORM as Task
-        from .wealth_task import require_plan_edit, TERMINAL
+        from .wealth_task import require_plan_edit, TERMINAL, current_workspace_task
         grant=await self.scope_resolver(user_id,context_id)
         if write:
             if portfolio_id:
@@ -26,6 +26,6 @@ class ExistingPortfolioAccess:
                 try:await require_plan_edit(self.db,user_id,portfolio_id)
                 except WealthPolicyError as error:raise CandidateError(error.code,error.status_code) from error
             tasks=(await self.db.scalars(select(Task).where(Task.user_id==user_id,Task.context_id==context_id,Task.status.not_in(TERMINAL)))).all()
-            if any(t.control_mode!='AGENT' or t.status=='PAUSED' or t.data.get('stop_new_submissions') or t.data.get('session_closed') for t in tasks):
+            if any(t.control_mode!='AGENT' or t.status=='PAUSED' or t.data.get('stop_new_submissions') or t.data.get('session_closed') for t in tasks if current_workspace_task(t)):
                 raise CandidateError('TASK_WRITE_BLOCKED',409)
         return grant

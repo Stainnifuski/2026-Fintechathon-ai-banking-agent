@@ -14,6 +14,58 @@ from ...integrations.wealth_authorization import lock_profile, WealthPolicyError
 TERMINAL = {'COMPLETED', 'PARTIAL_COMPLETED', 'CANCELLED', 'FAILED'}
 
 
+def current_workspace_task(task):
+    """Historical execution recovery does not lock a new manual workspace."""
+    return not task.data.get('workspace_detached')
+
+
+async def reset_workspace(db, user_id, context_id):
+    """Discard unsubmitted drafts, preserving bank receipts and uncertain submissions."""
+    from ...models.wealth import WealthOrderORM as Order
+    await lock_profile(db, user_id)
+    rows=list(await db.scalars(select(Task).where(Task.user_id==user_id,
+        Task.context_id==context_id, Task.status.not_in(TERMINAL))))
+    detached=[]
+    for task in rows:
+        if not current_workspace_task(task):continue
+        nodes=list(await db.scalars(select(Node).where(Node.task_id==task.task_id)))
+        recovering=False
+        for node in nodes:
+            if node.kind=='SUBMIT':
+                order=await db.get(Order,node.operation_id) if node.operation_id else None
+                if order and order.user_id==user_id:
+                    recovering=True
+                    node.status='COMPLETED'
+                    continue
+                consumed=await db.scalar(select(Authorization.authorization_id).where(
+                    Authorization.user_id==user_id,Authorization.operation_id==node.operation_id,
+                    Authorization.status=='CONSUMED'))
+                if consumed or node.status in {'RUNNING','UNKNOWN','COMPLETED'}:
+                    recovering=True
+                    if consumed and node.status not in {'RUNNING','UNKNOWN','COMPLETED'}:node.status='UNKNOWN'
+                    continue
+                await db.execute(update(Authorization).where(Authorization.user_id==user_id,
+                    Authorization.operation_id==node.operation_id,
+                    Authorization.status.in_(['AWAITING_CONFIRMATION','AWAITING_MFA','VALID'])).values(status='EXPIRED'))
+            if node.status not in {'COMPLETED','RUNNING','UNKNOWN'} and node.kind!='SETTLEMENT':
+                node.status='CANCELLED'
+        task.version+=1
+        task.data={**task.data,'workspace_detached':True,'session_closed':True,
+            'stop_new_submissions':True,'workspace_closed_at':utc_iso(utc_now())}
+        task.status='RECONCILING' if recovering else 'CANCELLED'
+        task.waiting_reason='SUBMITTED_RESULTS_PRESERVED' if recovering else 'WORKSPACE_RESET'
+        # Keep the graph and control receipts for audit; never cancel a bank order.
+        plan=await db.get(WealthPlanORM,task.data.get('plan_id')) if task.data.get('plan_id') else None
+        if plan and plan.user_id==user_id and not recovering:plan.status='CANCELLED'
+        detached.append(task.task_id)
+    # Detail/redemption previews may precede graph creation. They are drafts too.
+    for auth in await db.scalars(select(Authorization).where(Authorization.user_id==user_id,
+            Authorization.status.in_(['AWAITING_CONFIRMATION','AWAITING_MFA','VALID']))):
+        if await db.get(Order,auth.operation_id) is None:auth.status='EXPIRED'
+    await db.commit()
+    return {'reset':True,'detached_task_ids':detached}
+
+
 def operator_allowed(user_id: str) -> bool:
     return user_id in {value.strip() for value in os.getenv('WEALTH_OPERATOR_USER_IDS', '').split(',') if value.strip()}
 
@@ -48,7 +100,7 @@ async def create_command(db, user_id, session_id, context_id, command, *, sell_t
     await lock_profile(db, user_id)
     pending = (await db.scalars(select(Task).where(Task.user_id == user_id,
         Task.context_id == context_id, Task.status.not_in(TERMINAL)))).all()
-    active = next((t for t in pending if not t.data.get('read_only')),None)
+    active = next((t for t in pending if current_workspace_task(t) and not t.data.get('read_only')),None)
     if holding_redemption and (command.direction!='redeem' or sell_then_buy):
         raise WealthPolicyError('持仓入口仅支持独立赎回','INVALID_COMMAND',422)
     if active and not holding_redemption:
@@ -219,6 +271,7 @@ async def register_plan(db, user_id, session_id, context_id, plan, *, commit=Tru
     from sqlalchemy import delete
     await lock_profile(db,user_id)
     candidates=(await db.scalars(select(Task).where(Task.user_id==user_id,Task.context_id==context_id,Task.status.not_in(TERMINAL)))).all()
+    candidates=[t for t in candidates if current_workspace_task(t)]
     # Selecting a new planning goal preserves unrelated pending orders and graphs.
     task=next((t for t in candidates if t.data.get('plan_id')==plan['plan_id']),None)
     if task and task.data.get('plan_version')==plan['version']:
@@ -304,7 +357,7 @@ async def register_plan(db, user_id, session_id, context_id, plan, *, commit=Tru
 
 async def linked_plan_task(db,user_id,plan_id):
     rows=(await db.scalars(select(Task).where(Task.user_id==user_id,Task.status.not_in(TERMINAL)))).all()
-    return next((row for row in rows if row.data.get('plan_id')==plan_id),None)
+    return next((row for row in rows if current_workspace_task(row) and row.data.get('plan_id')==plan_id),None)
 
 
 async def require_plan_edit(db,user_id,plan_id):
@@ -321,6 +374,11 @@ async def require_write_control(db, user_id, command, authorization=None):
     linked=False
     has_transaction_task=False
     for task in tasks:
+        if not current_workspace_task(task):
+            nodes=list(await db.scalars(select(Node).where(Node.task_id==task.task_id)))
+            if any(n.operation_id==command.operation_id for n in nodes):
+                raise WealthPolicyError('旧操作轮次已结束，请重新生成预览并确认','WORKSPACE_CLOSED',409)
+            continue
         if task.data.get('read_only') and not task.data.get('plan_id'):continue
         has_transaction_task=True
         nodes = (await db.scalars(select(Node).where(Node.task_id==task.task_id))).all()

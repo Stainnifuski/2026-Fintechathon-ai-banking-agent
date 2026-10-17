@@ -10,6 +10,21 @@ from backend.app.services.bank.data_service import list_accounts
 from backend.app.services.bank.transfer_service import require_ordinary_accounts, BankError
 from tests.integration.test_wealth_bank import store
 
+async def seed_legacy_purchase_hold(db, operation_id, amount_fen):
+    """Create a real accepted legacy purchase before binding the shared context.
+
+    Both databases require the hold's referenced order; a detached hold is not
+    a valid bank state even if SQLite foreign-key enforcement is disabled.
+    """
+    from tests.integration.test_wealth_bank import assess, authorize, command
+    await assess(db)
+    cmd = command(operation_id, amount=amount_fen)
+    authorization_id = await authorize(db, cmd)
+    result = (await bank.accept_many(db, 'U1', [(cmd, authorization_id)]))[0]
+    assert result['status'] == 'ACCEPTED'
+    hold = await db.get(WealthCashHoldORM, operation_id)
+    assert hold.account_id == 'A1' and hold.amount_fen == amount_fen and hold.status == 'HELD'
+
 async def seed_dataset(db):
     db.add(WealthDatasetORM(dataset_key='shared-test:v1',dataset_id='shared-test',version='v1',
         mode='snapshot',manifest={'policy_version':'test-only'},ingested_at=datetime.now(timezone.utc)))
@@ -18,13 +33,13 @@ async def seed_dataset(db):
 @pytest.mark.asyncio
 async def test_shared_binding_preserves_money_and_cross_scene_holds(store):
     async with store() as db:
+        await seed_legacy_purchase_hold(db, 'test-pending', 12345)
         await seed_dataset(db)
         before=await db.scalar(select(func.count()).select_from(AccountORM))
         result=await research.bind_shared_account(db,'U1','A1','shared-test:v1')
         assert result['cash_issued_fen']==0
         assert await db.scalar(select(func.count()).select_from(AccountORM))==before
         db.add(WealthContextSelectionORM(user_id='U1',context_id=result['context_id'],version=1))
-        db.add(WealthCashHoldORM(operation_id='test-pending',account_id='A1',amount_fen=12345,status='HELD'))
         # Another ordinary account belongs to the same bank asset scope.
         db.add(AccountORM(account_id='A3',user_id='U1',account_type='savings',card_number='test3',balance_fen=10000))
         await db.commit()
@@ -69,10 +84,10 @@ async def test_transfer_consumes_the_same_cash_and_respects_wealth_hold(store):
     from backend.app.services.bank.bill_service import scope
     from backend.app.schemas.bills import BillQuery
     async with store() as db:
+        await seed_legacy_purchase_hold(db, 'test-held', 1900000)
         await seed_dataset(db)
         linked=await research.bind_shared_account(db,'U1','A1','shared-test:v1')
         db.add(WealthContextSelectionORM(user_id='U1',context_id=linked['context_id'],version=1))
-        db.add(WealthCashHoldORM(operation_id='test-held',account_id='A1',amount_fen=1900000,status='HELD'))
         await db.commit()
         cmd=BankTransferCommand('blocked','A1','A2',200000,'CNY','')
         cmd=replace(cmd,param_digest=_digest(cmd))

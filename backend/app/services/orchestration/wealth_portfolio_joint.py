@@ -250,10 +250,10 @@ class JointAccess:
         if write:
             if ctx.get('run_state')=='ARCHIVED':raise CandidateError('TASK_WRITE_BLOCKED',409)
             # Query the real control state; do not select an arbitrary historical session.
-            from .wealth_task import TERMINAL
+            from .wealth_task import TERMINAL, current_workspace_task
             tasks=list(await self.facts.transport.db.scalars(select(WealthTaskORM).where(
                 WealthTaskORM.user_id==user_id,WealthTaskORM.context_id==context_id,WealthTaskORM.status.not_in(TERMINAL))))
-            if any(t.control_mode!='AGENT' or t.status=='PAUSED' or t.data.get('stop_new_submissions') is True or t.data.get('session_closed') is True for t in tasks):
+            if any(t.control_mode!='AGENT' or t.status=='PAUSED' or t.data.get('stop_new_submissions') is True or t.data.get('session_closed') is True for t in tasks if current_workspace_task(t)):
                 raise CandidateError('TASK_WRITE_BLOCKED',409)
             grant['can_edit']=True # Actual service query proved no applicable control lock.
         return grant

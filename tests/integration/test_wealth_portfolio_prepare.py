@@ -89,6 +89,53 @@ async def prepare(client, source):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('target,expected', [('MF003',200),('MF002',409)])
+async def test_legacy_pending_is_not_a_global_lock_but_same_product_is_not_double_counted(store,http_store,monkeypatch,target,expected):
+    client,local,source,_=await setup(store,http_store,monkeypatch)
+    async with store() as db:
+        old=command('legacy-pending-target',amount=100000)
+        await bank.accept_many(db,'U1',[(old,await authorize(db,old))])
+    await source.record(local,[(target,'growth' if target=='MF003' else 'stable','0.10')])
+    before=await local.assets('U1')
+    response=await prepare(client,source)
+    assert response.status_code==expected,response.text
+    if expected==409:
+        assert response.json()['detail']['code']=='PENDING_PRODUCT_EXPOSURE'
+        assert 'MF002' in response.json()['detail']['message']
+    else:
+        assert response.json()['actions'][0]['product_id']=='MF003'
+    after=await local.assets('U1')
+    for key in ('cash','orders','lots'):assert before[key]==after[key]
+
+
+@pytest.mark.asyncio
+async def test_legacy_pending_still_reduces_spendable_cash(store,http_store,monkeypatch):
+    client,local,source,_=await setup(store,http_store,monkeypatch)
+    async with store() as db:
+        old=command('legacy-large-pending',amount=1800000)
+        await bank.accept_many(db,'U1',[(old,await authorize(db,old))])
+    await source.record(local,[('MF003','growth','0.20')])
+    before=await local.assets('U1')
+    response=await prepare(client,source)
+    assert response.status_code==409,response.text
+    assert response.json()['detail']['code']=='INSUFFICIENT_AVAILABLE_FUNDS'
+    assert '2000.00' in response.json()['detail']['message']
+    after=await local.assets('U1')
+    for key in ('cash','orders','lots'):assert before[key]==after[key]
+
+
+def test_pending_exposure_spans_accounts_and_versions():
+    from backend.app.services.orchestration.wealth_selection import require_no_pending_target_exposure
+    plan={'selected_positions':[{'account_id':'A1','product_id':'000003','product_version':4}]}
+    orders=[{'account_id':'A2','version_id':'000003:2','status':'PENDING_PRICING'}]
+    with pytest.raises(WealthPolicyError) as error:require_no_pending_target_exposure(plan,orders)
+    assert error.value.code=='PENDING_PRODUCT_EXPOSURE'
+    # Priced redemptions are already reflected in lots/receivables. Their cash
+    # still cannot fund a new trade, but they are not an exposure identity lock.
+    require_no_pending_target_exposure(plan,[{**orders[0],'status':'PENDING_CASH'}])
+
+
+@pytest.mark.asyncio
 async def test_revision_during_bank_precheck_cannot_save_stale_execution(store,http_store,monkeypatch):
     client,local,source,_ = await setup(store,http_store,monkeypatch)
     await source.record(local,SEVEN)

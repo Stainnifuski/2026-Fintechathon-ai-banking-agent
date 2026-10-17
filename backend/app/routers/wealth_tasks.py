@@ -67,7 +67,18 @@ async def list_tasks(user:dict=Depends(get_current_user), db:AsyncSession=Depend
     except BankApiError as error: fail(error)
     rows = (await db.scalars(select(WealthTaskORM).where(WealthTaskORM.user_id==user['user_id'])
         .order_by(WealthTaskORM.updated_at.desc()))).all()
-    return {'items':[await tasks.view(db, row) for row in rows if row.context_id==context]}
+    return {'items':[await tasks.view(db, row) for row in rows if row.context_id==context and tasks.current_workspace_task(row)]}
+
+
+@router.post('/workspace/reset')
+async def reset_workspace(user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db),
+        bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..integrations.bank_api import BankApiError
+    try:
+        context=(await bank.call('POST','/contexts',{'subject_user_id':user['user_id']}))['selected']
+        return await tasks.reset_workspace(db,user['user_id'],context)
+    except (WealthPolicyError,BankApiError) as error:
+        await db.rollback();fail(error)
 
 
 @router.get('/tasks/{task_id}')

@@ -599,10 +599,10 @@ async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
     current_facts = await assets(db, user_id)
     if not any(row['operation_id']==operation_id for row in current_facts['orders']):
         raise BankError('订单不属于当前资产范围','ACCOUNT_CONTEXT_MISMATCH',409)
-    controlled = await db.scalar(select(WealthTaskORM.task_id).where(WealthTaskORM.user_id==user_id,
+    controlled = await db.scalars(select(WealthTaskORM).where(WealthTaskORM.user_id==user_id,
         WealthTaskORM.account_id==initial.account_id,or_(WealthTaskORM.control_mode!='AGENT',WealthTaskORM.status=='PAUSED'),
         WealthTaskORM.status.not_in({'COMPLETED','PARTIAL_COMPLETED','CANCELLED','FAILED'})))
-    if controlled:
+    if any(not task.data.get('workspace_detached') for task in controlled):
         raise BankError('人工接管期间禁止通过旧入口撤单', 'TASK_WRITE_BLOCKED', 409)
     await lock_accounts(db, [initial.account_id])
     row = await owned_order(db, user_id, operation_id)

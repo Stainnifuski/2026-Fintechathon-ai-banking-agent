@@ -162,9 +162,38 @@ position binds a payment account; reading a scope grants no transfer authority.
         for account_id, account in accounts.items():
             required = sum(a['amount_fen'] for a in actions if a['account_id'] == account_id)
             if required > account['available_fen']:
-                reject(f"账户 {account_id} 可用现金不足，差额 ¥{(required-account['available_fen'])/100:.2f}；不使用其他账户或在途应收自动支付",
+                held=account.get('held_fen')
+                occupancy=f"，其中已有占款 ¥{held/100:.2f}" if held is not None else ''
+                reject(f"付款账户当前可用 ¥{account['available_fen']/100:.2f}{occupancy}；本次需支付 ¥{required/100:.2f}，还差 ¥{(required-account['available_fen'])/100:.2f}。请降低配置目标或等待原委托资金实际可用后重新规划；不会使用其他账户或尚未到账资金支付",
                        'INSUFFICIENT_AVAILABLE_FUNDS', 409)
     return actions
+
+
+def require_no_pending_target_exposure(plan, orders):
+    """Unrelated legacy orders consume available cash, not a global workspace lock.
+
+    A pending price/receipt cannot be treated as a zero holding of the same
+    product. Keep that specific target blocked until its original order resolves.
+    Compare concrete code across versions; never guess its future NAV or units.
+    """
+    targets={p['product_id'] for p in plan['selected_positions']}
+    conflicts=[]
+    for order in orders:
+        # PENDING_CASH has already reduced units and recorded a receivable in
+        # bank.assets; it must not freeze a new target or be spent as cash.
+        if order['status'] not in {'ACCEPTED','PENDING_PRICING'}:continue
+        version=order.get('version_id')
+        if not isinstance(version,str) or ':' not in version:
+            if targets:
+                reject('付款账户的旧委托资料暂不完整，请先刷新银行事实再准备预览；不会忽略已有占款',
+                    'PENDING_ORDER_IDENTITY_UNAVAILABLE',409)
+            continue
+        code=version.rsplit(':',1)[0]
+        if code in targets:conflicts.append(code)
+    if conflicts:
+        codes='、'.join(sorted(set(conflicts)))
+        reject(f'所选产品 {codes} 仍有 {len(conflicts)} 笔旧委托待处理，暂不能按当前持仓重复计算这些产品的配置差额。请等待原委托完成后重新规划，或改选其他产品并使用当前可用现金；原委托和占款保持不变',
+            'PENDING_PRODUCT_EXPOSURE',409)
 
 
 def prepared_view(row):
@@ -216,9 +245,8 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     basis = sum(a['balance_fen'] for a in real_accounts.values()) + sum(g['value'] for g in grouped.values()) + facts['receivable_fen']
     if snapshot['basis_fen'] != basis or snapshot['receivable_fen'] != facts['receivable_fen']:
         reject('整体资产或应收已变化', 'STALE_SNAPSHOT', 409)
-    if any(o['status'] in {'ACCEPTED', 'PENDING_PRICING', 'PENDING_CASH'} for o in facts['orders']):
-        reject('存在在途交易，请先核对结算后再准备整体差额', 'RECONCILIATION_REQUIRED', 409)
     executable,payment_account_id=execution_targets(plan,snapshot,request.payment_account_id)
+    require_no_pending_target_exposure(executable,facts['orders'])
     actions = difference_actions(executable, snapshot)
     catalog = {p['product_id']: p for p in products}
     # The preceding reads are detached facts. End their SQLite read snapshot
@@ -318,6 +346,7 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
     affected_accounts = {i['command']['account_id'] for i in items}
     for task in await db.scalars(select(WealthTaskORM).where(WealthTaskORM.user_id == user_id,
             WealthTaskORM.status.not_in(wealth_task.TERMINAL))):
+        if not wealth_task.current_workspace_task(task):continue
         if task.account_id in affected_accounts and (task.control_mode != 'AGENT' or task.status == 'PAUSED' or task.data.get('stop_new_submissions')):
             reject('人工接管或暂停任务尚未交还，不能准备新交易', 'TASK_WRITE_BLOCKED', 409)
     profile = await db.get(WealthProfileORM, user_id)

@@ -63,7 +63,7 @@ NOVA 已接通只读 Agent Loop：模型选择工具，服务端校验参数并�
 
 旧3010/3014前端、旧镜像和仅挂载旧dist的启动方式不再作为正式入口。Vite开发也固定3000并开启`strictPort`，遇占用直接报错，不悄悄跳端口；与Docker互斥运行。`/api/v1`及银行内部接口保留，以保护转账、账单、卡片、理财与Agent接入；这里移除的是重复/过期服务入口，不批量删除共用API。
 
-数据不会因重建镜像自动合并。默认Docker使用项目PostgreSQL卷；本机经用户选择，`.deps/bank-runtime.override.yml`沿用原3014账本的SQLite一致副本，运行于Docker本地数据卷以避免Windows挂载库慢读；原验收库和旧PostgreSQL备份保留，本地配置/账本不提交GitHub。旧数据库不通过删卷更新。详细准备、就绪检查及故障排查见[运行指南](运行指南.md)。
+数据不会因重建镜像自动合并。默认Docker使用项目PostgreSQL卷；本机已按用户确认完成独立PostgreSQL副本迁移，旧银行账户本金为准，理财事实与占款映射到本人原账户，不叠加研究账户初始化资金。3000已使用PostgreSQL；原PostgreSQL库及SQLite备份保留。本机私有配置和运行库不提交GitHub，也不复制到队友机器。旧数据库不通过删卷更新。迁移证据见[本机迁移核验](docs/validation/postgres_cutover_20261017.md)，准备及启动见[运行指南](运行指南.md)。
 
 
 ## 体验与风险授权

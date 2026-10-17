@@ -169,7 +169,7 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
             account=next(x['account_id'] for x in held if x['position_key']==target)
             tasks=list(await db.scalars(select(WealthTaskORM).where(WealthTaskORM.user_id==user_id,WealthTaskORM.account_id==account,
                 WealthTaskORM.status.not_in(['COMPLETED','CANCELLED','PARTIAL_COMPLETED','FAILED']))))
-            if any(t.control_mode!='AGENT' or t.status=='PAUSED' for t in tasks):
+            if any(t.control_mode!='AGENT' or t.status=='PAUSED' for t in tasks if not t.data.get('workspace_detached')):
                 status='blocked';message='该账户存在人工接管或暂停任务，请先处理原任务';data={'code':'TASK_CONTROL_BLOCKED','reason':message}
             else:
                 normalized=RedemptionRequest.model_validate({**draft,'position_key':target})

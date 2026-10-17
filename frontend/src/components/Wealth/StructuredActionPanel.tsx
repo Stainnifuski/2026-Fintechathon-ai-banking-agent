@@ -1,4 +1,4 @@
-import {wealthFeedback} from '../../utils/wealthFeedback';
+import {wealthFeedback,wealthRequestFailure} from '../../utils/wealthFeedback';
 import {useEffect,useState,useRef,useCallback,useMemo} from 'react';
 import * as w from '../../services/wealth';
 import {sendAction} from '../../services/wealthActions';
@@ -25,7 +25,6 @@ import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCa
 import {readPortfolioPlan,planProductSelection} from '../../services/wealthPortfolioReview';
 import StructuredPortfolioReview from './StructuredPortfolioReview';
 import './structuredActions.css';
-import TaskControlPanel from './TaskControlPanel';
 import {manualDrafts,draftScope} from '../../services/wealthManualDraft';
 import {useManualDraft} from './useManualDraft';
 type ResultSlot='planning'|'positions'|'returns'|'product'|'redemption'|'comparison';
@@ -138,7 +137,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
         setPositionState(current=>currentTableState(current,key,page.table_data.rows as w.PositionRow[],row=>row.position_key));
       }
       setResults(previous=>({...previous,[slot]:response}));return response;
-    }catch(reason){const message=(reason as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??(reason instanceof Error?reason.message:'操作失败，请刷新并核对原请求。');if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,message);if(throwOnError)throw new Error(message);}finally{if(requestNumber===latestRequest.current)setPending(null);}
+    }catch(reason){const message=wealthRequestFailure(reason);if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,message);if(throwOnError)throw new Error(message);}finally{if(requestNumber===latestRequest.current)setPending(null);}
   },[ready,reading]);
   const loadDetail=useCallback<ProductDetailLoader>(async(id,period,version)=>{
     const response=await run('show_product_detail',{product_id:id,product_version:version,period},version?{object_type:'products',ids:[`${id}:${version}`]}:undefined);
@@ -199,9 +198,8 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       {compared&&<><p>已比较{compared.length}只产品：{compared.map(p=>p.name).join('、')}。</p><button className="secondary" onClick={()=>setCompareView(true)}>重新选择并查看比较</button></>}
     </>}</section>;
   };
-  return <section aria-label="统一手动操作" className="structured-actions"><h2>直接选择要做的事</h2><p>这里使用登录账户的模拟银行资料。按钮直接传递操作参数，不需要输入聊天指令。</p><p className="consumer-note">未提交的选择与输入保留在当前界面；修改后需重新校验和预览。暂停任务不会自动提交草稿。退出登录或切换资金范围后清除。</p>
+  return <section aria-label="统一手动操作" className="structured-actions"><h2>直接选择要做的事</h2><p>这里使用登录账户的模拟银行资料。按钮直接传递操作参数，不需要输入聊天指令。</p><p className="consumer-note">未提交的选择与输入仅在本轮保留；修改后需重新校验和预览。刷新页面或重新登录后开启新轮次；已受理交易保持不变。</p>
     {!ready&&<p>正在读取本人资料…</p>}{error&&<p role="alert">{wealthFeedback(error)}</p>}{activityNotice&&<p role="status" className="consumer-warning">{activityNotice}</p>}<button className="secondary" disabled={busy} onClick={()=>{setResults({});setPositionState(initialTableState());setReturnView(null);setReload(n=>n+1);}}>刷新账户记录与操作状态</button>{reading&&ready&&<p role="status">正在刷新账户及人工控制状态…</p>}{blockedAccounts.length>0&&<p className="consumer-warning">账户 {Array.from(new Set(blockedAccounts)).join('、')} 存在人工接管或暂停任务。资料可继续查询；相关交易仍受银行权限检查。</p>}
-    {ready&&<TaskControlPanel key={`${userId}:${contextId}`} tasks={ready.tasks} disabled={busy} onChanged={()=>{setConfirm(null);setReviewing(false);setReload(n=>n+1);onActivity();}}/>}
     <fieldset disabled={busy||!ready||checkingCode}><legend>规划与推荐</legend><label>按代码手动选择<input aria-label="按代码手动选择" value={manualCode} onChange={e=>setManualCode(e.target.value)} /></label><button disabled={!manualCode.trim()} onClick={async()=>{if(!ready)return;setCheckingCode(true);try{const group=await w.get<unknown>(`/portfolio/products/${encodeURIComponent(manualCode.trim())}?context_id=${encodeURIComponent(contextId)}`);const checked=readCandidateGroup(group);const candidate=checked.items[0];if(!candidate)throw new Error('当前不能选择此产品');setCandidateGroups(previous=>[...previous,checked]);setCandidateSelection(previous=>previous.items.some(i=>i.share.product_id===candidate.share_classes[0].product_id)?previous:toggleProduct(previous,candidate));setReviewing(false);}catch(e){fail('planning',(e as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??'代码资格核对未完成');}finally{setCheckingCode(false);}}}>核对代码并加入</button><p className="consumer-note">按当前银行与01共用资格核对代码；加入仅为本人选择，不授权交易。</p><div className="consumer-entry-grid">
       <button onClick={()=>void run('plan_portfolio',{})}>理财规划</button><button onClick={()=>recommend({mode:'general'})}>产品推荐</button>
       <button onClick={()=>recommend({mode:'category',category:'bond_fund'})}>推荐债券基金</button></div>
@@ -213,7 +211,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
         onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:ids})}
         loadDetail={loadDetail} loadComparison={loadComparison} onContinue={()=>{const selected=candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class}));const keys=(rows:{product_id:string;product_version:number}[])=>rows.map(r=>`${r.product_id}:${r.product_version}`).sort().join(',');if(!portfolio||keys(selected)!==keys(portfolio.selected_positions))void run('plan_portfolio',{selected});else setReviewing(true);}}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。尚无整体方案时，继续操作会先请求配置服务创建方案。</p></>}
       {portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.snapshot_id}:${revision}:${reload}:${controlKey}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={()=>{setActivityNotice('银行操作已返回，资金与持仓已刷新；请以银行实际结果为准。');onActivity();}}
-        onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)});if(result?.status!=='ok')throw new Error(result?.message??'比例校验未完成，请重新核对。');return readPortfolioPlan(result.data,portfolio.context_id??contextId);}}
+        onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)},true);if(result?.status!=='ok')throw new Error(result?.message??'比例调整未完成，请按当前范围检查输入后重试。');return readPortfolioPlan(result.data,portfolio.context_id??contextId);}}
         onPrepare={async (plan,paymentAccountId)=>{const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id,...(paymentAccountId?{payment_account_id:paymentAccountId}:{})},undefined,true);if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}
     </fieldset>
     <fieldset disabled={busy||!ready}><legend>持仓查询</legend><button onClick={()=>list()}>查询我的持仓</button>{renderResult('positions')}</fieldset>

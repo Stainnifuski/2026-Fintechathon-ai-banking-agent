@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 import {manualDrafts} from './services/wealthManualDraft';
+import {post as wealthPost} from './services/wealth';
+import {AUTHENTICATION_EXPIRED_EVENT,authenticationExpiredMessage} from './utils/sessionAuthentication';
 import BeijingClock from './components/BeijingClock';
 import AssetSummaryCard from './components/AssetSummary';
 import {useAssetSummary} from './components/AssetSummary/useAssetSummary';
@@ -37,6 +39,23 @@ function App() {
   const [transactions, setTransactions] = useState<bank.Transaction[]>([]);
   const [bankRevision, setBankRevision] = useState(0);
   const [wealthWorkspaceEpoch,setWealthWorkspaceEpoch]=useState(0);
+  const [workspaceReady,setWorkspaceReady]=useState<string|null>(null);
+  const [workspaceError,setWorkspaceError]=useState('');
+  const [workspaceRetry,setWorkspaceRetry]=useState(0);
+  const workspaceBoot=useRef<{owner:string;promise:Promise<unknown>}|null>(null);
+  useEffect(()=>{
+    let live=true;setWorkspaceReady(null);setWorkspaceError('');
+    if(!user){workspaceBoot.current=null;return;}
+    const owner=user.user_id;
+    if(workspaceBoot.current?.owner!==owner){
+      manualDrafts.clear();
+      workspaceBoot.current={owner,promise:wealthPost('/workspace/reset',{})};
+    }
+    void workspaceBoot.current.promise.then(()=>{if(live)setWorkspaceReady(owner);}).catch(()=>{
+      if(live)setWorkspaceError('新操作轮次尚未准备完成，请点击重试；已受理交易保持不变。');
+    });
+    return()=>{live=false;};
+  },[user?.user_id,workspaceRetry]);
   const [paymentRequests, setPaymentRequests] = useState<bank.PaymentRequest[]>([]);
   const [subscriptions, setSubscriptions] = useState<bank.Subscription[]>([]);
   const [pendingSubscription, setPendingSubscription] = useState<bank.Subscription | null>(null);
@@ -457,6 +476,12 @@ function App() {
     setAppView('banking'); setBankingSection('home'); setWealthTestMode(false); setAgentOpen(false); setHighlightedPaymentRequest('');
   };
 
+  useEffect(()=>{
+    const expired=()=>{logout();setStatus(authenticationExpiredMessage);};
+    window.addEventListener(AUTHENTICATION_EXPIRED_EVENT,expired);
+    return()=>window.removeEventListener(AUTHENTICATION_EXPIRED_EVENT,expired);
+  },[]);
+
   const goToBankPayment = async (paymentRequestId?: string) => {
     setHighlightedPaymentRequest(paymentRequestId || '');
     setAppView('banking');
@@ -541,7 +566,7 @@ function App() {
         </>}
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
-        {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}><Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} /></Suspense></>}
+        {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>从需求开始，而不是从产品开始。</h1><p>研究、规划、本人确认和模拟银行执行保持分离。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}>{workspaceReady===user.user_id?<Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} />:<section className="card">{workspaceError?<><p role="alert">{workspaceError}</p><button onClick={()=>{workspaceBoot.current=null;setWorkspaceRetry(n=>n+1);}}>重新开启操作轮次</button></>:<p role="status">正在开启新的理财操作轮次…</p>}</section>}</Suspense></>}
         {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>让每一笔变化都有解释。</h1><p>账单分析保持只读，不会通过问答直接修改账户。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} /></Suspense></>}
 
         {bankingSection === 'transfer' && <><div className="page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账、收款和任务状态集中在一处。</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="grid">

@@ -22,3 +22,17 @@ def test_explicit_sqlite_test_runtime_keeps_existing_test_preference(monkeypatch
     with pytest.raises(ValueError): configure_local_test_limits('postgresql+asyncpg://unused')
     assert configure_local_test_limits('sqlite+aiosqlite:////app/runtime/banking_agent.db')
     assert (policy.ASSESSMENT_DAILY_LIMIT, policy.ASSESSMENT_ROLLING_YEAR_LIMIT) == (0, 0)
+
+
+def test_explicit_isolated_postgres_retains_local_preferences(monkeypatch):
+    monkeypatch.setenv('BANK_LOCAL_TEST_MODE', 'true')
+    monkeypatch.setenv('WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT', 'true')
+    monkeypatch.setenv('WEALTH_TEST_DISABLE_ASSESSMENT_YEAR_LIMIT', 'true')
+    monkeypatch.setattr(policy, 'ASSESSMENT_DAILY_LIMIT', 2)
+    monkeypatch.setattr(policy, 'ASSESSMENT_ROLLING_YEAR_LIMIT', 8)
+    with pytest.raises(ValueError):
+        configure_local_test_limits('postgresql+asyncpg://localhost/banking_agent')
+    with pytest.raises(ValueError):
+        configure_local_test_limits('postgresql+asyncpg://localhost/bank_local')
+    assert configure_local_test_limits('postgresql+asyncpg://localhost/bank_local_wealth_20261017')
+    assert (policy.ASSESSMENT_DAILY_LIMIT, policy.ASSESSMENT_ROLLING_YEAR_LIMIT) == (0, 0)

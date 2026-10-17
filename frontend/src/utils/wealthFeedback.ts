@@ -1,3 +1,14 @@
+import {authenticationExpiredMessage,isSessionAuthenticationFailure} from './sessionAuthentication.ts';
+
+/** Preserve the actual request failure instead of replacing it with a ratio error. */
+export function wealthRequestFailure(error:unknown):string {
+ if(isSessionAuthenticationFailure(error))return authenticationExpiredMessage;
+ const detail=(error as {response?:{data?:{detail?:string|{message?:string;code?:string}}}})?.response?.data?.detail;
+ if(typeof detail==='string')return wealthFeedback(detail);
+ if(detail?.message||detail?.code)return wealthFeedback(detail.message??detail.code!);
+ return wealthFeedback(error instanceof Error?error.message:'本次请求未完成，请稍后手动重试。');
+}
+
 /** User-facing explanations; server codes remain in network/audit evidence only. */
 export function wealthFeedback(raw:string):string {
  const rules:[string[],string][]=[

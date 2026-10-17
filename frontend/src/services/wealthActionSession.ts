@@ -20,7 +20,7 @@ export class WealthActionSession {
       const session=this.session;
       const result=await this.send({schema_version:'wealth-action-v1',request_id:'WA'+crypto.randomUUID().replace(/-/g,''),context_id:context!,
         ...(session?{session_id:session.id,expected_session_version:session.version}:{}),
-        ...(selection?{selection_context:selection}:{}),action,params});
+        ...(selection?.ids.length?{selection_context:selection}:{}),action,params});
       if(!current()||result.context_id!==context)throw new Error('资金范围已变化，请重新查询。');
       this.session={id:result.session_id,version:result.session_version};
       return result;

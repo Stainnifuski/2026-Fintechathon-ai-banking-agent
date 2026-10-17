@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import {changesAssetFacts,invalidateAssetSummary} from './assetSummaryEvents';
+import {AUTHENTICATION_EXPIRED_EVENT,isSessionAuthenticationFailure} from '../utils/sessionAuthentication';
 
 /**
  * Axios 实例封装 + 请求/响应拦截器
@@ -41,6 +42,10 @@ apiClient.interceptors.response.use(
         case 401:
           if (error.response?.data?.detail?.code !== 'TOTP_INVALID') {
             localStorage.removeItem('token');
+            if(isSessionAuthenticationFailure(error)){
+              localStorage.removeItem('bank-user');
+              window.dispatchEvent(new Event(AUTHENTICATION_EXPIRED_EVENT));
+            }
             console.error('认证失败，请重新登录');
           }
           break;
