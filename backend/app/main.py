@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -49,6 +50,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期管理：启动时初始化数据库，关闭时释放连接。"""
     workers: list[asyncio.Task] = []
     try:
+        from .database.connection import DATABASE_URL
+        from .integrations.local_runtime import configure_local_test_limits
+        app.state.local_test_mode = configure_local_test_limits(DATABASE_URL)
         mode = get_mode()
         if mode == "model":
             settings = get_settings()
@@ -57,8 +61,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("统一 LLM 服务：mode=offline")
         logger.info("正在初始化数据库...")
         await init_db()
-        logger.info("正在加载种子数据...")
-        await seed_data()
+        seed_mode = os.getenv('BANK_SEED_DEMO_DATA', 'true').lower()
+        if seed_mode not in {'true', 'false'}:
+            raise ValueError('BANK_SEED_DEMO_DATA must be true or false')
+        if seed_mode == 'true':
+            logger.info("正在加载种子数据...")
+            await seed_data()
+        else:
+            logger.info('保留现有账本；不注入通用演示种子')
         # Material initialization is separate from request latency. Missing
         # offline material keeps the ordinary app alive, but A reads fail 503;
         # there is never a fixture fallback.
@@ -143,4 +153,6 @@ app.include_router(calendar_router)
 async def health_check() -> dict:
     """健康检查接口。"""
     return {"status": "ok", "service": "AI Banking Agent API", "version": "0.1.0",
-        "portfolio_ready":bool(getattr(app.state.wealth_portfolio_source,'ready',False))}
+        "portfolio_ready":bool(getattr(app.state.wealth_portfolio_source,'ready',False)),
+        "source_revision":os.getenv('SOURCE_REVISION','source-workspace'),
+        "local_test_mode":bool(getattr(app.state,'local_test_mode',False))}

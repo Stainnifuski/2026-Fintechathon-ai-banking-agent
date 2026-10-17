@@ -32,7 +32,7 @@
 
 大资料包通过[GitHub Release](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/releases/tag/wealth-offline-data-20261015-v2)分发，安装器和文档保存在源码仓库。克隆仓库或下载自动生成的Source code ZIP不包含固定快照。
 
-1. 先克隆项目并安装Python依赖（`backend/requirements.txt`、`requirements-market.txt`）。
+1. 先克隆项目并安装Python依赖（`backend/requirements.txt`、`backend/requirements-market.txt`）。
 2. 下载[一键交接包](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/releases/download/wealth-offline-data-20261015-v2/wealth-offline-handoff-20261016.zip)，解压后双击`install_wealth_offline.cmd`，选择已克隆的项目目录。包内包含固定资料ZIP、安装器、接口说明、完整DAG和机器schema，不包含项目源码。
 3. 等待“固定离线资料安装成功”，再按项目运行指南配置数据库、演示账户和统一MFA并启动服务。
 
@@ -50,22 +50,23 @@ NOVA 已接通只读 Agent Loop：模型选择工具，服务端校验参数并�
 
 转账执行、卡片变更、订阅取消/扣费和理财操作仍在各业务工作台完成，NOVA没有资金执行、确认或授权工具，也不代表跨场景总DAG已完成。日历是本人保存数据，账户及商店交易是模拟数据；店铺查询不下单、扣款或退款。理财保留唯一当前方案、产品走势图及统一确认验证入口。
 
-正式前端只有一套：`frontend/index.html → src/main.tsx → App.tsx`，理财与其他场景共用。旧Docker镜像或本机`dist`不会因GitHub合并而更新；它们不是仓库中的第二套前端。历史01独立验收页只供隔离测试，不是用户入口。请按[当前源码启动步骤](运行指南.md#当前理财入口与源码启动)从同一份最新源码启动前后端。
+正式前端只有一套：`frontend/index.html → src/main.tsx → App.tsx`，理财与其他场景共用。旧Docker镜像或本机`dist`不会因GitHub合并而更新；它们不是仓库中的第二套前端。历史01独立验收页只供隔离测试，不是用户入口。请按[统一启动步骤](运行指南.md#准备与启动)从同一份最新源码构建前后端。
 
 
 ## 快速启动
 
 已有 `.env` 时保留原文件；首次运行复制 `.env.example`，设置独立的 `JWT_SECRET` 与 `INTERNAL_BANK_TOKEN`，不要提交密钥。无模型密钥时使用有限离线规则；默认 DeepSeek 服务只需填写一次 `LLM_API_KEY`，NOVA、转账、账单与理财共用。需要全局离线时设置 `LLM_MODE=offline`，详见[统一模型配置](docs/setup/model_configuration.md)。
 
-当前推荐前端：[http://127.0.0.1:3014/](http://127.0.0.1:3014/)；对应后端健康检查：[http://127.0.0.1:8014/health](http://127.0.0.1:8014/health)，API：[http://127.0.0.1:8014/docs](http://127.0.0.1:8014/docs)。登录后从左侧“理财”进入。
+**唯一正式入口：[http://localhost:3000/](http://localhost:3000/)**。所有场景共用同一NOVA应用、登录身份和银行账本；前端通过同源`/api/v1`调用最新后端。健康检查为[3000/health](http://localhost:3000/health)，API文档为[3000/docs](http://localhost:3000/docs)。后端8000是Docker内部端口，不作为另一个浏览器入口。
 
-这些地址需要本机对应服务已启动；GitHub不会替用户启动localhost。首次使用先安装固定资料、配置自己的数据库和合法演示账户，再按[当前源码启动步骤](运行指南.md#当前理财入口与源码启动)启动。前后端必须来自同一份最新源码，健康响应应为`portfolio_ready=true`；页面打开但资料未就绪不能算理财可用。当前无需Redis。
+首次准备：配置自己的`.env`，安装上面的固定资料包；Windows在**当前这份源码根目录**双击`start_bank.cmd`，或执行`powershell -NoProfile -File scripts/start_bank.ps1`。脚本校验资料与配置，重新构建同份源码的前后端，等待`portfolio_ready=true`后才报告成功。更新代码后再次执行即可；不要仅重启旧镜像。Linux/macOS执行`docker compose up -d --build --wait --wait-timeout 300 backend frontend`，已有本地专用账本覆盖文件时按[运行指南](运行指南.md)使用相同参数。
 
-演示种子用户为张三 `13800000001`，密码 `password123`，须已在当前数据库初始化。理财与转账、账单等场景使用同一银行账户、余额与占款，不另发一份理财现金。固定资料导入后，用`wealth_data_cli bind-account --user-id <本人ID> --account-id <本人已有借记账户ID> --dataset-key <比赛资料版本>`绑定本人已有账户；不使用旧`init`创建沙箱资金来替代共用账本。当前本机3014已绑定该用户选中的已有账户，登录后可在侧栏查看概览、转账和理财；历史隔离轮次不自动并入或复制余额。升级已有数据库先备份并遵循[理财迁移交接](docs/wealth/handoff.md)，不要删除数据卷或混跑旧扣款代码。
+全新数据库由正常启动创建演示客户/银行账户；已有账户保留。理财还须按[Docker初始化步骤](运行指南.md#理财资料与同一银行账户绑定)导入已安装资料并绑定本人已有借记账户；不新增另一份理财资金、不代填评估。演示密码获取位置：正常初始化代码`backend/app/services/bank/seed_service.py`；已有自定义账本使用原有账号，不能假定它与全新库的演示ID相同。
 
-**理财授权配置**：本人确认后选择验证器TOTP或短信验证码；沿用公共 `MFA_SMS_ENABLED`、`SMS_PROVIDER` 等配置。旧 `WEALTH_DEMO_VERIFICATION_ENABLED` 已移除，不再生效。默认短信 `mock` 为模拟发送，通过本人模拟收件箱读取验证码，仍必须校验。升级前备份数据库，启动自动迁移验证方法约束，保留旧证据和已提交交易。
+旧3010/3014前端、旧镜像和仅挂载旧dist的启动方式不再作为正式入口。Vite开发也固定3000并开启`strictPort`，遇占用直接报错，不悄悄跳端口；与Docker互斥运行。`/api/v1`及银行内部接口保留，以保护转账、账单、卡片、理财与Agent接入；这里移除的是重复/过期服务入口，不批量删除共用API。
 
-理财使用上面的固定资料版本；比赛数据导入、本人context及银行补充产品初始化见[交接文档](docs/wealth/nlp_agent_handoff_20261015.md#8-固定资料包队友如何获取与启动)。不要使用旧合成60份额初始化或启动采集worker替代当前资料安装；已有账本及订单保留。
+数据不会因重建镜像自动合并。默认Docker使用项目PostgreSQL卷；本机经用户选择，`.deps/bank-runtime.override.yml`沿用原3014账本的SQLite一致副本，运行于Docker本地数据卷以避免Windows挂载库慢读；原验收库和旧PostgreSQL备份保留，本地配置/账本不提交GitHub。旧数据库不通过删卷更新。详细准备、就绪检查及故障排查见[运行指南](运行指南.md)。
+
 
 ## 体验与风险授权
 
@@ -73,7 +74,7 @@ NOVA 已接通只读 Agent Loop：模型选择工具，服务端校验参数并�
 - 转账：输入“给手机号13800000002转300元，备注房租”，核对收款人、金额和风险等级，再操作任务卡。
 - 账单：进入账单分析查看报告、异常和流水，使用独立只读问答入口。
 - 卡片：在“卡片管理”选择操作→核对银行返回的变更明细→确认；信用卡调额、解锁、挂失还需输入验证器动态码（先在右上角绑定验证器）。演示信用卡初始为锁定，可先解锁再调额。
-- 理财：本人评估→普通/类别推荐→选品及整体配置→核对差额和披露→整份本人确认及TOTP/短信验证→查看订单、持仓及收益。在持仓表操作普通赎回或合格快赎；已受理订单不会因刷新或改方案被撤销。当前使用结构化工作台；自然语言团队通过[动作接口与DAG](docs/wealth/nlp_agent_handoff_20261015.md)接线，不能把旧聊天接口当成最新版配置入口。
+- 理财：本人评估→普通/类别推荐→选品及整体配置→核对差额和披露→整份本人确认及TOTP/短信验证→查看即时成交结果、持仓及收益。在持仓表操作普通赎回或合格快赎；已受理订单不会因刷新或改方案被撤销。当前使用结构化工作台；自然语言团队通过[动作接口与DAG](docs/wealth/nlp_agent_handoff_20261015.md)接线，不能把旧聊天接口当成最新版配置入口。
 - 花店／蛋糕店：点击左侧“生活服务”→选择花店或蛋糕店→选择商品并提交订单→返回银行接受收款申请→再次核对并确认付款→回店铺查看“交易完成”。提交订单本身不授权扣款。
 
 产品风险R1—R5、用户风险承受能力和操作权限等级是三个不同概念。绿色查询自动执行，黄色需要本人明确确认，红色需要本人确认及强验证。理财申购、普通赎回、快赎均复用三号的 `verify_second_factor()`，TOTP／短信二选一；整份方案一次验证为每笔订单写入绑定证据，改金额或版本后旧短信挑战不能用于新方案。

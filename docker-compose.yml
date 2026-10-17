@@ -1,3 +1,5 @@
+name: 2026-fintechathon-ai-banking-agent
+
 services:
   postgres:
     image: postgres:15
@@ -21,17 +23,33 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        INSTALL_MARKET_DATA: "true"
+        SOURCE_REVISION: ${SOURCE_REVISION:-unknown}
     container_name: banking-backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://bankuser:bankpass@postgres:5432/banking_agent
       BANK_API_BASE_URL: http://127.0.0.1:8000
+    volumes:
+      - type: bind
+        source: ./.deps/wealth_portfolio_data/snapshots
+        target: /app/.deps/wealth_portfolio_data/snapshots
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5)); assert h['status']=='ok' and h['portfolio_ready']"]
+      interval: 10s
+      timeout: 7s
+      start_period: 180s
+      retries: 12
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,19 +58,27 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: banking-frontend
     restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 7s
+      retries: 5
     networks:
       - banking-net
 
 volumes:
   postgres_data:
+    driver: local
+  bank_runtime_data:
     driver: local
 networks:
   banking-net:
