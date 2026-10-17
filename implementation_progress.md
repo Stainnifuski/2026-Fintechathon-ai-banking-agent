@@ -364,3 +364,14 @@ R4由专用用户ROUND2在正式浏览器九题问卷提交、本人确认得到
 08aa1bbdd678a9ec524fbc928c172e0f7c1c1fd6 refactor(wealth): simplify formal workspace and synchronize previews
 f22656925560582897c6a4c1ca52c1b3f08bf9e3 fix(wealth): align executable slider and existing bank scope safely
 最终工程文档提交见git log。私有原始日志/截图/运行库仅存集成目录.deps/round2及.deps/joint_validation；不提交。golden-api.json、catalog-api.json、guards-api.json、state-1/2/3.json、state-quick.json、各测试log及normal-compatible.err为实际证据；首次失败日志保留。state-ordinary-accepted.json是失败采集后误复制旧文件，**不是有效赎回证据**；应使用state-ordinary-current.json。
+
+
+## 2026-10-17：900基金与旧PostgreSQL增量接入
+
+- 固定真实池900（债券271、混合560、权益69）；完整清单、全目录配置及活动快照/新ZIP同步，不做全池采集或LLM开发。
+- 新离线包约1MB随源码；默认Docker启动先持久备份，再核验安装、增量升级并绑定既有借记账户，保留其他场景及历史账务。
+- 实测修复：既有v3规则冲突→发行v4；SQLite画像锁保留updated_at；旧持仓赎回用当前条款重新预览；备份原生完成再复制；后端健康后重建Nginx。
+- 当前库900代码精确匹配、池外0；12保护表全文哈希一致。3000推荐3.610s、Plan0.920s、prepare0.993s，均200且无新订单/占款。
+- 旧PG隔离副本47表原始行保留；正常HTTP张三U001、账户、两张演示卡可查；未知队友库仍受严格冲突拒绝。
+- 分组通过33/31/15/10/11项（有重叠，不相加）。最后启动与补验见docs/validation/wealth_compact_upgrade_20261017.md。本轮结果不代表所有历史测试全部重跑。
+- 已移除订单查询/撤单UI，后台交易事实必须保留。原工作区/原PG未覆盖，私有SQLite账本继续保留；不混合两套余额。后续发布与队友升级应明确源码版本。

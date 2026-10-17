@@ -14,8 +14,8 @@ try {
         } else { throw '请提供ProjectRoot。' }
     }
     if (-not $Package) {
-        $name = 'wealth-final-offline-20261015-disclosure-v2.zip'
-        foreach ($folder in @($PSScriptRoot, (Split-Path -Parent $PSScriptRoot), $ProjectRoot)) {
+        $name = 'wealth-compact-900-v1.zip'
+        foreach ($folder in @((Join-Path $ProjectRoot 'data/wealth'), $PSScriptRoot, (Split-Path -Parent $PSScriptRoot), $ProjectRoot)) {
             $candidate = Join-Path $folder $name
             if (Test-Path -LiteralPath $candidate) { $Package = $candidate; break }
         }

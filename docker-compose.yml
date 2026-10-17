@@ -37,11 +37,17 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://bankuser:bankpass@postgres:5432/banking_agent
       BANK_API_BASE_URL: http://127.0.0.1:8000
+      WEALTH_CATALOG_AUTO_UPGRADE: "true"
     volumes:
       - type: bind
         source: ./.deps/wealth_portfolio_data/snapshots
         target: /app/.deps/wealth_portfolio_data/snapshots
-        read_only: true
+        read_only: false
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.deps/upgrade_backups
+        target: /app/.deps/upgrade_backups
         bind:
           create_host_path: false
     healthcheck:

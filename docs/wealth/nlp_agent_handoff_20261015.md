@@ -1,3 +1,5 @@
+> 当前部署口径（2026-10-17）：真实基金固定为900只（债券271、混合560、权益69），另保留19个模拟银行理财定义。旧全量目录、旧Release安装及手动dataset-key步骤已由随源码资料包和PostgreSQL增量升级替代，详见 `docs/setup/wealth_compact_upgrade.md`。下文旧阶段记录仅作历史证据，不代表当前产品数量或启动方法。理财订单/撤单页面已移除；后台成交及审计事实继续保留。
+
 # 理财场景：NLP与执行Agent接入交接、完整业务DAG
 
 当前部署补充（2026-10-16，多伦多）：统一入口`http://localhost:3000`，外部Agent/脚本调用同源`/api/v1/...`；API文档`/docs`、健康`/health`。银行容器内自调用仍为8000，旧3010/3014网页及8014进程已关闭。相对API路径、JWT/内部令牌要求、本人确认及MFA边界不变。运行方法见仓库运行指南；队友须先取得本轮部署修复代码并重建，不通过重启旧镜像升级。旧端口只作为历史证据保留。
@@ -270,61 +272,13 @@ flowchart TD
 
 ## 8. 固定资料包：队友如何获取与启动
 
-### 获取和版本匹配
+当前900基金完整包直接随源码提供：`data/wealth/wealth-compact-900-v1.zip`，无需旧全池Release或Git LFS。克隆／下载源码后保留自己的`.env`和PostgreSQL卷，运行`start_bank.cmd`；启动流程先备份原库、核验安装资料、增量升级及接到本人现有借记账户，再开放3000。资料包不含开发者账号、密码、密钥或运行账本。
 
-源码已通过PR #12合入main，合并提交为`4ae64ab990bfc8d79a160be6735f54ed0bb5b7ea`；上述95b14b2是本次接口核对的修复版本。**固定包通过[GitHub Release](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/releases/tag/wealth-offline-data-20261015-v2)分发，不进入Git历史**。只下载仓库“Source code ZIP”不会带上`.deps`固定快照。下载Release中的一键交接包，或单独的资料资产：
+原生Python开发可安装项目依赖后运行`install_wealth_offline.cmd`。精确SHA256及数据版本以` scripts/install_wealth_offline.py `和`config/wealth/portfolio_content_binding_v2.json`为准。产品清单、比例与选品方法见`config/wealth/compact_pool.json`。匹配校验失败不会静默回退旧池或fixture。
 
-`wealth-final-offline-20261015-disclosure-v2.zip`
+当前原始快照版本为`85f35db0a1398dbffbe17f1c6feb6707310d1d009deb357dda709cce33cd6cfa`；API会返回包含模拟银行增补后的派生版本，上层必须使用实际返回的版本，不硬编码旧dataset-key。完整升级保护、旧持仓、卡片数据与失败恢复说明见[900产品与旧库升级](../setup/wealth_compact_upgrade.md)。
 
-SHA256：`63094dcbefbc4e92745859db095458fa6e29a10019844b17fe4bc41bc8655184`。
-
-Release正文记录匹配源码、资料DATA/DAILY、ZIP校验值和安装步骤。固定资料资产保持原SHA256；一键交接包使用独立校验值。大ZIP不例行commit进Git历史。它是开发交付资料，不是无需依赖/配置的桌面安装程序；发布数据资产不等于自动合并代码PR。
-
-### Windows一键安装固定资料
-
-队友从Release下载并解压`wealth-offline-handoff-20261016.zip`，双击根目录`install_wealth_offline.cmd`：
-
-1. 若不在源码根目录，弹窗选择已克隆并匹配版本的银行项目目录。
-2. 安装器自动找到同包ZIP，优先使用项目`.venv`/`venv`中的Python，否则使用PATH中的Python。
-3. 自动核验固定ZIP的SHA256、项目配置、资料版本及完整快照schema，再调用原安装器。配置不一致停止，不覆盖源码config；已有同版本会校验并复用。
-4. 终端显示安装成功及快照目标目录后，按项目原启动方式启动服务。
-
-本入口只安装固定资料，前提是项目Python依赖已装好；不会自动安装软件、改`.env`、初始化账户/MFA、修改数据库或启动服务。缺依赖会明确提示。macOS/Linux或需要手动排错时用下面的原CLI。
-
-机器协议补充`nlp_agent_action_schemas_20261015.json`含11种动作各自完整的独立JSON Schema；OpenAPI中params是通用对象，不能据此忽略服务端逐action的严格校验。
-
-### 手动安装（从匹配源码仓库根目录运行）
-
-先使用团队支持的Python/Node与独立数据库；安装`backend/requirements.txt`、`requirements-market.txt`，前端目录`npm ci`。密钥、数据库URL、JWT/内部银行令牌及MFA配置由队友按团队规范配置，不复制交接人的.env或运行库。
-
-PowerShell校验：
-
-```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath '<下载目录>/wealth-final-offline-20261015-disclosure-v2.zip'
-```
-
-解压到独立临时目录，不覆盖Git当前配置；包里的公开config用于校验，正常应与匹配源码一致。不匹配时先核对源码版本，不跳过校验。
-
-```shell
-python scripts/wealth_portfolio_package.py install --manifest "<解压目录>/package/d59ecfcc2ecb09e6573278d5b5f38524407f2ac72ac0051ebf7e7b63f53ff3e1.package.json"
-```
-
-安装后基础DATA=`d59ecfcc2ecb09e6573278d5b5f38524407f2ac72ac0051ebf7e7b63f53ff3e1`，DAILY=`5a1f10fea14d1691fc2341df93536d4550d03e2214f1ed390ddd7ec89dc4b5f8`。银行补充后运行DATA=`e08200a8427a1a80f635bcc993d563c9660dacb4cb590f8c67153ff919ab6e83`，DAILY=`d351efa228b2b9b0d42f77fbded651cd6eaf68463ef5fb1953ff34a85bbc91f9`。旧PORTFOLIO_DATA_VERSION/PORTFOLIO_DAILY_VERSION覆盖应移除，或两者按当前基础版本成对配置。
-
-包包含13,578普通真实基金质量交集及19个模拟银行定义；不含密码、密钥、运行数据库、原始全量缓存或真实货币产品。目录身份总数27,070不等于27,070个可交易产品；13,578也不是永久可买承诺。正文/风险/状态/价格/现金仍须运行核验。
-
-在已完成正常表结构迁移、创建合法本人演示用户及其银行账户并设置独立DATABASE_URL的前提下，按现有CLI导入资料并绑定同一银行账户，不恢复采集/worker：
-
-```shell
-python -m backend.app.services.bank.wealth_data_cli import --import-root . --file config/wealth/paper_products.json
-python -m backend.app.services.bank.wealth_data_cli bind-account --user-id <本人演示ID> --account-id <本人已有银行借记账户ID> --dataset-key real-public-paper-v1:b498da40b510a409211716f0
-python -m backend.app.services.bank.wealth_bank_supplement_cli --user-id <本人演示ID> --context-id <上一步返回context_id>
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port <后端端口>
-```
-
-设置BANK_API_BASE_URL指向实际银行后端，前端按现有Vite代理启动。仅导入数据不等于已创建登录账户、完成风险问卷或绑定MFA；这些分别完成，不能使用本机验收服务器源码中的账号当作团队生产账号。配置示例以仓库.env示例与README为准，不把本机冻结测试时钟带过去。正常启动使用真实当前时钟；隔离测试context的模拟日期与生产时钟分开。
-
-当前包已实际禁网空目录安装及逐字节重复导出通过；**不代表新队友电脑依赖、数据库和MFA自动配置完成**。在线NAV接口失败时保留最近可靠值/日期，必要时阻止依赖完整估值的确认，不保证断开互联网仍有实时行情。
+旧用户和账户ID保留，不导入本机U1测试身份或把两库余额相加；本人有效评估、确认和统一MFA仍须真实完成。订单／撤单页面移除不代表删去后台成交事实或原号恢复能力。
 
 ## 9. 建议队友的最小接线验收
 

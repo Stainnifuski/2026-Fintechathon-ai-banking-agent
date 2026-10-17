@@ -36,3 +36,26 @@ def test_pinned_source_manifest_matches_installer():
     root=Path(__file__).resolve().parents[2]
     binding=json.loads((root/'config/wealth/portfolio_content_binding_v2.json').read_bytes())
     assert binding['data_version']==installer.DATA_VERSION
+
+
+def test_shipped_compact_package_installs_twice_and_has_exact_selected_codes(tmp_path):
+    import shutil,zipfile
+    root=Path(__file__).resolve().parents[2]
+    target=tmp_path/'deployment'
+    target.mkdir();project(target)
+    shutil.copyfile(root/'scripts/wealth_portfolio_package.py',target/'scripts/wealth_portfolio_package.py')
+    archive=root/'data/wealth'/installer.PACKAGE_NAME
+    with zipfile.ZipFile(archive) as source:
+        for name in source.namelist():
+            if name.startswith('config/wealth/'):
+                dest=target/name;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(source.read(name))
+    old=target/'.deps/wealth_portfolio_data/snapshots';old.mkdir(parents=True)
+    (old/('a'*64+'.json')).write_text('retired snapshot')
+    first=installer.install_release(target,archive);again=installer.install_release(target,archive)
+    assert first['snapshot_sha256']==again['snapshot_sha256']
+    assert (target/'.deps/upgrade_backups/retired_material'/('a'*64+'.json')).exists()
+    snapshot=json.loads((old/(installer.DATA_VERSION+'.json')).read_bytes())
+    selected=json.loads((root/'config/wealth/compact_pool.json').read_bytes())
+    codes={p['product_id'] for p in snapshot['products'] if p['source_kind']=='real'}
+    assert codes==set(selected['codes']) and len(codes)==900
+    assert len(list(old.glob('*.json')))==3

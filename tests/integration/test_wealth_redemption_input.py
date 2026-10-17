@@ -21,6 +21,31 @@ async def setup_holding(store):
         await bank.settle(db,cmd.operation_id)
 
 
+@pytest.mark.asyncio
+async def test_historical_lot_after_catalogue_upgrade_uses_current_preview(store,http_store):
+    from copy import deepcopy
+    from backend.app.models.wealth import WealthProductORM,WealthProductVersionORM
+    await setup_holding(store)
+    async with store() as db:
+        old=await db.get(WealthProductVersionORM,'MF001:1')
+        original_rules=deepcopy(old.rules)
+        db.add(WealthProductVersionORM(version_id='MF001:2',product_id='MF001',version=2,name=old.name,
+            kind=old.kind,category=old.category,risk_level=old.risk_level,rules=deepcopy(old.rules),
+            disclosure={**old.disclosure,'version':2},created_at=old.created_at))
+        (await db.get(WealthProductORM,'MF001')).current_version=2
+        price=await bank.latest_nav(db,'MF001:1',await bank.business_now(db,'A1'))
+        db.add(WealthNavORM(nav_id='MF001:2:'+price.nav_date.isoformat(),version_id='MF001:2',nav_date=price.nav_date,price=price.price,available_at=price.available_at))
+        await db.commit()
+    client,_,_=http_store
+    response=await client.post('/api/v1/wealth/redemptions/preview',json=request('units',units='100.0000'))
+    assert response.status_code==200,response.text
+    assert response.json()['preview']['command']['product_version']==2
+    async with store() as db:
+        lot=await db.scalar(select(WealthLotORM));assert lot.version_id=='MF001:1' and lot.cost_fen==200000
+        assert (await db.get(WealthProductVersionORM,'MF001:1')).rules==original_rules
+        assert (await db.get(AccountORM,'A1')).balance_fen==1800000
+
+
 def request(mode='market_value',**fields):
     return dict(context_id='legacy-v1',position_key='A1:MF001:1',input_mode=mode,**fields)
 

@@ -6,10 +6,12 @@ from pathlib import Path, PurePosixPath
 import sys
 import tempfile
 import zipfile
+import shutil
+import re
 
-PACKAGE_NAME = 'wealth-final-offline-20261015-disclosure-v2.zip'
-PACKAGE_SHA = '63094dcbefbc4e92745859db095458fa6e29a10019844b17fe4bc41bc8655184'
-DATA_VERSION = 'd59ecfcc2ecb09e6573278d5b5f38524407f2ac72ac0051ebf7e7b63f53ff3e1'
+PACKAGE_NAME = 'wealth-compact-900-v1.zip'
+PACKAGE_SHA = '03c9ba386834e5536fae6356b99140b78a073e67cccefe7dbb8752225a1cae4c'
+DATA_VERSION = '85f35db0a1398dbffbe17f1c6feb6707310d1d009deb357dda709cce33cd6cfa'
 
 
 def install_release(repo, archive):
@@ -40,6 +42,19 @@ def install_release(repo, archive):
         # schema before save. Public config is compared, NEVER overwritten.
         manifest=target/'package'/f'{DATA_VERSION}.package.json'
         result=install(repo,manifest)
+    # The active directory contains only the current compact snapshot. Retired
+    # immutable inputs are isolated rollback backups, never runtime candidates.
+    directory=repo/'.deps/wealth_portfolio_data/snapshots'
+    retired=repo/'.deps/upgrade_backups/retired_material'
+    for path in directory.iterdir():
+        if path.is_file() and re.fullmatch(r'[0-9a-f]{64}(?:\.index)?\.json',path.name) and path.name not in {DATA_VERSION+'.json',DATA_VERSION+'.index.json'}:
+            retired.mkdir(parents=True,exist_ok=True)
+            dest=retired/path.name
+            if dest.exists():
+                if hashlib.sha256(dest.read_bytes()).digest()!=hashlib.sha256(path.read_bytes()).digest():
+                    raise ValueError('旧资料备份冲突，拒绝覆盖')
+                path.unlink()
+            else:shutil.move(str(path),str(dest))
     return {'ok':True,'data_version':DATA_VERSION,'snapshot_sha256':result['sha256'],
         'destination':str(repo/'.deps/wealth_portfolio_data/snapshots'),
         'database_modified':False,'configuration_overwritten':False}

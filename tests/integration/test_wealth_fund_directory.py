@@ -7,19 +7,25 @@ from backend.app.services.bank import wealth_fund_data as funds
 
 
 def directory():
+    from backend.app.services.bank.wealth_compact_upgrade import pool
+    codes=sorted(pool()['codes'])[:26]
     return {'ok': True, 'provider_version': '1.19.1', 'finished_at': '2026-10-02T00:00:00+00:00',
-        'records': [{'基金代码': f'{i:06}', '基金简称': f'契约样本{i}', '基金类型': '货币型' if i == 9 else '' if i == 3 else '债券型'} for i in range(1, 27)]}
+        'records': [{'基金代码': code, '基金简称': f'契约样本{i}', '基金类型': '' if code=='000003' else '债券型'} for i,code in enumerate(codes,1)]+
+            [{'基金代码':'999999','基金简称':'池外不应导入','基金类型':'债券型'},
+             {'基金代码':'000009','基金简称':'已移除货币','基金类型':'货币型'}]}
 
 
 @pytest.mark.asyncio
 async def test_directory_full_pagination_unknown_idempotency_and_injection(store, http_store):
     async with store() as db:
-        assert (await funds.import_directory(db, directory()))['source_count'] == 25
-        assert (await funds.import_directory(db, directory()))['retained_count'] == 25
-        assert (await funds.search(db, page=2, page_size=20))['items'][0]['code'] == '000022'
+        assert (await funds.import_directory(db, directory()))['source_count'] == 26
+        assert (await funds.import_directory(db, directory()))['retained_count'] == 26
+        assert (await funds.search(db, page=2, page_size=20))['items'][0]['code'] == directory()['records'][20]['基金代码']
         assert (await funds.search(db, '000003'))['items'][0]['fund_type'] == '未知'
         assert (await funds.search(db, '%'))['total'] == 0
-        assert (await funds.search(db, '债券基金'))['total'] == 24
+        assert (await funds.search(db, '债券基金'))['total'] == 25
+        assert (await funds.search(db, '999999'))['total'] == 0
+        with pytest.raises(ValueError,match='PROJECT_POOL'):await funds.detail(db,'999999')
         assert (await funds.search(db, '找几只货币型基金'))['total'] == 0
         assert (await funds.search(db, '契约样本26'))['total'] == 1
         assert (await funds.search(db, '不存在债券基金'))['total'] == 0

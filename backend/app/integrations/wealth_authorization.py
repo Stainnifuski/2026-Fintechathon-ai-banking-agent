@@ -54,7 +54,7 @@ async def lock_profile(db: AsyncSession, user_id: str) -> WealthProfileORM:
                      .on_conflict_do_nothing(index_elements=["user_id"]))
     if db.get_bind().dialect.name == "sqlite":
         await db.execute(update(WealthProfileORM).where(WealthProfileORM.user_id == user_id)
-                         .values(version=WealthProfileORM.version))
+                         .values(version=WealthProfileORM.version,updated_at=WealthProfileORM.updated_at))
     return (await db.scalars(select(WealthProfileORM).where(
         WealthProfileORM.user_id == user_id).with_for_update().execution_options(populate_existing=True))).one()
 

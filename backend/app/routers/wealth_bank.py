@@ -255,7 +255,7 @@ async def fund_detail(request: FundDetail, background: BackgroundTasks, db: Asyn
         result['on_demand_enabled'] = os.getenv('WEALTH_FUND_ON_DEMAND_ENABLED') == 'true'
         return result
     except ValueError as error:
-        raise HTTPException(404, detail={'code': str(error), 'message': '基金不在已核验目录中'}) from error
+        raise HTTPException(404, detail={'code': str(error), 'message': '基金不在当前项目产品目录中，请从当前产品列表重新选择'}) from error
 
 
 @router.post('/knowledge')

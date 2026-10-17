@@ -1,6 +1,6 @@
 """Convert against bank-owned holdings and reuse precheck. No money/units held."""
 from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP, localcontext
-from ...models.wealth import WealthProductVersionORM
+from ...models.wealth import WealthProductORM,WealthProductVersionORM
 from ...schemas.wealth import InvestmentCommand
 from .transfer_service import BankError
 from .wealth_asset_summary import begin_read
@@ -18,7 +18,12 @@ async def convert(db, user_id, request, operation_id):
     if not lots:
         raise BankError('当前范围没有该持仓，请明确选择本人的持仓','POSITION_NOT_FOUND',404)
     first=lots[0]
-    version=await db.get(WealthProductVersionORM,first['version_id'])
+    # Ownership/available units stay bound to the selected historical lots.
+    # A fresh preview uses current product terms, not an obsolete purchase
+    # version. FIFO cost/holding dates and historical fills remain unchanged.
+    current=await db.get(WealthProductORM,first['product_id'])
+    version=await db.get(WealthProductVersionORM,f"{first['product_id']}:{current.current_version}") if current else None
+    if version is None:raise BankError('当前产品资料不可用，请稍后重新预览','PRODUCT_UNAVAILABLE',409)
     now=await bank.business_now(db,first['account_id'])
     price=await bank.latest_nav(db,version.version_id,now)
     if price is None:
@@ -46,7 +51,7 @@ async def convert(db, user_id, request, operation_id):
         market=int((Decimal(resolved)*nav/100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
         ratio=format(Decimal(resolved)/Decimal(holding),'.8f')
     command=InvestmentCommand(operation_id=operation_id,direction='redeem',account_id=first['account_id'],
-        product_id=first['product_id'],product_version=first['product_version'],
+        product_id=first['product_id'],product_version=version.version,
         disclosure_version=version.disclosure['version'],amount_fen=0,units=bank.quantity(resolved),
         **({'command_version':2,'redemption_mode':'quick'} if request.redemption_mode=='quick' else {}))
     preview=await bank.precheck(db,user_id,command)

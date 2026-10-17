@@ -17,7 +17,9 @@ def utc(value):
 
 async def import_directory(db, raw):
     if not raw.get('ok'): return {'ok': False, 'error_code': raw.get('error_type', 'SOURCE_UNAVAILABLE')}
-    rows = [r for r in raw['records'] if '货币' not in str(r.get('基金类型',''))]; codes = set()
+    from .wealth_compact_upgrade import pool
+    allowed=set(pool()['codes'])
+    rows = [r for r in raw['records'] if str(r.get('基金代码','')) in allowed]; codes = set()
     # Validate the complete source before changing the retained directory.
     for r in rows:
         code = str(r.get('基金代码', ''))
@@ -42,7 +44,8 @@ async def import_directory(db, raw):
 
 async def search(db, query='', fund_type=None, page=1, page_size=20):
     query = query.strip()
-    conditions = []
+    from .wealth_compact_upgrade import pool
+    conditions = [Directory.code.in_(pool()['codes'])]
     if query:
         # Escape LIKE metacharacters; directory search never executes model code.
         pattern = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
@@ -63,6 +66,8 @@ async def search(db, query='', fund_type=None, page=1, page_size=20):
 
 async def claim(db, code, data_type, force=False):
     if not re.fullmatch(r'\d{6}', code) or data_type not in TTL: raise ValueError('INVALID_FUND_REQUEST')
+    from .wealth_compact_upgrade import pool
+    if code not in pool()['codes']:raise ValueError('FUND_NOT_IN_PROJECT_POOL')
     directory = await db.get(Directory, code)
     if not directory: raise ValueError('FUND_NOT_IN_DIRECTORY')
     now = datetime.now(timezone.utc); key = code+':'+data_type
@@ -121,6 +126,8 @@ async def refresh(sessions, code, data_type, provider=None):
 
 
 async def detail(db, code):
+    from .wealth_compact_upgrade import pool
+    if code not in pool()['codes']:raise ValueError('FUND_NOT_IN_PROJECT_POOL')
     identity = await db.get(Directory, code)
     if identity is None: raise ValueError('FUND_NOT_IN_DIRECTORY')
     rows = (await db.scalars(select(Cache).where(Cache.code == code))).all(); now = datetime.now(timezone.utc)

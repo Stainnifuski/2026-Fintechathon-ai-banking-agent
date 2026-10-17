@@ -60,6 +60,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         else:
             logger.info("统一 LLM 服务：mode=offline")
         logger.info("正在初始化数据库...")
+        if os.getenv('WEALTH_CATALOG_AUTO_UPGRADE','false').lower()=='true':
+            from .services.bank.wealth_compact_upgrade import prepare_deployment
+            await prepare_deployment(DATABASE_URL)
         await init_db()
         seed_mode = os.getenv('BANK_SEED_DEMO_DATA', 'true').lower()
         if seed_mode not in {'true', 'false'}:
@@ -69,6 +72,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await seed_data()
         else:
             logger.info('保留现有账本；不注入通用演示种子')
+        if os.getenv('WEALTH_CATALOG_AUTO_UPGRADE','false').lower()=='true':
+            from .services.bank.wealth_compact_upgrade import upgrade as upgrade_catalog
+            async with AsyncSessionLocal() as upgrade_session:
+                result=await upgrade_catalog(upgrade_session)
+                await upgrade_session.commit()
+                logger.info('理财资料升级：%s',result)
         # Material initialization is separate from request latency. Missing
         # offline material keeps the ordinary app alive, but A reads fail 503;
         # there is never a fixture fallback.

@@ -31,7 +31,7 @@ async def compose(db, config_dir=CONFIG):
         points=cached.data['observations']
         status=await db.get(Cache,code+':status'); fees=await db.get(Cache,code+':fees')
         p={'product_id':'R'+code,'source_product_code':code,'name':identity.name,'source':'akshare',
-            'identity':'真实基金数据','category':{'bond':'bond','broad_index':'index','sector_index':'equity','active':'mixed'}[entry['category']],
+            'identity':'真实基金数据','category':{'bond':'bond','mixed':'mixed','equity':'equity','broad_index':'index','sector_index':'equity','active':'mixed'}[entry['category']],
             'group':entry['category'],'subtype':identity.fund_type,'fund_family_id':entry.get('family_id'),
             'share_class':entry.get('share_class'), 'family_evidence_url':entry.get('family_evidence_url'),
             'rules_complete':False,'risk_level':None,'issuer_risk':None,'seller_risk':None,'rules_version':'research-only-v1',
