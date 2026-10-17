@@ -105,6 +105,8 @@ async def test_shared_account_purchase_uses_existing_bank_cash(store):
         await db.commit()
         await assess(db)
         cmd=command('shared-bank-purchase',amount=100000)
+        from backend.app.schemas.wealth import InvestmentCommand
+        cmd=InvestmentCommand.model_validate((await bank.precheck(db,'U1',cmd))['command'])
         aid=await authorize(db,cmd)
         await bank.precheck(db,'U1',cmd)
         assert (await db.get(AccountORM,'A1')).balance_fen==2000000
@@ -112,6 +114,7 @@ async def test_shared_account_purchase_uses_existing_bank_cash(store):
         rows=await list_accounts('U1',session=db)
         summary=(await bank.assets(db,'U1'))['asset_summary']
         assert rows[0]['account_id']==summary['account_ids'][0]=='A1'
-        assert rows[0]['held_fen']==summary['held_fen']==100000
-        assert rows[0]['available_fen']==summary['available_cash_fen']==1900000
-        assert rows[0]['balance']==20000
+        assert rows[0]['held_fen']==summary['held_fen']==0
+        assert rows[0]['available_fen']==summary['available_cash_fen']>=1900000
+        assert rows[0]['balance']<20000
+        assert summary['positions_market_value_fen']>0

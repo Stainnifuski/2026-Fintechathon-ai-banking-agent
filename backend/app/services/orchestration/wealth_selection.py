@@ -279,7 +279,8 @@ async def prepare(db, user_id, portfolio_id, request, bank, source):
         command = InvestmentCommand(operation_id='WO'+uuid4().hex, direction=action['direction'],
             product_id=action['product_id'], product_version=action['product_version'], disclosure_version=action['disclosure_version'],
             account_id=action['account_id'], amount_fen=action['amount_fen'], units=action['units'], plan_id=execution_id, plan_version=execution_version)
-        await bank.precheck(user_id, command)
+        preview = await bank.precheck(user_id, command)
+        command = InvestmentCommand.model_validate(preview['command'])
         items.append({'command': command.model_dump(), 'reason': '整体目标与当前持仓的差额', 'status': 'AWAITING_CONFIRMATION', 'depends_on': []})
     # The user lock serializes prepare calls. Re-read both source and mapping after
     # remote prechecks, so a concurrent revision cannot overwrite newer work.

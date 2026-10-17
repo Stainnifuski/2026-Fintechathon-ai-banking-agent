@@ -1,15 +1,9 @@
 // DEV-only explicit recording. Synthetic IDs never reach a bank endpoint.
 import recording from '../../../../tests/fixtures/wealth_portfolio_contract_v1/f23.json' with {type:'json'};
-import type {Assets,CancellationEligibility} from '../../services/wealth';
-import type {EligibilityLoader} from './OrderTable';
+import type {Assets} from '../../services/wealth';
 import {recordedDetail} from './FixtureProductProvider.ts';
 import type {ProductDetailLoader} from './ProductDetail';
 export const recordedTableAssets=():Assets=>structuredClone(recording.assets) as Assets;
-export const recordedTableEligibility:EligibilityLoader=async id=>{
-  const found=recording.cancellation_eligibility.find(row=>row.operation_id===id);
-  if(!found)throw new Error('F23未录制该订单的撤单资格');
-  return structuredClone(found) as CancellationEligibility;
-};
 export const recordedTableDetail:ProductDetailLoader=async(id,period,version)=>{
   if(version!=null&&version!==1)throw new Error('F23没有录制此版本的产品资料，不展示其他版本替代');
   const base=await recordedDetail(id,period,version);

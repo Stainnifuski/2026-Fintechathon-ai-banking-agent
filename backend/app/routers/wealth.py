@@ -436,8 +436,11 @@ async def confirm(authorization_id: str, request: PersonalConfirmation, user: di
     try:
         row = await policy.owned_authorization(db, user["user_id"], authorization_id)
         command = InvestmentCommand.model_validate(row.command)
+        digest = row.param_digest
         await db.rollback()
-        await bank.precheck(user["user_id"], command)
+        checked = await bank.precheck(user["user_id"], command)
+        if checked['digest'] != digest:
+            raise policy.WealthPolicyError('成交规则已更新，请重新预览并确认', 'PREVIEW_REQUIRED', 409)
         return await policy.record_confirmation(db, user["user_id"], authorization_id, request)
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()

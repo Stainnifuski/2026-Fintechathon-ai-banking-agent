@@ -46,8 +46,17 @@ async def preview_all(db: AsyncSession, user_id: str, plan_id: str, version: int
     commands = await confirmation_commands(db, user_id, plan_id, version)
     await db.rollback()
     views = [await bank.precheck(user_id, command) for command in commands]
+    await policy.lock_profile(db, user_id)
+    current = await confirmation_commands(db, user_id, plan_id, version)
+    if [c.model_dump() for c in current] != [c.model_dump() for c in commands]:
+        raise WealthPolicyError('预览期间方案已变化，请重新预览', 'STALE_PLAN')
+    plan = await owned_plan(db, user_id, plan_id)
+    normalized = {v['command']['operation_id']: v['command'] for v in views}
+    plan.data = {**plan.data, 'items': [{**item, 'command': normalized.get(item['command']['operation_id'], item['command'])}
+        for item in plan.data['items']]}
     items = []
     for command, view in zip(commands, views):
+        command = InvestmentCommand.model_validate(view['command'])
         auth = await policy.new_preview_authorization(db, user_id, command)
         items.append({**view, "command": command.model_dump(), "authorization_id": auth.authorization_id,
             "authorization_status": auth.status, "digest": auth.param_digest, "expires_at": policy.aware(auth.expires_at).isoformat()})
@@ -66,7 +75,10 @@ async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: Pla
         raise WealthPolicyError("必须确认当前方案全部选中订单，不能重复或遗漏", "STALE_PLAN")
     await db.rollback()
     for command in commands:
-        await bank.precheck(user_id, command)
+        checked = await bank.precheck(user_id, command)
+        from ...domain.wealth_command import command_digest
+        if checked['digest'] != command_digest(command):
+            raise WealthPolicyError('成交规则已更新，请重新预览整份方案', 'PREVIEW_REQUIRED', 409)
     await policy.lock_profile(db, user_id)
     await confirmation_commands(db, user_id, plan_id, request.version)
     for item in request.items:

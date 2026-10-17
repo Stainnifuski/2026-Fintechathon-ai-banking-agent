@@ -14,7 +14,7 @@ export default function PositionTable({data,loadDetail,onRedeem,onReturns,blocke
   const [detail,setDetail]=useState<{scope:string;key:string}|null>(null);
   const detailRow=detail?.scope===data.scope_key?data.rows.find(row=>row.position_key===detail.key):undefined;
   const canRedeem=(row:PositionRow)=>scaledUnits(row.redeemable_units)>0n&&row.disclosure_version!=null&&!blockedAccounts.includes(row.account_id);
-  return <section className="wealth-data-table" aria-label="独立持仓表"><h2>我的持仓</h2><p>同账户、同产品版本的买入批次合为一行。尚未确认的申请仅在订单表显示；可赎份额已扣除锁定和占用。</p>
+  return <section className="wealth-data-table" aria-label="独立持仓表"><h2>我的持仓</h2><p>同账户、同产品版本的买入批次合为一行。新申购成功后立即显示；可赎份额已扣除持有期锁定和历史占用。</p>
     <button className="secondary" onClick={()=>onReturns()}>查看整体收益</button><button disabled={!table.selected.length} onClick={()=>onRedeem(data.rows.filter(row=>table.selected.includes(row.position_key)))}>赎回已选持仓</button>
     <p className="table-scroll-hint">表格可左右滑动，查看完整资料、详情和赎回入口。</p>
     <div className="wealth-table-scroll"><table><thead><tr><th><input aria-label="勾选本页持仓" type="checkbox" checked={table.allChecked} onChange={e=>table.toggleVisible(e.target.checked)}/></th><th>产品／份额</th><th>持有／可赎</th><th>市值／整体占比</th><th>收益／行情</th><th>详情／赎回</th></tr></thead><tbody>{table.rows.map(row=><tr key={row.position_key}>
@@ -24,7 +24,7 @@ export default function PositionTable({data,loadDetail,onRedeem,onReturns,blocke
       <td>{money(row.market_value_fen)}<small>{row.total_ratio==null?'整体估值不完整':`${(Number(row.total_ratio)*100).toFixed(2)}% · 占全部资产`}</small></td>
       <td><button className="table-link" onClick={()=>onReturns(row.product_id)}>当前浮动收益 {money(row.unrealized_pnl_fen)}</button><small>浮动收益不等于累计实际收益</small><small>{row.lots.some(l=>l.quote_update_status==='failed_using_last_reliable')?'行情更新失败，保留最近可靠估值与原净值日期':row.market_value_fen==null?'缺少可靠估值，资产不完整，不能确认依赖完整估值的方案':''}</small><small>{metricText(row.daily_metric)}</small><small>{row.daily_metric?.date??'无有效日期'}{row.daily_metric?.previous_date&&` / 前次 ${row.daily_metric.previous_date}`}</small></td>
       <td><button className="secondary" onClick={()=>setDetail({scope:data.scope_key,key:row.position_key})}>查看持仓详情</button><button disabled={!canRedeem(row)} onClick={()=>onRedeem([row])}>赎回</button>{!canRedeem(row)&&<small>{blockedAccounts.includes(row.account_id)?'人工接管／暂停任务限制':row.disclosure_version==null?'产品版本资料缺失':'当前没有可赎份额'}</small>}</td>
-    </tr>)}</tbody></table></div>{!data.rows.length&&<p className="consumer-empty">当前没有已确认持仓。已受理、待计价的申购仍可在订单表查询。</p>}
+    </tr>)}</tbody></table></div>{!data.rows.length&&<p className="consumer-empty">当前没有已确认持仓。新申购成功后会刷新此表；原有在途交易保持原规则。</p>}
     <TablePager {...table} label="持仓" total={data.rows.length} selected={table.selected.length} onPage={table.changePage} onSize={table.changeSize} onClear={table.clear}/>
     {detailRow&&<PositionDetail row={detailRow} loadDetail={loadDetail} onClose={()=>setDetail(null)} onReturns={()=>{setDetail(null);onReturns(detailRow.product_id);}}/>}
   </section>;

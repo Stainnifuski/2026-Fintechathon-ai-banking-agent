@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {recordedTableAssets,recordedTableEligibility,recordedTableDetail} from '../src/components/Wealth/FixtureTableProvider.ts';
+import {recordedTableAssets,recordedTableDetail} from '../src/components/Wealth/FixtureTableProvider.ts';
 import {positionTableData,orderTableData,scaledUnits,pageRows,togglePage,scopeKey,metricText} from '../src/components/Wealth/tableData.ts';
 
 test('F23 aggregates lots by account/product/version with exact four-place shares',()=>{
@@ -42,9 +42,9 @@ test('daily quote missing/not applicable never appears as 0%',()=>{
   const a=recordedTableAssets();assert.equal(metricText(a.lots[0].daily_metric),'货币类收益率不是单位净值涨跌');
   assert.equal(metricText(undefined),'缺少行情资料');assert.match(metricText(a.lots[1].daily_metric),/0.5000%/);
 });
-test('F23 only replays recorded cancellation and matching-version details',async()=>{
-  assert.equal((await recordedTableEligibility('fixture-table-order-08')).eligibility,'UNKNOWN');
-  await assert.rejects(recordedTableEligibility('bank-real-id'));await assert.rejects(recordedTableDetail('fixture-S1-A','1y',2));
+// Cancellation UI and its exclusive fixture loader were removed by scope change.
+test('F23 only replays matching-version holding details',async()=>{
+  await assert.rejects(recordedTableDetail('fixture-S1-A','1y',2));
   const detail=await recordedTableDetail('fixture-S1-A','1y',1);assert.equal(detail.product_id,'fixture-S1-A');
   const lot=recordedTableAssets().lots.find(r=>r.product_id==='fixture-S1-A')!;
   assert.equal(detail.latest_nav?.date,lot.nav_date);assert.equal(detail.latest_nav?.nav,lot.nav);
