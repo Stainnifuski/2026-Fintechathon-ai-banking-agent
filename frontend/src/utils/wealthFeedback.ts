@@ -5,6 +5,9 @@ export function wealthRequestFailure(error:unknown):string {
  if(isSessionAuthenticationFailure(error))return authenticationExpiredMessage;
  const detail=(error as {response?:{data?:{detail?:string|{message?:string;code?:string}}}})?.response?.data?.detail;
  if(typeof detail==='string')return wealthFeedback(detail);
+ if(detail?.message&&detail.code&&['INSUFFICIENT_AVAILABLE_FUNDS','INVALID_AMOUNT','NAV_UNAVAILABLE',
+  'DATA_STALE','PURCHASE_STOPPED','HOLDING_CAP'].includes(detail.code)&&!/请|后重试/.test(detail.message))
+  return `${wealthFeedback(detail.message)} ${wealthFeedback(detail.code)}`;
  if(detail?.message||detail?.code)return wealthFeedback(detail.message??detail.code!);
  return wealthFeedback(error instanceof Error?error.message:'本次请求未完成，请稍后手动重试。');
 }
@@ -22,7 +25,11 @@ export function wealthFeedback(raw:string):string {
   [['RISK_EXCEEDS_CAPACITY','SUITABILITY_MISMATCH'],'所选产品风险超过本人评估等级，不能购买。请移除超出等级的产品，选择本人风险等级允许的产品后重新校验。'],
   [['VALUATION_INCOMPLETE','ASSET_SUMMARY_UNAVAILABLE'],'暂时无法取得完整资产估值，不能确认配置方案。请先点击“刷新银行事实”；仍有缺失时等待报价恢复，再重新生成方案。'],
   [['PURCHASE_STOPPED','CURRENT_DISPLAY_QUALIFICATION_UNAVAILABLE'],'产品当前不满足申购条件。请刷新推荐或选择其他合格产品，再重新核对方案。'],
-  [['INSUFFICIENT_FUNDS','INSUFFICIENT_CASH'],'账户可支付现金不足。请先查看可用余额和占款，减少申购金额或等待资金实际到账后重新准备预览。'],
+  [['INSUFFICIENT_AVAILABLE_FUNDS','INSUFFICIENT_FUNDS','INSUFFICIENT_CASH'],'借记账户可用资金不足。请减少申购金额，或向绑定借记账户补足资金后重试。'],
+  [['QUOTE_CHANGED','PREVIEW_REQUIRED'],'交易报价已变化，系统需重新核对当前交易明细；请查看更新后的金额、净值日期和费用后确认。'],
+  [['NAV_UNAVAILABLE','DATA_STALE'],'暂时缺少可用净值，当前无法申购。请稍后重试，或移除该产品并选择其他产品。'],
+  [['NAV_UPDATE_REQUIRED'],'当前净值未更新到本次交易所需日期，暂时不能成交。请稍后重试或选择净值已更新的产品；已有持仓和资金保留。'],
+  [['INVALID_AMOUNT'],'金额不符合该产品的申购限额。请查看产品详情中的最低及最高金额并修改后重试。'],
   [['AUTHORIZATION_EXPIRED','STALE_PLAN','VERSION_STALE','STALE'],'方案、账户事实或授权已变化。请刷新银行事实，重新核对当前方案并准备新的确认预览；已受理订单不变。'],
   [['WRITE_CONTROL_UNPROVEN','TASK_WRITE_BLOCKED'],'当前任务暂停或尚未取得写入许可。请先检查任务状态并恢复允许操作的任务，再重试；不要重复提交交易。'],
   [['HOLDING_CAP'],'该持仓当前只允许保留或减持，不能增持。请降低该产品目标金额，再重新校验。'],

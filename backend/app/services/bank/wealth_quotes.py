@@ -19,6 +19,36 @@ _locks = {}
 _limit = asyncio.Semaphore(3)
 stats = {'http_code_queries': 0, 'cache_hits': 0, 'all_market_queries': 0}
 
+
+def required_trade_nav_date(at, calendar_version):
+    """Latest completed NAV day under the project's 18:00 review cutoff.
+
+    Weekends/holidays never advance this requirement. This is an execution
+    freshness check, not an assertion about an issuer's publication deadline.
+    """
+    from datetime import timedelta, time as day_time
+    from ...domain.wealth import TZ, business_day
+    local = at.astimezone(TZ)
+    day = local.date()
+    if local.time() < day_time(18):
+        day -= timedelta(days=1)
+    while not business_day(day, calendar_version):
+        day -= timedelta(days=1)
+    return day
+
+
+def require_trade_nav(version, price, at):
+    """A frozen offline anchor is not indefinitely valid for a new fill."""
+    if version.rules.get('pricing_mode') != PRICING_MODE:
+        return
+    required = required_trade_nav_date(at, version.rules['calendar_version'])
+    if price is None or price.nav_date < required:
+        from .transfer_service import BankError
+        known = price.nav_date.isoformat() if price else '缺失'
+        raise BankError(f'{version.product_id}当前可用净值日期为{known}，本次交易需核对至{required.isoformat()}。'
+            '最新有效净值尚未取得，不能使用过旧离线报价成交。请稍后重试，或移除此产品并选择净值已更新的产品；已有持仓和资金保留。',
+            'NAV_UPDATE_REQUIRED', 409)
+
 async def refresh_scope(db, user_id, codes=None, account_id=None):
     from . import wealth_service as bank, wealth_research as research
     from ...models.wealth import WealthLotORM, WealthOrderORM
@@ -42,7 +72,9 @@ async def refresh_scope(db, user_id, codes=None, account_id=None):
         if context or account_id:
             lots = lots.where(WealthLotORM.account_id.in_(accounts)); orders = orders.where(WealthOrderORM.account_id.in_(accounts))
         versions = set(await db.scalars(lots)) | set(await db.scalars(orders))
-    result = await refresh(db, versions, at, subject_user_id=user_id)
+    async def observation_cutoff():
+        return await bank.business_now(db, account_id or (context.account_id if context else None))
+    result = await refresh(db, versions, at, subject_user_id=user_id, observation_cutoff=observation_cutoff)
     db.info['wealth_quote_updates']=result
     await db.commit() # only quote observations, before the coherent read snapshot
     import logging
@@ -78,7 +110,7 @@ async def observation(code):
         _cache[code] = (time.monotonic(), result)
         return result
 
-async def refresh(db, version_ids, at, *, subject_user_id='public-market-data'):
+async def refresh(db, version_ids, at, *, subject_user_id='public-market-data', observation_cutoff=None):
     """Only caller's scoped holdings/selection/order versions. Existing NAV immutable.
 
     Read-only transactions may consume previously committed observations without
@@ -88,6 +120,10 @@ async def refresh(db, version_ids, at, *, subject_user_id='public-market-data'):
         WealthProductVersionORM.version_id.in_(set(version_ids))))) if version_ids else []
     real = [v for v in versions if v.rules.get('pricing_mode') == PRICING_MODE]
     results = await asyncio.gather(*(observation(code) for code in sorted({v.product_id for v in real})))
+    # A live account must include observations completed by this read. A fixed
+    # historical business clock still returns its historical cutoff unchanged.
+    if observation_cutoff is not None:
+        at = await observation_cutoff()
     by_code = {r['code']: r for r in results}
     for version in real:
         result = by_code[version.product_id]

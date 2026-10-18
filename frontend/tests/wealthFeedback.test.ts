@@ -42,3 +42,10 @@ test('bank quote failures explain the preview boundary and next step',()=>{
  assert.match(message,/核对差额与准备预览/);
  assert.doesNotMatch(message,/database is locked|BANK_UNAVAILABLE/);
 });
+
+test('cash shortfall preserves exact server amounts and an actionable remedy',()=>{
+ const message='申购合计22000.00元，借记账户可用20000.00元，还差2000.00元。请减少申购金额或补足资金后重试。';
+ assert.equal(wealthRequestFailure({response:{data:{detail:{code:'INSUFFICIENT_AVAILABLE_FUNDS',message}}}}),message);
+ assert.match(wealthRequestFailure({response:{data:{detail:{code:'INVALID_AMOUNT',message:'金额不符合产品申购限制'}}}}),/最低及最高金额.*修改/);
+ assert.match(wealthFeedback('DATA_STALE'),/稍后重试.*移除/);
+});

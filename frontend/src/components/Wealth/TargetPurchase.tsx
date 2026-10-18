@@ -34,7 +34,7 @@ export default function TargetPurchase({selection,assets,accountId,onActivity}:{
         if(fen<=0n||fen>2000000000n)throw new Error(`${candidate.name}：金额需大于零且不超过业务上限。`);
         return {product_id:share.product_id,product_version:share.product_version,disclosure_version:share.disclosure_version,amount_fen:Number(fen)};
       });
-      if(items.reduce((sum,item)=>sum+item.amount_fen,0)>account.available_fen)throw new Error('全部已选产品的申购总额超过借记账户可用现金。');
+      // The server checks current cash; the page's asset snapshot may be older.
       requestId.current??='WP'+crypto.randomUUID().replace(/-/g,'');
       const prepared=await w.post<{plan:w.Plan;preview:w.PlanPreview|null}>('/target-purchases/prepare',{
         request_id:requestId.current,context_id:scope,items,

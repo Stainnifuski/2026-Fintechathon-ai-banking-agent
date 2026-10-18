@@ -4,6 +4,7 @@ import json
 from uuid import uuid5, NAMESPACE_URL
 from sqlalchemy import select
 from ...integrations.wealth_authorization import lock_profile, WealthPolicyError
+from ...integrations.bank_api import BankApiError
 from ...models.wealth import WealthPlanORM, WealthProfileORM, WealthGoalORM
 from ...schemas.wealth import InvestmentCommand
 from . import wealth_plan
@@ -33,7 +34,10 @@ async def prepare(db, user_id, bank, request):
             raise WealthPolicyError('当前理财绑定的借记账户不可用', 'CASH_ACCOUNT_REQUIRED', 409)
         total = sum(item.amount_fen for item in request.items)
         if total > account['available_fen']:
-            raise WealthPolicyError('全部已选产品的申购总额超过借记账户可用现金', 'INSUFFICIENT_AVAILABLE_FUNDS', 409)
+            available = account['available_fen']
+            raise WealthPolicyError(f'申购合计{total / 100:.2f}元，借记账户可用{available / 100:.2f}元，'
+                f'还差{(total - available) / 100:.2f}元。请减少申购金额或向绑定借记账户补足资金后重试。',
+                'INSUFFICIENT_AVAILABLE_FUNDS', 409)
         commands = []
         for index, item in enumerate(request.items):
             cmd = InvestmentCommand(**item.model_dump(), account_id=account['account_id'], direction='purchase',
@@ -68,6 +72,14 @@ async def prepare(db, user_id, bank, request):
         result = wealth_plan.plan_view(row)
     preview = None
     if result['status'] == 'AWAITING_CONFIRMATION' and all(i['status'] == 'AWAITING_CONFIRMATION' for i in result['items']):
-        preview = await wealth_plan.preview_all(db, user_id, plan_id, result['version'], bank)
+        try:
+            preview = await wealth_plan.preview_all(db, user_id, plan_id, result['version'], bank)
+        except (BankApiError, WealthPolicyError) as error:
+            if error.code not in {'QUOTE_CHANGED', 'AUTHORIZATION_EXPIRED', 'PREVIEW_REQUIRED'}:
+                raise
+            await db.rollback()
+            # One bounded automatic renewal. Old confirmations are invalidated;
+            # the response still requires a new explicit confirmation and MFA.
+            return await wealth_plan.refresh_purchase_review(db, user_id, plan_id, result['version'], bank)
         result = wealth_plan.plan_view(await wealth_plan.owned_plan(db, user_id, plan_id))
     return {'plan':result, 'preview':preview}

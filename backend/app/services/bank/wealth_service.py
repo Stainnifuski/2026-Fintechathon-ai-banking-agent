@@ -337,10 +337,11 @@ async def eligible_lots(db: AsyncSession, user_id: str, command: InvestmentComma
                         at: datetime) -> list[tuple[WealthLotORM, int]]:
     """FIFO只选择已解锁且未占用份额；不偷偷改变全部赎回要求。"""
     rows = (await db.scalars(select(WealthLotORM).join(WealthProductVersionORM,
-        WealthProductVersionORM.version_id == WealthLotORM.version_id).where(
+        WealthProductVersionORM.version_id == WealthLotORM.version_id).join(WealthOrderORM,
+        WealthOrderORM.operation_id == WealthLotORM.operation_id).where(
         WealthLotORM.user_id == user_id, WealthLotORM.account_id == command.account_id,
         WealthProductVersionORM.product_id == command.product_id, WealthLotORM.units_scaled > 0)
-        .order_by(WealthLotORM.acquired_date, WealthLotORM.lot_id))).all()
+        .order_by(WealthLotORM.acquired_date, WealthOrderORM.accepted_at, WealthLotORM.lot_id))).all()
     result = []
     for lot in rows:
         held = int(await db.scalar(select(func.coalesce(func.sum(WealthUnitHoldORM.units_scaled), 0)).where(
@@ -384,6 +385,8 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     estimate = None
     suitability = None
     price = await latest_nav(db, row.version_id, now)
+    from .wealth_quotes import require_trade_nav
+    require_trade_nav(row, price, now)
     paper=row.rules.get('pricing_mode') in PRICING_MODES
     if paper:
         from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons
@@ -396,9 +399,13 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     if command.direction == "purchase":
         suitability = await require_suitability(db, user_id, row.risk_level)
         if not row.rules["min_amount_fen"] <= command.amount_fen <= row.rules["max_amount_fen"]:
-            raise BankError("金额不符合产品申购限制", "INVALID_AMOUNT", 422)
-        if await available_cash(db, account.account_id, account.balance_fen) < command.amount_fen:
-            raise BankError("可用现金不足（在途赎回不可使用）", "INSUFFICIENT_AVAILABLE_FUNDS", 409)
+            raise BankError(f'该产品单笔申购金额需在{row.rules["min_amount_fen"]/100:.2f}元至'
+                f'{row.rules["max_amount_fen"]/100:.2f}元之间，请修改该产品金额后重试。', 'INVALID_AMOUNT', 422)
+        cash = await available_cash(db, account.account_id, account.balance_fen)
+        if cash < command.amount_fen:
+            raise BankError(f'本笔申购{command.amount_fen/100:.2f}元，借记账户可用{cash/100:.2f}元，'
+                f'还差{(command.amount_fen-cash)/100:.2f}元。请减少申购金额或补足借记账户资金后重试。',
+                'INSUFFICIENT_AVAILABLE_FUNDS', 409)
         from ...integrations.wealth_authorization import require_payment_capacity
         await require_payment_capacity(db, user_id,
             await available_cash(db, account.account_id, account.balance_fen), command.amount_fen)

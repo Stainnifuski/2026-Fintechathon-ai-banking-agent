@@ -323,6 +323,18 @@ async def preview_plan(plan_id: str, request: PlanVersion, http_request: Request
         fail(error)
 
 
+@router.post("/plans/{plan_id}/refresh-review")
+async def refresh_purchase_review(plan_id: str, request: PlanVersion, http_request: Request,
+        user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+        bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
+    try:
+        await require_current_portfolio(http_request, db, user['user_id'], plan_id)
+        return await wealth_plan.refresh_purchase_review(db, user['user_id'], plan_id, request.version, bank)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
 @router.post("/plans/{plan_id}/confirm")
 async def confirm_plan(plan_id: str, request: PlanConfirmation,http_request: Request, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), bank: HttpWealthBankApi = Depends(get_wealth_bank)) -> dict:
     try:

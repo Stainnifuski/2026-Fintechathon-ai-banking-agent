@@ -1,11 +1,12 @@
 """Full 806 pool, identical SQLite/PG browsing, zero external quote calls."""
 import json
 import time
+from datetime import datetime, date, timezone
 from pathlib import Path
 import pytest
 from sqlalchemy import select,func,event
 from backend.app.models import AccountORM
-from backend.app.models.wealth import WealthOrderORM,WealthLotORM,WealthCashHoldORM,WealthUnitHoldORM,WealthProductORM
+from backend.app.models.wealth import WealthOrderORM,WealthLotORM,WealthCashHoldORM,WealthUnitHoldORM,WealthProductORM,WealthNavORM
 from backend.app.services.bank import wealth_service as bank,wealth_quotes as quotes
 from backend.app.services.bank.wealth_compact_upgrade import upgrade,pool
 from backend.app.services.orchestration.wealth_portfolio_joint import install
@@ -30,6 +31,15 @@ async def test_full_pool_category_rotation_reads_current_bank_without_market_wai
         # refresh NAV too; this is test money only.
         cmd=InvestmentCommand(operation_id='offline-browsing-opening',direction='purchase',product_id='000003',
             product_version=pool()['product_version'],disclosure_version=pool()['product_version'],account_id='A1',amount_fen=100000)
+        # This fixture's opening trade needs a current, explicitly synthetic
+        # observation. Candidate browsing itself still uses only local data.
+        now=datetime(2026,10,18,6,tzinfo=timezone.utc)
+        async def clock(*args,**kwargs):return now
+        monkeypatch.setattr(bank,'business_now',clock)
+        vid=f'000003:{pool()["product_version"]}'
+        db.add(WealthNavORM(nav_id=f'{vid}:2026-10-16',version_id=vid,nav_date=date(2026,10,16),
+            price='1.00000000',available_at=datetime(2026,10,16,12,tzinfo=timezone.utc)))
+        await db.commit()
         cmd=InvestmentCommand.model_validate((await bank.precheck(db,'U1',cmd))['command'])
         await bank.accept_many(db,'U1',[(cmd,await authorize(db,cmd))])
     calls=[];allow=False

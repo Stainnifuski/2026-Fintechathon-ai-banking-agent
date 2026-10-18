@@ -44,10 +44,23 @@ async def preview_all(db: AsyncSession, user_id: str, plan_id: str, version: int
     """整页预览，每笔仍绑定独立操作号和披露摘要。"""
     from ...integrations import wealth_authorization as policy
     commands = await confirmation_commands(db, user_id, plan_id, version)
+    authorized = set(await db.scalars(select(WealthAuthorizationORM.operation_id).where(
+        WealthAuthorizationORM.operation_id.in_([c.operation_id for c in commands]))))
+    # Before a preview has ever been issued, these are only internal drafts.
+    # Bind their first visible review to current facts; never replace an issued
+    # authorization or carry its consent/MFA across a different quote.
+    inputs = [c if c.operation_id in authorized else c.model_copy(update={
+        'command_version': 2 if c.redemption_mode == 'quick' else 1,
+        'nav_quote_id': None, 'quoted_cash_fen': None, 'context_id': None, 'context_epoch': None,
+    }) for c in commands]
     await db.rollback()
-    views = [await bank.precheck(user_id, command) for command in commands]
+    views = [await bank.precheck(user_id, command) for command in inputs]
     await policy.lock_profile(db, user_id)
     current = await confirmation_commands(db, user_id, plan_id, version)
+    now_authorized = set(await db.scalars(select(WealthAuthorizationORM.operation_id).where(
+        WealthAuthorizationORM.operation_id.in_([c.operation_id for c in commands]))))
+    if now_authorized != authorized:
+        raise WealthPolicyError('交易核对期间已有其他请求生成确认，请重试原操作', 'STALE_PLAN')
     if [c.model_dump() for c in current] != [c.model_dump() for c in commands]:
         raise WealthPolicyError('预览期间方案已变化，请重新预览', 'STALE_PLAN')
     plan = await owned_plan(db, user_id, plan_id)
@@ -64,6 +77,56 @@ async def preview_all(db: AsyncSession, user_id: str, plan_id: str, version: int
     reference = verification_reference([await policy.owned_authorization(db,user_id,i["authorization_id"]) for i in items], grouped=True)
     await db.commit()
     return {"plan_id": plan_id, "version": version, "items": items, "verification_reference_id": reference}
+
+
+async def refresh_purchase_review(db, user_id, plan_id, version, bank):
+    """Renew an unsubmitted purchase review, never its consent or MFA evidence."""
+    from ...integrations import wealth_authorization as policy
+    from .wealth_task import require_plan_edit, register_plan
+    await policy.lock_profile(db, user_id)
+    task = await require_plan_edit(db, user_id, plan_id)
+    commands = await confirmation_commands(db, user_id, plan_id, version)
+    row = await owned_plan(db, user_id, plan_id)
+    if row.data['stage'] != 'BUY' or any(i['status'] != 'AWAITING_CONFIRMATION' for i in row.data['items']):
+        raise WealthPolicyError('已有提交结果，请按原操作号核对成交，不能重新生成交易', 'RECONCILIATION_REQUIRED')
+    for cmd in commands:
+        await policy.require_current_plan(db, user_id, cmd)
+    inputs = [c.model_copy(update={'operation_id': 'WO'+uuid4().hex, 'plan_version': version+1,
+        'command_version': 1, 'nav_quote_id': None, 'quoted_cash_fen': None,
+        'context_id': None, 'context_epoch': None}) for c in commands]
+    await db.rollback()
+    facts = await bank.assets(user_id)
+    for account_id in {c.account_id for c in commands}:
+        total = sum(c.amount_fen for c in commands if c.account_id == account_id)
+        cash = next((a['available_fen'] for a in facts['cash'] if a['account_id'] == account_id), 0)
+        if total > cash:
+            raise WealthPolicyError(f'申购合计{total/100:.2f}元，借记账户可用{cash/100:.2f}元，还差{(total-cash)/100:.2f}元。'
+                '请减少申购金额或向绑定借记账户补足资金后重试。', 'INSUFFICIENT_AVAILABLE_FUNDS')
+    views = [await bank.precheck(user_id, c) for c in inputs]
+    await policy.lock_profile(db, user_id)
+    task = await require_plan_edit(db, user_id, plan_id)
+    current = await confirmation_commands(db, user_id, plan_id, version)
+    if [c.model_dump() for c in current] != [c.model_dump() for c in commands]:
+        raise WealthPolicyError('交易核对期间方案已变化，请刷新当前方案', 'STALE_PLAN')
+    for cmd in current:
+        await policy.require_current_plan(db, user_id, cmd)
+    authorizations = list(await db.scalars(select(WealthAuthorizationORM).where(
+        WealthAuthorizationORM.operation_id.in_([c.operation_id for c in commands]))))
+    if any(a.status == 'CONSUMED' for a in authorizations):
+        raise WealthPolicyError('已有提交结果，请按原操作号核对成交', 'RECONCILIATION_REQUIRED')
+    for auth in authorizations:
+        auth.status = 'EXPIRED'
+    row = await owned_plan(db, user_id, plan_id)
+    previous = row.data['items']
+    row.data = {**row.data, 'history': [*row.data.get('history', []),
+        {'version': version, 'stage': row.data['stage'], 'items': previous}],
+        'items': [{**item, 'command': view['command']} for item, view in zip(previous, views)]}
+    row.version = version+1
+    if task:
+        await register_plan(db, user_id, task.session_id, task.context_id, plan_view(row), commit=False)
+    await db.commit()
+    preview = await preview_all(db, user_id, plan_id, version+1, bank)
+    return {'plan': plan_view(await owned_plan(db, user_id, plan_id)), 'preview': preview}
 
 
 async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: PlanConfirmation, bank: HttpWealthBankApi) -> dict:

@@ -23,14 +23,15 @@ async def selected(store, monkeypatch):
 
 async def confirm_verify(client, data):
     base = '/api/v1/wealth/plans/'+data['plan']['plan_id']; preview = data['preview']
+    version = data['plan']['version']
     confirmations = [{'authorization_id':i['authorization_id'],'digest':i['digest'],
         'disclosure_version':i['command']['disclosure_version'],'accepted':True} for i in preview['items']]
-    missing = await client.post(base+'/confirm', json={'version':1,'items':confirmations[:1]})
+    missing = await client.post(base+'/confirm', json={'version':version,'items':confirmations[:1]})
     assert missing.status_code == 409
-    result = await client.post(base+'/confirm', json={'version':1,'items':confirmations})
+    result = await client.post(base+'/confirm', json={'version':version,'items':confirmations})
     assert result.status_code == 200, result.text
-    assert (await client.post(base+'/execute', json={'version':1})).status_code == 409
-    verified = await sms_verify(client, base, version=1, reference=preview['verification_reference_id'])
+    assert (await client.post(base+'/execute', json={'version':version})).status_code == 409
+    verified = await sms_verify(client, base, version=version, reference=preview['verification_reference_id'])
     assert verified.status_code == 200, verified.text
     return base
 
@@ -73,7 +74,9 @@ async def test_total_scope_credit_duplicates_and_same_request_changes_rejected(s
     assert (await client.post(url,json={**payload,'context_id':'other'})).status_code == 409
     assert (await client.post(url,json={**payload,'items':[payload['items'][0]]*2})).status_code == 422
     huge={**payload,'items':[{**item,'amount_fen':1100000} for item in payload['items']]}
-    assert (await client.post(url,json=huge)).status_code == 409
+    shortage = await client.post(url,json=huge)
+    assert shortage.status_code == 409
+    assert '还差2000.00元' in shortage.json()['detail']['message']
     async with store() as db:
         assert await db.scalar(select(func.count()).select_from(WealthPlanORM)) == 0
         (await db.get(AccountORM,'A1')).account_type='credit';await db.commit()

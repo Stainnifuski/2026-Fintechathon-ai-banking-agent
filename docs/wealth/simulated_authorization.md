@@ -10,6 +10,10 @@
 
 ## 接口
 
+申购准备自动核对当前报价、可用现金及产品条件并返回交易明细，不要求用户另点“生成预览”。首次对外签发授权前，内部草稿可重新绑定当前报价；已签发的授权不覆盖参数摘要。
+
+POST `/api/v1/wealth/plans/{plan_id}/refresh-review` 接收当前`version`，仅重新核对全部尚未提交的BUY方案。它保留本人指定的账户、产品、金额及披露版本，创建新方案版本和逐笔操作号，旧授权失效，返回`{plan,preview}`。前端在确认时遇到报价变化或授权过期会自动调用一次，更新明细并清除旧勾选及验证码；新版本仍需本人确认和统一MFA。已提交、结果未知、已完成、暂停或受人工控制的交易不能借此重新创建。资金不足返回总额、可用金额、差额及修改/补资办法；不产生订单或占款。
+
 - 公共短信：POST `/api/v1/auth/sms/send`，`purpose=wealth`，`reference_id` 为单笔authorization_id或整份preview返回的verification_reference_id；不得使用plan_id代替集合摘要。
 - GET `/api/v1/auth/sms/dev-inbox`：仅本人模拟通道收件箱；短信默认5分钟、60秒重发冷却，每小时10条，5次错误锁定，具体可配置。
 - 单笔：POST `/api/v1/wealth/previews/{authorization_id}/verify`，`{proof,method:totp|sms,challenge_id?}`，省略method仍兼容旧TOTP调用。
