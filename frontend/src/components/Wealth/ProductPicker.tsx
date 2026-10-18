@@ -19,8 +19,9 @@ interface Props {
   onContinue?: (selection: ProductSelectionState) => void;
   loadDetail?: ProductDetailLoader; loadComparison?: ComparisonLoader;
   busy?: boolean; error?: string;
+  showBuckets?: boolean;
 }
-export default function ProductPicker({ groups, scopeKey, selection, onSelectionChange, onRefreshGroup, onContinue, loadDetail, loadComparison, busy = false, error }: Props) {
+export default function ProductPicker({ groups, scopeKey, selection, onSelectionChange, onRefreshGroup, onContinue, loadDetail, loadComparison, busy = false, error, showBuckets = true }: Props) {
   const state = selectionForScope(selection, scopeKey);
   const [detailId, setDetailId] = useState<{id:string;version:number} | null>(null);
   const [comparing, setComparing] = useState(false);
@@ -52,7 +53,7 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
       </section>;
     })}
     <section className="picker-selection" aria-label="已选产品"><div className="consumer-card-head"><h3>已选产品 · 换批后保留</h3><button className="secondary" disabled={state.items.length < 2} onClick={() => setComparing(true)}>比较已选产品</button></div>
-      {!state.items.length ? <p>勾选产品后会显示在这里；无需先打开详情或比较。</p> : <ul>{state.items.map(({ candidate, share }) => <li key={candidate.family_id}><span><strong>{candidate.name}{share.share_class ? ` · ${share.share_class}类` : ''}</strong><small>{bucketNames[candidate.bucket]} · {share.product_id} · v{share.product_version}</small></span><button className="secondary" onClick={()=>setDetailId({id:share.product_id,version:share.product_version})}>查看已选产品详情</button><button className="secondary" onClick={() => onSelectionChange(toggleProduct(state, candidate))}>移除{candidate.name}</button></li>)}</ul>}
+      {!state.items.length ? <p>勾选产品后会显示在这里；无需先打开详情或比较。</p> : <ul>{state.items.map(({ candidate, share }) => <li key={candidate.family_id}><span><strong>{candidate.name}{share.share_class ? ` · ${share.share_class}类` : ''}</strong><small>{showBuckets?`${bucketNames[candidate.bucket]} · `:''}{share.product_id} · v{share.product_version}</small></span><button className="secondary" onClick={()=>setDetailId({id:share.product_id,version:share.product_version})}>查看已选产品详情</button><button className="secondary" onClick={() => onSelectionChange(toggleProduct(state, candidate))}>移除{candidate.name}</button></li>)}</ul>}
       {onContinue && <button disabled={busy || !state.items.length} onClick={() => onContinue(state)}>继续核对所选产品</button>}
     </section>
     {detailId && <ProductDetail productId={detailId.id} productVersion={detailId.version} onClose={() => setDetailId(null)} loadDetail={loadDetail} />}

@@ -429,8 +429,9 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     interval = row.rules.get("open_interval_days", 1)
     if interval > 1 and (priced - datetime(2026, 9, 30).date()).days % interval != 0:
         raise BankError("当前不是模拟定期开放日", "NON_OPEN_DAY", 409)
-    from .account_scope import is_shared
-    instant = is_shared(context)
+    if context is None:
+        raise BankError('请先选择已绑定的理财账户；不再受理等待成交订单','CONTEXT_REQUIRED',409)
+    instant = True
     # Cash-management products retain their quota/window contract; choosing
     # ordinary redemption must not create an unlimited immediate-cash bypass.
     if instant and command.direction == 'redeem' and row.rules.get('quick_redemption') and command.redemption_mode != 'quick':
@@ -526,27 +527,18 @@ async def accept_many(db: AsyncSession, user_id: str,
             "replacement_required": evidence.replacement_required if evidence else False}}
         db.add(row)
         await db.flush()
-        if preview.get('execution_policy') and command.redemption_mode != 'quick':
-            from .wealth_instant import complete
-            account = await owned_account(db, user_id, command.account_id)
-            await complete(db, row, account, command, version, now, preview)
-        elif command.direction == "purchase":
-            db.add(WealthCashHoldORM(operation_id=row.operation_id, account_id=row.account_id,
-                                     amount_fen=row.amount_fen, status="HELD"))
+        account = await owned_account(db, user_id, command.account_id)
+        if command.redemption_mode == 'quick':
+            from .wealth_quick import complete
+            row.pricing_date = row.confirm_date = row.cash_date = now.astimezone(TZ).date()
+            await complete(db, row, account, command, version, now, preview['estimate'])
         else:
-            if command.redemption_mode == "quick":
-                from .wealth_quick import complete
-                account = await owned_account(db, user_id, command.account_id)
-                row.pricing_date = row.confirm_date = row.cash_date = now.astimezone(TZ).date()
-                await complete(db, row, account, command, version, now, preview["estimate"])
-            else:
-                remaining = row.units_scaled
-                for lot, free in await eligible_lots(db, user_id, command, now):
-                    take = min(remaining, free)
-                    if take:
-                        db.add(WealthUnitHoldORM(hold_id=hashlib.sha256(f"{row.operation_id}:{lot.lot_id}".encode()).hexdigest(),
-                            operation_id=row.operation_id, lot_id=lot.lot_id, units_scaled=take, status="HELD"))
-                        remaining -= take
+            if not preview.get('execution_policy'):
+                raise BankError('等待成交已取消，请重新预览即时交易','PREVIEW_REQUIRED',409)
+            from .wealth_instant import complete
+            await complete(db, row, account, command, version, now, preview)
+        if row.status != 'SETTLED':
+            raise BankError('即时成交未完成，整个事务回滚','BANK_LEDGER_INVALID',503)
         authorization.status = "CONSUMED"
         record_bank_event(db, event_key=row.operation_id, subject_user_id=user_id,
             action="investment_accept", result="success",
@@ -623,98 +615,12 @@ async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
 
 
 async def settle(db: AsyncSession, operation_id: str) -> dict:
-    """管理员结算：受理后无需重新授权，固定价格/唯一分录保证重试安全。"""
-    initial = await db.get(WealthOrderORM, operation_id)
-    if initial is None:
-        raise BankError("订单不存在", "NOT_FOUND", 404)
-    await lock_accounts(db, [initial.account_id])
-    row = await db.get(WealthOrderORM, operation_id, populate_existing=True)
-    if row.status in {"SETTLED", "CANCELLED", "REJECTED"}:
-        return order_view(row)
-    from .wealth_reconciliation import require_reconciled
-    await require_reconciled(db, row.account_id)
-    from .wealth_demo import require_active
-    await require_active(db, row.account_id)
-    now = await business_now(db, row.account_id)
-    day = now.astimezone(TZ).date()
-    version = await db.get(WealthProductVersionORM, row.version_id)
-    account = await db.get(AccountORM, row.account_id, populate_existing=True)
-    if row.status!='PENDING_CASH' and version.rules.get('pricing_mode') in PRICING_MODES:
-        from .wealth_quotes import refresh
-        await refresh(db,[version.version_id],now,subject_user_id=row.user_id)
-    if row.status != "PENDING_CASH":
-        row.status = "PENDING_PRICING"
-        price = await db.get(WealthNavORM, f"{row.version_id}:{row.pricing_date.isoformat()}")
-        if version.rules.get('pricing_mode') in PRICING_MODES:
-            row.details={**row.details,'underlying_source_kind':'real','execution_source_kind':'simulated',
-                'source_nav_date':price.nav_date.isoformat() if price else None,
-                'price_source':'public_nav_for_order_pricing_date','project_policy_version':version.rules['execution_policy']['version']}
-        from ...models.wealth_research import WealthContextORM
-        context=(await db.scalars(select(WealthContextORM).where(WealthContextORM.account_id==row.account_id))).first()
-        if context and context.data.get('fixture',{}).get('missing_pricing_nav'): price=None
-        if day < row.confirm_date or price is None or price.nav_date > day or nav_available_at(price)>now:
-            row.details = {**row.details, "waiting_reason": "NAV_UNAVAILABLE" if price is None else "CONFIRMATION_DATE_NOT_REACHED"}
-            await db.commit()
-            return order_view(row)
-        if row.direction == "purchase":
-            value = purchase(row.amount_fen, price.price, version.rules["purchase_fee_rate"])
-            hold = await db.get(WealthCashHoldORM, row.operation_id)
-            if hold is None or hold.status != "HELD" or account.balance_fen < hold.amount_fen:
-                raise BankError("占款事实异常，需要核对", "BANK_LEDGER_INVALID", 503)
-            account.balance_fen -= value.gross_fen - value.refund_fen
-            hold.status = "CONSUMED"
-            db.add(WealthLotORM(lot_id=stable_id("LOT", row.operation_id), operation_id=row.operation_id,
-                user_id=row.user_id, account_id=row.account_id, version_id=row.version_id,
-                units_scaled=scaled(value.units), cost_fen=value.gross_fen-value.refund_fen,
-                acquired_date=row.confirm_date, unlock_date=date.fromisoformat(version.rules['closed_maturity_date']) if version.rules.get('closed_maturity_date') else row.confirm_date+timedelta(days=version.rules["holding_days"])))
-            row.units_scaled = scaled(value.units)
-            row.details = {**row.details, "actual": asdict(value), "actual_nav": price.price, "waiting_reason": None}
-            row.status = "SETTLED"
-            db.add(TransactionORM(tx_id=stable_id("WPT", row.operation_id), operation_id=row.operation_id, account_id=row.account_id,
-                type="investment_purchase", amount_fen=value.gross_fen-value.refund_fen,
-                counterparty=version.name, category="investment", note=None,
-                timestamp=utc_now(), status="completed", channel="app"))
-        else:
-            holds = (await db.scalars(select(WealthUnitHoldORM).where(
-                WealthUnitHoldORM.operation_id == row.operation_id, WealthUnitHoldORM.status == "HELD"))).all()
-            values = []
-            for hold in holds:
-                lot = await db.get(WealthLotORM, hold.lot_id, populate_existing=True)
-                lot_version = await db.get(WealthProductVersionORM, lot.version_id)
-                value = redeem(quantity(hold.units_scaled), price.price,
-                    redemption_rate(lot_version.rules, (row.pricing_date-lot.acquired_date).days),
-                    lot_units=quantity(lot.units_scaled), lot_cost_fen=lot.cost_fen)
-                lot.units_scaled -= hold.units_scaled
-                lot.cost_fen -= value.cost_fen
-                hold.status = "CONSUMED"
-                values.append({"lot_id": lot.lot_id, "units": quantity(hold.units_scaled), **asdict(value)})
-            if not holds:
-                raise BankError("份额占用缺失，需要核对", "BANK_LEDGER_INVALID", 503)
-            row.details = {**row.details, "actual_nav": price.price, "waiting_reason": None,
-                "actual": {"lots": values, **{field: sum(item[field] for item in values)
-                    for field in ("gross_fen", "fee_fen", "cash_fen", "cost_fen", "realized_pnl_fen")}}}
-            row.status = "PENDING_CASH"
-        event = WealthSettlementORM(event_id=f"{row.operation_id}:pricing", operation_id=row.operation_id,
-            kind="pricing", data={**row.details["actual"], "business_at": now.isoformat()}, created_at=utc_now())
-        db.add(event)
-        record_bank_event(db, event_key=event.event_id, subject_user_id=row.user_id,
-            action="investment_pricing", result="success", facts={"operation_id": row.operation_id,
-                "version_id": row.version_id, "pricing_date": row.pricing_date.isoformat(), "actual": row.details["actual"]},
-            decision_chain=["account_locked", "fixed_nav_checked", "hold_consumed", "unique_settlement"])
-    if row.status == "PENDING_CASH" and day >= row.cash_date:
-        cash = row.details["actual"]["cash_fen"]
-        account.balance_fen += cash
-        row.status = "SETTLED"
-        event = WealthSettlementORM(event_id=f"{row.operation_id}:cash", operation_id=row.operation_id,
-            kind="cash", data={"cash_fen": cash, "business_at": now.isoformat()}, created_at=utc_now())
-        db.add(event)
-        if cash > 0:
-            db.add(TransactionORM(tx_id=stable_id("WRT", row.operation_id), operation_id=row.operation_id, account_id=row.account_id,
-                type="investment_redemption", amount_fen=cash, counterparty=version.name,
-                category="investment", note=None, timestamp=utc_now(), status="completed", channel="app"))
-        record_bank_event(db, event_key=event.event_id, subject_user_id=row.user_id,
-            action="investment_cash", result="success", facts={"operation_id": row.operation_id, "cash_fen": cash},
-            decision_chain=["receivable_checked", "cash_date_reached", "unique_credit"])
+    """Compatibility endpoint: retire legacy waiting facts, never enqueue pricing."""
+    from .wealth_retire_pending import retire
+    row = await db.get(WealthOrderORM, operation_id)
+    if row is None:
+        raise BankError('订单不存在','NOT_FOUND',404)
+    await retire(db, operation_id)
     await db.commit()
     return order_view(row)
 

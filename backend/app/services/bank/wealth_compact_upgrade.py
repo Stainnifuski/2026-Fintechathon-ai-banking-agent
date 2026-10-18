@@ -148,5 +148,5 @@ async def upgrade(db,root=ROOT):
         preserved=all(after[table].get(k)==v for k,v in rows.items())
         if not preserved or (table!='wealth_profiles' and rows!=after[table]):
             raise ValueError('升级保护校验失败：'+table+'账务或其他场景数据改变，事务必须回滚')
-    return {'pool_version':manifest['version'],'real_funds':900,'categories':manifest['categories'],
+    return {'pool_version':manifest['version'],'real_funds':manifest['count'],'categories':manifest['categories'],
         'removed_products':len(removed),'bound_existing_accounts':bound,'financial_and_teammate_rows_unchanged':True}

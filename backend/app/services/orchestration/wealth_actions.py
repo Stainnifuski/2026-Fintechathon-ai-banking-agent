@@ -42,6 +42,9 @@ def positions(facts):
     return rows
 
 async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
+    if request.action == 'recommend_products':
+        from .wealth_portfolio_joint import BrowsingBankReads
+        bank = BrowsingBankReads(bank)
     # External bank scope is always checked before replay or object lookup.
     facts=await bank.assets(user_id)
     if facts['context_id']!=request.context_id:reject('资金范围已变化，请刷新','STALE_CONTEXT')

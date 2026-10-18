@@ -19,7 +19,8 @@ export function readCandidateGroup(value:unknown):CandidateGroup{
   if(!object(value)||!statuses.includes(String(value.status))||!object(value.filter)||!Array.isArray(value.items)
     ||!(value.bucket===null||buckets.includes(String(value.bucket)))||!(value.next_cursor===undefined||optionalText(value.next_cursor))||!(value.risk_explanation==null||object(value.risk_explanation)))return invalid();
   const filter=value.filter;
-  if(!['general','category','theme'].includes(String(filter.mode))
+  if(!['general','category','name','theme'].includes(String(filter.mode))
+    ||(filter.mode==='name'&&!text(filter.name_query))
     ||(filter.mode==='category'&&!text(filter.category))||(filter.mode==='theme'&&!text(filter.theme_key)&&!(Array.isArray(filter.theme_keys)&&filter.theme_keys.length&&['AND','OR'].includes(String(filter.theme_operator)))))return invalid();
   if(value.status==='risk_mismatch'&&(!object(value.risk_explanation)||!integer(value.risk_explanation.user_level,1)||!Array.isArray(value.risk_explanation.product_levels)||!value.risk_explanation.product_levels.every(n=>integer(n,1))))return invalid();
   const families=new Set<string>(),products=new Set<string>();
@@ -44,7 +45,7 @@ export function assertCurrentCandidates(group:CandidateGroup,products:Product[])
 }
 export function sameCandidateFilter(a:unknown,b:unknown):boolean{
   if(!object(a)||!object(b))return false;
-  return ['mode','category','theme_key','bucket','theme_operator','theme_keys'].every(k=>
+  return ['mode','category','name_query','theme_key','bucket','theme_operator','theme_keys'].every(k=>
     JSON.stringify(a[k]??(k==='theme_keys'?[]:null))===JSON.stringify(b[k]??(k==='theme_keys'?[]:null)));
 }
 export function replaceCandidateGroup(groups:CandidateGroup[],next:CandidateGroup):CandidateGroup[]{

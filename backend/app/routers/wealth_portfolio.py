@@ -59,6 +59,8 @@ from ..domain.wealth_portfolio_allocation import ModelError
 
 def get_portfolio_lifecycle(request: Request, user: dict=Depends(get_current_user), db=Depends(get_db), bank=Depends(portfolio_bank)) -> PortfolioLifecycle:
     provider=getattr(request.app.state,'wealth_portfolio_source',None)
+    if request.url.path.endswith('/recommendations') and hasattr(provider,'bind_browsing'):
+        return provider.bind_browsing(db,user['user_id'],bank)[1]
     if provider is not None and hasattr(provider,'bind'):return provider.bind(db,user['user_id'],bank)[1]
 
     raise HTTPException(503,detail={'code':'PORTFOLIO_SOURCE_UNAVAILABLE','message':'全授权资产、当前评估与context来源尚未注册'})

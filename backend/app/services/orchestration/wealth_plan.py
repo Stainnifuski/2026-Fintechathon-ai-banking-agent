@@ -278,8 +278,10 @@ async def progress(db: AsyncSession, user_id: str, plan_id: str, bank: HttpWealt
         raise WealthPolicyError("计划已更新", "STALE_PLAN")
     statuses = {item["status"] for item in items}
     if items and statuses <= {"SETTLED"}:
-        row.status = "AWAITING_CONFIRMATION" if data["stage"] == "SELL" else "COMPLETED"
-        if data["stage"] == "SELL":
+        row.status = "AWAITING_CONFIRMATION" if data["stage"] == "SELL" and not data.get('manual_redemption') else "COMPLETED"
+        if data.get('manual_redemption'):
+            data['next_action'] = '赎回已全部成交，资金与持仓已刷新'
+        elif data["stage"] == "SELL":
             data["next_action"] = "赎回已到账，请刷新可用现金并创建新购买版本，重新确认与强验证"
     elif "PAUSED" in statuses or statuses & {"REJECTED", "CANCELLED"}:
         row.status = "PAUSED"
@@ -354,6 +356,8 @@ async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan
     if row.version != request.version or row.status != "AWAITING_CONFIRMATION" or any(
         child["status"] != "AWAITING_CONFIRMATION" for child in row.data["items"]):
         raise WealthPolicyError("仅未受理当前方案可部分采用", "STALE_PLAN")
+    if row.data.get('manual_redemption') or row.data.get('manual_purchase'):
+        raise WealthPolicyError('请返回所选产品重新填写数量并统一核对', 'EXPLICIT_INPUT_REQUIRED', 409)
     if row.data.get('portfolio_id'):
         raise WealthPolicyError('整体目标必须经配置服务修订，再重新准备差额', 'PORTFOLIO_REVISION_REQUIRED', 409)
     previous = {child["command"]["operation_id"]: child for child in row.data["items"]}

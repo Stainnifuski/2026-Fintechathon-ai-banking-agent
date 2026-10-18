@@ -94,7 +94,8 @@ class VersionContext(DTO):
     facts_fingerprint: str
 
 class CandidateFilter(DTO):
-    mode: Literal['general','category','theme']
+    mode: Literal['general','category','name','theme']
+    name_query: str | None = Field(default=None,min_length=1,max_length=120)
     category: Literal['quick_redeem','bank_wealth','bond_fund','mixed_fund','equity_fund'] | None = None
     bucket: Literal['cash_management','stable','growth'] | None = None
     theme_key: str | None = None
@@ -103,6 +104,11 @@ class CandidateFilter(DTO):
 
     @model_validator(mode='after')
     def validate_filter(self) -> Self:
+        if self.mode=='name':
+            value=RecommendationFilter.model_validate(self.model_dump())
+            self.name_query=value.name_query
+            return self
+        if self.name_query is not None:raise ValueError('name query only applies to name mode')
         if self.mode=='theme':
             if self.category or bool(self.theme_key)==bool(self.theme_keys):raise ValueError('one explicit theme form required')
             keys=[self.theme_key] if self.theme_key else self.theme_keys

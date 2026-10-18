@@ -32,6 +32,21 @@ async def bound(db, cmd):
 
 
 @pytest.mark.asyncio
+async def test_isolated_context_cannot_create_deferred_order_anymore(store,monkeypatch):
+    from backend.app.models.wealth_research import WealthContextORM
+    async with store() as db:
+        await setup(db,monkeypatch)
+        context=await db.scalar(select(WealthContextORM).where(WealthContextORM.account_id=='A1'))
+        context.data={**context.data,'account_scope':'isolated','disposable':True}
+        await db.commit()
+        cmd=await bound(db,command('isolated-instant'))
+        auth=await authorize(db,cmd)
+        result=(await bank.accept_many(db,'U1',[(cmd,auth)]))[0]
+        assert result['status']=='SETTLED'
+        assert await db.scalar(select(func.count()).select_from(WealthCashHoldORM))==0
+
+
+@pytest.mark.asyncio
 async def test_instant_purchase_redemption_and_replay(store,monkeypatch):
     async with store() as db:
         await setup(db,monkeypatch)

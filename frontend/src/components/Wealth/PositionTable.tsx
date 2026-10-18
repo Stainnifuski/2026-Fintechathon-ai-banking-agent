@@ -24,7 +24,7 @@ export default function PositionTable({data,loadDetail,onRedeem,onReturns,blocke
       <td>{money(row.market_value_fen)}<small>{row.total_ratio==null?'整体估值不完整':`${(Number(row.total_ratio)*100).toFixed(2)}% · 占全部资产`}</small></td>
       <td><button className="table-link" onClick={()=>onReturns(row.product_id)}>当前浮动收益 {money(row.unrealized_pnl_fen)}</button><small>浮动收益不等于累计实际收益</small><small>{row.lots.some(l=>l.quote_update_status==='failed_using_last_reliable')?'行情更新失败，保留最近可靠估值与原净值日期':row.market_value_fen==null?'缺少可靠估值，资产不完整，不能确认依赖完整估值的方案':''}</small><small>{metricText(row.daily_metric)}</small><small>{row.daily_metric?.date??'无有效日期'}{row.daily_metric?.previous_date&&` / 前次 ${row.daily_metric.previous_date}`}</small></td>
       <td><button className="secondary" onClick={()=>setDetail({scope:data.scope_key,key:row.position_key})}>查看持仓详情</button><button disabled={!canRedeem(row)} onClick={()=>onRedeem([row])}>赎回</button>{!canRedeem(row)&&<small>{blockedAccounts.includes(row.account_id)?'人工接管／暂停任务限制':row.disclosure_version==null?'产品版本资料缺失':'当前没有可赎份额'}</small>}</td>
-    </tr>)}</tbody></table></div>{!data.rows.length&&<p className="consumer-empty">当前没有已确认持仓。新申购成功后会刷新此表；原有在途交易保持原规则。</p>}
+    </tr>)}</tbody></table></div>{!data.rows.length&&<p className="consumer-empty">当前没有已确认持仓。申购即时成交成功后会刷新此表。</p>}
     <TablePager {...table} label="持仓" total={data.rows.length} selected={table.selected.length} onPage={table.changePage} onSize={table.changeSize} onClear={table.clear}/>
     {detailRow&&<PositionDetail row={detailRow} loadDetail={loadDetail} onClose={()=>setDetail(null)} onReturns={()=>{setDetail(null);onReturns(detailRow.product_id);}}/>}
   </section>;

@@ -1,8 +1,8 @@
-# 900基金固定池与旧PostgreSQL升级
+# 固定基金池与旧PostgreSQL升级
 
 ## 当前范围
 
-真实基金900只：债券271、混合560、权益69。原三类4093/8444/1041按比例缩减，优先保留现有账务和正式证据样本，再按已有NAV覆盖及固定SHA256排序补足；不按未来收益选品，不改变风险或配置算法。精确清单为`config/wealth/compact_pool.json`。19个模拟银行定义、原银行模块和模拟快赎保留。运行时仍核对风险、报价、现金、窗口、额度及授权。
+当前真实基金806只：债券242、混合501、权益63。2026-10-17按用户授权永久排除原900池中任一周期均无数值夏普的94只，含历史数据库和备份；其他原始统计为旧基线。原三类4093/8444/1041按比例缩减，优先保留现有账务和正式证据样本，再按已有NAV覆盖及固定SHA256排序补足；不按未来收益选品，不改变风险或配置算法。精确清单为`config/wealth/compact_pool.json`。19个模拟银行定义、原银行模块和模拟快赎保留。运行时仍核对风险、报价、现金、窗口、额度及授权。
 
 理财订单查询、撤单页面已移除；后台成交记录继续关联持仓、流水、幂等和审计。不是删除交易事实。商户订单不在删除范围。
 
@@ -11,10 +11,10 @@
 1. 保存已有改动，取得本次代码。保留自己的`.env`、数据库卷、用户与账户，不复制开发者的SQLite库或私有覆盖文件。
 2. 启动Docker Desktop，在源码根目录执行`start_bank.cmd`（PowerShell：`powershell -NoProfile -File scripts/start_bank.ps1`）。启动器保留原Compose项目名与PostgreSQL卷，重建前后端。
 3. 后端在改表前使用`pg_dump`生成持久备份；SQLite本地覆盖使用SQLite backup API。路径为`.deps/upgrade_backups/<pool-version>-<connection-id>.dump`或`.db`。备份失败则停止，不继续结构升级。备份不提交GitHub。
-4. 安装随源码提供的`data/wealth/wealth-compact-900-v1.zip`，校验ZIP、公开配置和快照；不再下载旧全池Release，不联网采集。旧活动快照移入`upgrade_backups/retired_material`回滚备份。
+4. 安装随源码提供的`data/wealth/wealth-compact-806-v1.zip`，校验ZIP、公开配置和快照；不再下载旧全池Release，不联网采集。旧活动快照移入`upgrade_backups/retired_material`回滚备份。
 5. 补齐缺表、MFA和卡片新增字段，导入新版本资料；为有效既有借记账户绑定比赛理财context，理财升级不另建用户或账户、不发钱、不代答问卷、不授予MFA。
 6. 自动删除池外且没有成交/持仓关联的基金目录、版本、NAV、研究条目、专属知识条目和缓存。原库已有卡片、联系人、订阅、转账、账单、店铺、日历和账务记录保留。
-7. 等待Ready后访问`http://localhost:3000/`，登录原账号。检查姓名、原卡片、账户余额、理财900产品接线及本人评估/授权。API文档为`http://localhost:3000/docs`。
+7. 等待Ready后访问`http://localhost:3000/`，登录原账号。检查姓名、原卡片、账户余额、理财806产品接线及本人评估/授权。API文档为`http://localhost:3000/docs`。
 
 Docker环境自动设置`WEALTH_CATALOG_AUTO_UPGRADE=true`。原生Python环境需要安装依赖、提供备份工具，并显式配置该开关。固定资料安装器本身不改数据库，启动时的银行升级才修改数据库。运行配置中的DATABASE_URL不被升级器改写。
 

@@ -26,7 +26,7 @@ export default function Wealth({revision,onActivity,userId}:Props){
  const act=async(fn:()=>Promise<void>)=>{if(busy)return;setBusy(true);setNotice('');try{await fn();setLocalRevision(n=>n+1);}catch(e){setNotice(explain(e));}finally{setBusy(false);}};
  const changed=()=>{setLocalRevision(n=>n+1);onActivity();};
  return <section className="wealth-page"><h1>理财</h1><p>真实基金资料与虚构银行理财分别标源，资金和交易均为比赛模拟。本金可能亏损；低风险和快赎能力不代表本金或收益保证。</p>
-  <p className="consumer-note">比赛模拟即时成交：新买入经本人确认和MFA后立即扣款并增加持仓；赎回立即到账。使用最近已公布有效净值，持有期、开放窗口及额度仍适用，成功后不可撤。历史在途交易保持原规则。</p>
+  <p className="consumer-note">比赛模拟即时成交：买入经本人确认和MFA后立即扣款并增加持仓；赎回立即到账。使用最近已公布有效净值，持有期、开放窗口及额度仍适用，成功后不可撤。资料不足时不会受理或生成等待订单。</p>
   <button className="secondary" disabled={busy} onClick={()=>{changed();}}>刷新银行事实</button>
   {notice&&<p role="alert">{wealthFeedback(notice)}</p>}
   <details><summary>本人风险评估</summary><p>{assessment?`模拟承受能力 R${assessment.capacity_level} · ${assessment.confirmed?'已确认':'待确认'}`:'尚未评估，可先查看客观产品资料'}</p>

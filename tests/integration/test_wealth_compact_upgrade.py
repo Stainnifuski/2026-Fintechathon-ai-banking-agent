@@ -31,10 +31,10 @@ async def test_existing_ledger_compact_upgrade_repeat_preserves_teammate_cards(s
         db.add(WealthProductVersionORM(version_id='999999:1',product_id='999999',version=1,name='obsolete unheld material',kind='open_fund',category='bond',risk_level=2,rules={},disclosure={},created_at=datetime.now(timezone.utc)))
         await db.commit();before=await protected_digest(db)
         result=await upgrade(db);await db.commit()
-        assert result['real_funds']==900 and result['removed_products']==1
+        assert result['real_funds']==pool()['count'] and result['removed_products']==1
         assert await db.get(WealthProductORM,'999999') is None
         assert (await db.get(WealthProductVersionORM,'000015:3')).rules=={'dataset_version':'existing-bank-v3'}
-        assert (await db.get(WealthProductORM,'000015')).current_version==4
+        assert (await db.get(WealthProductORM,'000015')).current_version==pool()['product_version']
         assert (await db.get(CardORM,'TEAM-CARD')).state_version==7
         assert (await db.get(AccountORM,'A1')).balance_fen==2000000
         assert (await db.get(UserORM,'U1')).name=='U1'
@@ -77,9 +77,10 @@ async def test_out_of_pool_financial_reference_refuses_without_deleting(store):
 @pytest.mark.asyncio
 async def test_newer_teammate_product_version_is_not_downgraded(store):
     async with store() as db:
-        db.add(WealthProductORM(product_id='000015',current_version=5,status='on_sale'))
+        newer=pool()['product_version']+1
+        db.add(WealthProductORM(product_id='000015',current_version=newer,status='on_sale'))
         await db.commit()
         with pytest.raises(ValueError,match='禁止降级'):await upgrade(db)
         await db.rollback()
-        assert (await db.get(WealthProductORM,'000015')).current_version==5
+        assert (await db.get(WealthProductORM,'000015')).current_version==newer
         assert (await db.get(AccountORM,'A1')).balance_fen==2000000

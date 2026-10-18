@@ -261,7 +261,8 @@ class ProductCandidate(DTO):
 
 
 class RecommendationFilter(DTO):
-    mode: Literal['general', 'category', 'theme']
+    mode: Literal['general', 'category', 'name', 'theme']
+    name_query: str | None = Field(default=None, min_length=1, max_length=120)
     category: Literal['quick_redeem', 'bank_wealth',  'bond_fund', 'mixed_fund', 'equity_fund'] | None = None
     theme_key: str | None = None
     bucket: Bucket | None = None
@@ -271,6 +272,13 @@ class RecommendationFilter(DTO):
 
     @model_validator(mode='after')
     def mode_fields(self) -> Self:
+        if self.mode == 'name':
+            if not self.name_query or not self.name_query.strip() or self.category or self.bucket or self.theme_key or self.theme_keys or self.theme_operator:
+                raise ValueError('name matching requires only a nonblank product name or code')
+            self.name_query = self.name_query.strip()
+            return self
+        if self.name_query is not None:
+            raise ValueError('name query only applies to name mode')
         if self.theme_keys:
             if self.mode != 'theme' or self.theme_key or self.category or self.theme_operator is None or any(not k.strip() or k != k.strip() for k in self.theme_keys) or len(set(self.theme_keys)) != len(self.theme_keys):
                 raise ValueError('explicit distinct multi-theme filter required')

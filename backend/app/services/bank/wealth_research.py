@@ -25,9 +25,15 @@ def validate(payload: dict) -> list[dict]:
     if payload.get("mode") not in {"synthetic","snapshot","live_sync"} or not payload.get("dataset_id") or not payload.get("dataset_version"):
         errors.append({"row":0,"code":"DATASET_IDENTITY"})
     seen=set()
+    from pathlib import Path
+    exclusions_path=Path(__file__).resolve().parents[4]/'config/wealth/product_exclusions.json'
+    try:excluded=set(json.loads(exclusions_path.read_bytes())['codes'])
+    except (OSError,ValueError,KeyError):return [{'row':0,'code':'EXCLUSION_POLICY_UNAVAILABLE'}]
     for n,p in enumerate(payload.get("products",[]),1):
         try:
             pid=p["product_id"]
+            if isinstance(pid,str) and (pid.removeprefix('R') in excluded or p.get('source_product_code') in excluded):
+                raise ValueError('PRODUCT_PERMANENTLY_EXCLUDED')
             if not isinstance(pid,str) or not 1<=len(pid)<=32 or pid in seen: raise ValueError("IDENTITY_DUPLICATE")
             seen.add(pid)
             if not p.get("name") or p.get("source") not in {"synthetic","akshare","admin_import"}: raise ValueError("SOURCE_MISSING")

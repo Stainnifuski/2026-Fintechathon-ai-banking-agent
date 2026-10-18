@@ -1,5 +1,15 @@
 # 理财推荐provider契约
 
+## 当前正式入口（2026-10-18）
+
+正式工作台仅有两条流程：理财规划、目标产品推荐。理财规划沿用现有三板块配置模型、投影及比例调整；目标产品推荐只做类别或名称/代码匹配、当前资格校验和候选换批，不调用资产配置、比例投影或配置方案创建。
+
+目标推荐使用现有`recommend_products`动作及`/wealth/portfolio/recommendations`：`filter={mode:'category',category:'bond_fund'}`，或`filter={mode:'name',name_query:'中海可转债'}`。名称为不区分大小写的连续子串，代码为完整匹配；空白查询拒绝，名称查询不得携带配置板块、类别或主题。均经过相同本人评估、风险、产品版本和银行资格校验；匹配不代表一定可购买。
+
+当前候选选择器是`CodeCategorySelector`：同类别按具体代码升序、跨类别轮换，每批最多3只，排除已展示/已选对象；并非收益、夏普或质量排名。`general`仍供内部规划/兼容协议使用，正式用户入口已移除“普通推荐”。早期下文的预算分配provider说明属于旧语义流程，不能当作当前目标推荐逻辑。
+
+目标推荐勾选后，本人逐只填写金额，自动使用当前绑定借记账户，调用`POST /wealth/target-purchases/prepare`汇总全部已选；复用既有执行组的整份确认、一次MFA及原子批量申购。执行组只保存本人指定金额，不经过`plan_portfolio`、`revise_portfolio`、整体比例或差额prepare。切换流程清除旧未提交候选/比例，已受理交易不受影响。自然语言理解本轮按用户要求留给队友；后续LLM只能输出匹配参数，不推断配置比例或代替确认。夏普未用于排序；原900池中94只无任一周期数值夏普的产品已按后续用户授权排除，当前806只。
+
 当前默认`DeterministicRuleProvider`，`provider_id=mock-allocation-v1`，版本1；复用原分配权重和费用/流动性排序，不引入新模型算法。
 
 服务通过`WEALTH_RECOMMENDATION_PROVIDER`和显式`register_provider`选择实现。实现`recommend(inputs)`与`research(inputs)`；研究返回无金额的条件候选，可执行配置返回金额、预算、费用、未分配现金、目标/实际类别占比、理由代码与证据。实现不得接收数据库session、密钥或本人授权。

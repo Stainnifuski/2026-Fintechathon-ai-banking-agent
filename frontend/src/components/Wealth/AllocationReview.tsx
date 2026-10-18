@@ -30,7 +30,7 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
   const [validatedKey,setValidatedKey]=useState<string|null>(()=>selectionKey({items:initial.selected_positions}));
   const [prepared,setPrepared]=useState<w.PreparedPortfolio|null>(null);
   const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('');
-  const [paymentAccount,setPaymentAccount]=useState('');
+
   let draft:w.PortfolioSelection|null=null;
   try { draft=collectPortfolioSelection(plan,selection,percentages); } catch { /* Explain invalid input when submitted. */ }
   const clean=validatedKey===selectionKey({items:plan.selected_positions}) || !!draft && validatedKey===selectionKey(draft);
@@ -70,8 +70,8 @@ export default function AllocationReview({plan:initial,snapshot,selection,onRevi
     {plan.selected_positions.length===0&&plan.candidate_groups.every(group=>group.items.length===0)&&<p role="note">当前没有合格产品候选。此图仅显示账户现金及受候选不足限制的配置基准，尚未完成可投资产品配置；未发生申购。</p>}
     <p>已校验保留现金 {w.money(plan.cash_residual_fen)} · 赎回应收 {w.money(snapshot.receivable_fen)}（到账前不可用于买入）</p>
     <details><summary>查看全部现有持仓与保留项目（{snapshot.positions.length}）</summary>{snapshot.positions.length?snapshot.positions.map(position=><p key={position.position_key}>{position.account_id} · {position.product_id} v{position.product_version} · {position.units}份 · 市值 {w.money(position.market_value_fen)} · 可赎 {position.redeemable_units}份</p>):<p>当前快照没有持仓；不会把在途申请算成已确认份额。</p>}</details>
-    {!onPropose&&<>{snapshot.accounts.length>1&&<label>本次付款账户<select value={paymentAccount} onChange={e=>{setPaymentAccount(e.target.value);setPrepared(null);}}><option value="">请选择，不跨账户自动付款</option>{snapshot.accounts.map(a=><option key={a.account_id} value={a.account_id}>{a.account_id} · 可用 {w.money(a.available_fen)}</option>)}</select></label>}<button disabled={busy||!clean||needsAdoption||!snapshot.valuation_complete||snapshot.accounts.length>1&&!paymentAccount} onClick={()=>act(async()=>{
-      const result=await onPrepare(plan,paymentAccount||undefined);
+    {!onPropose&&<><button disabled={busy||!clean||needsAdoption||!snapshot.valuation_complete} onClick={()=>act(async()=>{
+      const result=await onPrepare(plan);
       if(result.portfolio_id!==plan.portfolio_id||result.portfolio_version!==plan.version)throw new Error('差额结果与当前整体版本不一致');
       setPrepared(result);
     })}>核对差额与准备预览</button>

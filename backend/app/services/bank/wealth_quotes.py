@@ -14,7 +14,7 @@ from ...models.wealth import WealthNavORM, WealthProductVersionORM
 from ...domain.wealth_paper_policy import PRICING_MODE
 
 _cache = {}
-POLICY_VERSION='published-nav-by-order-date-20261015-v1'
+POLICY_VERSION='published-nav-instant-20261017-v2'
 _locks = {}
 _limit = asyncio.Semaphore(3)
 stats = {'http_code_queries': 0, 'cache_hits': 0, 'all_market_queries': 0}

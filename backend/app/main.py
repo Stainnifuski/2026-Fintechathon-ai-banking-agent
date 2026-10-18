@@ -34,7 +34,6 @@ from .routers.flower_shop import router as flower_shop_router
 from .routers.cake_shop import router as cake_shop_router
 from .routers.calendar import router as calendar_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
-from .services.bank.wealth_worker import settlement_loop
 from .services.orchestration.wealth_task_worker import loop as wealth_task_loop
 from .services.ai.llm import get_mode, get_settings, llm
 
@@ -78,6 +77,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 result=await upgrade_catalog(upgrade_session)
                 await upgrade_session.commit()
                 logger.info('理财资料升级：%s',result)
+        from .services.bank.wealth_retire_pending import retire as retire_deferred
+        async with AsyncSessionLocal() as retirement_session:
+            retired=await retire_deferred(retirement_session)
+            await retirement_session.commit()
+            logger.info('Legacy deferred execution retired: %s',retired)
         # Material initialization is separate from request latency. Missing
         # offline material keeps the ordinary app alive, but A reads fail 503;
         # there is never a fixture fallback.
@@ -88,7 +92,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning('Portfolio material unavailable: %s',type(error).__name__)
         workers.append(asyncio.create_task(
             scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()), name="scheduled-transfer-loop"))
-        workers.append(asyncio.create_task(settlement_loop(AsyncSessionLocal), name="wealth-settlement-loop"))
         workers.append(asyncio.create_task(wealth_task_loop(AsyncSessionLocal), name="wealth-dag-loop"))
         logger.info("AI Banking Agent API 启动完成 🚀")
         yield

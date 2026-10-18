@@ -96,7 +96,7 @@ async def view(db, task):
             'operation_id':n.operation_id, 'attempts':n.attempts, **n.data} for n in nodes]}
 
 
-async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None, holding_redemption=False):
+async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None, holding_redemption=False, commit=True):
     await lock_profile(db, user_id)
     pending = (await db.scalars(select(Task).where(Task.user_id == user_id,
         Task.context_id == context_id, Task.status.not_in(TERMINAL)))).all()
@@ -127,7 +127,10 @@ async def create_command(db, user_id, session_id, context_id, command, *, sell_t
             attempts=0, data={'completion_condition':item['completion_condition'],
                 'operation_ref':command.operation_id,
                 'command':command.model_dump() if item['kind']=='SUBMIT' else None}))
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return await view(db, task)
 
 

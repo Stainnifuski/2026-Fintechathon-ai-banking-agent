@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 from .wealth import StrictRequest
 from ..domain.wealth import units, rate
+from ..domain.wealth_limits import MAX_EXECUTION_ITEMS
 
 
 class RedemptionRequest(StrictRequest):
@@ -25,4 +26,18 @@ class RedemptionRequest(StrictRequest):
             units(self.units)
         if self.holding_ratio is not None and rate(self.holding_ratio) <= 0:
             raise ValueError('持仓比例须大于0且不超过1')
+        return self
+
+
+class RedemptionBatch(StrictRequest):
+    request_id: str = Field(min_length=8, max_length=64, pattern=r'^[A-Za-z0-9_-]+$')
+    session_id: str | None = Field(default=None, min_length=1, max_length=64)
+    items: list[RedemptionRequest] = Field(min_length=1, max_length=MAX_EXECUTION_ITEMS)
+
+    @model_validator(mode='after')
+    def unique_scope(self):
+        if len({item.context_id for item in self.items}) != 1:
+            raise ValueError('整份赎回必须属于同一理财环境')
+        if len({item.position_key for item in self.items}) != len(self.items):
+            raise ValueError('同一持仓不能重复选择')
         return self

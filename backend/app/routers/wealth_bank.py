@@ -32,6 +32,7 @@ class CatalogueSubject(Subject):
     facts_only: bool = Field(default=False,strict=True)
     policy_references: bool = Field(default=False,strict=True)
     product_ids: list[str] | None = Field(default=None,max_length=256)
+    refresh_quotes: bool = Field(default=True, strict=True)
 
 
 from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
@@ -161,6 +162,7 @@ class Precheck(Subject):
 
 class AssetSubject(Subject):
     account_id: str | None = Field(default=None, max_length=32)
+    refresh_quotes: bool = Field(default=True, strict=True)
 
 
 class Verify(Subject, StrongVerification):
@@ -329,7 +331,8 @@ async def assets(request: AssetSubject, db: AsyncSession = Depends(get_db)) -> d
     """内部本人银行资产事实。"""
     from ..services.bank.wealth_asset_summary import begin_read
     from ..services.bank.wealth_quotes import refresh_scope
-    await refresh_scope(db,request.subject_user_id,account_id=request.account_id)
+    if request.refresh_quotes:
+        await refresh_scope(db,request.subject_user_id,account_id=request.account_id)
     await begin_read(db)
     return await bank.assets(db, request.subject_user_id, request.account_id)
 
@@ -347,7 +350,7 @@ async def asset_summary(request: Subject, db: AsyncSession = Depends(get_db)) ->
 async def contextual_catalog(request: CatalogueSubject, db: AsyncSession = Depends(get_db)) -> list[dict]:
     import logging
     logging.getLogger(__name__).info('Catalogue read: full=%s; selected_codes=%d',request.product_ids is None,len(request.product_ids or []))
-    if request.product_ids:
+    if request.product_ids and request.refresh_quotes:
         from ..services.bank.wealth_quotes import refresh_scope
         await refresh_scope(db,request.subject_user_id,codes=request.product_ids)
     return await bank.products(db, request.subject_user_id,facts_only=request.facts_only,policy_references=request.policy_references,product_ids=request.product_ids)

@@ -19,6 +19,8 @@ def export(root,version,out):
     public=[root/'config/wealth/portfolio_evidence_manifest.json',
             *sorted((root/'config/wealth/portfolio_public_evidence').glob('*.txt'))]
     public.extend(sorted((root/'config/wealth').glob('paper_products*.json')))
+    exclusions=root/'config/wealth/product_exclusions.json'
+    if exclusions.exists():public.append(exclusions)
     supplement=root/'config/wealth/portfolio_bank_supplement.json'
     if supplement.exists():public.append(supplement)
     scope=root/'config/wealth/competition_runtime_scope.json'

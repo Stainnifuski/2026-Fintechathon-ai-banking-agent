@@ -6,19 +6,19 @@ import { SecondFactor } from '../SecondFactor';
 import { beijingTime } from '../../utils/time';
 import { disclosureLabels, displayDisclosure, visibleDisclosures } from './disclosureView';
 
-interface Props { plan:w.Plan; onActivity:()=>void }
+interface Props { plan:w.Plan; initialPreview?:w.PlanPreview|null; onActivity:()=>void; onCompleted?:(message:string)=>void }
 /** Existing plan endpoints and shared second factor; no alternative authority. */
-export default function PlanExecution({plan:initial,onActivity}:Props){
-  const [plan,setPlan]=useState(initial);const [preview,setPreview]=useState<w.PlanPreview|null>(null);
+export default function PlanExecution({plan:initial,initialPreview=null,onActivity,onCompleted}:Props){
+  const [plan,setPlan]=useState(initial);const [preview,setPreview]=useState<w.PlanPreview|null>(initialPreview);
   const [consent,setConsent]=useState(false);const [stage,setStage]=useState<'PREVIEW'|'CONFIRMED'|'VERIFIED'>('PREVIEW');
   const [factor,setFactor]=useState<Factor|null>({method:'totp'});const [code,setCode]=useState('');
   const [busy,setBusy]=useState(false);const [notice,setNotice]=useState('');
   const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(e){setNotice((e as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message||'请求失败，请保留原操作号核对');}finally{setBusy(false);}};
   const execute=async()=>{const current=await w.post<w.Plan>(`/plans/${plan.plan_id}/execute`,{version:plan.version});setPlan(current);setPreview(null);setCode('');onActivity();
-    setNotice(current.items.every(i=>i.status==='SETTLED')?'模拟即时成交成功，资金与持仓已刷新。':'部分结果需要核对，请按原操作号刷新，勿重新创建订单。');};
+    const message=current.items.every(i=>i.status==='SETTLED')?'模拟即时成交成功，资金与持仓已刷新。':'部分结果需要核对，请按原操作号刷新，勿重新创建订单。';setNotice(message);if(current.items.every(i=>i.status==='SETTLED'))onCompleted?.(message);};
   return <section className="plan-execution" aria-label="整份方案可信操作">
     <h3>银行执行版本 v{plan.version}</h3><p>每笔绑定真实付款账户、具体产品、披露和原操作号；整份方案使用一次本人确认与验证码。</p>
-    <button disabled={busy||!plan.items.length||plan.status!=='AWAITING_CONFIRMATION'} onClick={()=>act(async()=>{setPreview(await w.post<w.PlanPreview>(`/plans/${plan.plan_id}/preview`,{version:plan.version}));setConsent(false);setStage('PREVIEW');setCode('');setFactor({method:'totp'});})}>预览整份{plan.stage==='SELL'?'赎回':'申购'}</button>
+    {!preview&&<button disabled={busy||!plan.items.length||plan.status!=='AWAITING_CONFIRMATION'} onClick={()=>act(async()=>{setPreview(await w.post<w.PlanPreview>(`/plans/${plan.plan_id}/preview`,{version:plan.version}));setConsent(false);setStage('PREVIEW');setCode('');setFactor({method:'totp'});})}>预览整份{plan.stage==='SELL'?'赎回':'申购'}</button>}
     <button className="secondary" disabled={busy} onClick={()=>act(async()=>{setPlan(await w.get<w.Plan>(`/plans/${plan.plan_id}/progress`));onActivity();})}>刷新成交结果</button>
     <CommandReview rows={plan.items}/>
     {plan.next_action&&<p>{plan.next_action}</p>}

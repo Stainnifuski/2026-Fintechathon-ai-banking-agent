@@ -149,6 +149,7 @@ class ProductIndex:
         result=[]
         for code in self.scope_codes:
             p=self.products[code]
+            if filter.mode=='name' and filter.name_query.casefold() not in p.name.casefold() and filter.name_query.casefold()!=p.product_id.casefold():continue
             if filter.bucket and p.bucket!=filter.bucket:continue
             if filter.mode=='category':
                 expected={'bond_fund':{'bond'},'mixed_fund':{'mixed'},'equity_fund':{'equity'}}
@@ -215,7 +216,7 @@ def pipeline(index: ProductIndex,filter: CandidateFilter,facts: CurrentFacts,use
     for code,reasons in material_exclusions.items():exclusions.setdefault(code,[]).extend(reasons)
     gate=assessment_reasons(facts,user_id,now);risk_explanation=None
     if not matched:
-        status={'theme':'no_theme_match','category':'no_category_match','general':'no_eligible_products'}[filter.mode];reasons=['NO_STRUCTURED_MATCH']+gate
+        status={'theme':'no_theme_match','category':'no_category_match','name':'no_category_match','general':'no_eligible_products'}[filter.mode];reasons=['NO_STRUCTURED_MATCH']+gate
     elif gate:status='unavailable';reasons=gate
     elif families:status='ok';reasons=[]
     elif all(d.product_level is not None and d.user_level is not None and d.product_level>d.user_level for d in decisions):

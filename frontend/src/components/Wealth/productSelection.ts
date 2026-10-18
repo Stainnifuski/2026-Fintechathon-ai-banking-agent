@@ -39,7 +39,7 @@ export function groupMessage(group: CandidateGroup): string | null {
       ? `当前评估 R${group.risk_explanation.user_level}，该组候选风险 ${group.risk_explanation.product_levels.map(level => `R${level}`).join('／')}，均超过评估能力。`
       : '风险适配说明缺失，请重新查询，不能据此选择产品。';
     case 'no_theme_match': return '未找到符合该主题的产品。';
-    case 'no_category_match': return '该类别暂无匹配产品。';
+    case 'no_category_match': return group.filter.mode==='name'?'未找到匹配该名称或代码的产品。':'该类别暂无匹配产品。';
     case 'no_eligible_products': return '暂无符合条件且可申购的产品。';
     default: return '资料暂不可用，请稍后重新查询。';
   }

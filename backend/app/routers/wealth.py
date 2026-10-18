@@ -18,7 +18,8 @@ from pydantic import Field
 from ..schemas.wealth_selection import PortfolioPrepare
 from ..schemas.wealth_assets import AssetSummary
 from ..schemas.wealth_returns import ReturnsQuery, WealthReturns
-from ..schemas.wealth_redemption import RedemptionRequest
+from ..schemas.wealth_redemption import RedemptionRequest, RedemptionBatch
+from ..schemas.wealth_target_purchase import TargetPurchaseBatch
 from ..schemas.wealth_action import WealthActionV1, WealthActionResultV1
 from ..services.orchestration.wealth_portfolio_source import get_portfolio_source
 
@@ -55,6 +56,28 @@ async def structured_action(request: WealthActionV1, http_request: Request,
             getattr(http_request.app.state,'wealth_action_handlers',None),
             getattr(http_request.app.state,'wealth_portfolio_source',None))
     except (BankApiError,policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post('/target-purchases/prepare')
+async def prepare_target_purchases(request: TargetPurchaseBatch, user: dict=Depends(get_current_user),
+        db:AsyncSession=Depends(get_db), bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..services.orchestration.wealth_target_purchase import prepare
+    try:
+        return await prepare(db, user['user_id'], bank, request)
+    except (BankApiError, policy.WealthPolicyError) as error:
+        await db.rollback()
+        fail(error)
+
+
+@router.post('/redemptions/prepare')
+async def prepare_redemptions(request: RedemptionBatch, user: dict=Depends(get_current_user),
+        db:AsyncSession=Depends(get_db), bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..services.orchestration.wealth_redemption_batch import prepare
+    try:
+        return await prepare(db, user['user_id'], bank, request)
+    except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
 

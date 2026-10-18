@@ -56,6 +56,9 @@ def adapt_candidate_group(result: dict,index: ProductIndex,filter: CandidateFilt
         if shares:items.append(ProductCandidate(family_id=family['family_id'],name=index.products[family['default_share']['product_id']].name,
             bucket=family['bucket'],reason=f"{ {'money_market':'货币','money':'货币','bond':'债券','mixed':'混合','equity':'股票'}.get(family.get('substantive_category'),family.get('substantive_category')) }／项目R{shares[0].product_risk_level}，当前可购；{ {'cash_management':'活钱','stable':'稳健','growth':'成长'}.get(family['bucket'],family['bucket']) }板块候选。类别／代码展示顺序不代表收益或质量排名。",reason_codes=['QUALIFIED_SHARE','DETERMINISTIC_CATEGORY_CODE_ORDER'],
             evidence={'default_share':family['default_share'],'share_decisions':family['shares'],'source_kind':result['source_kind'],'fixture_only':result['fixture_only']},share_classes=shares))
+    if filter.mode in {'category','name'} and filter.bucket is None:
+        for item in items:
+            item.reason=item.reason.split('，当前可购')[0]+'，符合当前匹配条件及申购资格。类别／代码展示顺序不代表收益或质量排名。'
     return CandidateGroup(bucket=filter.bucket,filter=RecommendationFilter.model_validate(filter.model_dump()),status=status,items=items,
         reason_codes=sorted(all_reasons | set(result.get('reason_codes',[]))) if status!='ok' else [],
         next_cursor=result.get('session',{}).get('cursor') if result.get('session') else None,

@@ -9,9 +9,9 @@ import zipfile
 import shutil
 import re
 
-PACKAGE_NAME = 'wealth-compact-900-v1.zip'
-PACKAGE_SHA = '03c9ba386834e5536fae6356b99140b78a073e67cccefe7dbb8752225a1cae4c'
-DATA_VERSION = '85f35db0a1398dbffbe17f1c6feb6707310d1d009deb357dda709cce33cd6cfa'
+PACKAGE_NAME = 'wealth-compact-806-v1.zip'
+PACKAGE_SHA = 'db614cb6d0f94d82917558d4f3533dbb838233f62aedf42be41690623a36d460'
+DATA_VERSION = '4c4a116e6c086702ee4a29424675fd81ef2807fbe2a01ce4258bc8f51b181d98'
 
 
 def install_release(repo, archive):

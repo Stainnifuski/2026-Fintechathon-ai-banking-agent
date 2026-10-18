@@ -57,5 +57,5 @@ def test_shipped_compact_package_installs_twice_and_has_exact_selected_codes(tmp
     snapshot=json.loads((old/(installer.DATA_VERSION+'.json')).read_bytes())
     selected=json.loads((root/'config/wealth/compact_pool.json').read_bytes())
     codes={p['product_id'] for p in snapshot['products'] if p['source_kind']=='real'}
-    assert codes==set(selected['codes']) and len(codes)==900
+    assert codes==set(selected['codes']) and len(codes)==selected['count']
     assert len(list(old.glob('*.json')))==3

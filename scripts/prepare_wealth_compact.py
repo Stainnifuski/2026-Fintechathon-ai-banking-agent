@@ -33,6 +33,8 @@ def choose(products, pinned=()):
 
 
 def prepare(root):
+    if (root/'config/wealth/product_exclusions.json').exists():
+        raise ValueError('LEGACY_POOL_EXPANSION_REMOVED: use the approved Sharpe-filtered fixed pool; do not recreate the old 900 pool')
     config=root/'config/wealth'; archive=root/'.deps/compact_upgrade/source'; archive.mkdir(parents=True,exist_ok=True)
     names=['paper_products.json','paper_products_core_v2.json','paper_products_legacy_v1.json','portfolio_evidence_manifest.json','preload.json','competition_runtime_scope.json','portfolio_content_binding_v2.json']
     for name in names:

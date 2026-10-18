@@ -2,7 +2,7 @@
 
 No existing ledger is opened. Public facts/dates and model parameters stay put.
 """
-import asyncio,hashlib,json,re,tempfile,zipfile,shutil
+import asyncio,hashlib,json,re,tempfile,zipfile,shutil,gzip
 from pathlib import Path
 from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
 from backend.app.models import Base,UserORM,AccountORM
@@ -15,7 +15,7 @@ from backend.app.services.orchestration.wealth_portfolio_data import read,save,d
 from scripts.wealth_portfolio_package import export
 
 ROOT=Path(__file__).resolve().parents[1]
-BASE='d59ecfcc2ecb09e6573278d5b5f38524407f2ac72ac0051ebf7e7b63f53ff3e1'
+BASE=json.loads((ROOT/'config/wealth/portfolio_content_binding_v2.json').read_bytes())['data_version']
 
 async def build(root=ROOT):
     selected=pool(root);codes=set(selected['codes'])
@@ -35,9 +35,11 @@ async def build(root=ROOT):
         await engine.dispose()
     base_dir=root/'.deps/wealth_portfolio_data/snapshots'
     if not (base_dir/(BASE+'.json')).exists():
-        base_dir=root/'.deps/wealth_portfolio_data/compact_build_source';base_dir.mkdir(parents=True,exist_ok=True)
-        for suffix in ('.json','.index.json'):
-            shutil.copyfile(root/'.deps/upgrade_backups/retired_material'/(BASE+suffix),base_dir/(BASE+suffix))
+        from scripts.install_wealth_offline import PACKAGE_NAME
+        from backend.app.schemas.wealth_portfolio_data import DataSnapshot
+        with zipfile.ZipFile(root/'data/wealth'/PACKAGE_NAME) as archive:
+            source=DataSnapshot.model_validate(json.loads(gzip.decompress(archive.read('package/'+BASE+'.snapshot.json.gz'))))
+        save(source,base_dir)
     base=read(root,base_dir,BASE)
     base.products=[p for p in base.products if p.source_kind!='real' or p.product_id in codes]
     base.daily=[d for d in base.daily if d.source_kind!='real' or d.product_id in codes]
@@ -68,13 +70,13 @@ async def build(root=ROOT):
     save(base,root/'.deps/wealth_portfolio_data/snapshots')
     binding=json.loads((root/'config/wealth/portfolio_content_binding_v2.json').read_bytes())
     binding.update(previous_data_version=BASE,data_version=base.version,daily_version=base.daily_version,
-        capture_sha256=capture_sha,verified_previous_bindings=900,pool_version=selected['version'])
+        capture_sha256=capture_sha,verified_previous_bindings=selected['count'],pool_version=selected['version'])
     (root/'config/wealth/portfolio_content_binding_v2.json').write_bytes(canonical(binding))
     joint=root/'backend/app/services/orchestration/wealth_portfolio_joint.py'
     text=joint.read_text(encoding='utf-8');text=re.sub(r"DATA='[0-9a-f]{64}'",f"DATA='{base.version}'",text);text=re.sub(r"DAILY='[0-9a-f]{64}'",f"DAILY='{base.daily_version}'",text);joint.write_text(text,encoding='utf-8')
     signature=digest({p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'config/wealth').glob('*.json'))})[:12]
     stage=root/'.deps/compact_upgrade'/('package-'+base.version[:12]+'-'+signature);package=export(root,base.version,stage)
-    target=root/'data/wealth/wealth-compact-900-v1.zip';target.parent.mkdir(parents=True,exist_ok=True)
+    target=root/'data/wealth'/f"wealth-compact-{selected['count']}-v1.zip";target.parent.mkdir(parents=True,exist_ok=True)
     with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
         for path in sorted(stage.iterdir()):z.write(path,'package/'+path.name)
         for relative in sorted(package['public_files']):z.write(root/relative,relative)
@@ -83,6 +85,6 @@ async def build(root=ROOT):
     for name,value in [('PACKAGE_NAME',target.name),('PACKAGE_SHA',sha),('DATA_VERSION',base.version)]:
         text=re.sub(name+r" = '[^']+'",name+" = '"+value+"'",text)
     installer.write_text(text,encoding='utf-8')
-    print(json.dumps({'data_version':base.version,'daily_version':base.daily_version,'products':len(base.products),'real_funds':900,'zip_bytes':target.stat().st_size,'zip_sha256':sha},ensure_ascii=False))
+    print(json.dumps({'data_version':base.version,'daily_version':base.daily_version,'products':len(base.products),'real_funds':selected['count'],'zip_bytes':target.stat().st_size,'zip_sha256':sha},ensure_ascii=False))
 
 if __name__=='__main__':asyncio.run(build())

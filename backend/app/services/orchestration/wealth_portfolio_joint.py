@@ -27,8 +27,26 @@ async def invoke(call):
         message=str(error)+('：'+', '.join(r for r in reasons if isinstance(r,str)) if reasons else '')
         raise WealthPolicyError(message,error.code,getattr(error,'status_code',422)) from error
 
-DATA='85f35db0a1398dbffbe17f1c6feb6707310d1d009deb357dda709cce33cd6cfa'
-DAILY='b36e10a79af4571d81f9a9fed76292270e5d078377b41ea0a0560717751124e0'
+DATA='4c4a116e6c086702ee4a29424675fd81ef2807fbe2a01ce4258bc8f51b181d98'
+DAILY='d6b0ce1ea6491c4ff39d3f760a7e3eab75a64d92d72515450e57aee4f6185e1c'
+
+class BrowsingBankReads:
+    """Fresh bank permissions/balances, existing published NAV; no market wait.
+
+    Only candidate browsing uses this adapter. Trading and execution retain
+    the original precheck and quote refresh path.
+    """
+    def __init__(self, bank): self.bank = bank
+    def __getattr__(self, name): return getattr(self.bank, name)
+    async def call(self, method, suffix, body=None):
+        if suffix in {'/assets', '/catalog'}:
+            body = {**(body or {}), 'refresh_quotes':False}
+        return await self.bank.call(method, suffix, body)
+    async def assets(self, user_id):
+        return await self.call('POST', '/assets', {'subject_user_id':user_id})
+    async def selected_products(self, user_id, product_ids):
+        return await self.call('POST', '/catalog', {'subject_user_id':user_id,
+            'product_ids':sorted(set(product_ids)), 'facts_only':True})
 
 class ServerReads:
     owns_responses=True # protected HTTP returns request-owned new JSON, never a shared bank cache
@@ -320,6 +338,8 @@ class JointPortfolio:
         service=PortfolioLifecycle(PortfolioModelProvider(candidates,facts),self.store,JointAccess(facts,self.store))
         service.candidate_contexts=self.candidate_contexts
         return facts,service
+    def bind_browsing(self,db,user_id,bank):
+        return self.bind(db,user_id,BrowsingBankReads(bank))
     async def display_products(self,db,user_id,bank):
         facts,_=self.bind(db,user_id,bank)
         rows=await invoke(facts.transport.get('/api/v1/wealth/products'))
@@ -340,7 +360,7 @@ class JointPortfolio:
         _,service=self.bind(db,user_id,bank)
         return (await invoke(service.create(user_id,PortfolioCreate(context_id=context_id,**{k:v for k,v in params.items() if v is not None})))).model_dump(mode='json')
     async def recommend(self,*,db,user_id,context_id,bank,params):
-        _,service=self.bind(db,user_id,bank)
+        _,service=self.bind_browsing(db,user_id,bank)
         p={k:v for k,v in params.items() if k!='selected_family_ids' and v is not None}
         # B sends the last server-issued cursor; its bound session is resolved server-side.
         if p.get('cursor') and not p.get('candidate_binding'):

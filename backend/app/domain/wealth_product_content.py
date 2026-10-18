@@ -30,7 +30,7 @@ def effective_disclosure(disclosure, rules):
     return {**disclosure,
         'base_pricing': disclosure.get('base_pricing', disclosure.get('pricing')),
         'base_limitations': disclosure.get('base_limitations', disclosure.get('limitations')),
-        'pricing': '预览使用最近已公布的可靠净值；最终按订单计价日净值，未公布时等待，不使用虚构未来价格。',
+        'pricing': '使用最近已公布的有效净值；本人确认及MFA后模拟即时成交。无有效净值时拒绝受理，不生成等待订单或虚构未来价格。',
         'limitations': '真实公开基金资料；比赛模拟资金、费用和交易，不代表真实代销或收益保证。',
         'runtime_pricing_policy_version': POLICY_VERSION}
 
