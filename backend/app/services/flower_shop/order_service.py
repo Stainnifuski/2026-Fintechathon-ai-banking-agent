@@ -76,6 +76,8 @@ def _view(order: FlowerOrderORM, payment: dict | None = None) -> dict:
         "payment_request_id": order.payment_request_id,
         "payment_request": _payment_summary(payment),
         "status": order.status,
+        "refunded_fen": (payment or {}).get("refunded_fen",order.total_fen if order.status==REFUNDED else 0),
+        "remaining_refundable_fen": max(0,order.total_fen-(payment or {}).get("refunded_fen",order.total_fen if order.status==REFUNDED else 0)),
         "state_version": order.state_version,
         "created_at": order.created_at,
         "updated_at": order.updated_at,
@@ -92,7 +94,9 @@ async def _find_payment_request(customer_user_id: str, payment_request_id: str) 
 
 def effective_order_status(stored_status: str, payment: dict | None) -> str:
     """页面对账与NOVA投影共用状态规则；函数不修改订单。"""
-    if payment is None or stored_status in {COMPLETED, PAYMENT_CLOSED, REFUNDED}:
+    if payment and payment.get('refunded_fen',0)>0:
+        return REFUNDED if payment['refunded_fen']>=payment['amount_fen'] else 'PARTIALLY_REFUNDED'
+    if payment is None or stored_status in {COMPLETED, PAYMENT_CLOSED, REFUNDED, 'PARTIALLY_REFUNDED'}:
         return stored_status
     if payment["status"] == "PAID":
         return COMPLETED
@@ -284,6 +288,8 @@ async def refund_order(
     merchant_user_id: str,
     order_id: str,
     state_version: int,
+    amount_fen: int | None = None,
+    operation_id: str | None = None,
 ) -> dict:
     if merchant_user_id != FLOWER_MERCHANT_USER_ID:
         raise FlowerShopError("只有花店商户可以发起退款", "MERCHANT_FORBIDDEN", 403)
@@ -305,15 +311,18 @@ async def refund_order(
             return _view(order, payment)
         if order.state_version != state_version:
             raise FlowerShopError("订单状态已变化，请刷新后重试", "STALE_STATE_VERSION", 409)
-        if order.status != COMPLETED or not order.payment_request_id:
+        if order.status not in (COMPLETED,'PARTIALLY_REFUNDED') or not order.payment_request_id:
             raise FlowerShopError("只有已完成付款的订单可以退款", "ORDER_NOT_REFUNDABLE", 409)
         payment_request_id = order.payment_request_id
+        expected_refunded=(payment or {}).get("refunded_fen",0)
 
     try:
-        await refund_merchant_payment(
+        refunded = await refund_merchant_payment(
             payment_request_id=payment_request_id,
             merchant_user_id=merchant_user_id,
-            operation_id=f"FLOWER-REFUND-{order_id}",
+            operation_id=operation_id or f"FLOWER-REFUND-{order_id}",
+            amount_fen=amount_fen,
+            expected_refunded_fen=expected_refunded,
         )
     except BankError as error:
         raise FlowerShopError(error.message, error.code, error.status_code) from error
@@ -327,9 +336,9 @@ async def refund_order(
             )
         ).scalar_one()
         if order.status != REFUNDED:
-            if order.status != COMPLETED:
+            if order.status not in (COMPLETED,'PARTIALLY_REFUNDED'):
                 raise FlowerShopError("订单退款状态冲突", "REFUND_STATE_CONFLICT", 409)
-            order.status = REFUNDED
+            order.status = REFUNDED if refunded.get('remaining_fen',0)==0 else 'PARTIALLY_REFUNDED'
             order.state_version += 1
             await session.commit()
             await session.refresh(order)

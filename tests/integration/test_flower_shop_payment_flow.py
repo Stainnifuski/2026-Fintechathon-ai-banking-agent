@@ -226,6 +226,13 @@ async def test_flower_order_payment_completes_through_transfer_task(
         ("refund_out", "顾客"),
     }
 
+    from backend.app.models.bill_foundation import BillTransactionMetaORM
+    customer_refund = next(item for item in refund_transactions if item.type == 'refund')
+    original = next(item for item in migrated if item.type == 'purchase')
+    metadata = await flower_payment_store.get(BillTransactionMetaORM, customer_refund.tx_id)
+    assert metadata.original_tx_id == original.tx_id
+    assert metadata.merchant_id == (await flower_payment_store.get(BillTransactionMetaORM, original.tx_id)).merchant_id
+
     repeated = await order_service.refund_order(
         merchant_user_id="U007",
         order_id=order["order_id"],

@@ -19,6 +19,7 @@ export interface CakeOrder {
   quantity: number;
   unit_price_fen: number;
   unit_price: number;
+  refunded_fen: number; remaining_refundable_fen: number;
   total_fen: number;
   total: number;
   currency: 'CNY';
@@ -34,7 +35,7 @@ export interface CakeOrder {
     status: string;
     state_version: number;
   };
-  status: 'PENDING_PAYMENT' | 'COMPLETED' | 'PAYMENT_CLOSED' | 'REFUNDED';
+  status: 'PENDING_PAYMENT' | 'COMPLETED' | 'PAYMENT_CLOSED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
   state_version: number;
   created_at: string;
   updated_at: string;
@@ -58,7 +59,7 @@ export const createOrder = (payload: {
 export const merchantOrders = () =>
   apiClient.get<CakeOrder[]>('/cake-shop/merchant/orders').then(response => response.data);
 
-export const refundOrder = (item: CakeOrder) =>
+export const refundOrder = (item: CakeOrder, amount_fen?:number, operation_id?:string) =>
   apiClient.post<CakeOrder>(`/cake-shop/merchant/orders/${item.order_id}/refund`, {
-    state_version: item.state_version,
+    state_version: item.state_version, amount_fen, operation_id,
   }).then(response => response.data);

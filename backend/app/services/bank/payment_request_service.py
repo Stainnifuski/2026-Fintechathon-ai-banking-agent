@@ -349,7 +349,9 @@ async def list_payment_requests(*, user_id: str, role: str = "all") -> list[dict
         } if user_ids else {}
         if changed:
             await session.commit()
-        return [_view(record, names[record.requester_user_id], names[record.payer_user_id]) for record in records]
+        from .merchant_refund_service import refund_summaries
+        refunds=await refund_summaries(session,[r.payment_request_id for r in records])
+        return [{**_view(record,names[record.requester_user_id],names[record.payer_user_id]),'refunded_fen':refunds.get(record.payment_request_id,0),'remaining_refundable_fen':max(0,record.amount_fen-refunds.get(record.payment_request_id,0))} for record in records]
 
 
 async def respond_to_payment_request(
@@ -574,7 +576,10 @@ async def read_payment_snapshots(db, *, user_id: str, requester_user_id: str,
         PaymentRequestORM.payer_user_id == user_id,
         PaymentRequestORM.requester_user_id == requester_user_id))).all()
     now = _now()
+    from .merchant_refund_service import refund_summaries
+    refunds=await refund_summaries(db,[r.payment_request_id for r in records])
     return {record.payment_request_id: {
+        'refunded_fen':refunds.get(record.payment_request_id,0),
         "payment_request_id": record.payment_request_id,
         "status": EXPIRED if record.status == PENDING and as_utc(record.expires_at, legacy_utc=True) <= now else record.status,
         "stored_status": record.status, "state_version": record.state_version,

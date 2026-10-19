@@ -43,12 +43,14 @@ class CakeOrderView(BaseModel):
     quantity: int
     unit_price_fen: int
     unit_price: float
+    refunded_fen: int = 0
+    remaining_refundable_fen: int = 0
     total_fen: int
     total: float
     currency: Literal["CNY"]
     payment_request_id: str | None
     payment_request: CakePaymentRequestSummary | None
-    status: Literal["PENDING_PAYMENT", "COMPLETED", "PAYMENT_CLOSED", "REFUNDED"]
+    status: Literal["PENDING_PAYMENT", "COMPLETED", "PAYMENT_CLOSED", "REFUNDED", "PARTIALLY_REFUNDED"]
     state_version: int
     created_at: datetime
     updated_at: datetime
@@ -56,3 +58,5 @@ class CakeOrderView(BaseModel):
 
 class CakeRefundAction(BaseModel):
     state_version: int = Field(ge=1)
+    amount_fen: int | None = Field(default=None,gt=0,strict=True)
+    operation_id: str | None = Field(default=None,min_length=1,max_length=64)

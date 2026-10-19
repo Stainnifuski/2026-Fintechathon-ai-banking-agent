@@ -31,6 +31,7 @@ const statusText: Record<flowerShop.FlowerOrder['status'], string> = {
   COMPLETED: '交易完成',
   PAYMENT_CLOSED: '付款已关闭',
   REFUNDED: '已退款',
+  PARTIALLY_REFUNDED: '部分退款',
 };
 
 export default function ThirdPartyServices({ revision, onBack, onGoBank, onContextChange }: Props) {

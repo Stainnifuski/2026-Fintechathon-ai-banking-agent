@@ -54,4 +54,6 @@ async def transaction_detail(db, user_id: str, tx_id: str) -> dict:
         TransactionORM.tx_id == tx_id, TransactionORM.status == "completed"))
     if row is None:
         raise BankError("流水不存在或无权访问", "TRANSACTION_NOT_FOUND", 404)
-    return transaction_view(row)
+    from .bill_foundation import metadata_views
+    metadata = await metadata_views(db, user_id, [row.tx_id])
+    return transaction_view(row, metadata.get(row.tx_id))

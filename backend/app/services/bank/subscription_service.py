@@ -163,6 +163,8 @@ async def cancel_subscription(
             subject_user_id=user_id, action="subscription_cancel", result="cancelled",
             facts={"subscription_id": subscription_id, "state_version": subscription.state_version},
             decision_chain=["ownership_checked", "version_checked", "subscription_cancelled"])
+        from .bill_foundation import sync_users
+        await sync_users(session, [user_id], changed_tx_ids=[])
         await session.commit()
         await session.refresh(subscription)
         return _view(subscription, account)
@@ -262,6 +264,8 @@ async def simulate_subscription_charge(
             facts={"operation_id": idempotency_key, "subscription_id": subscription_id,
                    "bank_tx_id": transaction.tx_id, "amount_fen": subscription.amount_fen},
             decision_chain=["ownership_checked", "version_checked", "balance_checked", "debit_committed"])
+        from .bill_foundation import sync_users
+        await sync_users(session, [user_id], changed_tx_ids=[transaction.tx_id])
         await session.commit()
         await session.refresh(subscription)
         await session.refresh(account)

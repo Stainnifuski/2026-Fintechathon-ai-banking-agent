@@ -10,7 +10,7 @@ from ...schemas.nova import StrictModel
 from .. import shop_reads
 
 Shop = Literal['flower', 'cake']
-Status = Literal['PENDING_PAYMENT', 'COMPLETED', 'PAYMENT_CLOSED', 'REFUNDED']
+Status = Literal['PENDING_PAYMENT', 'COMPLETED', 'PAYMENT_CLOSED', 'REFUNDED','PARTIALLY_REFUNDED']
 
 
 class ShopArguments(StrictModel):
@@ -167,7 +167,7 @@ async def offline_reply(message, context, execute):
         name = 'get_shop_order'
     elif re.search(r'订单|付款了吗|付了吗|退款了吗', message):
         name = 'list_shop_orders'
-        for text, status in [('待付款', 'PENDING_PAYMENT'), ('已付款', 'COMPLETED'), ('已退款', 'REFUNDED'), ('已关闭', 'PAYMENT_CLOSED')]:
+        for text, status in [('部分退款','PARTIALLY_REFUNDED'),('待付款', 'PENDING_PAYMENT'), ('已付款', 'COMPLETED'), ('已退款', 'REFUNDED'), ('已关闭', 'PAYMENT_CLOSED')]:
             if text in message:
                 arguments['status'] = status
     elif re.search(r'这个商品|这款|选中商品', message):
@@ -188,7 +188,7 @@ async def offline_reply(message, context, execute):
             reply = f"{result['shop_name']}共有{data['total']}款符合条件的商品：\n" + '\n'.join(f"- {i['name']} · ¥{i['price_fen']/100:,.2f} · {i['description']}" for i in data['items'])
         else:
             items = data['items'] if name == 'list_shop_orders' else [data]
-            labels = {'PENDING_PAYMENT': '等待付款', 'COMPLETED': '交易完成', 'PAYMENT_CLOSED': '付款已关闭', 'REFUNDED': '已退款'}
+            labels = {'PENDING_PAYMENT': '等待付款', 'COMPLETED': '交易完成', 'PAYMENT_CLOSED': '付款已关闭', 'REFUNDED': '已退款','PARTIALLY_REFUNDED':'部分退款'}
             reply = f"{result['shop_name']}本人订单：\n" + ('暂无符合条件的订单。' if not items else '\n'.join(
                 f"- {i['order_id']} · {i['product_name']} × {i['quantity']} · ¥{i['total_fen']/100:,.2f} · {labels[i['status']]} · 银行付款状态：{i['payment_request']['status'] if i['payment_request'] else '未取得'}" for i in items))
             if name == 'list_shop_orders' and data['has_more']:

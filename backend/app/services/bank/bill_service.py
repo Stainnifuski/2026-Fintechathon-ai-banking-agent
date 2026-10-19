@@ -12,6 +12,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, func, not_, and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
+from ...models.bill_foundation import BillTransactionMetaORM as Meta, BillTransactionTagORM as TxTag, BillUserTagORM as Tag, BillTransferPairORM as Pair
+from .bill_foundation import metadata_views
 
 from ...models.account import AccountORM
 from ...models.transaction import TransactionORM as Tx
@@ -25,7 +28,7 @@ OUTGOING = (*CONSUMPTION, "transfer_out")
 # Bank-issued business types, not customer notes or purchase/category guesses.
 EXCLUDED_WEALTH_TYPES = ("investment_purchase", "investment_redemption")
 LABELS = {"dining": "餐饮", "shopping": "购物", "transport": "交通",
-          "entertainment": "娱乐", "subscription": "订阅", "other": "其他"}
+          "entertainment": "娱乐", "subscription": "订阅", "education": "学习", "other": "其他"}
 
 
 @dataclass(frozen=True)
@@ -96,16 +99,23 @@ async def scope(db: AsyncSession, user_id: str, query: BillQuery):
     predicates = [Tx.account_id.in_([query.account_id] if query.account_id else accounts),
                   Tx.status == "completed", Tx.type.not_in(EXCLUDED_WEALTH_TYPES)]
     if not query.account_id:
-        predicates.append(not_(and_(Tx.type.in_(("transfer_in", "transfer_out")), Tx.counterparty.in_(accounts))))
-    # Category filters deliberately select consumption only; refunds lack an original-tx link.
+        predicates.append(not_(and_(Tx.type.in_(("transfer_in", "transfer_out")),
+            (Tx.counterparty.in_(accounts)) | Tx.tx_id.in_(select(Meta.tx_id).join(Pair, Pair.pair_id == Meta.transfer_pair_id).where(Pair.user_id == user_id)))))
+    if query.tag_id:
+        if not await db.scalar(select(Tag.tag_id).where(Tag.tag_id == query.tag_id, Tag.user_id == user_id)):
+            raise BankError('标签不存在或无权访问', 'TAG_NOT_FOUND', 404)
+        predicates.append(Tx.tx_id.in_(select(TxTag.tx_id).where(TxTag.tag_id == query.tag_id)))
+    # Linked refunds follow the original category, in the period they arrive.
     if query.category:
-        predicates.extend([Tx.type.in_(CONSUMPTION), category_expr() == query.category])
+        predicates.extend([Tx.type.in_((*CONSUMPTION, "refund")), category_expr() == query.category])
     return predicates
 
 
 def category_expr():
-    return case((Tx.type == "subscription", "subscription"),
-                (Tx.category.in_(tuple(LABELS)), Tx.category), else_="other")
+    from .bill_classification import consumption_category
+    original = aliased(Tx)
+    original_category = select(consumption_category(original)).join(Meta, Meta.original_tx_id == original.tx_id).where(Meta.tx_id == Tx.tx_id, original.account_id == Tx.account_id).correlate(Tx).scalar_subquery()
+    return case((Tx.type == 'refund', func.coalesce(original_category, 'unlinked_refund')), else_=consumption_category())
 
 
 def interval(predicates, start, end):
@@ -124,7 +134,7 @@ async def aggregate(db, predicates, start, end, period):
                             .where(*interval(predicates, start, end))
                             .group_by(Tx.type, category, day))).all()
     totals = Totals().model_dump()
-    categories = defaultdict(lambda: [0, 0])
+    categories = defaultdict(lambda: [0, 0, 0])
     trend = defaultdict(int)
     for kind, cat, day_key, amount, count in rows:
         amount = int(amount)
@@ -143,14 +153,20 @@ async def aggregate(db, predicates, start, end, period):
             trend[day_key] += amount
         elif kind in INCOMING or kind == "transfer_out":
             totals[kind + "_fen"] += amount
+            if kind == 'refund':
+                if cat in LABELS:
+                    categories[cat][2] += amount
+                    totals['linked_refund_fen'] += amount
+                else:
+                    totals['unlinked_refund_fen'] += amount
     totals["net_inflow_fen"] = totals["inflow_fen"] - totals["outflow_fen"]
     totals["net_consumption_fen"] = totals["consumption_fen"] - totals["refund_fen"]
     return totals, categories, trend
 
 
-def transaction_view(tx):
-    return dict(tx_id=tx.tx_id, account_id=tx.account_id, type=tx.type,
-                category="subscription" if tx.type == "subscription" else tx.category,
+def transaction_view(tx, metadata=None):
+    return dict(**(metadata or {}), tx_id=tx.tx_id, account_id=tx.account_id, type=tx.type,
+                category=(metadata or {}).get("effective_category") or ("subscription" if tx.type == "subscription" else tx.category),
                 amount_fen=tx.amount_fen, timestamp=aware(tx.timestamp), counterparty=tx.counterparty,
                 note=tx.note, status=tx.status)
 
@@ -160,7 +176,7 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
     predicates = await scope(db, user_id, query)
     current, cats, trend = await aggregate(db, predicates, b["start"], b["end_exclusive"], query.period)
     previous, prev_cats, _ = await aggregate(db, predicates, b["previous_start"], b["previous_end_exclusive"], query.period)
-    categories = [dict(category=key, label=LABELS[key], amount_fen=cats[key][0], count=cats[key][1],
+    categories = [dict(category=key, label=LABELS[key], refund_fen=cats[key][2], net_amount_fen=cats[key][0]-cats[key][2], amount_fen=cats[key][0], count=cats[key][1],
                        share_percent=round(cats[key][0] * 100 / current["consumption_fen"], 2) if current["consumption_fen"] else 0,
                        previous_fen=prev_cats[key][0], change_fen=cats[key][0] - prev_cats[key][0],
                        change_percent=percent(cats[key][0], prev_cats[key][0]))
@@ -174,13 +190,14 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
     typical = median([Decimal(value) for value in baseline]) if len(baseline) >= rules.min_samples else None
     anomalies = []
     recent = {}
+    tx_metadata = await metadata_views(db, user_id, [t.tx_id for t in purchases])
     for tx in purchases:
         absolute = tx.amount_fen >= rules.large_fen
         relative = typical is not None and tx.amount_fen >= rules.relative_min_fen and tx.amount_fen >= typical * rules.median_multiple
         if absolute or relative:
             reason = f"本笔消费 {money(tx.amount_fen)}，达到大额提醒阈值 {money(rules.large_fen)}。" if absolute else f"本笔消费 {money(tx.amount_fen)}，达到上期 {len(baseline)} 笔消费中位数（约 {money(typical)}）的 {rules.median_multiple} 倍以上。"
             anomalies.append(dict(kind="large", title="大额消费，建议核对", reason=reason, tx_ids=[tx.tx_id]))
-        key = (tx.account_id, tx.type, tx.counterparty, tx.amount_fen)
+        key = (tx.account_id, tx.type, tx_metadata.get(tx.tx_id, {}).get("merchant_id") or tx.counterparty, tx.amount_fen)
         earlier = recent.get(key)
         if earlier and (aware(tx.timestamp) - aware(earlier.timestamp)).total_seconds() <= rules.duplicate_seconds:
             seconds = int((aware(tx.timestamp) - aware(earlier.timestamp)).total_seconds())
@@ -190,6 +207,10 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
         if cat["previous_fen"] and cat["change_fen"] >= rules.increase_min_fen and cat["change_fen"] * 100 >= cat["previous_fen"] * rules.increase_percent:
             anomalies.append(dict(kind="increase", title=f"{cat['label']}消费增加", category=cat["category"],
                                   reason=f"本期 {money(cat['amount_fen'])}，上期 {money(cat['previous_fen'])}，增加 {money(cat['change_fen'])}（{cat['change_percent']}%）。"))
+    from .bill_reviews import decorate
+    anomalies = await decorate(db,user_id,BillQuery(**b["query"]),anomalies)
+    anomalies.sort(key=lambda item:item['review_status']!='pending')
+    pending_count=sum(a['review_status']=='pending' for a in anomalies)
     points = []
     cursor = b["start"]
     while cursor < b["end_exclusive"]:
@@ -198,7 +219,7 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
         cursor = cursor + timedelta(days=1) if query.period == "month" else shifted(cursor, months=1)
     notices = ["仅统计已完成交易；消费含购买和订阅，转账单列。",
                "理财申购和赎回不计入本报告的金额、笔数、异常及明细；实际记录保留在资金流水。",
-               "退款按到账期单列；未关联原消费，因此不抵扣分类金额。",
+               "退款按到账期计入；有付款链证据的退款归到原消费类别并展示净额，未关联退款单列，不改写原账期。",
                "全部账户汇总排除可确认的本人账户互转；单账户保留转入转出。",
                "所有金额为人民币；历史无时区时间按 UTC 解释，北京时间划分账期。"]
     if typical is None:
@@ -218,9 +239,9 @@ async def analyze(db: AsyncSession, user_id: str, query: BillQuery, *, now=None,
     if increased:
         top = increased[0]
         report.append(f"增加最多的类别是{top['label']}，比上期多 {money(top['change_fen'])}；这说明支出构成变化，不代表已知购买原因。")
-    report.append(f"发现 {len(anomalies)} 条待核对提示，具体依据见下方明细。" if anomalies else "本期未触发已配置的异常规则；这不代表所有交易均无异常。")
+    report.append(f"发现 {pending_count} 条待核对提示，具体依据见下方明细。" if pending_count else "本期没有尚待核对的异常提示；已核对记录可在明细展开，这不代表所有交易均无异常。")
     from .bill_explanation import explain_changes
-    explanation = await explain_changes(db, predicates, b)
+    explanation = await explain_changes(db, predicates, b, user_id=user_id)
     if explanation['total_change_fen'] != change:
         raise BankError('账单在分析期间发生变化，请重新查询', 'BILL_CHANGED', 409)
     if explanation['drivers']:
@@ -241,4 +262,5 @@ async def transactions(db, user_id, query, *, page=1, page_size=20, tx_ids=None,
     total = await db.scalar(select(func.count()).select_from(Tx).where(*predicates))
     rows = (await db.scalars(select(Tx).where(*predicates).order_by(Tx.timestamp.desc(), Tx.tx_id.desc())
                             .offset((page - 1) * page_size).limit(page_size))).all()
-    return dict(items=[transaction_view(tx) for tx in rows], total=total, page=page, page_size=page_size)
+    metadata = await metadata_views(db, user_id, [tx.tx_id for tx in rows])
+    return dict(items=[transaction_view(tx, metadata.get(tx.tx_id)) for tx in rows], total=total, page=page, page_size=page_size)

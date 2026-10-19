@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import ReactECharts from 'echarts-for-react/lib/core';
+import ReactECharts from './Chart';
 import * as echarts from 'echarts/core';
+import {ForecastHistory} from './Decisions';
+import {fromBeijingInput} from '../../utils/time';
 import * as bills from '../../services/bills';
 
 const money = (fen: number) => (fen / 100).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' });
-const labels: Record<string, string> = { dining: '餐饮', shopping: '购物', transport: '交通', entertainment: '娱乐', subscription: '订阅', other: '其他' };
+const labels: Record<string, string> = { dining: '餐饮', shopping: '购物', transport: '交通', entertainment: '娱乐', subscription: '订阅', education: '学习', other: '其他' };
 const time = (s: string) => new Date(s).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 const errorText = (e: unknown) => (e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message || '读取失败，请重试。';
 
@@ -53,28 +55,14 @@ export default function Enhancements({ result, revision, onSelect, onManage, sel
 }
 
 function CashflowPanel({ accountId, revision }: { accountId: string | null; revision: number }) {
-  const initial = (): bills.CashflowScenario => ({ days: 30, account_id: accountId, reductions: [], excluded_subscription_ids: [] });
+  const initial = (): bills.CashflowScenario => ({ days: 30, account_id: accountId, reductions: [], excluded_subscription_ids: [],one_off_events:[] });
   const [draft, setDraft] = useState<bills.CashflowScenario>(initial);
   const [data, setData] = useState<bills.CashflowProjection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const [oneOff,setOneOff]=useState({label:'',at:'',amount:'',direction:'expense'});
   const generation = useRef(0);
-  const chartRef = useRef<ReactECharts | null>(null);
-  const chartHost = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!chartHost.current || busy || !data) return;
-    let frame = 0;
-    const resize = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => chartRef.current?.getEchartsInstance().resize());
-    };
-    const observer = new ResizeObserver(resize);
-    observer.observe(chartHost.current);
-    window.addEventListener('resize', resize);
-    resize();
-    return () => { observer.disconnect(); window.removeEventListener('resize', resize); cancelAnimationFrame(frame); };
-  }, [data, busy]);
   const load = async (scenario: bills.CashflowScenario) => {
     const id = ++generation.current;
     setError(''); setBusy(true);
@@ -88,27 +76,31 @@ function CashflowPanel({ accountId, revision }: { accountId: string | null; revi
   }, [accountId, revision, retry]);
   const updateReduction = (category: string, percent: number) => setDraft(s => ({ ...s, reductions: [...s.reductions.filter(r => r.category !== category), { category, percent }] }));
   const submit = (e: FormEvent) => { e.preventDefault(); void load(draft); };
-  const dirty = data && JSON.stringify(draft) !== JSON.stringify(data.scenario);
+  const scenarioKey=(s:bills.CashflowScenario)=>JSON.stringify([s.days,s.account_id,s.reductions.filter(r=>r.percent>0).sort((a,b)=>a.category.localeCompare(b.category)),[...s.excluded_subscription_ids].sort(),(s.one_off_events||[]).map(e=>({...e,at:new Date(e.at).toISOString()}))]);
+  const dirty = data && scenarioKey(draft)!==scenarioKey(data.scenario);
   const subscriptionEvents = Array.from(new Map((data?.events || []).filter(e => e.source === 'subscription_plan' && e.reference_id).map(e => [e.reference_id!, e])).values());
   return <section className="bill-enhancement cashflow-panel" aria-labelledby="cashflow-title"><h3 id="cashflow-title">未来现金流与情景模拟</h3><p className="hint">从现实现在起算，与上方历史账期独立。仅分析有效储蓄现金；所有调整仅是本次假设。</p>
     <form onSubmit={submit}><div className="cashflow-controls"><label>预测天数<select value={draft.days} onChange={e => setDraft(s => ({ ...s, days: Number(e.target.value) }))}><option value={7}>未来7天</option><option value={30}>未来30天</option><option value={62}>未来62天</option></select></label><button disabled={busy}>{busy ? '正在计算…' : '计算情景'}</button><button type="button" className="secondary" disabled={busy} onClick={() => { const s = initial(); setDraft(s); void load(s); }}>恢复基准</button></div>
       <div className="cashflow-reductions">{Object.entries(labels).filter(([c]) => c !== 'subscription').map(([category, label]) => <label key={category}>{label}减少 {draft.reductions.find(r => r.category === category)?.percent || 0}%<input type="range" aria-label={`${label}减少比例`} min={0} max={100} step={5} value={draft.reductions.find(r => r.category === category)?.percent || 0} onChange={e => updateReduction(category, Number(e.target.value))} /></label>)}</div>
       {subscriptionEvents.length > 0 && <fieldset><legend>假设排除以下订阅扣费（不会实际取消）</legend>{subscriptionEvents.map(e => <label className="cashflow-check" key={e.reference_id}><input type="checkbox" checked={draft.excluded_subscription_ids.includes(e.reference_id!)} onChange={event => setDraft(s => ({ ...s, excluded_subscription_ids: event.target.checked ? [...s.excluded_subscription_ids, e.reference_id!] : s.excluded_subscription_ids.filter(id => id !== e.reference_id) }))} />{e.label} · 单次 {money(-e.amount_fen)}</label>)}</fieldset>}
+      <fieldset><legend>临时大额收支假设（只改变情景）</legend><div className="bill-plan-form"><label>用途<input value={oneOff.label} maxLength={64} onChange={e=>setOneOff({...oneOff,label:e.target.value})}/></label><label>时间（北京时间）<input type="datetime-local" value={oneOff.at} onChange={e=>setOneOff({...oneOff,at:e.target.value})}/></label><label>金额（元）<input type="number" min="0.01" step="0.01" value={oneOff.amount} onChange={e=>setOneOff({...oneOff,amount:e.target.value})}/></label><label>方向<select value={oneOff.direction} onChange={e=>setOneOff({...oneOff,direction:e.target.value})}><option value="expense">支出</option><option value="income">收入</option></select></label><button type="button" disabled={!oneOff.label.trim()||!oneOff.at||Number(oneOff.amount)<=0||!oneOff.amount} onClick={()=>{setDraft(s=>({...s,one_off_events:[...(s.one_off_events||[]),{at:fromBeijingInput(oneOff.at),label:oneOff.label,amount_fen:Math.round(Number(oneOff.amount)*100)*(oneOff.direction==='expense'?-1:1)}]}));setOneOff({label:'',at:'',amount:'',direction:'expense'});}}>添加临时假设</button></div>{draft.one_off_events?.map((event,i)=><p key={i}>{event.label} · {time(event.at)} · {money(event.amount_fen)} <button type="button" className="text-button" onClick={()=>setDraft(s=>({...s,one_off_events:s.one_off_events?.filter((_,k)=>k!==i)}))}>移除此假设</button></p>)}</fieldset>
     </form>
     {error && <p role="alert" className="error">{error} <button onClick={() => setRetry(n => n + 1)}>重试</button></p>}{busy && <p role="status">正在读取计划与历史样本…</p>}
     {data && !busy && <>{dirty && <p className="notice" role="status">假设已修改，请点击“计算情景”更新；下方仍是上一次计算结果。</p>}
       <p>截止 {time(data.as_of)}，预测至 {time(data.end_exclusive)}（不含终点）；{data.account_id || '全部有效储蓄账户'}。</p>
       <div className="bill-metrics">{[['当前可用现金', data.opening_available_fen], ['基准期末估计', data.baseline_end_fen], ['情景期末估计', data.scenario_end_fen], ['假设改善金额', data.scenario_saving_fen]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{money(Number(value))}</strong></div>)}</div>
-      <p>当前占款 {money(data.held_fen)} · 计划流出 {money(data.planned_outflow_fen)} · 历史收入估计 {money(data.estimated_income_fen)} · 日常消费估计 {money(data.estimated_variable_spending_fen)}</p>
+      <p className="hint">{data.calibration?.reason} · 消费校准系数 {data.calibration?.factor||1}</p>
+      <p>当前占款 {money(data.held_fen)} · 计划流出 {money(data.planned_outflow_fen)} · 历史收入估计 {money(data.estimated_income_fen)} · 周期支出估计 {money(data.estimated_recurring_spending_fen)} · 日常消费估计 {money(data.estimated_variable_spending_fen)}</p>
       <p className={data.first_negative_date ? 'notice' : 'hint'}>{data.first_negative_date ? `基准路径在 ${data.first_negative_date} 首次低于零，建议核对计划和估计。` : '本次日末基准路径未低于零；不代表没有日内或未知支出风险。'}</p>
-      <div ref={chartHost} className="cashflow-chart"><ReactECharts ref={chartRef} echarts={echarts} style={{ height: 310 }} option={{ animation: false, aria: { enabled: true, description: `未来${data.days}天现金流估计，金额人民币元。基准期末${money(data.baseline_end_fen)}，假设情景期末${money(data.scenario_end_fen)}。` }, tooltip: { trigger: 'axis', valueFormatter: (v: number) => money(v) }, legend: { data: ['基准估计', '假设情景', '仅计划', '历史高支出', '历史低支出'], bottom: 0 }, grid: { left: 75, right: 15, bottom: 65, top: 25 }, xAxis: { type: 'category', data: data.timeline.map(p => p.date.slice(5)) }, yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `¥${v / 100}` } }, series: [
+      <div className="cashflow-chart"><ReactECharts echarts={echarts} style={{ height: 310 }} option={{ animation: false, aria: { enabled: true, description: `未来${data.days}天现金流估计，金额人民币元。基准期末${money(data.baseline_end_fen)}，假设情景期末${money(data.scenario_end_fen)}。` }, tooltip: { trigger: 'axis', valueFormatter: (v: number) => money(v) }, legend: { data: ['基准估计', '假设情景', '仅计划', '历史高支出', '历史低支出'], bottom: 0 }, grid: { left: 75, right: 15, bottom: 65, top: 25 }, xAxis: { type: 'category', data: data.timeline.map(p => p.date.slice(5)) }, yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `¥${v / 100}` } }, series: [
         { name: '基准估计', type: 'line', data: data.timeline.map(p => p.baseline_balance_fen), showSymbol: false },
         { name: '假设情景', type: 'line', data: data.timeline.map(p => p.scenario_balance_fen), showSymbol: false },
         { name: '仅计划', type: 'line', data: data.timeline.map(p => p.planned_balance_fen), showSymbol: false, lineStyle: { type: 'dashed' } },
         { name: '历史高支出', type: 'line', data: data.timeline.map(p => p.historical_low_balance_fen), showSymbol: false, lineStyle: { type: 'dotted', opacity: .5 } },
         { name: '历史低支出', type: 'line', data: data.timeline.map(p => p.historical_high_balance_fen), showSymbol: false, lineStyle: { type: 'dotted', opacity: .5 } },
       ], color: ['#1769e0', '#159a8c', '#815ac0', '#dd7184', '#e8a346'] }} /></div>
-      <details className="insight-evidence"><summary>计划与估计依据 · {data.events.length} 项</summary>{data.events.map((e, i) => <p key={`${e.reference_id}-${i}`}>{time(e.at)} · {e.label} · {money(e.amount_fen)}{e.excluded_in_scenario && ' · 本次假设排除'}<small>{e.source === 'salary_estimate' ? `历史工资估计，依据 ${e.evidence_tx_ids.join('、')}` : '当前已保存计划，尚未执行'}</small></p>)}{data.spending_baselines.map(b => <p key={b.category}>{labels[b.category]}：{b.sample_count} 笔／{b.observed_months} 个月样本，日均约 {money(b.daily_fen)}；本期基准 {money(b.estimated_total_fen)}，假设 {money(b.scenario_total_fen)}。</p>)}</details>
+      <details className="insight-evidence"><summary>计划与估计依据 · {data.events.length} 项</summary>{data.events.map((e, i) => <p key={`${e.reference_id}-${i}`}>{time(e.at)} · {e.label} · {money(e.amount_fen)}{e.excluded_in_scenario && ' · 本次假设排除'}<small>{['salary_estimate', 'recurring_estimate'].includes(e.source) ? `历史周期估计，依据 ${e.evidence_tx_ids.join('、')}` : e.source==='scenario'?'本次临时假设，不会执行收支':'当前已保存计划，尚未执行'}</small></p>)}{data.spending_baselines.map(b => <p key={b.category}>{labels[b.category]}：{b.sample_count} 笔／{b.observed_months} 个月样本，日均约 {money(b.daily_fen)}；本期基准 {money(b.estimated_total_fen)}，假设 {money(b.scenario_total_fen)}。</p>)}</details>
+      <ForecastHistory scenario={data.scenario} dirty={!!dirty}/>
       <details className="bill-notices"><summary>估计方法与数据不足说明</summary>{data.notices.map(n => <p key={n}>{n}</p>)}</details>
     </>}
   </section>;

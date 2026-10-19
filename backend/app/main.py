@@ -82,6 +82,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             retired=await retire_deferred(retirement_session)
             await retirement_session.commit()
             logger.info('Legacy deferred execution retired: %s',retired)
+        from .services.bank.bill_foundation import refresh_all
+        async with AsyncSessionLocal() as bill_session:
+            await refresh_all(bill_session)
+            await bill_session.commit()
         # Material initialization is separate from request latency. Missing
         # offline material keeps the ordinary app alive, but A reads fail 503;
         # there is never a fixture fallback.
@@ -117,6 +121,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(wealth_tasks_router)
+from .routers.bill_foundations import router as bill_foundations_router
+app.include_router(bill_foundations_router)
+from .routers.bill_features import router as bill_features_router
+app.include_router(bill_features_router)
 from .routers.wealth_portfolio import router as portfolio_router
 from .services.orchestration.wealth_portfolio_joint import install as install_portfolio
 from pathlib import Path

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 from decimal import Decimal
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, String, func, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -15,6 +15,7 @@ class TransactionORM(Base):
     """交易记录 ORM 模型。"""
 
     __tablename__ = "transactions"
+    __table_args__ = (Index("ix_bill_transactions_scope_time", "account_id", "status", "timestamp", "tx_id"),)
 
     tx_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="交易ID")
     operation_id: Mapped[str | None] = mapped_column(

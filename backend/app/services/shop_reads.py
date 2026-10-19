@@ -54,6 +54,8 @@ async def orders(db, user_id, shop, *, order_id=None):
             'status', 'state_version', 'created_at', 'updated_at')}
         view['created_at'] = as_utc(row.created_at, legacy_utc=True)
         view['updated_at'] = as_utc(row.updated_at, legacy_utc=True)
+        view['refunded_fen']=(payment or {}).get('refunded_fen',row.total_fen if row.status=='REFUNDED' else 0)
+        view['remaining_refundable_fen']=max(0,row.total_fen-view['refunded_fen'])
         view['stored_status'] = row.status
         view['status'] = config['orders'].effective_order_status(row.status, payment)
         view['status_projected'] = view['status'] != row.status

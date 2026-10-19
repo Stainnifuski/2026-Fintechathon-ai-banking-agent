@@ -24,7 +24,7 @@ class Extraction(BaseModel):
 
 TIME = r"\d{4}年\d{1,2}月|\d{4}-\d{2}(?![-\d])|\d{4}年|\d{1,2}月|上个月|这个月|本月|上月|今年|去年|本年"
 ALIASES = {"餐饮": "dining", "吃饭": "dining", "外卖": "dining", "购物": "shopping",
-           "交通": "transport", "打车": "transport", "娱乐": "entertainment", "订阅": "subscription", "其他": "other"}
+           "交通": "transport", "打车": "transport", "娱乐": "entertainment", "订阅": "subscription", "学习": "education", "教育": "education", "其他": "other"}
 
 
 def parse_time(text: str, now: datetime) -> tuple[str, str]:

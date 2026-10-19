@@ -470,6 +470,8 @@ async def submit_transfer(
                    "control_epoch": context.control_epoch},
             decision_chain=["trusted_executor", "ownership_and_status_checked", "digest_checked",
                             "balance_and_daily_limit_checked", "double_entry_committed"])
+        from .bill_foundation import sync_users
+        await sync_users(db, [sender.user_id, receiver.user_id], now=now, exact_pair=(bank_tx_id, credit_tx_id), changed_tx_ids=[bank_tx_id,credit_tx_id])
         await db.commit()
         if simulate_response_loss:
             raise BankResponseLost("银行已记账，但响应在传输中丢失")

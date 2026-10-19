@@ -466,4 +466,7 @@ async def simulate_card_purchase(session: AsyncSession, *, user_id: str, card_id
                         "txn_limits_checked", "funds_checked",
                         "purchase_approved" if decline is None else f"declined_{decline.lower()}"])
     await session.flush()
+    if decline is None:
+        from .bill_foundation import sync_users
+        await sync_users(session, [user_id], now=now, changed_tx_ids=[row.tx_id])
     return {"authorization": authorization_view(row), "card": card_view(card, account)}

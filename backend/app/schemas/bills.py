@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Period = Literal["month", "year"]
-Category = Literal["dining", "shopping", "transport", "entertainment", "subscription", "other"]
+Category = Literal["dining", "shopping", "transport", "entertainment", "subscription", "education", "other"]
 
 
 class BillQuery(BaseModel):
@@ -14,6 +14,7 @@ class BillQuery(BaseModel):
     date: str | None = Field(default=None, max_length=7)
     account_id: str | None = Field(default=None, max_length=32)
     category: Category | None = None
+    tag_id: str | None = Field(default=None, min_length=1, max_length=40)
 
 
 class BillMessage(BaseModel):
@@ -28,6 +29,8 @@ class Totals(BaseModel):
     net_inflow_fen: int = 0
     consumption_fen: int = 0
     refund_fen: int = 0
+    linked_refund_fen: int = 0
+    unlinked_refund_fen: int = 0
     net_consumption_fen: int = 0
     transfer_in_fen: int = 0
     transfer_out_fen: int = 0
@@ -40,6 +43,8 @@ class Totals(BaseModel):
 
 
 class CategoryTotal(BaseModel):
+    refund_fen: int = 0
+    net_amount_fen: int = 0
     category: str
     label: str
     amount_fen: int
@@ -58,6 +63,12 @@ class TrendPoint(BaseModel):
 
 
 class Anomaly(BaseModel):
+    anomaly_id: str = ""
+    fingerprint: str = ""
+    review_status: str = "pending"
+    review_note: str = ""
+    review_version: int = 0
+    evidence_changed: bool = False
     kind: Literal["large", "duplicate", "increase"]
     title: str
     reason: str

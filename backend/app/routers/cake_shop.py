@@ -113,6 +113,8 @@ async def refund(
                 merchant_user_id=current_user["user_id"],
                 order_id=order_id,
                 state_version=request.state_version,
+                amount_fen=request.amount_fen,
+                operation_id=request.operation_id,
             )
         )
     except CakeShopError as error:

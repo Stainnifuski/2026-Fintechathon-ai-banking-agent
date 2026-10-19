@@ -54,6 +54,11 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
     if not ids:
         notices.append('没有可纳入的有效储蓄现金账户；以下仅为空范围计算。')
     events = []
+    for item in request.one_off_events:
+        if item.at.tzinfo is None or not now<=item.at<end or item.amount_fen==0 or not item.label.strip():
+            raise BankError('临时收支需带时区、金额非零且位于预测范围内','INVALID_SCENARIO_EVENT',422)
+        events.append(dict(at=item.at.astimezone(TZ),label=item.label,amount_fen=item.amount_fen,source='scenario',reference_id=None,evidence_tx_ids=[],excluded_in_scenario=False))
+
     subs = list((await db.scalars(select(SubscriptionORM).where(SubscriptionORM.user_id == user_id,
                                                                 SubscriptionORM.debit_account_id.in_(ids),
                                                                 SubscriptionORM.status == 'ACTIVE'))).all())
@@ -104,12 +109,59 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
                                                 Tx.timestamp >= history_start.astimezone(timezone.utc),
                                                 Tx.timestamp < now.astimezone(timezone.utc),
                                                 Tx.type.in_(('purchase', 'salary'))).order_by(Tx.timestamp))).all()
+    from ...models.bill_foundation import BillRecurringStreamORM as Stream, BillRecurringOccurrenceORM as Occurrence, BillMerchantORM as Merchant, BillTransactionMetaORM as Meta
+    streams = (await db.execute(select(Stream, Merchant.display_name).join(Merchant, Merchant.merchant_id == Stream.merchant_id).where(
+        Stream.user_id == user_id, Stream.account_id.in_(ids), Stream.source == 'detected', Stream.status == 'ACTIVE'))).all()
+    observed = defaultdict(list)
+    for sid, tx in (await db.execute(select(Occurrence.stream_id, Tx).join(Tx, Tx.tx_id == Occurrence.tx_id).where(
+        Occurrence.stream_id.in_([stream.stream_id for stream, _ in streams]), Tx.account_id.in_(ids)))).all():
+        observed[sid].append(tx)
+    history_metadata = {m.tx_id:m for m in (await db.scalars(select(Meta).where(Meta.tx_id.in_([tx.tx_id for tx in history])))).all()}
+    fixed_expense_ids = set()
+    salary_count = 0
+    from ...models.bill_features import BillRecurringScheduleORM as Schedule
+    from .bill_schedules import occurrences
+    schedules={r.stream_id:r for r in (await db.scalars(select(Schedule).where(Schedule.stream_id.in_([s.stream_id for s,_ in streams])))).all()}
+    def period_key(at,frequency):
+        at=aware(at).astimezone(TZ)
+        if frequency=='WEEKLY':return at.isocalendar()[:2]
+        if frequency=='QUARTERLY':return at.year,(at.month-1)//3
+        if frequency=='YEARLY':return at.year
+        return at.year,at.month
+    for stream, merchant in streams:
+        if not stream.enabled or not stream.last_observed_at:continue
+        last=aware(stream.last_observed_at).astimezone(TZ)
+        max_gap={'WEEKLY':10,'MONTHLY':62,'QUARTERLY':124,'YEARLY':397}.get(stream.frequency,62)
+        if (now-last).days>max_gap:
+            notices.append(f'{merchant} 周期记录已过期，未继续推演，请刷新识别。');continue
+        rows=observed[stream.stream_id]
+        if stream.kind=='expense':fixed_expense_ids.update(t.tx_id for t in rows)
+        schedule=schedules.get(stream.stream_id)
+        anchor=aware(schedule.anchor_at).astimezone(TZ) if schedule else month_start.replace(day=min(stream.anchor_day,calendar.monthrange(month_start.year,month_start.month)[1]),hour=12)
+        for when in occurrences(anchor,stream.frequency,now,end,month_end=stream.month_end):
+            already=any(period_key(t.timestamp,stream.frequency)==period_key(when,stream.frequency) for t in rows)
+            if already:continue
+            income=stream.kind=='income'
+            events.append(dict(at=when,label=f'{merchant} 周期{ "收入" if income else "支出" }估计',amount_fen=stream.amount_fen if income else -stream.amount_fen,
+                source='salary_estimate' if income else 'recurring_estimate',reference_id=stream.stream_id,evidence_tx_ids=[t.tx_id for t in sorted(rows,key=lambda t:aware(t.timestamp))[-3:]],excluded_in_scenario=False))
+            if income:salary_count+=1
+    from ...models.bill_features import BillRecurringScheduleORM as Schedule
+    from .bill_schedules import occurrences
+    manual=(await db.execute(select(Stream,Schedule,Merchant.display_name).join(Schedule,Schedule.stream_id==Stream.stream_id).join(Merchant,Merchant.merchant_id==Stream.merchant_id).where(Stream.user_id==user_id,Stream.account_id.in_(ids),Stream.source=='manual',Stream.status=='ACTIVE',Stream.enabled.is_(True)))).all()
+    for stream,schedule,merchant in manual:
+        if stream.kind=='expense':
+            fixed_expense_ids.update(tx.tx_id for tx in history if tx.type=='purchase' and tx.account_id==stream.account_id and history_metadata.get(tx.tx_id) and history_metadata[tx.tx_id].merchant_id==stream.merchant_id and tx.amount_fen==stream.amount_fen)
+        for at in occurrences(schedule.anchor_at,stream.frequency,now,end,month_end=stream.month_end):
+            events.append(dict(at=at,label=f'{merchant} 手动周期计划',amount_fen=stream.amount_fen if stream.kind=='income' else -stream.amount_fen,source='recurring_plan',reference_id=stream.stream_id,evidence_tx_ids=[],excluded_in_scenario=False))
+    if fixed_expense_ids:
+        notices.append('已启用周期支出的历史记录从可变消费基线移除，避免重复计算；消费降幅只作用于可变消费。')
+    # Compatibility for old, not-yet-backfilled records. Persisted income preferences take priority.
     # Salary estimates require one payment per month, at least 3 months, stable date and amount.
     salaries = defaultdict(list)
     for tx in history:
-        if tx.type == 'salary':
+        meta = history_metadata.get(tx.tx_id)
+        if tx.type == 'salary' and (not meta or not meta.merchant_id):
             salaries[(tx.account_id, tx.counterparty)].append(tx)
-    salary_count = 0
     for (_, merchant), rows in salaries.items():
         by_month = defaultdict(list)
         for tx in rows:
@@ -141,11 +193,14 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
     months = [shifted(month_start, months=-k) for k in (3, 2, 1)]
     monthly = defaultdict(lambda: defaultdict(int))
     samples = defaultdict(list)
+    from .bill_classification import classification_views
+    effective_categories=await classification_views(db,user_id,[tx.tx_id for tx in history])
     for tx in history:
         when = aware(tx.timestamp).astimezone(TZ)
-        if tx.type != 'purchase' or when >= month_start:
+        if tx.type != 'purchase' or when >= month_start or tx.tx_id in fixed_expense_ids:
             continue
-        cat = tx.category if tx.category in LABELS and tx.category != 'subscription' else 'other'
+        cat = effective_categories.get(tx.tx_id,{}).get('effective_category',tx.category)
+        cat = cat if cat in LABELS else 'other'
         monthly[cat][when.strftime('%Y-%m')] += tx.amount_fen
         samples[cat].append(tx)
     rates, low_rates, high_rates = {}, {}, {}
@@ -161,12 +216,19 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
         rates[cat], low_rates[cat], high_rates[cat] = rate, min(month_rates), max(month_rates)
         baselines.append(dict(category=cat, daily_fen=rounded(rate), sample_count=len(rows), observed_months=observed,
                               estimated_total_fen=0, scenario_total_fen=0))
+    from .bill_forecasts import calibration
+    calibration_info=await calibration(db,user_id,request.account_id,now)
+    factor=Decimal(str(calibration_info['factor']))
+    rates={cat:rate*factor for cat,rate in rates.items()}
+    low_rates={cat:rate*factor for cat,rate in low_rates.items()}
+    high_rates={cat:rate*factor for cat,rate in high_rates.items()}
+    for baseline in baselines:baseline['daily_fen']=rounded(rates[baseline['category']])
     if not rates:
         notices.append('消费历史不足，基准余额仅包含已识别计划与收入估计；不代表未来消费为零。')
     events.sort(key=lambda e: (e['at'], e['source'], e['reference_id'] or ''))
     timeline = []
     planned_balance = baseline_balance = scenario_balance = low_balance = high_balance = available
-    planned_out = estimated_income = variable_total = 0
+    planned_out = estimated_income = estimated_recurring = variable_total = 0
     first_negative = start_day.date().isoformat() if available < 0 else None
     previous_expected = {cat: 0 for cat in rates}
     previous_scenario = {cat: 0 for cat in rates}
@@ -190,6 +252,9 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
             high_spend += rounded(high_rates[cat] * elapsed) - rounded(high_rates[cat] * (elapsed - weight))
         for event in (e for e in events if day <= e['at'] < next_day):
             amount = event['amount_fen']
+            if event['source']=='scenario':
+                scenario_balance += amount
+                continue
             baseline_balance += amount
             low_balance += amount
             high_balance += amount
@@ -197,6 +262,8 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
                 scenario_balance += amount
             if event['source'] == 'salary_estimate':
                 estimated_income += amount
+            elif event['source'] == 'recurring_estimate':
+                estimated_recurring -= amount
             else:
                 planned_balance += amount
                 if amount < 0:
@@ -216,9 +283,9 @@ async def project_cashflow(db, user_id, request: CashflowScenario, *, now=None):
         cat = baseline['category']
         baseline['estimated_total_fen'] = previous_expected[cat]
         baseline['scenario_total_fen'] = previous_scenario[cat]
-    return dict(as_of=now, end_exclusive=end, account_id=request.account_id, days=request.days,
+    return dict(calibration=calibration_info, as_of=now, end_exclusive=end, account_id=request.account_id, days=request.days,
                 opening_balance_fen=opening, held_fen=held, opening_available_fen=available,
-                planned_outflow_fen=planned_out, estimated_income_fen=estimated_income,
+                planned_outflow_fen=planned_out, estimated_income_fen=estimated_income, estimated_recurring_spending_fen=estimated_recurring,
                 estimated_variable_spending_fen=variable_total, baseline_end_fen=baseline_balance,
                 scenario_end_fen=scenario_balance, scenario_saving_fen=scenario_balance - baseline_balance,
                 minimum_baseline_fen=min([available] + [p['baseline_balance_fen'] for p in timeline]),

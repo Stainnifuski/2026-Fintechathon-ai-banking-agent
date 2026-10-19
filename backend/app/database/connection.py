@@ -65,6 +65,8 @@ async def init_db() -> None:
         await upgrade_legacy_user_mfa_columns(conn)
         await upgrade_card_columns(conn)
         await migrate_bank_money(conn)
+        from ..services.bank.bill_migration import upgrade_indexes
+        await upgrade_indexes(conn)
     await upgrade_phone_registry(AsyncSessionLocal)
     await upgrade_flower_purchase_transactions(AsyncSessionLocal)
     from ..services.bank.wealth_migration import upgrade

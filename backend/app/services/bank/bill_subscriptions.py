@@ -14,9 +14,17 @@ async def subscription_insights(db, user_id, query: BillQuery, *, now=None):
     predicates = await scope(db, user_id, query)
     records = (await db.scalars(select(Tx).where(*interval(predicates, b['previous_start'], b['end_exclusive']),
                                                 Tx.type == 'subscription').order_by(Tx.timestamp.desc(), Tx.tx_id))).all()
+    from .bill_foundation import metadata_views
+    from ...models.bill_foundation import BillMerchantAliasORM as Alias, BillMerchantORM as Merchant
+    metadata = await metadata_views(db, user_id, [tx.tx_id for tx in records])
+    aliases = {a.normalized_name: a.merchant_id for a in (await db.scalars(select(Alias).where(Alias.user_id == user_id))).all()}
+    names = {m.merchant_id:m.display_name for m in (await db.scalars(select(Merchant).where(Merchant.user_id == user_id))).all()}
+    from .bill_foundation import normalize
+    def identity(name):
+        return aliases.get(normalize(name), name)
     groups = defaultdict(lambda: {'current': [], 'previous': [], 'subscriptions': []})
     for tx in records:
-        group = groups[(tx.account_id, tx.counterparty)]
+        group = groups[(tx.account_id, metadata.get(tx.tx_id, {}).get('merchant_id') or identity(tx.counterparty))]
         when = aware(tx.timestamp)
         if b['start'] <= when < b['end_exclusive']:
             group['current'].append(tx)
@@ -30,13 +38,14 @@ async def subscription_insights(db, user_id, query: BillQuery, *, now=None):
         AccountORM.account_id.not_in(isolated_account_ids()),
         *([AccountORM.account_id == query.account_id] if query.account_id else [])))).all()
     for sub in subs:
-        groups[(sub.debit_account_id, sub.merchant_name)]['subscriptions'].append(sub)
+        groups[(sub.debit_account_id, identity(sub.merchant_name))]['subscriptions'].append(sub)
     merchant_active = defaultdict(list)
     for sub in subs:
         if sub.status == 'ACTIVE':
-            merchant_active[sub.merchant_name].append(sub)
+            merchant_active[identity(sub.merchant_name)].append(sub)
     items = []
-    for (account, merchant), group in sorted(groups.items()):
+    for (account, merchant_key), group in sorted(groups.items()):
+        merchant = names.get(merchant_key, merchant_key)
         current, previous, relations = group['current'], group['previous'], group['subscriptions']
         active = [s for s in relations if s.status == 'ACTIVE']
         flags, explanations = [], []
@@ -52,7 +61,7 @@ async def subscription_insights(db, user_id, query: BillQuery, *, now=None):
                 explanations.append(f'同账户同商户两笔 {money(tx.amount_fen)} 扣费在5分钟内发生，请核对。')
                 break
             recent[tx.amount_fen] = tx
-        if len(merchant_active[merchant]) > 1:
+        if len(merchant_active[merchant_key]) > 1:
             flags.append('multiple_active')
             explanations.append('同商户存在多条活跃订阅关系，可能对应不同套餐或账户；需要本人核对。')
         if not relations and current:
@@ -77,11 +86,11 @@ async def subscription_insights(db, user_id, query: BillQuery, *, now=None):
                           current_fen=sum(t.amount_fen for t in current), previous_fen=sum(t.amount_fen for t in previous),
                           current_count=len(current), previous_count=len(previous), flags=flags,
                           explanations=explanations or ['本期未触发订阅专项规则；计划与实际扣费分开展示。'],
-                          current_evidence=[transaction_view(t) for t in current[:5]],
-                          previous_evidence=[transaction_view(t) for t in previous[:5]]))
+                          current_evidence=[transaction_view(t, metadata.get(t.tx_id)) for t in current[:5]],
+                          previous_evidence=[transaction_view(t, metadata.get(t.tx_id)) for t in previous[:5]]))
     items.sort(key=lambda item: (not bool(item['flags']), -item['current_fen'], item['merchant'], item['account_id']))
     return dict(as_of=b['as_of'], items=items, notices=[
         '按当前账户范围分析订阅，与消费类别筛选独立；实际扣费只计已完成流水。',
         '订阅关系按当前状态展示；历史金额按所选账期及上期统计。',
-        '商户匹配依赖同账户及完全相同名称，未匹配不表示没有真实订阅。',
+        '标签只筛选实际扣费，当前计划仍按账户展示；按同账户及已保存商户身份匹配；多套餐保留歧义，未匹配不表示没有真实订阅。',
         '每组各展示最多5笔本期和上期流水；取消需在订阅页核对并本人确认，不退回历史扣费。'])

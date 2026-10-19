@@ -28,6 +28,7 @@ const orderStatus: Record<flowerShop.FlowerOrder['status'], string> = {
   COMPLETED: '已收款',
   PAYMENT_CLOSED: '付款关闭',
   REFUNDED: '已退款',
+  PARTIALLY_REFUNDED: '部分退款',
 };
 
 export default function MerchantDashboard({
@@ -42,6 +43,8 @@ export default function MerchantDashboard({
   const category = user.user_id === 'U008' ? '蛋糕' : '鲜花';
   const [orders, setOrders] = useState<flowerShop.FlowerOrder[]>([]);
   const [pendingRefund, setPendingRefund] = useState<flowerShop.FlowerOrder | null>(null);
+  const [refundAmount,setRefundAmount]=useState('');
+  const [refundOperation,setRefundOperation]=useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -56,8 +59,8 @@ export default function MerchantDashboard({
   useEffect(() => { loadOrders(); }, [loadOrders, revision]);
 
   const totals = useMemo(() => ({
-    paid: orders.filter(order => order.status === 'COMPLETED').reduce((sum, order) => sum + order.total, 0),
-    refunded: orders.filter(order => order.status === 'REFUNDED').reduce((sum, order) => sum + order.total, 0),
+    paid: orders.filter(order => ['COMPLETED','PARTIALLY_REFUNDED'].includes(order.status)).reduce((sum, order) => sum + (order.total_fen-order.refunded_fen)/100, 0),
+    refunded: orders.reduce((sum,order)=>sum+(order.refunded_fen||0)/100,0),
     pending: orders.filter(order => order.status === 'PENDING_PAYMENT').length,
   }), [orders]);
 
@@ -66,10 +69,12 @@ export default function MerchantDashboard({
     setBusy(true);
     setNotice('');
     try {
-      const updated = await shop.refundOrder(pendingRefund);
+      const fen=Math.round(Number(refundAmount)*100);
+      if(!Number.isFinite(fen)||fen<=0||fen>pendingRefund.remaining_refundable_fen)throw new Error('请输入不超过剩余可退金额的退款数额');
+      const updated = await shop.refundOrder(pendingRefund,fen,refundOperation);
       setOrders(items => items.map(item => item.order_id === updated.order_id ? updated : item));
       setPendingRefund(null);
-      setNotice(`订单 ${updated.order_id} 已全额退款，顾客账户已入账。`);
+      setNotice(`订单 ${updated.order_id} 已退款 ¥${(fen/100).toFixed(2)}，累计已退 ¥${(updated.refunded_fen/100).toFixed(2)}。`);
       await onRefresh();
     } catch (error) {
       setNotice(errorMessage(error));
@@ -121,7 +126,7 @@ export default function MerchantDashboard({
             <div className="merchant-order-action">
               <strong>¥{order.total.toFixed(2)}</strong>
               <span className={`merchant-status ${order.status.toLowerCase()}`}>{orderStatus[order.status]}</span>
-              {order.status === 'COMPLETED' && <button className="secondary" disabled={busy} onClick={() => setPendingRefund(order)}>全额退款</button>}
+              {['COMPLETED','PARTIALLY_REFUNDED'].includes(order.status) && <><small>已退 ¥{((order.refunded_fen||0)/100).toFixed(2)} · 剩余可退 ¥{((order.remaining_refundable_fen||0)/100).toFixed(2)}</small><button className="secondary" disabled={busy} onClick={() => {setPendingRefund(order);setRefundAmount(String(order.remaining_refundable_fen/100));setRefundOperation(crypto.randomUUID());}}>退款…</button></>}
             </div>
           </li>)}
         </ul>}
@@ -145,10 +150,10 @@ export default function MerchantDashboard({
     {pendingRefund && <div className="merchant-modal" role="dialog" aria-modal="true" aria-label="确认退款">
       <section className="card">
         <p className="merchant-kicker">退款确认</p>
-        <h2>向 {pendingRefund.payment_request?.payer_name || '顾客'} 全额退款？</h2>
+        <h2>向 {pendingRefund.payment_request?.payer_name || '顾客'} 退款？</h2>
         <p>订单：{pendingRefund.product_name} × {pendingRefund.quantity}</p>
-        <strong className="merchant-refund-amount">¥{pendingRefund.total.toFixed(2)}</strong>
-        <p className="hint">确认后银行将从商户账户原路退回顾客付款账户，并生成双方退款流水。退款不可重复执行。</p>
+        <p>原付款 ¥{pendingRefund.total.toFixed(2)} · 已退 ¥{(pendingRefund.refunded_fen/100).toFixed(2)} · 剩余可退 ¥{(pendingRefund.remaining_refundable_fen/100).toFixed(2)}</p><label>本次退款金额（元）<input aria-label="本次退款金额" disabled={busy} type="number" min="0.01" step="0.01" max={pendingRefund.remaining_refundable_fen/100} value={refundAmount} onChange={e=>{setRefundAmount(e.target.value);setRefundOperation(crypto.randomUUID());}} /></label>
+        <p className="hint">确认后银行将从商户账户原路退回顾客付款账户，并生成双方退款流水。支持多次部分退款，累计不超过原付款。按原操作重试不会重复记账。</p>
         <div className="confirm"><button className="secondary" disabled={busy} onClick={() => setPendingRefund(null)}>返回</button><button disabled={busy} onClick={confirmRefund}>{busy ? '退款处理中…' : '确认退款'}</button></div>
       </section>
     </div>}

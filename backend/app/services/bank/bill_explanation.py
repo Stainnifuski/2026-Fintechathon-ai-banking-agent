@@ -9,16 +9,24 @@ def rounded(value):
     return int(Decimal(value).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
-async def explain_changes(db, predicates, bounds):
+async def explain_changes(db, predicates, bounds, *, user_id):
+    from .bill_foundation import metadata_views
+    metadata = {}
+    names = {}
     groups = defaultdict(lambda: [[], []])
     for index, (start, end) in enumerate([(bounds['start'], bounds['end_exclusive']),
                                          (bounds['previous_start'], bounds['previous_end_exclusive'])]):
         rows = (await db.execute(select(Tx, category_expr()).where(
             *interval(predicates, start, end), Tx.type.in_(CONSUMPTION)).order_by(Tx.timestamp.desc(), Tx.tx_id))).all()
+        metadata.update(await metadata_views(db, user_id, [tx.tx_id for tx, _ in rows]))
         for tx, cat in rows:
-            groups[(cat, tx.counterparty)][index].append(tx)
+            meta = metadata.get(tx.tx_id, {})
+            identity = meta.get('merchant_id') or tx.counterparty
+            names[identity] = meta.get('merchant_name') or tx.counterparty
+            groups[(cat, identity)][index].append(tx)
     drivers = []
-    for (category, merchant), (current, previous) in groups.items():
+    for (category, identity), (current, previous) in groups.items():
+        merchant = names[identity]
         cur, prev = sum(t.amount_fen for t in current), sum(t.amount_fen for t in previous)
         cn, pn = len(current), len(previous)
         change = cur - prev
@@ -40,13 +48,13 @@ async def explain_changes(db, predicates, bounds):
                             current_count=cn, previous_count=pn, change_fen=change,
                             frequency_effect_fen=frequency, unit_amount_effect_fen=unit, entry_exit_effect_fen=entry,
                             new_large_single=large, explanation=text,
-                            current_evidence=[transaction_view(t) for t in current[:5]],
-                            previous_evidence=[transaction_view(t) for t in previous[:5]]))
+                            current_evidence=[transaction_view(t, metadata.get(t.tx_id)) for t in current[:5]],
+                            previous_evidence=[transaction_view(t, metadata.get(t.tx_id)) for t in previous[:5]]))
     drivers.sort(key=lambda d: (-abs(d['change_fen']), d['category'], d['merchant']))
     return dict(total_change_fen=sum(d['change_fen'] for d in drivers),
                 frequency_effect_fen=sum(d['frequency_effect_fen'] for d in drivers),
                 unit_amount_effect_fen=sum(d['unit_amount_effect_fen'] for d in drivers),
                 entry_exit_effect_fen=sum(d['entry_exit_effect_fen'] for d in drivers), drivers=drivers,
-                notices=['按商户原始名称及消费类别比较；商户名称不同不自动合并。',
+                notices=['按已保存商户标识及消费类别比较；缺少标识的历史记录按原始名称，不自动猜测归并。',
                          '次数指交易笔数，平均单笔金额不是商品单价；分解描述统计变化，不推断购买动机。',
                          '每组展示本期及上期各最多5笔依据，组内金额和次数包含全部匹配流水。'])

@@ -92,3 +92,5 @@ __all__ = [
 from .conversation import ConversationORM, ChatReceiptORM
 from . import wealth
 from . import wealth_research
+from . import bill_foundation
+from . import bill_features

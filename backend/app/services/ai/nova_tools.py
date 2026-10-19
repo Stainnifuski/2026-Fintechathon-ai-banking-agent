@@ -129,12 +129,54 @@ async def cashflow(arguments: CashflowScenario, context: ToolContext) -> dict:
     return envelope('bills.cashflow', data, data['as_of'])
 
 
+async def recurring_records(arguments: OverviewArguments, context: ToolContext) -> dict:
+    from ..bank.bill_recurring import list_recurring
+    data = await list_recurring(context.db, context.user_id)
+    total = len(data['items'])
+    data['items'] = data['items'][:30]
+    for item in data['items']:
+        item['evidence_total'] = len(item['evidence_tx_ids'])
+        item['evidence_tx_ids'] = item['evidence_tx_ids'][-5:]
+        for field in ('last_observed_at', 'next_expected_at','anchor_at'):
+            if item[field]:
+                item[field] = bill_service.aware(item[field]).isoformat()
+    data.update(total=total, has_more=total>30)
+    return envelope('bills.recurring', data)
+
+
+class BudgetArguments(StrictModel):
+    month: str | None = Field(default=None,pattern=r'^\d{4}-\d{2}$')
+
+
+async def budget_status(arguments:BudgetArguments,context:ToolContext)->dict:
+    from ..bank.bill_budgets import summary
+    from datetime import datetime
+    month=arguments.month or (context.page.filters.date if context.page.filters and context.page.filters.period=='month' else None) or utc_now().astimezone(bill_service.TZ).strftime('%Y-%m')
+    data=await summary(context.db,context.user_id,month)
+    data['as_of']=data['as_of'].isoformat()
+    return envelope('bills.budgets',data)
+
+
+async def forecast_reviews(arguments:OverviewArguments,context:ToolContext)->dict:
+    from ..bank.bill_forecasts import comparisons
+    data=await comparisons(context.db,context.user_id)
+    data['as_of']=data['as_of'].isoformat()
+    for item in data['items']:
+        for field in ('start_at','end_at'):
+            if item.get(field):item[field]=item[field].isoformat()
+    return envelope('bills.forecasts',data)
+
+
 def business_tools() -> dict:
     entries = [
+        ('get_budget_status', BudgetArguments, budget_status,'只读查询本人月度总预算及分类预算、已用净消费、剩余额度和预计超支。标签筛选不改变预算范围，样本不足时仅估计已知部分。'),
+        ('list_forecast_reviews',OverviewArguments,forecast_reviews,'只读查询本人保存的基准预测及实际收支净变化偏差。未结束不计算最终误差，不能用当前余额冒充过去期末余额。'),
+        ('list_recurring_records', OverviewArguments, recurring_records,
+         '只读查询本人已保存的周／月／季度／年度周期收入、支出及订阅、历史证据、有效状态和是否纳入预测。估计不是银行承诺；启用设置不会停止扣费，取消订阅需本人确认。'),
         ('get_subscription_insights', AnalysisArguments, subscription_analysis,
          '只读分析本人订阅扣费增加、疑似重复、计划与实际差异和关联订阅。沿用页面账期和账户，忽略消费分类；仅供核对，取消需本人到订阅页确认。'),
         ('project_cashflow', CashflowScenario, cashflow,
-         '只读计算从现实现在起1至62天储蓄现金流及情景。可减少某消费类别0至100%或假设排除活跃订阅ID，不执行取消或扣款。省略账户沿用页面账户，null为全部储蓄。金额分，计划/工资及消费估计区分。历史高低线不是置信区间。'),
+         '只读计算从现实现在起1至62天储蓄现金流及情景。可增加临时收支假设one_off_events（带时区时间、非零整数分），减少某消费类别0至100%或假设排除活跃订阅ID，不执行取消或扣款。省略账户沿用页面账户，null为全部储蓄。金额分，计划/工资及消费估计区分。历史高低线不是置信区间。'),
         ("get_financial_overview", OverviewArguments, overview,
          "查询本人现金和总资产。totals 仅是普通 savings 现金小计；首页/理财页总资产必须使用 asset_summary，按其授权范围、快照及估值完整性解释。总资产=现金+持仓+赎回应收，冻结不重复加；总资产不是可支付现金，null 不是零。无需参数。"),
         ("get_bill_analysis", AnalysisArguments, analysis,
