@@ -5,7 +5,7 @@
 """
 
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Protocol
 
 import httpx
@@ -56,6 +56,8 @@ class TransferValidation:
     to_account: str
     recipient_name: str
     daily_transfer_used_fen: int
+    payer_card_masked: str | None = field(default=None, kw_only=True)
+    recipient_card_masked: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)

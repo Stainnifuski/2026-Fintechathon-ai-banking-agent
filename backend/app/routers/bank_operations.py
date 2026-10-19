@@ -70,6 +70,8 @@ class TransferValidationResponse(BaseModel):
     to_account: str
     recipient_name: str
     daily_transfer_used_fen: int
+    payer_card_masked: str | None = None
+    recipient_card_masked: str | None = None
 
 
 class TransferResolutionResponse(TransferValidationResponse):

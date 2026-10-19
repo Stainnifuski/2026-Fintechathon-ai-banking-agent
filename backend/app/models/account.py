@@ -65,6 +65,7 @@ class AccountSchema(BaseModel):
     user_id: str
     account_type: str
     card_number: str
+    transfer_card_number: str | None = None
     balance: float
     available_fen: int | None = None
     held_fen: int | None = None

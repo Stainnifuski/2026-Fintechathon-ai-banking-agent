@@ -55,6 +55,7 @@ async def init_db() -> None:
     """初始化数据库，创建所有表。"""
     from ..services.bank.migration_service import (
         upgrade_card_columns,
+        upgrade_contact_knowledge_columns,
         upgrade_flower_purchase_transactions,
         upgrade_legacy_user_mfa_columns,
         upgrade_phone_registry,
@@ -64,6 +65,7 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
         await upgrade_legacy_user_mfa_columns(conn)
         await upgrade_card_columns(conn)
+        await upgrade_contact_knowledge_columns(conn)
         await migrate_bank_money(conn)
         from ..services.bank.bill_migration import upgrade_indexes
         await upgrade_indexes(conn)

@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.models import AccountORM, Base, UserORM
+from backend.app.services.bank.transfer_cards import transfer_card_number
 from backend.app.integrations.bank_api import (
     BankApiError,
     BankOperationResult,
@@ -146,6 +147,37 @@ async def _ready_task(db, suffix: str, amount: float = 100.0):
         plan_version=task["plan_version"],
     )
     return ready, bank
+
+
+@pytest.mark.asyncio
+async def test_confirmation_card_uses_bank_masked_card_numbers(db) -> None:
+    task = await create_transfer_task(
+        db, InProcessBankApi(db), user_id="U1", request_id="request-display-card",
+        operation_id="operation-display-card", from_account="A1", to_account="A2",
+        amount=10.0, recipient_card_number=transfer_card_number("A2"),
+    )
+    card = task["confirmation_card"]
+    assert card["payer_card_masked"] == f"**** **** **** {transfer_card_number('A1')[-4:]}"
+    assert card["recipient_card_masked"] == f"**** **** **** {transfer_card_number('A2')[-4:]}"
+    assert "A1" not in card["payer_card_masked"]
+    assert "A2" not in card["recipient_card_masked"]
+
+
+@pytest.mark.asyncio
+async def test_confirmation_does_not_reveal_card_without_matching_input(db) -> None:
+    task = await create_transfer_task(
+        db, InProcessBankApi(db), user_id="U1", request_id="request-private-card",
+        operation_id="operation-private-card", from_account="A1", to_account="A2",
+        amount=10.0,
+    )
+    assert task["confirmation_card"]["recipient_card_masked"] is None
+    with pytest.raises(TaskError) as error:
+        await create_transfer_task(
+            db, InProcessBankApi(db), user_id="U1", request_id="request-wrong-card",
+            operation_id="operation-wrong-card", from_account="A1", to_account="A2",
+            amount=10.0, recipient_card_number="6214000000000000",
+        )
+    assert error.value.code == "RECIPIENT_CARD_MISMATCH"
 
 
 @pytest.mark.asyncio

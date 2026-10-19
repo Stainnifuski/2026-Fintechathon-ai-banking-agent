@@ -2,7 +2,7 @@
 from .account_scope import isolated_account_ids
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import hashlib
@@ -23,6 +23,7 @@ from ...models.payment_request_payment import PaymentRequestPaymentORM
 from ...models.transaction import TransactionORM
 from ...models.user import UserORM
 from .phone import normalize_phone, mask_phone
+from .transfer_cards import transfer_card_number
 from ...domain.money import ledger_fen
 from .audit_service import record_bank_event
 
@@ -72,6 +73,8 @@ class TransferValidationResult:
     to_account: str
     recipient_name: str
     daily_transfer_used_fen: int
+    payer_card_masked: str | None = field(default=None, kw_only=True)
+    recipient_card_masked: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -210,6 +213,8 @@ async def validate_transfer_parties(
             ))).scalars().all(),
             now=datetime.now(timezone.utc),
         ),
+        payer_card_masked=f"**** **** **** {transfer_card_number(sender.account_id)[-4:]}",
+        recipient_card_masked=f"**** **** **** {transfer_card_number(receiver.account_id)[-4:]}",
     )
 
 
@@ -264,6 +269,8 @@ async def resolve_transfer_parties(
             ))).scalars().all(),
             now=datetime.now(timezone.utc),
         ),
+        payer_card_masked=f"**** **** **** {transfer_card_number(sender.account_id)[-4:]}",
+        recipient_card_masked=f"**** **** **** {transfer_card_number(receiver.account_id)[-4:]}",
     )
 
 
@@ -493,8 +500,9 @@ async def transfer_directory(
     subject_user_id: str,
     recipient_name: str | None = None,
     recipient_phone: str | None = None,
+    contacts_only: bool = False,
 ) -> dict:
-    """受控目录：姓名或规范化手机号精确查询；只返回脱敏候选。"""
+    """受控目录：真实姓名、本人保存的备注名或规范化手机号精确查询。"""
     if not recipient_name and not recipient_phone:
         raise BankError("请提供收款人姓名或手机号", "RECIPIENT_REQUIRED", 422)
     normalized_phone = None
@@ -524,10 +532,33 @@ async def transfer_directory(
         if len(matches) > 1:
             raise BankError("手机号映射冲突，请联系管理员", "PHONE_CONFLICT", 409)
         if recipient_name and matches and matches[0].name != recipient_name:
-            raise BankError("姓名与手机号不指向同一收款人", "RECIPIENT_MISMATCH", 409)
+            from ...models.contact import ContactORM
+            alias = await db.scalar(select(ContactORM.contact_id).where(
+                ContactORM.user_id == subject_user_id,
+                ContactORM.nickname == recipient_name,
+                ContactORM.name == matches[0].name,
+                ContactORM.phone == normalized_phone,
+            ))
+            if alias is None:
+                raise BankError("姓名与手机号不指向同一收款人", "RECIPIENT_MISMATCH", 409)
         users = matches
     else:
-        users = [user for user in users if user.name == recipient_name]
+        from ...models.contact import ContactORM
+        contacts = (await db.scalars(select(ContactORM).where(
+            ContactORM.user_id == subject_user_id,
+            (ContactORM.name == recipient_name) | (ContactORM.nickname == recipient_name),
+        ))).all()
+        saved_matches = {(contact.phone, contact.name) for contact in contacts}
+        matching_users = []
+        for user in users:
+            try:
+                canonical_phone = normalize_phone(user.phone)
+            except ValueError:
+                continue
+            if ((not contacts_only and user.name == recipient_name)
+                    or (canonical_phone, user.name) in saved_matches):
+                matching_users.append(user)
+        users = matching_users
     users = [user for user in users if user.status == "active"]
     user_ids = [user.user_id for user in users]
     accounts = (await db.execute(select(AccountORM).where(
@@ -542,8 +573,9 @@ async def transfer_directory(
         "recipients": [
             {"account_id": account.account_id,
              "recipient_user_id": account.user_id,
-             "phone_masked": mask_phone(by_id[account.user_id].phone),
-             "label": f"{by_id[account.user_id].name} · 手机{mask_phone(by_id[account.user_id].phone)} · 账户尾号{account.card_number[-4:]}"}
+             "recipient_name": by_id[account.user_id].name,
+             "phone_masked": mask_phone(by_id[account.user_id].phone) if recipient_phone else None,
+             "label": f"{by_id[account.user_id].name} · {account.account_type}账户"}
             for account in accounts
         ],
     }

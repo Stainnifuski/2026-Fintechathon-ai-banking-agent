@@ -1,18 +1,22 @@
 """4号模拟银行的演示数据初始化。"""
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
 from ...database.connection import AsyncSessionLocal
 from ...models.account import AccountORM
-from ...models.contact import ContactORM
 from ...models.transaction import TransactionORM
 from ...models.subscription import SubscriptionORM
 from ...models.card import CardORM
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
+from ...models.bill_foundation import (
+    BillRecurringOccurrenceORM, BillTransactionMetaORM, BillTransactionTagORM,
+    BillTransferPairORM,
+)
+from ...models.bill_features import BillClassificationORM
 from ...security.passwords import hash_password
 from .phone import normalize_phone
 from .transfer_service import BankError
@@ -20,13 +24,49 @@ from .transfer_service import BankError
 logger = logging.getLogger(__name__)
 
 
+LEGACY_SEED_TRANSACTION_IDS = (
+    "TX20260901001", "TX20260905001", "TX20260908001", "TX20260910001",
+    "TX20260912001", "TX20260914001", "TX20260918001",
+)
+
+
+async def remove_legacy_seed_transactions(session) -> None:
+    """Remove only old fixed-ID sample rows and their dependent bill metadata."""
+    seed_ids = (await session.scalars(select(TransactionORM.tx_id).where(
+        TransactionORM.tx_id.in_(LEGACY_SEED_TRANSACTION_IDS),
+        TransactionORM.operation_id.is_(None),
+    ))).all()
+    if not seed_ids:
+        return
+    pair_ids = (await session.scalars(select(BillTransferPairORM.pair_id).where(
+        (BillTransferPairORM.debit_tx_id.in_(seed_ids)) |
+        (BillTransferPairORM.credit_tx_id.in_(seed_ids)),
+    ))).all()
+    if pair_ids:
+        await session.execute(update(BillTransactionMetaORM).where(
+            BillTransactionMetaORM.transfer_pair_id.in_(pair_ids)).values(transfer_pair_id=None))
+        await session.execute(delete(BillTransferPairORM).where(
+            BillTransferPairORM.pair_id.in_(pair_ids)))
+    await session.execute(update(BillTransactionMetaORM).where(
+        BillTransactionMetaORM.original_tx_id.in_(seed_ids)).values(original_tx_id=None))
+    await session.execute(delete(BillRecurringOccurrenceORM).where(
+        BillRecurringOccurrenceORM.tx_id.in_(seed_ids)))
+    await session.execute(delete(BillTransactionTagORM).where(
+        BillTransactionTagORM.tx_id.in_(seed_ids)))
+    await session.execute(delete(BillClassificationORM).where(
+        BillClassificationORM.tx_id.in_(seed_ids)))
+    await session.execute(delete(BillTransactionMetaORM).where(
+        BillTransactionMetaORM.tx_id.in_(seed_ids)))
+    await session.execute(update(SubscriptionORM).where(
+        SubscriptionORM.source_transaction_id.in_(seed_ids)).values(source_transaction_id=None))
+    await session.execute(delete(TransactionORM).where(TransactionORM.tx_id.in_(seed_ids)))
+    logger.info("已移除 %d 条旧版默认演示流水", len(seed_ids))
+
+
 async def seed_bank_data() -> None:
-    """通过模拟银行边界初始化客户、账户、联系人和流水。"""
+    """通过模拟银行边界初始化客户和账户；默认流水为空。"""
     async with AsyncSessionLocal() as session:
-        has_seed_data = (
-            await session.execute(select(UserORM).limit(1))
-        ).scalar_one_or_none() is not None
-        logger.info("正在同步模拟银行种子客户与联系人...")
+        logger.info("正在同步模拟银行种子客户...")
 
         user_specs = [
             ("U001", "张三", "13800000001", "balanced"),
@@ -101,58 +141,7 @@ async def seed_bank_data() -> None:
                 )
         await session.flush()
 
-        contact_specs = [
-            ("C001", "李四", "老李", "13800000002", "6222****7756", 15),
-            ("C002", "王五", "老王", "13800000003", "6222****7757", 8),
-            ("C003", "赵六", None, "13800000004", "6222****7758", 3),
-            ("C004", "孙七", None, "13800000005", "6222****7759", 0),
-            ("C005", "周八", None, "13800000006", "6222****7760", 0),
-        ]
-        for contact_id, name, nickname, phone, account_number, transfer_count in contact_specs:
-            contact = await session.get(ContactORM, contact_id)
-            if contact is None:
-                contact = ContactORM(contact_id=contact_id, user_id="U001")
-                session.add(contact)
-                contact.name = name
-                contact.nickname = nickname
-                contact.phone = phone
-                contact.account_number = account_number
-                contact.bank = "AI 模拟银行"
-                contact.transfer_count = transfer_count
-                contact.last_transfer = date(2026, 9, 10) if transfer_count else None
-
-        now = datetime.now()
-        if not has_seed_data:
-            specs = [
-                ("TX20260901001", "A001", "salary", 15000.0, "XX科技有限公司", "salary", "9月工资", 15, "app"),
-                ("TX20260905001", "A001", "transfer_out", 500.0, "李四", "transfer", "还上次吃饭的钱", 11, "agent"),
-                ("TX20260908001", "A001", "purchase", 128.0, "美团外卖", "dining", None, 8, "app"),
-                ("TX20260910001", "A001", "purchase", 299.0, "京东商城", "shopping", "买耳机", 6, "app"),
-                ("TX20260912001", "A001", "subscription", 15.0, "网易云音乐", "subscription", "会员自动续费", 4, "app"),
-                ("TX20260914001", "A002", "purchase", 66.0, "滴滴出行", "transport", None, 2, "pos"),
-            ]
-            session.add_all([
-                TransactionORM(tx_id=tx_id, account_id=account_id, type=kind, amount=amount,
-                               counterparty=counterparty, category=category, note=note,
-                               timestamp=now - timedelta(days=days_ago), status="completed", channel=channel)
-                for tx_id, account_id, kind, amount, counterparty, category, note, days_ago, channel in specs
-            ])
-
-        if await session.get(TransactionORM, "TX20260918001") is None:
-            session.add(
-                TransactionORM(
-                    tx_id="TX20260918001",
-                    account_id="A001",
-                    type="subscription",
-                    amount=25.0,
-                    counterparty="腾讯视频",
-                    category="subscription",
-                    note="VIP 自动续费",
-                    timestamp=now - timedelta(days=2),
-                    status="completed",
-                    channel="app",
-                )
-            )
+        await remove_legacy_seed_transactions(session)
 
         if await session.get(SubscriptionORM, "SUB001") is None:
             session.add(
@@ -167,7 +156,7 @@ async def seed_bank_data() -> None:
                     next_charge_at=datetime(2026, 10, 12, 2, 0, tzinfo=timezone.utc),
                     status="ACTIVE",
                     state_version=1,
-                    source_transaction_id="TX20260912001",
+                    source_transaction_id=None,
                 )
             )
         if await session.get(SubscriptionORM, "SUB002") is None:
@@ -183,7 +172,7 @@ async def seed_bank_data() -> None:
                     next_charge_at=datetime(2026, 10, 20, 2, 0, tzinfo=timezone.utc),
                     status="ACTIVE",
                     state_version=1,
-                    source_transaction_id="TX20260918001",
+                    source_transaction_id=None,
                 )
             )
         card_specs = [

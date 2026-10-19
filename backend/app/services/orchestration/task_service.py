@@ -264,6 +264,7 @@ async def create_transfer_task(
     amount: float,
     note: str | None = None,
     recipient_phone: str | None = None,
+    recipient_card_number: str | None = None,
     note_source: str | None = None,
     scheduled_at: datetime | None = None,
     commit: bool = True,
@@ -302,6 +303,10 @@ async def create_transfer_task(
         canonical_phone = normalize_phone(recipient_phone) if recipient_phone else None
     except ValueError as error:
         raise TaskError(str(error), 422, "INVALID_PHONE") from error
+    if recipient_card_number is not None:
+        from ..bank.transfer_cards import transfer_card_number
+        if recipient_card_number != transfer_card_number(to_account):
+            raise TaskError("银行卡号与收款账户不匹配", 409, "RECIPIENT_CARD_MISMATCH")
     digest = parameter_digest(from_account, to_account, amount_fen, "CNY", note, canonical_phone)
     # 3号风险检查
     risk_level = await _checked_risk_level(
@@ -334,6 +339,9 @@ async def create_transfer_task(
             "note_source": note_source,
             "recipient_phone": canonical_phone,
             "recipient_name": bank_validation.recipient_name,
+            "payer_card_masked": bank_validation.payer_card_masked,
+            "recipient_card_masked": bank_validation.recipient_card_masked,
+            "recipient_card_confirmed": bool(recipient_card_number),
             "scheduled_at": scheduled_at_utc.isoformat() if scheduled_at_utc else None,
         },
     )
@@ -945,6 +953,12 @@ async def modify_task(
             "note_source": note_source,
             "recipient_phone": canonical_phone,
             "recipient_name": bank_validation.recipient_name,
+            "payer_card_masked": bank_validation.payer_card_masked,
+            "recipient_card_masked": bank_validation.recipient_card_masked,
+            "recipient_card_confirmed": (
+                old_plan.params.get("recipient_card_confirmed", False)
+                and to_account == old_operation.to_account
+            ),
             "scheduled_at": old_plan.params.get("scheduled_at"),
         },
     )
@@ -1211,6 +1225,11 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             "from_account": operation.from_account,
             "to_account": operation.to_account,
             "recipient_name": plan.params.get("recipient_name", operation.to_account),
+            "payer_card_masked": plan.params.get("payer_card_masked"),
+            "recipient_card_masked": (
+                plan.params.get("recipient_card_masked")
+                if plan.params.get("recipient_card_confirmed") else None
+            ),
             "amount": fen_to_yuan(operation.amount_fen),
             "currency": operation.currency,
             "note": operation.note,

@@ -33,6 +33,7 @@ from ...security.totp import (
 from .transfer_service import BankError, transfer_directory, _daily_used_fen
 from .phone import mask_phone, normalize_phone
 from .available_funds import available_cash, held_cash
+from .transfer_cards import transfer_card_number
 
 
 def _account_dict(account: AccountORM) -> dict:
@@ -41,6 +42,7 @@ def _account_dict(account: AccountORM) -> dict:
         "user_id": account.user_id,
         "account_type": account.account_type,
         "card_number": account.card_number,
+        "transfer_card_number": transfer_card_number(account.account_id),
         "balance": account.balance,
         "daily_transfer_used": account.daily_transfer_used,
         "daily_transfer_limit": account.daily_transfer_limit,
@@ -126,38 +128,8 @@ async def list_balances(
 
 
 async def list_recipients(subject_user_id: str) -> list[dict]:
-    async with AsyncSessionLocal() as session:
-        rows = (
-            await session.execute(
-                select(UserORM, AccountORM)
-                .join(AccountORM, AccountORM.user_id == UserORM.user_id)
-                .where(
-                    UserORM.user_id != subject_user_id,
-                    UserORM.status == "active",
-                    AccountORM.status == "active",
-                    AccountORM.account_id.not_in(isolated_account_ids()),
-                )
-                .order_by(
-                    UserORM.name, AccountORM.account_type.desc(), AccountORM.account_id
-                )
-            )
-        ).all()
-    seen: set[str] = set()
-    recipients: list[dict] = []
-    for user, account in rows:
-        if user.user_id in seen:
-            continue
-        seen.add(user.user_id)
-        recipients.append(
-            {
-                "user_id": user.user_id,
-                "name": user.name,
-                "phone": f"{user.phone[:3]}****{user.phone[-4:]}",
-                "account_id": account.account_id,
-                "bank": "AI 模拟银行",
-            }
-        )
-    return recipients
+    from .contacts import list_contact_recipients
+    return await list_contact_recipients(subject_user_id)
 
 
 async def register_customer(
@@ -499,6 +471,27 @@ async def lookup_recipient_phone(subject_user_id: str, phone: str) -> list[dict]
             session, subject_user_id=subject_user_id, recipient_phone=phone
         )
     return [
-        {"account_id": row["account_id"], "label": row["label"]}
+        {"account_id": row["account_id"], "label": row["label"], "name": row["recipient_name"]}
         for row in result["recipients"]
     ]
+
+
+async def lookup_recipient_card(subject_user_id: str, card_number: str) -> list[dict]:
+    """Only full simulation card numbers can identify an active recipient."""
+    if not (len(card_number) == 16 and card_number.isascii() and card_number.isdigit()):
+        raise BankError("请输入完整的16位模拟银行卡号", "INVALID_CARD_NUMBER", 422)
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(AccountORM, UserORM).join(UserORM).where(
+            AccountORM.status == "active", UserORM.status == "active",
+            UserORM.user_id != subject_user_id,
+            AccountORM.account_id.not_in(isolated_account_ids()),
+        ))).all()
+        match = next(((account, user) for account, user in rows
+                      if transfer_card_number(account.account_id) == card_number), None)
+        if match is None:
+            return []
+        account, user = match
+        result = await transfer_directory(session, subject_user_id=subject_user_id,
+                                          recipient_phone=user.phone)
+        return [{"account_id": row["account_id"], "label": row["label"], "name": user.name}
+                for row in result["recipients"] if row["account_id"] == account.account_id]

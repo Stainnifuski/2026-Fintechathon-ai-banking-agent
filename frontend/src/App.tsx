@@ -4,6 +4,8 @@ import {manualDrafts} from './services/wealthManualDraft';
 import {post as wealthPost} from './services/wealth';
 import {AUTHENTICATION_EXPIRED_EVENT,authenticationExpiredMessage} from './utils/sessionAuthentication';
 import BeijingClock from './components/BeijingClock';
+import TransferContacts, { type TransferChoice } from './components/TransferContacts';
+import AddContactForm from './components/AddContactForm';
 import AssetSummaryCard from './components/AssetSummary';
 import {useAssetSummary} from './components/AssetSummary/useAssetSummary';
 import NovaChat from './components/NovaChat';
@@ -36,6 +38,7 @@ function App() {
   const [password, setPassword] = useState('password123');
   const [accounts, setAccounts] = useState<bank.Account[]>([]);
   const [recipients, setRecipients] = useState<bank.Recipient[]>([]);
+  const [transferHistoryRecipients, setTransferHistoryRecipients] = useState<bank.TransferHistoryRecipient[]>([]);
   const [transactions, setTransactions] = useState<bank.Transaction[]>([]);
   const [bankRevision, setBankRevision] = useState(0);
   const [wealthWorkspaceEpoch,setWealthWorkspaceEpoch]=useState(0);
@@ -63,12 +66,11 @@ function App() {
   const [subscriptionCancellationToken, setSubscriptionCancellationToken] = useState('');
   const [subscriptionChargeId, setSubscriptionChargeId] = useState('');
   const [fromAccount, setFromAccount] = useState('');
-  const [toUserId, setToUserId] = useState('');
-  const [recipientMode, setRecipientMode] = useState<'name' | 'phone'>('name');
-  const [recipientPhone, setRecipientPhone] = useState('');
-  const [phoneCandidates, setPhoneCandidates] = useState<bank.PhoneRecipientCandidate[]>([]);
-  const [selectedPhoneAccount, setSelectedPhoneAccount] = useState('');
-  const [lookedUpPhone, setLookedUpPhone] = useState('');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientMode, setRecipientMode] = useState<'card' | 'phone'>('card');
+  const [recipientNumbers, setRecipientNumbers] = useState({ card: '', phone: '' });
+  const [recipientAccountIds, setRecipientAccountIds] = useState({ card: '', phone: '' });
+  const [recipientPanel, setRecipientPanel] = useState<'people' | 'settings' | null>(null);
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [editNoteCleared, setEditNoteCleared] = useState(false);
   const [amount, setAmount] = useState('');
@@ -135,13 +137,12 @@ function App() {
         setBankRevision(value => value + 1);
         return;
       }
-      const [a, r, h, requests, subscriptionItems] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests(), bank.listSubscriptions()]);
-      setAccounts(a); setRecipients(r); setTransactions(h); setPaymentRequests(requests); setSubscriptions(subscriptionItems);
+      const [a, r, h, requests, subscriptionItems, recentRecipients] = await Promise.all([bank.accounts(user.user_id), bank.recipients(), bank.history(), bank.paymentRequests(), bank.listSubscriptions(), bank.transferRecipientHistory()]);
+      setAccounts(a); setRecipients(r); setTransferHistoryRecipients(recentRecipients); setTransactions(h); setPaymentRequests(requests); setSubscriptions(subscriptionItems);
       setBankRevision(value => value + 1);
       const defaultFrom = a.find(acc => acc.account_type === 'savings')?.account_id || a[0]?.account_id || '';
       setFromAccount(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
-      setToUserId(current => current && r.some(rec => rec.user_id === current) ? current : r[0]?.user_id || '');
-      setRequestPayerIds(current => current.filter(id => r.some(rec => rec.user_id === id)));
+      setRequestPayerIds(current => current.filter(id => r.some(rec => rec.user_id === id) || recentRecipients.some(rec => rec.user_id === id)));
       setRequestAccountId(current => current && a.some(acc => acc.account_id === current) ? current : defaultFrom);
       bank.totpStatus().then(s => setTotpEnabled(s.enabled)).catch(() => {});
     } catch (error) {
@@ -214,21 +215,22 @@ function App() {
 
   const submitTransfer = async (event: FormEvent) => {
     event.preventDefault(); setStatus('');
-    const recipient = recipients.find(item => item.user_id === toUserId);
-    const phoneChoice = phoneCandidates.find(item => item.account_id === selectedPhoneAccount);
-    if (!fromAccount || (recipientMode === 'name' && !recipient)
-      || (recipientMode === 'phone' && (!phoneChoice || lookedUpPhone !== recipientPhone))) {
-      return setStatus('请选择付款账户并核验收款人；手机号变更后请重新查询');
-    }
+    if (!fromAccount) return setStatus('请选择付款账户');
     if (transferMode === 'scheduled') {
       if (!scheduledAt) return setStatus('请选择定时执行时间');
       if (new Date(fromBeijingInput(scheduledAt)).getTime() <= Date.now()) return setStatus('定时执行时间必须晚于当前时间');
     }
+    setIsActing(true);
     try {
+      const choice = await bank.resolveTransferRecipient(recipientName.trim(), recipientMode,
+        recipientNumbers[recipientMode].trim(), recipientAccountIds[recipientMode]);
       const task = await bank.createTransferTask({
         request_id: newId(), operation_id: newId(), from_account: fromAccount,
-        to_account: recipientMode === 'phone' ? phoneChoice!.account_id : recipient!.account_id,
-        recipient_phone: recipientMode === 'phone' ? recipientPhone : undefined,
+        to_account: choice.account_id,
+        recipient_phone: recipientMode === 'phone' && recipientNumbers.phone.trim()
+          ? recipientNumbers.phone.trim() : undefined,
+        recipient_card_number: recipientMode === 'card' && recipientNumbers.card.trim()
+          ? recipientNumbers.card.trim() : undefined,
         amount: Number(amount), note: note.trim() ? note : null,
         note_source: note.trim() ? 'manual' : 'cleared',
         scheduled_at: transferMode === 'scheduled' ? fromBeijingInput(scheduledAt) : undefined,
@@ -239,16 +241,16 @@ function App() {
       setActiveTask(task); setStatus(task.message);
       if (user) localStorage.setItem(`active-task-${user.user_id}`, task.task_id);
     } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
   };
 
-  const lookupPhone = async () => {
-    setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone('');
-    try {
-      const candidates = await bank.lookupPhoneRecipients(recipientPhone);
-      setPhoneCandidates(candidates); setLookedUpPhone(recipientPhone);
-      setSelectedPhoneAccount(candidates.length === 1 ? candidates[0].account_id : '');
-      if (!candidates.length) setStatus('未找到可收款账户，请核对手机号');
-    } catch (error) { setStatus(message(error)); }
+  const chooseTransferRecipient = (choice: TransferChoice) => {
+    setRecipientName(choice.name);
+    setRecipientMode(choice.cardNumber ? 'card' : 'phone');
+    setRecipientNumbers({ card: choice.cardNumber || '', phone: choice.phoneNumber || '' });
+    setRecipientAccountIds({ card: choice.cardAccountId || choice.accountId,
+      phone: choice.phoneAccountId || choice.accountId });
+    setRecipientPanel(null); setStatus('');
   };
 
   const saveEditedNote = async () => {
@@ -463,10 +465,10 @@ function App() {
   const logout = () => {
     manualDrafts.clear();
     localStorage.removeItem('token'); localStorage.removeItem('bank-user');
-    setUser(null); setAccounts([]); setRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setSubscriptionCancellationToken(''); setPendingChargeSubscription(null); setSubscriptionChargeId('');
+    setUser(null); setAccounts([]); setRecipients([]); setTransferHistoryRecipients([]); setTransactions([]); setPaymentRequests([]); setSubscriptions([]); setPendingSubscription(null); setSubscriptionCancellationToken(''); setPendingChargeSubscription(null); setSubscriptionChargeId('');
     setChat([]); setActiveTask(null); setConversation(null); setRetryChat(null); setStatus('');
-    setFromAccount(''); setToUserId(''); setRequestPayerIds([]); setRequestAccountId(''); setScheduledAt('');
-    setRecipientMode('name'); setRecipientPhone(''); setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone('');
+    setFromAccount(''); setRecipientName(''); setRequestPayerIds([]); setRequestAccountId(''); setScheduledAt('');
+    setRecipientMode('card'); setRecipientNumbers({ card: '', phone: '' }); setRecipientAccountIds({ card: '', phone: '' }); setRecipientPanel(null);
     setAmount(''); setNote(''); setEditingNote(null); setEditNoteCleared(false); setTransferMode('instant');
     setRequestAmount(''); setRequestNote(''); setSplitEqually(false); setChatInput('');
     setTotpEnabled(false); setMfaOpen(false); setMfaCode(''); setEnrollOpen(false); setEnrollData(null); setEnrollCode('');
@@ -491,6 +493,11 @@ function App() {
   };
 
   const requestAmountNumber = Number(requestAmount) || 0;
+  const requestRecipients = [
+    ...recipients.map(item => ({ user_id: item.user_id, name: item.name, label: item.nickname || item.name, number: item.phone ? `手机号 ${item.phone}` : item.card_masked ? `银行卡尾号 ${item.card_masked.slice(-4)}` : '', saved: true })),
+    ...transferHistoryRecipients.filter(item => !recipients.some(saved => saved.user_id === item.user_id))
+      .map(item => ({ user_id: item.user_id, name: item.name, label: item.name, number: item.phone_masked ? `手机号 ${item.phone_masked}` : item.card_number ? `银行卡尾号 ${item.card_number.slice(-4)}` : '', saved: false })),
+  ];
   const splitIsExact = requestPayerIds.length > 0
     && Math.round(requestAmountNumber * 100) % requestPayerIds.length === 0;
   const perPersonAmount = splitEqually && requestPayerIds.length > 0
@@ -524,6 +531,10 @@ function App() {
   if (['U007', 'U008'].includes(user.user_id)) return <><BeijingClock /><Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
     <MerchantDashboard user={user} accounts={accounts} transactions={transactions} revision={bankRevision} onRefresh={load} onLogout={logout} />
   </Suspense></>;
+
+  const confirmationCard = activeTask?.confirmation_card;
+  const payerCardTail = confirmationCard?.payer_card_masked?.slice(-4)
+    || accounts.find(account => account.account_id === confirmationCard?.from_account)?.transfer_card_number?.slice(-4);
 
   return <main className={`app prototype-app${agentOpen ? ' nova-open' : ''}`}>
     <div className="bank-shell" ref={bankShellRef}>
@@ -562,7 +573,7 @@ function App() {
               <button className="insight-row" onClick={() => openSection('wealth')}><span className="insight-icon mint">◇</span><span><strong>把可用资金变成清晰计划</strong><small>先形成需求卡，再确认任何模拟订单。</small></span><b>›</b></button>
             </article>
           </section>
-          <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
+          <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.length === 0 && <p className="hint">暂无流水</p>}{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
         </>}
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
@@ -570,25 +581,24 @@ function App() {
         {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>让每一笔变化都有解释。</h1><p>查看消费与周期收支，按自己的标签整理账单。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} /></Suspense></>}
 
         {bankingSection === 'transfer' && <><div className="page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账、收款和任务状态集中在一处。</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="grid">
-      <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span><strong>¥{a.balance.toFixed(2)}</strong>{a.available_fen != null && <small>可用 ¥{(a.available_fen / 100).toFixed(2)} · 占款 ¥{((a.held_fen || 0) / 100).toFixed(2)}</small>}<small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
-      <div className="card"><h2>创建转账任务</h2><form onSubmit={submitTransfer}>
+      <div className="card"><h2>我的账户</h2>{accounts.map(a => <div className="account" key={a.account_id}><span>{a.account_type === 'savings' ? '活期账户' : a.account_type} · {a.card_number}</span>{a.transfer_card_number && <small>模拟收款卡号：{a.transfer_card_number}</small>}<strong>¥{a.balance.toFixed(2)}</strong>{a.available_fen != null && <small>可用 ¥{(a.available_fen / 100).toFixed(2)} · 占款 ¥{((a.held_fen || 0) / 100).toFixed(2)}</small>}<small>今日已转 ¥{a.daily_transfer_used.toFixed(2)} / ¥{a.daily_transfer_limit.toFixed(2)}</small></div>)}</div>
+      <div className="card"><div className="transfer-heading"><h2>创建转账任务</h2><div className="transfer-heading-actions"><button type="button" className="secondary" aria-label="转账人" title="转账人" aria-expanded={recipientPanel === 'people'} onClick={() => setRecipientPanel(current => current === 'people' ? null : 'people')}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></svg></button><button type="button" className="secondary" aria-label="转账人设置" title="转账人设置" aria-expanded={recipientPanel === 'settings'} onClick={() => setRecipientPanel(current => current === 'settings' ? null : 'settings')}>⚙</button></div></div>
+      {recipientPanel && <TransferContacts key={user.user_id} userId={user.user_id} mode={recipientPanel} onChoose={chooseTransferRecipient} onChanged={load} />}
+      <form onSubmit={submitTransfer}>
         <label>付款账户<select value={fromAccount} onChange={e => setFromAccount(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}（¥{a.balance.toFixed(2)}）</option>)}</select></label>
-        <label>收款方式<select value={recipientMode} onChange={e => setRecipientMode(e.target.value as 'name' | 'phone')}><option value="name">按姓名选择</option><option value="phone">按手机号查询</option></select></label>
-        {recipientMode === 'name'
-          ? <label>收款人<select value={toUserId} onChange={e => setToUserId(e.target.value)}>{recipients.map(r => <option value={r.user_id} key={r.user_id}>{r.name} · {r.bank}</option>)}</select></label>
-          : <><label>手机号<input value={recipientPhone} onChange={e => { setRecipientPhone(e.target.value); setPhoneCandidates([]); setSelectedPhoneAccount(''); setLookedUpPhone(''); }} /></label>
-            <button type="button" className="secondary" onClick={lookupPhone}>查询收款账户</button>
-            {phoneCandidates.length > 0 && <label>收款账户<select value={selectedPhoneAccount} onChange={e => setSelectedPhoneAccount(e.target.value)}><option value="">请选择脱敏候选</option>{phoneCandidates.map(candidate => <option value={candidate.account_id} key={candidate.account_id}>{candidate.label}</option>)}</select></label>}</>}
+        <label>收款人户名或备注名<input required maxLength={64} value={recipientName} onChange={e => { setRecipientName(e.target.value); setRecipientAccountIds({ card: '', phone: '' }); }} placeholder="输入真实户名或已保存的备注名" /></label>
+        <label>收款账户<select value={recipientMode} onChange={e => setRecipientMode(e.target.value as 'card' | 'phone')}><option value="card">银行卡号</option><option value="phone">手机号</option></select></label>
+        <label>{recipientMode === 'card' ? '银行卡号（使用已保存备注名时可留空）' : '手机号'}<input inputMode="numeric" autoComplete="off" value={recipientNumbers[recipientMode]} onChange={e => { setRecipientNumbers(current => ({ ...current, [recipientMode]: e.target.value })); setRecipientAccountIds(current => ({ ...current, [recipientMode]: '' })); }} placeholder={recipientMode === 'card' ? '请输入完整模拟银行卡号' : '请输入完整手机号'} /></label>
         <label>金额（元）<input required min="0.01" step="0.01" type="number" value={amount} onChange={e => setAmount(e.target.value)} /></label>
         <label>备注（可选）<input maxLength={256} value={note} onChange={e => setNote(e.target.value)} /></label>
         <label>执行方式<select value={transferMode} onChange={e => { const mode = e.target.value as 'instant' | 'scheduled'; setTransferMode(mode); if (mode === 'scheduled' && !scheduledAt) setScheduledAt(suggestedScheduleTime()); }}><option value="instant">立即转账</option><option value="scheduled">定时转账</option></select></label>
         {transferMode === 'scheduled' && <><label>执行时间<input required min={localDateTimeInput(new Date())} type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /><small>点击右侧日历图标选择日期和时间，例如：2026/09/26 21:31。系统按北京时间执行。</small></label><button type="button" className="secondary" onClick={() => setScheduledAt(suggestedScheduleTime())}>快速设置为约 2 分钟后</button></>}
-        <button disabled={!fromAccount || (recipientMode === 'name' ? !toUserId : !selectedPhoneAccount) || isActing}>生成确认信息</button>
+        <button disabled={!fromAccount || isActing}>生成确认信息</button>
       </form></div>
     </section>
     <section className="grid">
-      <div className="card"><h2>发起收款申请</h2><form onSubmit={submitPaymentRequest}>
-        <label>向谁收款（可多选）<details className="multi-select" ref={payerSelectorRef}><summary>{requestPayerIds.length ? `已选择 ${requestPayerIds.length} 人：${recipients.filter(r => requestPayerIds.includes(r.user_id)).map(r => r.name).join('、')}` : '请选择联系人'}</summary><div>{recipients.map(r => <label className="check-option" key={r.user_id}><input type="checkbox" checked={requestPayerIds.includes(r.user_id)} onChange={e => setRequestPayerIds(ids => e.target.checked ? [...ids, r.user_id] : ids.filter(id => id !== r.user_id))} />{r.name} · {r.phone}</label>)}</div></details></label>
+      <div className="card"><h2>发起收款申请</h2><details className="add-contact-details"><summary>＋ 添加联系人</summary><AddContactForm onAdded={load} /></details><form onSubmit={submitPaymentRequest}>
+        <label>向谁收款（可多选）<details className="multi-select" ref={payerSelectorRef}><summary>{requestPayerIds.length ? `已选择 ${requestPayerIds.length} 人：${requestRecipients.filter(r => requestPayerIds.includes(r.user_id)).map(r => r.label).join('、')}` : '请选择联系人'}</summary><div>{requestRecipients.length === 0 && <p className="hint">暂无联系人或历史转账人</p>}{requestRecipients.map(r => <label className="check-option" key={r.user_id}><input type="checkbox" checked={requestPayerIds.includes(r.user_id)} onChange={e => setRequestPayerIds(ids => e.target.checked ? [...ids, r.user_id] : ids.filter(id => id !== r.user_id))} />{r.label}{r.label !== r.name ? `（${r.name}）` : ''}{r.number && ` · ${r.number}`}{!r.saved && ' · 历史转账人'}</label>)}</div></details></label>
         <label>收款账户<select value={requestAccountId} onChange={e => setRequestAccountId(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}</option>)}</select></label>
         <label>{splitEqually ? 'AA 总金额（元）' : '每人收款金额（元）'}<input required min="0.01" step="0.01" type="number" value={requestAmount} onChange={e => setRequestAmount(e.target.value)} /></label>
         <button type="button" className={splitEqually ? '' : 'secondary'} onClick={() => setSplitEqually(value => !value)}>AA 均分：{splitEqually ? '已开启' : '未开启'}</button>
@@ -604,7 +614,11 @@ function App() {
     </section>
     {activeTask && <section className="card task-focus">
       <h2>转账任务 · {activeTask.phase}</h2><p>{activeTask.message}</p>
-      {activeTask.confirmation_card && <p>从 {activeTask.confirmation_card.from_account} 向 {activeTask.confirmation_card.recipient_name}{activeTask.confirmation_card.recipient_phone_masked && `（${activeTask.confirmation_card.recipient_phone_masked}）`} 转入 {activeTask.confirmation_card.to_account} <strong>¥{activeTask.confirmation_card.amount.toFixed(2)}</strong> CNY · 备注：{activeTask.confirmation_card.note ?? '无'} · 风险级别 {activeTask.confirmation_card.risk_level}</p>}
+      {confirmationCard && <p>从{payerCardTail ? `尾号 ${payerCardTail} 的银行卡` : '付款银行卡'}向 {confirmationCard.recipient_name}（{confirmationCard.recipient_phone_masked
+        ? `手机号 ${confirmationCard.recipient_phone_masked}`
+        : confirmationCard.recipient_card_masked
+          ? `银行卡尾号 ${confirmationCard.recipient_card_masked.slice(-4)}`
+          : '收款账户'}）转账 <strong>¥{confirmationCard.amount.toFixed(2)}</strong> · 备注：{confirmationCard.note ?? '无'} · 风险级别 {confirmationCard.risk_level}</p>}
       {activeTask.confirmation_card && activeTask.allowed_actions.includes('modify') && conversation?.task?.task_id !== activeTask.task_id && <>
         {editingNote === null
           ? <button className="secondary" onClick={() => { setEditingNote(activeTask.confirmation_card?.note || ''); setEditNoteCleared(activeTask.confirmation_card?.note_source === 'cleared'); }}>修改或清空备注</button>

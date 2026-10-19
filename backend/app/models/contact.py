@@ -3,7 +3,7 @@
 from datetime import date
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Date, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -23,6 +23,8 @@ class ContactORM(Base):
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="昵称")
     phone: Mapped[str] = mapped_column(String(20), nullable=False, comment="手机号")
     account_number: Mapped[str] = mapped_column(String(32), nullable=False, comment="银行账号")
+    phone_known: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    card_known: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     bank: Mapped[str] = mapped_column(String(64), nullable=False, comment="银行名称")
     transfer_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="历史转账次数"

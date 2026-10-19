@@ -233,3 +233,6 @@ __marimo__/
 
 # TypeScript incremental build cache
 frontend/tsconfig.tsbuildinfo
+
+# Local offline wealth disclosure archive
+/wealth-final-offline-20261015-disclosure-v2.zip

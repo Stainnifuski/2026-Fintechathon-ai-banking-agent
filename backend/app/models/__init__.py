@@ -11,6 +11,7 @@ from .transaction import (
     TransferResponseSchema,
 )
 from .contact import ContactORM, ContactSchema
+from .transfer_recipient_history import TransferRecipientHistoryCutoffORM
 from .audit_log import AuditLogORM, AuditLogSchema, AuditLogCreateSchema
 from .bank_operation import BankOperationORM
 from .payment_request import PaymentRequestORM

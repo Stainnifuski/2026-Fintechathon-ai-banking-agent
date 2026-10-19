@@ -16,6 +16,7 @@ class TransferTaskCreate(BaseModel):
     note: str | None = Field(default=None, max_length=256)
     note_source: Literal["manual", "automatic", "cleared"] | None = None
     recipient_phone: str | None = Field(default=None, max_length=32)
+    recipient_card_number: str | None = Field(default=None, max_length=32)
     scheduled_at: datetime | None = None
 
 
@@ -87,6 +88,8 @@ class ConfirmationCard(BaseModel):
     from_account: str
     to_account: str
     recipient_name: str
+    payer_card_masked: str | None = None
+    recipient_card_masked: str | None = None
     amount: float
     currency: str
     note: str | None = None

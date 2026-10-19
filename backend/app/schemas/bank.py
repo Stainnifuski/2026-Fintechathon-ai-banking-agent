@@ -19,7 +19,7 @@ class PayerCandidate(BaseModel):
 
 class RecipientCandidate(PayerCandidate):
     recipient_user_id: str
-    phone_masked: str
+    phone_masked: str | None = None
 
 
 class TransferDirectoryView(BaseModel):
@@ -29,13 +29,21 @@ class TransferDirectoryView(BaseModel):
 
 
 class PhoneRecipientView(PayerCandidate):
-    pass
+    name: str | None = None
+    card_number: str | None = None
+    phone_number: str | None = None
+    preferred_mode: str | None = None
+    card_account_id: str | None = None
+    phone_account_id: str | None = None
 
 
 class RecipientView(BaseModel):
     user_id: str
+    contact_id: str | None = None
     name: str
-    phone: str = Field(description="脱敏手机号")
+    nickname: str | None = None
+    phone: str | None = Field(default=None, description="仅在用户已提供手机号时返回脱敏号码")
+    card_masked: str | None = None
     account_id: str
     bank: str
 

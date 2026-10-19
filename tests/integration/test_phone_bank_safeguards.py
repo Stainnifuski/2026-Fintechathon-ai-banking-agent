@@ -61,6 +61,7 @@ async def test_phone_note_and_mapping_change(db):
     card = plan["task"]["confirmation_card"]
     assert card["recipient_name"] == "李四"
     assert card["recipient_phone_masked"] == "139****0002"
+    assert card["recipient_card_masked"] is None
     assert card["note"] == "房租"
     assert card["note_source"] == "manual"
 

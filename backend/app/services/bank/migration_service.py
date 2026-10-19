@@ -121,6 +121,22 @@ async def upgrade_card_columns(connection) -> None:
     await connection.run_sync(add_missing)
 
 
+async def upgrade_contact_knowledge_columns(connection) -> None:
+    """旧联系人来源不明，默认不向前端公开任何号码。"""
+    def add_missing(sync_connection) -> None:
+        inspector = inspect(sync_connection)
+        if "contacts" not in inspector.get_table_names():
+            return
+        columns = {column["name"] for column in inspector.get_columns("contacts")}
+        for name in ("phone_known", "card_known"):
+            if name not in columns:
+                sync_connection.execute(text(
+                    f"ALTER TABLE contacts ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT FALSE"
+                ))
+
+    await connection.run_sync(add_missing)
+
+
 async def upgrade_phone_registry(session_factory) -> None:
     """检查旧库号码冲突并填充唯一登记表；不改写客户数据。"""
     async with session_factory() as session:

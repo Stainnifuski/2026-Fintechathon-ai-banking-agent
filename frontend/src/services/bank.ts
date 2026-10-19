@@ -2,8 +2,8 @@ import { apiClient } from './api';
 
 export interface User { user_id: string; name: string; phone: string; }
 export interface AuthResponse { access_token: string; token_type: string; user: User; }
-export interface Account { account_id: string; account_type: string; card_number: string; balance: number; available_fen?: number; held_fen?: number; daily_transfer_used: number; daily_transfer_limit: number; }
-export interface Recipient { user_id: string; name: string; phone: string; account_id: string; bank: string; }
+export interface Account { account_id: string; account_type: string; card_number: string; transfer_card_number?: string; balance: number; available_fen?: number; held_fen?: number; daily_transfer_used: number; daily_transfer_limit: number; }
+export interface Recipient { user_id: string; name: string; nickname?: string | null; phone: string | null; card_masked?: string | null; account_id: string; bank: string; }
 export interface Transaction { tx_id: string; type: string; amount: number; counterparty: string; note?: string; timestamp: string; status: string; }
 export interface PaymentRequest {
   payment_request_id: string; requester_user_id: string; requester_name: string;
@@ -26,6 +26,7 @@ export interface SubscriptionChargeResult {
 export interface ConfirmationCard {
   card_id: string; plan_version: number; from_account: string; to_account: string;
   recipient_name: string; recipient_phone_masked?: string; amount: number; currency: string;
+  payer_card_masked?: string | null; recipient_card_masked?: string | null;
   note?: string | null; note_source?: 'manual' | 'automatic' | 'cleared'; risk_level: string;
   scheduled_at?: string;
 }
@@ -59,9 +60,37 @@ export const sendSms = (purpose: SmsPurpose, referenceId: string) =>
 export const smsDevInbox = () => apiClient.get<SmsInboxMessage[]>('/auth/sms/dev-inbox').then(r => r.data);
 export const accounts = (userId: string) => apiClient.get<Account[]>(`/accounts/${userId}/accounts`).then(r => r.data);
 export const recipients = () => apiClient.get<Recipient[]>('/users/recipients').then(r => r.data);
-export interface PhoneRecipientCandidate { account_id: string; label: string; }
+export interface PhoneRecipientCandidate { account_id: string; label: string; name?: string; card_number?: string | null; phone_number?: string | null; preferred_mode?: 'card' | 'phone' | null; card_account_id?: string | null; phone_account_id?: string | null; }
+export interface TransferHistoryRecipient { user_id: string; account_id: string; name: string; phone_masked: string | null; card_number: string | null; phone_number: string | null; card_account_id: string | null; phone_account_id: string | null; last_transfer_at: string; }
+export interface TransferContact {
+  contact_id: string; name: string; nickname: string | null; phone_masked: string | null; card_masked: string | null; bank: string;
+}
 export const lookupPhoneRecipients = (phone: string) =>
   apiClient.post<PhoneRecipientCandidate[]>('/users/recipients/phone', { phone }).then(r => r.data);
+export const lookupCardRecipients = (cardNumber: string) =>
+  apiClient.post<PhoneRecipientCandidate[]>('/users/recipients/card', { card_number: cardNumber }).then(r => r.data);
+export const lookupSavedNameRecipients = (name: string) =>
+  apiClient.post<PhoneRecipientCandidate[]>('/users/recipients/saved-name', { name }).then(r => r.data);
+export const resolveTransferRecipient = (name: string, mode: 'card' | 'phone', number: string, accountId?: string | null) =>
+  apiClient.post<PhoneRecipientCandidate>('/users/recipients/resolve', { name, mode, number: number || null, account_id: accountId || null }).then(r => r.data);
+export const listContacts = () => apiClient.get<TransferContact[]>('/users/contacts').then(r => r.data);
+export const createContact = (
+  lookup: { phone: string } | { card_number: string },
+  accountId: string,
+  nickname: string,
+) => apiClient.post<TransferContact>('/users/contacts', {
+  ...lookup, account_id: accountId, nickname: nickname || undefined,
+}).then(r => r.data);
+export const createManualContact = (payload: { name: string; phone?: string; card_number?: string; nickname?: string }) =>
+  apiClient.post<TransferContact>('/users/contacts', payload).then(r => r.data);
+export const resolveContact = (contactId: string) =>
+  apiClient.post<PhoneRecipientCandidate[]>(`/users/contacts/${contactId}/resolve`).then(r => r.data);
+export const renameContact = (contactId: string, nickname: string) =>
+  apiClient.patch<TransferContact>(`/users/contacts/${contactId}`, { nickname }).then(r => r.data);
+export const deleteContact = (contactId: string) =>
+  apiClient.delete(`/users/contacts/${contactId}`);
+export const transferRecipientHistory = () => apiClient.get<TransferHistoryRecipient[]>('/users/transfer-recipients/history').then(r => r.data);
+export const clearTransferRecipientHistory = () => apiClient.delete('/users/transfer-recipients/history');
 export const history = () => apiClient.get<Transaction[]>('/transactions/history').then(r => r.data);
 export const paymentRequests = () => apiClient.get<PaymentRequest[]>('/payment-requests').then(r => r.data);
 export const listSubscriptions = () => apiClient.get<Subscription[]>('/subscriptions').then(r => r.data);
@@ -99,6 +128,7 @@ export const createTransferTask = (payload: {
   request_id: string; operation_id: string; from_account: string; to_account: string;
   amount: number; note?: string | null; note_source?: 'manual' | 'automatic' | 'cleared';
   recipient_phone?: string; scheduled_at?: string;
+  recipient_card_number?: string;
 }) => apiClient.post<TaskSnapshot>('/tasks/transfers', payload).then(r => r.data);
 export interface ChatReply {
   session_id: string; session_version: number; kind: string; message: string; mode: string;
