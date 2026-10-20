@@ -4,6 +4,12 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  // Worktrees and baseline previews may share node_modules, never optimizer state.
+  cacheDir: path.resolve(__dirname, '../.deps/vite-cache'),
+  optimizeDeps: {
+    // Keep ECharts registration and initialization in one prebundle graph.
+    include: ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

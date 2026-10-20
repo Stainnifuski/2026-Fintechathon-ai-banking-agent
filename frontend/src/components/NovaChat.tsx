@@ -51,6 +51,65 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
   return text;
 }
 
+type Prompt = { label: string; text: string };
+const COMMON_PROMPTS: Prompt[] = [
+  { label: '可用资金', text: '我现在有多少钱可以用？' },
+  { label: '明天的安排', text: '明天有什么日程安排？' },
+  { label: '北京时间', text: '现在北京时间几点？' },
+];
+
+function guideFor(context: NovaPageContext): { label: string; prompts: Prompt[] } {
+  const prompts: Prompt[] = [];
+  const pages = { home: '财务概览', transfer: '转账与收款', insights: '账单洞察', cards: '卡片管理',
+    subscriptions: '订阅管理', wealth: '理财规划', thirdParty: '生活服务' };
+  let label: string = pages[context.page];
+  if (context.page === 'cards') {
+    if (context.cards?.selected_card_id) {
+      label += ' · 已选卡片';
+      prompts.push({ label: '这张卡的限额', text: '这张卡的状态和限额是多少？' },
+        { label: '锁卡预览', text: '帮我把这张卡临时锁上' });
+    }
+    prompts.push({ label: '我的卡片', text: '查看我的卡片状态和限额' });
+  }
+  if (context.page === 'subscriptions') {
+    if (context.subscriptions?.selected_subscription_id) {
+      label += ' · 已选订阅';
+      prompts.push({ label: '下次扣费时间', text: '这个订阅什么时候扣费？' });
+    }
+    prompts.push({ label: '预计订阅月费', text: '我的订阅每月预计要花多少钱？' });
+  }
+  if (context.page === 'insights') {
+    label += context.filters?.date ? ' · ' + context.filters.date : '';
+    if (context.selected) {
+      label += ' · 已选流水';
+      prompts.push({ label: '解释这笔流水', text: '这笔流水是什么？' });
+    }
+    prompts.push({ label: '解释当前账单', text: '解释当前筛选的账单' });
+  }
+  if (context.shop) {
+    label = context.shop.shop === 'flower' ? '鲜花店' : '蛋糕店';
+    if (context.shop.selected?.type === 'product') {
+      label += ' · 已选商品';
+      prompts.push({ label: '所选商品报价', text: '这个商品多少钱，我选的数量总共多少钱？' });
+    }
+    if (context.shop.selected?.type === 'order') {
+      label += ' · 已选订单';
+      prompts.push({ label: '这笔订单的付款状态', text: '这个订单付款了吗？' });
+    }
+    prompts.push({ label: '店铺商品', text: '这家店有哪些商品？' },
+      { label: '我的店铺订单', text: '查看这家店我的订单和付款状态' });
+  }
+  if (context.calendar) {
+    label = '日历 · ' + context.calendar.selected_date;
+    if (context.calendar.selected_event) {
+      label += ' · 已选活动';
+      prompts.push({ label: '所选活动的时间地点', text: '这个活动什么时候举行，在哪里？' });
+    }
+    prompts.push({ label: '这一天的安排', text: '这一天有什么规划？' });
+  }
+  return { label, prompts };
+}
+
 export default function NovaChat({ name, open, onClose, onNavigate, pageContext, onReviewCardOperation }: {
   name: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
   onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
@@ -60,6 +119,11 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const guide = guideFor(pageContext);
+  const prompts = [...guide.prompts, ...COMMON_PROMPTS];
+  const contextKey = JSON.stringify({ ...pageContext, observed_as_of: undefined });
+  useEffect(() => { setShowHelp(false); }, [contextKey]);
   const request = useRef<AbortController | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => () => { request.current?.abort(); }, []);
@@ -73,7 +137,7 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
     const history = messages.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) }));
     // 先放一条草稿回答，流式片段逐步写入；完成后替换为带查询记录的正式回答。
     setMessages(previous => [...previous, { role: 'user', content }, { role: 'assistant', content: '', streaming: true }]);
-    setInput(''); setError(''); setBusy(true);
+    setInput(''); setError(''); setBusy(true); setShowHelp(false);
     const updateDraft = (change: (draft: Entry) => Entry) => setMessages(previous => {
       const last = previous[previous.length - 1];
       return last?.streaming ? [...previous.slice(0, -1), change(last)] : previous;
@@ -104,41 +168,13 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
   return <aside id="nova-panel" className="agent-panel" aria-label="NOVA 对话">
       <div className="agent-head"><span className="agent-orb">✦</span><div><strong>NOVA</strong><small>银行与生活服务助手</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
       <div className="agent-body">
-        <p className="agent-greeting">你好，{name}。可以问我账户资金、账单、日历、店铺商品和订单。</p>
-        <p className="hint">我会结合当前页面筛选查询本人数据。卡片操作我只生成待确认的变更，需你在卡片页本人确认；转账及其他操作请进入对应工作台。</p>
-        <button className="agent-prompt" disabled={busy} onClick={() => void send('现在北京时间几点？')}>现在北京时间几点？ <span>→</span></button>
-        <button className="agent-prompt" disabled={busy} onClick={() => void send('我现在有多少钱可以用？')}>查看可用资金 <span>→</span></button>
-        <button className="agent-prompt" disabled={busy} onClick={() => void send('明天有什么日程安排？')}>明天有什么安排？ <span>→</span></button>
-        {pageContext.page === 'cards' && <>
-          <button className="agent-prompt" disabled={busy} onClick={() => void send('查看我的卡片状态和限额')}>查看我的卡片 <span>→</span></button>
-          {pageContext.cards?.selected_card_id && <button className="agent-prompt" disabled={busy} onClick={() => void send('这张卡的状态和限额是多少？')}>查询选中卡片 <span>→</span></button>}
-          {pageContext.cards?.selected_card_id && <button className="agent-prompt" disabled={busy} onClick={() => void send('帮我把这张卡临时锁上')}>锁定选中卡片（生成预览） <span>→</span></button>}
-        </>}
-        {pageContext.page === 'subscriptions' && <>
-          <button className="agent-prompt" disabled={busy} onClick={() => void send('我的订阅每月预计要花多少钱？')}>查看订阅与预计月费 <span>→</span></button>
-          {pageContext.subscriptions?.selected_subscription_id && <button className="agent-prompt" disabled={busy} onClick={() => void send('这个订阅什么时候扣费？')}>查询选中订阅 <span>→</span></button>}
-        </>}
-        {pageContext.shop && <>
-          <button className="agent-prompt" disabled={busy} onClick={() => void send('这家店有哪些商品？')}>查看当前店铺商品 <span>→</span></button>
-          <button className="agent-prompt" disabled={busy} onClick={() => void send('查看这家店我的订单和付款状态')}>查看我的店铺订单 <span>→</span></button>
-          {pageContext.shop.selected?.type === 'product' && <button className="agent-prompt" disabled={busy} onClick={() => void send('这个商品多少钱，我选的数量总共多少钱？')}>查询选中商品价格 <span>→</span></button>}
-          {pageContext.shop.selected?.type === 'order' && <button className="agent-prompt" disabled={busy} onClick={() => void send('这个订单付款了吗？')}>查询选中订单状态 <span>→</span></button>}
-        </>}
-        {pageContext.calendar && <>
-          <button className="agent-prompt" disabled={busy} onClick={() => void send('这一天有什么规划？')}>查看日历选中日期 <span>→</span></button>
-          {pageContext.calendar.selected_event && <button className="agent-prompt" disabled={busy} onClick={() => void send('这个活动什么时候举行，在哪里？')}>解释选中活动 <span>→</span></button>}
-        </>}
-        {pageContext.page === 'insights' && <>
-          <button className="agent-prompt" disabled={busy} onClick={() => void send('解释当前筛选的账单')}>解释当前账单 <span>→</span></button>
-          {pageContext.selected && <button className="agent-prompt" disabled={busy} onClick={() => void send('这笔流水是什么？')}>解释选中流水 <span>→</span></button>}
-        </>}
-        {(['transfer', 'insights', 'wealth'] as const).map((section, index) => <button key={section} className="agent-prompt" onClick={() => onNavigate(section)}>{['转账与收款', '账单洞察', '理财规划'][index]} <span>→</span></button>)}
+        {messages.length === 0 && !error && <div className="nova-empty"><p>{name}，想了解什么？</p><small>直接输入问题，或从下方示例开始。</small></div>}
         <div className="nova-messages" aria-live="polite">
           {messages.map((entry, index) => <div key={index} className={`nova-message nova-${entry.role}`}>
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
             {entry.role === 'assistant' ? (entry.content ? <NovaMarkdown content={entry.content} /> : null) : <p>{entry.content}</p>}
-            {entry.streaming && <p className="hint" role="status">{entry.status ? `🔍 ${entry.status}…` : entry.content ? '▍' : 'NOVA 正在思考…'}</p>}
-            {entry.details && <small>{entry.details.mode === 'offline' ? '离线规则' : '模型回答'}{entry.details.tool_calls.length > 0 && ` · 工具调用 ${entry.details.tool_calls.length} 次`}</small>}
+            {entry.streaming && <p className="hint" role="status">{entry.status ? `🔍 ${entry.status}…` : entry.content ? '▍' : '正在处理你的问题…'}</p>}
+            {entry.details && <small>{entry.details.mode === 'offline' ? '离线规则' : '模型回答'}{entry.details.tool_calls.length > 0 && ` · 处理记录 ${entry.details.tool_calls.length} 项`}</small>}
             {entry.details?.tool_calls.map((call, callIndex) => <details key={callIndex}><summary>{TOOL_LABELS[call.name] || call.name}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
             {entry.details?.tool_calls.filter(call => call.name === 'preview_card_operation' && !call.result.error).map((call, callIndex) => {
               const preview = call.result.data as { operation_id: string; action_label: string };
@@ -149,6 +185,27 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
           <div ref={bottom} />
         </div>
       </div>
-      <form className="agent-compose" onSubmit={submit}><input aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy} onChange={event => setInput(event.target.value)} placeholder="可用资金有多少？这笔流水是什么？"/><button type="submit" aria-label="发送" disabled={busy || !input.trim()}>↑</button></form>
+      <div className="agent-controls">
+        <div className="nova-guide-row">
+          <span className="nova-context" title={guide.label}>{guide.label}</span>
+          <button type="button" className="nova-help-toggle" aria-expanded={showHelp} aria-controls="nova-help" onClick={() => setShowHelp(value => !value)}>{showHelp ? '收起示例' : '更多示例'} <span aria-hidden="true">{showHelp ? '−' : '+'}</span></button>
+        </div>
+        {!showHelp && messages.length === 0 && <div className="nova-quick-prompts" aria-label="快捷提问">
+          {prompts.slice(0, 2).map(prompt => <button type="button" key={prompt.text} className="nova-chip" disabled={busy} onClick={() => void send(prompt.text)}>问：{prompt.label}</button>)}
+        </div>}
+        {showHelp && <div id="nova-help" className="nova-help">
+          <p>点击示例直接提问，会结合当前页面的筛选与选择。</p>
+          <div className="nova-example-list" aria-label="示例提问">
+            {prompts.map(prompt => <button type="button" key={prompt.text} className="nova-chip" disabled={busy} onClick={() => void send(prompt.text)}>问：{prompt.label}</button>)}
+          </div>
+          <p>打开工作台，自行办理：</p>
+          <div className="nova-workspace-links" aria-label="打开工作台">
+            {(['transfer', 'insights', 'wealth'] as const).map((section, index) => <button type="button" key={section} onClick={() => { onNavigate(section); setShowHelp(false); }}>打开{['转账与收款', '账单洞察', '理财规划'][index]} <span aria-hidden="true">→</span></button>)}
+          </div>
+          <p>账户资金与交易均为模拟。卡片变更会先生成预览，需在卡片页核对、确认；其他业务请到相应工作台办理。</p>
+        </div>}
+        <small className="nova-confirm-note">变更需本人确认，必要时还需验证码。</small>
+      </div>
+      <form className="agent-compose" onSubmit={submit}><input aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy} onChange={event => setInput(event.target.value)} placeholder="输入问题，例如：可用资金有多少？"/><button type="submit" aria-label="发送" disabled={busy || !input.trim()}>↑</button></form>
   </aside>;
 }

@@ -109,7 +109,7 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .agent-head { padding: 22px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; background: #fff; border-bottom: 1px solid var(--line); }
 .agent-head > div { display: grid; gap: 2px; }.agent-head small { font-size: 10px; }.agent-orb { width: 40px; height: 40px; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 28% 24%, #bcd8ff, #7059f4 50%, #2f4cd7); border-radius: 50%; box-shadow: 0 8px 22px #624ce54c; }
 .agent-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 28px 22px; }
-.agent-greeting { margin: 0 0 20px; font-size: 24px; font-weight: 750; line-height: 1.35; letter-spacing: -.025em; }
+
 .agent-suggestion { margin-bottom: 18px; padding: 20px; color: #fff; background: linear-gradient(145deg, #181e33, #34479e); border-radius: 18px; }
 .agent-suggestion span, .agent-suggestion small { display: block; color: #cdd4f2; }.agent-suggestion strong { display: block; margin: 7px 0; font-size: 30px; }
 .agent-prompt { width: 100%; margin-top: 9px; padding: 14px 15px; display: flex; justify-content: space-between; color: #30384d; background: #fff; border: 1px solid #e5e7ed; text-align: left; }
@@ -130,7 +130,7 @@ button:not(:disabled):hover { transform: translateY(-1px); }
   .workspace-content { padding: 20px 14px 40px; }.dashboard-hero { min-height: auto; padding: 28px 22px; border-radius: 22px; }.dashboard-hero h1 { font-size: 32px; }.safe-card { padding: 19px; }.metric-grid { grid-template-columns: 1fr; gap: 9px; }.metric-grid article { padding: 16px 18px; }.dashboard-grid { gap: 12px; }.overview-card { padding: 20px; }.prototype-app .grid { grid-template-columns: 1fr; }
 }
 
-.nova-messages { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.nova-messages { display: flex; flex-direction: column; gap: 12px; }
 .nova-message { min-width: 0; padding: 16px; border-radius: 12px; background: #f1f5f9; overflow-wrap: anywhere; }
 .nova-message p { margin: 6px 0; white-space: pre-wrap; }
 .nova-message small { color: #526174; }
@@ -195,7 +195,7 @@ button:not(:disabled):hover { transform: translateY(-1px); }
   .agent-head { padding: 10px 16px; }
   .agent-orb { width: 32px; height: 32px; }
   .agent-body { padding: 14px 16px; }
-  .agent-greeting { font-size: 18px; margin-bottom: 10px; }
+
   .agent-compose { padding: 10px 16px; }
 }
 @media (max-width: 640px) {
@@ -228,3 +228,35 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .add-contact-details { margin-top: 14px; }
 .add-contact-details summary { cursor: pointer; color: #1769e0; font-weight: 600; }
 .add-contact-form { display: grid; gap: 10px; margin-top: 12px; }
+
+/* Suggestions stay beside the input; conversation history keeps the main scroll area. */
+.agent-head, .agent-compose { flex-shrink: 0; }
+.agent-head { padding: 16px 20px; }
+.agent-body { padding: 20px; }
+.nova-empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; color: #526174; padding: 12px; }
+.nova-empty p { margin: 0; font-size: 16px; font-weight: 600; }
+.agent-controls { flex: 0 1 auto; min-height: 0; max-height: min(45%, 320px); overflow-y: auto; overscroll-behavior: contain; padding: 10px 16px 0; border-top: 1px solid var(--line); background: #fff; }
+.nova-guide-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.nova-context { min-width: 0; color: #526174; font-size: 12px; overflow-wrap: anywhere; }
+.nova-help-toggle { flex: none; padding: 6px 0 6px 8px; color: #4355a4; background: transparent; font-size: 12px; }
+.nova-help-toggle span { margin-left: 3px; }
+.nova-quick-prompts, .nova-example-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.nova-chip { max-width: 100%; padding: 7px 10px; border: 1px solid #e5e7ed; border-radius: 8px; background: #f8f8fb; color: #30384d; font-size: 12px; line-height: 1.4; text-align: left; overflow-wrap: anywhere; }
+.nova-chip:hover { background: #edf1fd; border-color: #cbd3f8; }
+.nova-help p { margin: 10px 0 6px; font-size: 12px; line-height: 1.6; color: #657187; }
+.nova-workspace-links { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.nova-workspace-links button { padding: 5px 0; background: transparent; color: #4355a4; font-size: 12px; text-align: left; }
+.nova-confirm-note { display: block; padding-top: 6px; color: #657187; font-size: 11px; line-height: 1.5; }
+.agent-compose { border-top: 0; padding: 10px 16px 14px; }
+.nova-help-toggle:focus-visible, .nova-chip:focus-visible, .nova-workspace-links button:focus-visible { outline: 2px solid #4355a4; outline-offset: 2px; }
+@media (max-width: 1100px) {
+  .agent-head { padding: 8px 14px; }
+  .agent-body { padding: 12px 14px; }
+  .agent-controls { padding-inline: 14px; }
+  .agent-compose { padding: 8px 14px 10px; }
+  .nova-empty { padding: 4px; gap: 3px; }
+  .nova-empty p { font-size: 14px; }
+}
+@media (max-width: 640px) {
+  .agent-compose input { font-size: 16px; }
+}
