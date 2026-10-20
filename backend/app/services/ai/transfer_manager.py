@@ -19,8 +19,9 @@ from ..bank.contacts import _transfer_methods
 from ..bank.transfer_cards import transfer_card_number
 from ..bank.account_scope import isolated_account_ids
 from ..bank.transfer_service import BankError, transfer_directory
+from ..bank.nova_conversations import redact as redact_sensitive
 from ..orchestration import TaskError, create_transfer_task, modify_task, task_snapshot
-from .nlu import NLUEngine, UnderstandingError, amount_fen, PHONE, scope_guard
+from .nlu import NLUEngine, UnderstandingError, amount_fen, PHONE, scope_guard, offline_extract
 from .skill_registry import load_skill
 
 SKILL_VERSION = "transfer-v1"
@@ -218,8 +219,10 @@ async def _extract(nlu: NLUEngine, text: str, pending: bool) -> dict:
     if card:
         clean = re.sub(r"银行卡号|卡号|银行卡", "", clean)
     # Existing NLU handles phone numbers, but explicit extraction also covers a reply with only a number.
-    result = await nlu.extract(clean, {"missing_recipient": pending,
-                                       "skill_instructions": load_skill("transfer")})
+    extraction_context = {"missing_recipient": pending, "skill_instructions": load_skill("transfer")}
+    # Full recipient identifiers stay inside the bank application, even in model mode.
+    result = (offline_extract(clean, extraction_context) if redact_sensitive(text) != text else
+              await nlu.extract(clean, extraction_context))
     for key in ("recipient", "recipient_phone", "amount_text", "payer", "note"):
         value = getattr(result, key)
         if value is not None and value not in clean:
@@ -240,7 +243,7 @@ async def _extract(nlu: NLUEngine, text: str, pending: bool) -> dict:
 async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, user_id: str,
                           message: str, request_id: str, session_id: str | None,
                           session_version: int, focus_task_id: str | None = None,
-                          candidate_id: str | None = None) -> dict:
+                          candidate_id: str | None = None, create_session: bool = False) -> dict:
     receipt_id = _digest([user_id, request_id])
     payload_digest = _digest([message, session_id, session_version, focus_task_id, candidate_id])
     receipt = await db.get(NovaMessageReceiptORM, receipt_id)
@@ -250,7 +253,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         row = await db.get(NovaSessionORM, receipt.response["session_id"])
         return {**receipt.response, **await _view(db, row)}
     row = await db.get(NovaSessionORM, session_id) if session_id else None
-    if session_id and (row is None or row.user_id != user_id):
+    if session_id and ((row is None and not create_session) or (row is not None and row.user_id != user_id)):
         raise ManagerError("聊天任务会话不存在", "SESSION_NOT_FOUND", 404)
     if row and row.version != session_version:
         raise ManagerError("会话已更新，请刷新后重试", "STALE_SESSION_VERSION")
@@ -316,7 +319,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         return {"reply": "请说明要发起、补充或修改哪笔转账。", "mode": nlu.mode, "tool_calls": [],
                 **(await _view(db, row) if row else {"session_id": None, "session_version": 0, "tasks": [], "focus_task_id": None})}
     if row is None:
-        row = NovaSessionORM(session_id="NOVA-" + uuid4().hex, user_id=user_id, version=0, state={})
+        row = NovaSessionORM(session_id=session_id or "NOVA-" + uuid4().hex, user_id=user_id, version=0, state={})
         db.add(row)
         await db.flush()
     else:

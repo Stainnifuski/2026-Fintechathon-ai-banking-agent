@@ -20,7 +20,8 @@
 - 首轮不传 `session_id`；后续使用上轮返回的 `session_id` 和 `session_version`。每条新消息使用新 `request_id`，网络结果不确定时必须用**完全相同的请求体及编号**重试。相同编号搭配不同参数返回 `MESSAGE_ID_CONFLICT`。
 - `focus_task_id` 指定补充或修改哪笔任务；有多笔可能目标时需要用户选择。`candidate_id` 选择服务端给出的脱敏收款/付款候选，不能自造账户 ID；候选约十分钟过期，并在选择时重新核验。
 - 转账响应保留 NOVA 的 `reply`、`mode`、`tool_calls`，新增 `session_id`、`session_version`、`focus_task_id`、`tasks[]`。流式接口通过最终 `done` 事件返回相同结构。每个 `tasks[]` 项包含 `chat_task_id`、`status`、脱敏候选、缺失字段、可空的 `transfer_task_id` 及其权威 `task` 快照。聊天草稿没有 `transfer_task_id`。
-- `GET /api/v1/nova/task-sessions/{session_id}` 恢复本人会话及任务卡，其他用户与未知会话统一返回 404。NOVA 面板把会话 ID 保存在当前浏览器的 `sessionStorage`；普通查询历史仍只在前端内存中。
+- `POST /api/v1/bank/nova/conversations` 新建本人对话；`GET /api/v1/bank/nova/conversations` 列出本人历史；`GET /api/v1/bank/nova/conversations/{session_id}` 读取本人对话消息（敏感号码脱敏）。
+- `GET /api/v1/nova/task-sessions/{session_id}` 恢复本人会话对应的任务卡；无转账任务时返回空列表。其他用户与未知会话统一返回 404。对话及任务使用同一会话 ID，前端通过银行 API 恢复历史，不依赖 `sessionStorage`。
 
 ## 处理约束
 
