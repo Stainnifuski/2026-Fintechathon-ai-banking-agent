@@ -45,6 +45,13 @@ class InProcessBankApi:
     def __init__(self, db) -> None:
         self.db = db
 
+    async def transfer_funding_accounts(self, *, subject_user_id: str) -> dict:
+        from backend.app.services.bank.transfer_service import transfer_funding_accounts
+        try:
+            return await transfer_funding_accounts(self.db, subject_user_id=subject_user_id)
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
+
     async def verify_totp(self, *, subject_user_id: str, proof: str) -> None:
         try:
             await verify_totp_for_operation(self.db, subject_user_id, proof)

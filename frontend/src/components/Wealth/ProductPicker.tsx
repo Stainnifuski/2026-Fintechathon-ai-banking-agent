@@ -41,7 +41,7 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
           return <article key={candidate.family_id} className={`picker-card ${selected ? 'selected' : ''}`}>
             <label className="picker-check"><input type="checkbox" checked={selected} disabled={busy || !share} onChange={() => onSelectionChange(toggleProduct(state, candidate))} /><strong>{candidate.name}</strong></label>
             {!share ? <p>当前没有可申购的有效份额，不能选择。</p> : <>
-              <div className="picker-share"><span>{share.share_class ? `${share.share_class}类` : '具体代码产品'} · R{share.product_risk_level}</span><small>{share.product_id} · v{share.product_version}</small></div>
+              <div className="picker-share"><span>{share.share_class ? `${share.share_class}类` : '产品份额'} · R{share.product_risk_level}</span></div>
               <p className="consumer-note">{candidate.reason}</p>
               <div className="picker-performance">{share.performance.one_year.status==='available'&&performance&&<><strong>{performance.label}：{performance.value}</strong><small>{performance.date}</small></>}<small>资料时点 {share.data_as_of?.slice(0, 10)??'未知'} · {share.data_source === 'contract_fixture_only' ? '虚构样例' : share.data_source}</small></div>
               <p className="picker-fees">起购 {money(share.min_amount_fen)} · 申购 {feeRate(share.fees.purchase_fee_rate)} · 销售服务 {feeRate(share.fees.sales_service_fee_rate)}</p>

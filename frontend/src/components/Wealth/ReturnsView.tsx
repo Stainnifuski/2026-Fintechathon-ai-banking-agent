@@ -52,7 +52,7 @@ export default function ReturnsView({source,initialProduct,initialPeriod='day',i
       <p className="returns-note">下面按日期列出赚了或亏了多少；“待资料”表示无法核实，并不代表收益为零。</p>
       <div className="returns-table-scroll"><table aria-label="收益时间序列表"><thead><tr><th>时段</th><th>收益金额</th><th>完整性／说明</th></tr></thead><tbody>{result.points.map(point=><tr key={point.period_start}><td>{point.period_start}{point.period_end!==point.period_start&&` 至 ${point.period_end}`}</td><td>{returnMoney(point.pnl_fen)}</td><td>{returnStatus[point.status]}{point.reason&&` · ${point.reason}`}</td></tr>)}</tbody></table></div>
       <h3>具体份额贡献（全量）</h3><div className="returns-table-scroll"><table aria-label="分产品收益贡献"><thead><tr><th>产品／份额代码</th><th>期间收益</th><th>累计收益</th></tr></thead><tbody>{result.products.map(row=><tr key={row.product_id}><td><button className="returns-product-link" onClick={()=>setProduct(row.product_id)}>{row.product_name}</button><small>{row.product_id}{row.reason&&` · ${row.reason}`}</small></td><td>{returnMoney(row.period_pnl_fen)}</td><td>{returnMoney(row.cumulative_pnl_fen)}</td></tr>)}</tbody></table></div>
-      <details className="returns-note"><summary>数据来源与计算版本</summary><p>{result.data_source} · {result.formula_version}</p><p>查询时点：{result.as_of} · 范围 {result.asset_scope_id} · 收益事实版本 {result.snapshot_id}</p><p>{source.actualBank?'按已成交批次和业务时点重建持仓、成本及赎回应收；投入本金和赎回到账均不当作利润。资料不足的历史不补零。':'当前为界面消费契约录制，与登录账户记录无关。'}</p></details>
+      <details className="returns-note"><summary>数据来源</summary><p>查询时点：{result.as_of}</p><p>{source.actualBank?'按已成交批次和业务时点重建持仓、成本及赎回应收；投入本金和赎回到账均不当作利润。资料不足的历史不补零。':'当前为界面消费契约录制，与登录账户记录无关。'}</p></details>
     </>}
   </section>;
 }

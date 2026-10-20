@@ -120,7 +120,7 @@ export default function MerchantDashboard({
           {orders.map(order => <li key={order.order_id}>
             <div>
               <strong>{order.product_name} × {order.quantity}</strong>
-              <small>{order.payment_request?.payer_name || order.customer_user_id} · {order.order_id}</small>
+              <small>{order.payment_request?.payer_name || '顾客'} · 订单</small>
               <small>{beijingTime(order.created_at)}</small>
             </div>
             <div className="merchant-order-action">

@@ -177,7 +177,7 @@ export default function CardManagement({ accounts, revision, onActivity, selecte
           {!closed(card) && <small>渠道：{CHANNELS.map(([key, label]) => `${label}${card[key] ? '开' : '关'}`).join(' · ')}</small>}
           {card.lock_reason && <small>锁定原因：{card.lock_reason}</small>}
           {card.lost_reported_at && <small>挂失时间（北京时间）：{beijingTime(card.lost_reported_at)}</small>}
-          {card.replaced_by_card_id && <small>已补发新卡 {cards.find(c => c.card_id === card.replaced_by_card_id)?.card_number ?? card.replaced_by_card_id}</small>}
+          {card.replaced_by_card_id && <small>已补发新卡 {cards.find(c => c.card_id === card.replaced_by_card_id)?.card_number ?? '，卡片信息待刷新'}</small>}
           {card.cancelled_at && <small>注销时间（北京时间）：{beijingTime(card.cancelled_at)}</small>}</span>
         <div className="subscription-action"><button className="secondary" aria-pressed={selectedCardId === card.card_id} onClick={() => onSelectCard(selectedCardId === card.card_id ? undefined : card.card_id)}>{selectedCardId === card.card_id ? '已选中 · 再点取消' : '选择供 NOVA 查询'}</button><strong className={active ? 'in' : closed(card) ? 'out' : 'hint'}>{STATUS_LABELS[card.status]}</strong>
           <div className="card-actions">

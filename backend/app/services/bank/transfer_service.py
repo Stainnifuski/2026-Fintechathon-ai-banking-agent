@@ -579,3 +579,22 @@ async def transfer_directory(
             for account in accounts
         ],
     }
+
+
+async def transfer_funding_accounts(db: AsyncSession, *, subject_user_id: str) -> dict:
+    """Bank-owned read of cash available for a relative transfer quote."""
+    from .available_funds import available_cash
+    subject = await db.get(UserORM, subject_user_id)
+    if subject is None or subject.status != "active":
+        raise BankError("付款用户不可用", "PAYER_INACTIVE", 403)
+    accounts = (await db.scalars(select(AccountORM).where(
+        AccountORM.user_id == subject_user_id,
+        AccountORM.status == "active",
+        AccountORM.account_type.in_(["savings", "checking"]),
+        AccountORM.account_id.not_in(isolated_account_ids()),
+    ).order_by(AccountORM.account_id))).all()
+    return {"accounts": [{"account_id": account.account_id,
+                          "label": f"{account.account_type} · 尾号{transfer_card_number(account.account_id)[-4:]}",
+                          "available_fen": max(0, await available_cash(db, account.account_id, account.balance_fen))}
+                         for account in accounts],
+            "as_of": datetime.now(timezone.utc).isoformat()}

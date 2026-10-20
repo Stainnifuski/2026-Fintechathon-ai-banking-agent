@@ -74,6 +74,8 @@ class BankApi(Protocol):
 
     async def transfer_directory(self, *, subject_user_id: str, recipient_name: str | None = None, recipient_phone: str | None = None) -> dict: ...
 
+    async def transfer_funding_accounts(self, *, subject_user_id: str) -> dict: ...
+
     async def validate_transfer(
         self, *, subject_user_id: str, from_account: str, to_account: str,
         recipient_phone: str | None = None,
@@ -192,6 +194,13 @@ class HttpBankApiClient:
         response = await self._request("POST", "/api/v1/internal/bank/transfers/directory",
             json={"subject_user_id": subject_user_id, "recipient_name": recipient_name,
                   "recipient_phone": recipient_phone})
+        if response.is_error:
+            raise self._error(response)
+        return response.json()
+
+    async def transfer_funding_accounts(self, *, subject_user_id: str) -> dict:
+        response = await self._request("POST", "/api/v1/internal/bank/transfers/funding-accounts",
+                                       json={"subject_user_id": subject_user_id})
         if response.is_error:
             raise self._error(response)
         return response.json()

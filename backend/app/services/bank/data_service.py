@@ -34,6 +34,7 @@ from .transfer_service import BankError, transfer_directory, _daily_used_fen
 from .phone import mask_phone, normalize_phone
 from .available_funds import available_cash, held_cash
 from .transfer_cards import transfer_card_number
+from .transaction_display import transfer_counterparty_names, display_counterparty
 
 
 def _account_dict(account: AccountORM) -> dict:
@@ -62,13 +63,13 @@ def _user_dict(user: UserORM) -> dict:
     }
 
 
-def _transaction_dict(transaction: TransactionORM) -> dict:
+def _transaction_dict(transaction: TransactionORM, names: dict[str, str] | None = None) -> dict:
     return {
         "tx_id": transaction.tx_id,
         "account_id": transaction.account_id,
         "type": transaction.type,
         "amount": transaction.amount,
-        "counterparty": transaction.counterparty,
+        "counterparty": display_counterparty(transaction, names or {}),
         "category": transaction.category,
         "note": transaction.note,
         "timestamp": as_utc(transaction.timestamp, legacy_utc=True),
@@ -445,7 +446,8 @@ async def list_transactions(user_id: str, limit: int = 50) -> list[dict]:
                 .limit(limit)
             )
         ).scalars().all()
-    return [_transaction_dict(transaction) for transaction in records]
+        names = await transfer_counterparty_names(session, records)
+    return [_transaction_dict(transaction, names) for transaction in records]
 
 
 async def get_transaction(user_id: str, transaction_id: str) -> dict | None:
@@ -460,7 +462,8 @@ async def get_transaction(user_id: str, transaction_id: str) -> dict | None:
                 )
             )
         ).scalar_one_or_none()
-    return _transaction_dict(transaction) if transaction else None
+        names = await transfer_counterparty_names(session, [transaction]) if transaction else {}
+    return _transaction_dict(transaction, names) if transaction else None
 
 
 

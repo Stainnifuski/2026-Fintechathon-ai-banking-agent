@@ -1,5 +1,6 @@
 import { apiClient } from './api';
 import type { BillQuery } from './bills';
+import type { TaskSnapshot } from './bank';
 
 export type NovaPageContext = {
   version: 1;
@@ -22,15 +23,68 @@ export type NovaPageContext = {
   observed_as_of?: string;
 };
 
-export type NovaMessage = { role: 'user' | 'assistant'; content: string };
+export type NovaMessage = { role: 'user' | 'assistant'; content: string; request_id?: string };
+export type NovaConversation = { session_id: string; title: string; created_at: string; updated_at: string };
+export type NovaConversationDetail = NovaConversation & { messages: NovaMessage[] };
+export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[] };
+
+export async function listNovaConversations(): Promise<NovaConversation[]> {
+  return apiClient.get<NovaConversation[]>('/bank/nova/conversations').then(response => response.data);
+}
+export async function createNovaConversation(): Promise<NovaConversation> {
+  return apiClient.post<NovaConversation>('/bank/nova/conversations').then(response => response.data);
+}
+export async function getNovaConversation(sessionId: string): Promise<NovaConversationDetail> {
+  return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
+}
 export type NovaReply = {
   reply: string;
   mode: 'model' | 'offline';
   tool_calls: { name: string; result: Record<string, unknown> & { error?: string; local_time?: string; timezone?: string } }[];
+  session_id?: string;
+  session_version?: number;
+  focus_task_id?: string | null;
+  tasks?: NovaTransferTask[];
 };
 
-export async function askNova(message: string, history: NovaMessage[], signal: AbortSignal, pageContext: NovaPageContext): Promise<NovaReply> {
-  const response = await apiClient.post<NovaReply>('/nova/chat', { message, history, page_context: pageContext }, {
+export type NovaTransferTask = {
+  chat_task_id: string; origin_request_id?: string | null; status: string; recipient?: string | null; amount_fen?: number | null;
+  form: { recipient: string; amount_yuan: string; amount_rule?: string | null; amount_basis_available_fen?: number | null;
+    phone_masked?: string | null; card_masked?: string | null;
+    payer_account_id: string; note: string };
+  missing_fields: string[]; candidates: { candidate_id: string; label: string; kind: string }[];
+  transfer_task_id?: string | null;
+  task?: TaskSnapshot | null;
+};
+
+export type NovaTaskRequest = {
+  request_id: string; session_id?: string; session_version?: number;
+  focus_task_id?: string; candidate_id?: string;
+};
+
+export async function getNovaTaskSession(sessionId: string) {
+  return apiClient.get<NovaTaskSession>(`/nova/task-sessions/${sessionId}`).then(r => r.data);
+}
+
+export type NovaTaskForm = {
+  recipient: string; amount_yuan: string; phone?: string | null; card?: string | null;
+  clear_phone: boolean; clear_card: boolean; payer_account_id: string; note: string;
+};
+export async function saveNovaTaskForm(sessionId: string, taskId: string, sessionVersion: number,
+                                       form: NovaTaskForm, requestId = crypto.randomUUID()): Promise<NovaTaskSession> {
+  return apiClient.post<NovaTaskSession>(`/nova/task-sessions/${sessionId}/tasks/${taskId}/form`, {
+    request_id: requestId, session_version: sessionVersion, ...form,
+  }).then(response => response.data);
+}
+export async function cancelNovaTaskCard(sessionId: string, taskId: string, sessionVersion: number,
+                                         requestId = crypto.randomUUID()): Promise<NovaTaskSession> {
+  return apiClient.post<NovaTaskSession>(`/nova/task-sessions/${sessionId}/tasks/${taskId}/cancel`, {
+    request_id: requestId, session_version: sessionVersion,
+  }).then(response => response.data);
+}
+
+export async function askNova(message: string, signal: AbortSignal, pageContext: NovaPageContext, taskRequest?: NovaTaskRequest): Promise<NovaReply> {
+  const response = await apiClient.post<NovaReply>('/nova/chat', { message, page_context: pageContext, ...taskRequest }, {
     timeout: 95000, signal,
   });
   return response.data;
@@ -51,20 +105,20 @@ const novaError = (status: number, detail: NovaErrorDetail) => Object.assign(new
  * 流式提问：边接收边回调 tool/delta/reset，最终以 done 事件的完整结果为准。
  * 浏览器不支持读取响应流时退回一次性接口。
  */
-export async function streamNova(message: string, history: NovaMessage[], signal: AbortSignal,
-  pageContext: NovaPageContext, onEvent: (event: NovaStreamEvent) => void): Promise<NovaReply> {
+export async function streamNova(message: string, signal: AbortSignal,
+  pageContext: NovaPageContext, onEvent: (event: NovaStreamEvent) => void, taskRequest?: NovaTaskRequest): Promise<NovaReply> {
   const token = localStorage.getItem('token');
   const response = await fetch('/api/v1/nova/chat/stream', {
     method: 'POST', signal,
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ message, history, page_context: pageContext }),
+    body: JSON.stringify({ message, page_context: pageContext, ...taskRequest }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     if (response.status === 401) localStorage.removeItem('token');
     throw novaError(response.status, typeof body?.detail === 'object' && body.detail ? body.detail : { message: '查询失败，请重新发送。' });
   }
-  if (!response.body) return askNova(message, history, signal, pageContext);
+  if (!response.body) return askNova(message, signal, pageContext, taskRequest);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

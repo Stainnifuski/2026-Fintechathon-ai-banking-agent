@@ -36,8 +36,8 @@ export function draftIssue(plan:PortfolioPlan,state:ProductSelectionState,percen
     const old=plan.advised_positions?.find(p=>p.product_id===item.product_id);
     const increase=value-(old?.current_fen??0);
     const limit=plan.model_view?.adjustment_contract?.limits[item.product_id];
-    if(increase>0&&(increase<(limit?.minimum_fen??chosen.share.min_amount_fen??0)||limit?.maximum_fen!=null&&increase>limit.maximum_fen))return `${item.product_id}调整金额不符合产品申购限制`;
-    if(old?.holding_cap_fen!=null&&value>old.holding_cap_fen)return `${item.product_id}只能保留或减持现有份额`;
+    if(increase>0&&(increase<(limit?.minimum_fen??chosen.share.min_amount_fen??0)||limit?.maximum_fen!=null&&increase>limit.maximum_fen))return '该产品调整金额不符合申购限制';
+    if(old?.holding_cap_fen!=null&&value>old.holding_cap_fen)return '该产品只能保留或减持现有份额';
   }
   const sum=[...targets.values()].reduce((a,b)=>a+b,0);
   if(sum>plan.basis_fen)return '产品合计超过全部资产的100%，请自行修改比例';

@@ -20,6 +20,7 @@ from ...models.account import AccountORM
 from ...models.transaction import TransactionORM as Tx
 from ...schemas.bills import BillQuery, Totals
 from .transfer_service import BankError
+from .transaction_display import transfer_counterparty_names, display_counterparty
 
 TZ = ZoneInfo("Asia/Shanghai")
 CONSUMPTION = ("purchase", "subscription")
@@ -164,10 +165,11 @@ async def aggregate(db, predicates, start, end, period):
     return totals, categories, trend
 
 
-def transaction_view(tx, metadata=None):
+def transaction_view(tx, metadata=None, names=None):
     return dict(**(metadata or {}), tx_id=tx.tx_id, account_id=tx.account_id, type=tx.type,
                 category=(metadata or {}).get("effective_category") or ("subscription" if tx.type == "subscription" else tx.category),
-                amount_fen=tx.amount_fen, timestamp=aware(tx.timestamp), counterparty=tx.counterparty,
+                amount_fen=tx.amount_fen, timestamp=aware(tx.timestamp),
+                counterparty=display_counterparty(tx, names or {}),
                 note=tx.note, status=tx.status)
 
 
@@ -263,4 +265,5 @@ async def transactions(db, user_id, query, *, page=1, page_size=20, tx_ids=None,
     rows = (await db.scalars(select(Tx).where(*predicates).order_by(Tx.timestamp.desc(), Tx.tx_id.desc())
                             .offset((page - 1) * page_size).limit(page_size))).all()
     metadata = await metadata_views(db, user_id, [tx.tx_id for tx in rows])
-    return dict(items=[transaction_view(tx, metadata.get(tx.tx_id)) for tx in rows], total=total, page=page, page_size=page_size)
+    names = await transfer_counterparty_names(db, rows)
+    return dict(items=[transaction_view(tx, metadata.get(tx.tx_id), names) for tx in rows], total=total, page=page, page_size=page_size)

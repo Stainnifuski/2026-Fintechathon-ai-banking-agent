@@ -1,5 +1,6 @@
-"""只读业务工具适配：模型参数和服务端身份分别传递。"""
+"""NOVA 业务工具适配：模型参数和服务端可信上下文分别传递。"""
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,16 @@ class ToolContext:
     user_id: str
     db: AsyncSession
     page: PageContext
+    original_message: str | None = None
+    request_id: str | None = None
+    session_id: str | None = None
+    session_version: int = 0
+    focus_task_id: str | None = None
+    candidate_id: str | None = None
+    bank_api: Any | None = None
+    conversation_history: list[dict[str, str]] | None = None
+    current_tool_results: list[dict[str, Any]] | None = None
+    goal_plan: dict[str, Any] | None = None
 
 
 class OverviewArguments(StrictModel):

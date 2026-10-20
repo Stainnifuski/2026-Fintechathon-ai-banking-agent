@@ -12,6 +12,7 @@ import NovaChat from './components/NovaChat';
 import type { NovaPageContext } from './services/nova';
 import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
+import { counterpartyLabel } from './utils/customerLabels';
 
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 const Wealth = lazy(() => import('./components/Wealth'));
@@ -573,7 +574,7 @@ function App() {
               <button className="insight-row" onClick={() => openSection('wealth')}><span className="insight-icon mint">◇</span><span><strong>规划资金或挑选产品</strong><small>选择购买方式，核对方案后确认与验证。</small></span><b>›</b></button>
             </article>
           </section>
-          <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.length === 0 && <p className="hint">暂无流水</p>}{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
+          <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.length === 0 && <p className="hint">暂无流水</p>}{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.type === 'transfer_out' ? `转给 ${counterpartyLabel(tx.counterparty)}` : tx.type === 'transfer_in' ? `收到 ${counterpartyLabel(tx.counterparty)} 的转账` : tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
         </>}
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
@@ -613,7 +614,7 @@ function App() {
       })}</ul>}<p className="hint">接受申请后先核对转账任务，再确认付款；需要强验证的任务会停留在身份验证阶段。</p></div>
     </section>
     {activeTask && <section className="card task-focus">
-      <h2>转账任务 · {activeTask.phase}</h2><p>{activeTask.message}</p>
+      <h2>转账任务</h2><p>{activeTask.message}</p>
       {confirmationCard && <p>从{payerCardTail ? `尾号 ${payerCardTail} 的银行卡` : '付款银行卡'}向 {confirmationCard.recipient_name}（{confirmationCard.recipient_phone_masked
         ? `手机号 ${confirmationCard.recipient_phone_masked}`
         : confirmationCard.recipient_card_masked
@@ -625,7 +626,7 @@ function App() {
           : <div className="row"><input maxLength={256} disabled={editNoteCleared} value={editingNote} onChange={e => setEditingNote(e.target.value)} /><label><input type="checkbox" checked={editNoteCleared} onChange={e => setEditNoteCleared(e.target.checked)} />清空</label><button disabled={isActing || (!editNoteCleared && !editingNote.trim())} onClick={saveEditedNote}>保存并重新确认</button><button className="secondary" onClick={() => setEditingNote(null)}>返回</button></div>}
       </>}
       {activeTask.scheduled_at && <p className="notice">计划执行时间：{beijingTime(activeTask.scheduled_at)}</p>}
-      <p className="hint">应用操作：{activeTask.operation.status} · 银行状态：{activeTask.operation.bank_status || '尚未受理'} {activeTask.operation.bank_tx_id && `· 银行流水 ${activeTask.operation.bank_tx_id}`} · 最终备注：{activeTask.operation.note ?? '无'}</p>
+      <p className="hint">{activeTask.phase === 'FINISHED' ? '银行处理已结束' : '银行处理中或待本人确认'} · 最终备注：{activeTask.operation.note ?? '无'}</p>
       <div className="confirm">
         {activeTask.allowed_actions.includes('cancel') && <button className="secondary" disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('cancel')}>取消任务</button>}
         {activeTask.allowed_actions.includes('confirm') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('confirm')}>{activeTask.scheduled_at ? '确认定时转账' : '确认并提交'}</button>}
@@ -638,7 +639,7 @@ function App() {
         const outgoing = ['transfer_out', 'purchase', 'subscription', 'investment_purchase'].includes(tx.type);
         const label = tx.type === 'investment_purchase' ? '理财申购' : tx.type === 'investment_redemption' ? '理财赎回到账' : tx.type === 'transfer_out' ? '转出' : tx.type === 'transfer_in' ? '转入' : tx.type === 'subscription' ? '订阅扣费' : tx.type === 'purchase' ? '消费' : tx.type === 'refund' ? '退款' : tx.type === 'salary' ? '工资' : tx.type;
         const statusLabel = ({ completed: '已完成', pending: '处理中', failed: '失败', cancelled: '已取消' } as Record<string, string>)[tx.status] || tx.status;
-        const counterparty = recipients.find(recipient => recipient.account_id === tx.counterparty)?.name || tx.counterparty;
+        const counterparty = counterpartyLabel(tx.counterparty);
         return <li key={tx.tx_id}><span>{label}{counterparty && ` · ${counterparty}`} {tx.note && `· ${tx.note}`}<small>{beijingTime(tx.timestamp)} · {statusLabel}</small></span><strong className={tx.status !== 'completed' ? 'hint' : outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{tx.amount.toFixed(2)}</strong></li>;
       })}</ul>}</div></section></>}
     {bankingSection === 'cards' && <><div className="page-intro"><p className="eyebrow">CARDS</p><h1>管理卡片</h1><p>查看卡片状态与限额；变更需确认，部分操作还需验证码。</p></div><Suspense fallback={<section className="card"><p>正在加载卡片管理…</p></section>}><CardManagement key={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} selectedCardId={selectedCardId} onSelectCard={setSelectedCardId} pendingOperationId={pendingCardOperationId} onPendingHandled={() => setPendingCardOperationId(undefined)} /></Suspense></>}
@@ -646,7 +647,7 @@ function App() {
       <h2>订阅管理</h2><p className="hint">选择一项订阅后，可向 NOVA 询问“这个订阅什么时候扣费？”</p>
       {subscriptions.length === 0 ? <p className="hint">暂无订阅记录</p> : <ul className="history">{subscriptions.map(subscription => {
         const active = subscription.status === 'ACTIVE';
-        return <li key={subscription.subscription_id} className={selectedSubscriptionId === subscription.subscription_id ? 'nova-selected-row' : undefined}><span><strong>{subscription.merchant_name}</strong><small>{subscription.debit_account_label} · 每月 ¥{subscription.amount.toFixed(2)}</small><small>{active ? `计划扣费：${beijingTime(subscription.next_charge_at)}` : `已于 ${subscription.cancelled_at ? beijingTime(subscription.cancelled_at) : '-'} 取消`}</small>{subscription.source_transaction_id && <small>识别依据：历史流水 {subscription.source_transaction_id}</small>}</span><div className="subscription-action"><button className="secondary" aria-pressed={selectedSubscriptionId === subscription.subscription_id} onClick={() => setSelectedSubscriptionId(selectedSubscriptionId === subscription.subscription_id ? undefined : subscription.subscription_id)}>{selectedSubscriptionId === subscription.subscription_id ? '已选中 · 再点取消' : '选择这项订阅问 NOVA'}</button><strong className={active ? 'in' : 'hint'}>{active ? '生效中' : '已取消'}</strong>{active ? <><button disabled={isActing} onClick={() => { setPendingSubscription(null); setPendingChargeSubscription(subscription); setSubscriptionChargeId(newId()); }}>模拟扣费</button><button className="secondary" disabled={isActing} onClick={async () => {
+        return <li key={subscription.subscription_id} className={selectedSubscriptionId === subscription.subscription_id ? 'nova-selected-row' : undefined}><span><strong>{subscription.merchant_name}</strong><small>{subscription.debit_account_label} · 每月 ¥{subscription.amount.toFixed(2)}</small><small>{active ? `计划扣费：${beijingTime(subscription.next_charge_at)}` : `已于 ${subscription.cancelled_at ? beijingTime(subscription.cancelled_at) : '-'} 取消`}</small>{subscription.source_transaction_id && <small>识别依据：已有历史扣费</small>}</span><div className="subscription-action"><button className="secondary" aria-pressed={selectedSubscriptionId === subscription.subscription_id} onClick={() => setSelectedSubscriptionId(selectedSubscriptionId === subscription.subscription_id ? undefined : subscription.subscription_id)}>{selectedSubscriptionId === subscription.subscription_id ? '已选中 · 再点取消' : '选择这项订阅问 NOVA'}</button><strong className={active ? 'in' : 'hint'}>{active ? '生效中' : '已取消'}</strong>{active ? <><button disabled={isActing} onClick={() => { setPendingSubscription(null); setPendingChargeSubscription(subscription); setSubscriptionChargeId(newId()); }}>模拟扣费</button><button className="secondary" disabled={isActing} onClick={async () => {
           setIsActing(true); setPendingSubscription(null); setSubscriptionCancellationToken('');
           setPendingChargeSubscription(null); setSubscriptionChargeId('');
           try {
@@ -664,7 +665,7 @@ function App() {
         </div>
       </div>
     </div>
-    <NovaChat pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection }} key={user.user_id} name={user.name} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} />
+    <NovaChat pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>

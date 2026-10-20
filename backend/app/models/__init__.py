@@ -91,6 +91,8 @@ __all__ = [
 ]
 
 from .conversation import ConversationORM, ChatReceiptORM
+from .nova_task import NovaSessionORM, NovaMessageReceiptORM, NovaTaskMessageORM
+from .nova_conversation import NovaConversationORM, NovaConversationMessageORM
 from . import wealth
 from . import wealth_research
 from . import bill_foundation
