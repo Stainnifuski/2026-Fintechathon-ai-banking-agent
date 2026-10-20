@@ -203,7 +203,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
 
   async function selectConversation(sessionId: string) {
     if (busy || loadingConversation || sessionId === activeConversationId) return;
-    setLoadingConversation(true); setError('');
+    setLoadingConversation(true); setError(''); setShowHelp(false);
     try {
       const [conversation, session] = await Promise.all([getNovaConversation(sessionId), getNovaTaskSession(sessionId)]);
       setActiveConversationId(sessionId); setMessages(conversation.messages); setTaskSession(session);
@@ -214,7 +214,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
 
   async function newConversation() {
     if (busy || loadingConversation) return;
-    setLoadingConversation(true); setError('');
+    setLoadingConversation(true); setError(''); setShowHelp(false);
     try {
       const created = await createNovaConversation();
       setConversations(previous => [created, ...previous]); setActiveConversationId(created.session_id);

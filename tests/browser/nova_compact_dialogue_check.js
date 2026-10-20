@@ -36,7 +36,8 @@ async page => {
     await panel.getByRole('button', { name:'发送', exact:true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.nova-assistant').length === 3 && !document.querySelector('.nova-message [role="status"]'));
     check(!await panel.locator('.nova-error').count(), '移除错误拦截后真实重发成功并清除错误');
-    check(calls[3].history.length === 4, '重发历史只包含之前两轮成功对话');
+    check(!('history' in calls[3]) && calls[3].session_id === calls[1].session_id, '重发由服务端会话管理历史，不上传客户端历史');
+    check(calls[3].request_id === calls[2].request_id, '503重试复用请求编号，避免重复建单');
     await page.setViewportSize({width:1440,height:1000});
     await page.screenshot({path:'output/playwright/nova20-after-desktop-chat.png'});
     const fixtureReply = '# UI隔离长内容示例\n\n' + '这段合成文字只检查界面滚动，不是模型或银行结果。\n\n'.repeat(30) + '| 项目 | 较长的说明文字 |\n|---|---|\n| 示例 | ' + '很长的表格内容'.repeat(30) + ' |';
@@ -62,7 +63,7 @@ async page => {
     }
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:'output/playwright/nova20-ui-fixture-long-mobile.png'});
-    return {results, actualOfflineQueries:3, isolatedFixtures:['503错误','流式格式长文本与表格'], capturedRequests:calls.map(call => ({message:call.message,page:call.page_context.page,historyCount:call.history.length}))};
+    return {results, actualOfflineQueries:3, isolatedFixtures:['503错误','流式格式长文本与表格'], capturedRequests:calls.map(call => ({message:call.message,page:call.page_context.page,sessionId:call.session_id,clientHistorySent:!!call.history}))};
   } finally {
     await page.unroute(pattern);
     page.off('request',watch);
