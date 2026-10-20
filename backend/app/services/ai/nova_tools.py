@@ -10,7 +10,7 @@ from ...schemas.bill_insights import CashflowScenario, CashflowProjection, Subsc
 from ..bank.bill_subscriptions import subscription_insights
 from ..bank.bill_cashflow import project_cashflow
 from ...schemas.nova import StrictModel, BillFilters, PageContext
-from ..bank import bill_service, nova_reads
+from ..bank import bill_service, nova_reads, contacts as contact_service
 from .calendar_tools import calendar_tools
 from .shop_tools import shop_tools
 from .card_subscription_tools import card_subscription_tools
@@ -39,6 +39,15 @@ class TransactionsArguments(AnalysisArguments):
 
 class TransactionArguments(StrictModel):
     tx_id: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class ContactListArguments(StrictModel):
+    include_history: bool = True
+    limit: int = Field(default=50, ge=1, le=50)
+
+
+class ContactSearchArguments(ContactListArguments):
+    query: str = Field(min_length=1, max_length=64, pattern=r"\S")
 
 
 def query_from(arguments: AnalysisArguments, context: ToolContext) -> BillQuery:
@@ -107,6 +116,19 @@ async def transaction(arguments: TransactionArguments, context: ToolContext) -> 
     if key is None:
         return {"error": "MISSING_SELECTION", "message": "请指定流水 ID，或在账单页选择一笔流水"}
     return envelope("bills.transaction", await nova_reads.transaction_detail(context.db, context.user_id, key))
+
+
+async def list_contacts(arguments: ContactListArguments, context: ToolContext) -> dict:
+    data = await contact_service.read_contact_shortcuts(
+        context.user_id, include_history=arguments.include_history, limit=arguments.limit)
+    return envelope("contacts", data)
+
+
+async def search_contacts(arguments: ContactSearchArguments, context: ToolContext) -> dict:
+    data = await contact_service.read_contact_shortcuts(
+        context.user_id, query=arguments.query, include_history=arguments.include_history,
+        limit=arguments.limit)
+    return envelope("contacts.search", data)
 
 
 async def subscription_analysis(arguments: AnalysisArguments, context: ToolContext) -> dict:
@@ -185,6 +207,10 @@ def business_tools() -> dict:
          "分页查询本人已完成账单流水。省略字段继承页面筛选及明细下钻条件；清除筛选请显式传 category:null 和 tx_ids:[]。page_size 最大50，金额为分。"),
         ("get_transaction", TransactionArguments, transaction,
          "查询本人一笔已完成流水的详情；省略 tx_id 使用页面选中流水。不能访问其他用户流水。"),
+        ("list_contacts", ContactListArguments, list_contacts,
+         "只读列出本人已保存联系人，以及可选的历史转账人。只返回用户已提供过的号码类型的脱敏信息；不返回完整手机号、卡号或其他用户的联系人。"),
+        ("search_contacts", ContactSearchArguments, search_contacts,
+         "只读按姓名、备注名或本人已知的手机号/银行卡号查询联系人和可选历史转账人。未知号码不能用于匹配；结果仅有脱敏号码。"),
     ]
     tools = {name: {"schema": {"type": "function", "function": {
         "name": name, "description": description, "parameters": model.model_json_schema()}},

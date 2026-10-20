@@ -251,6 +251,45 @@ async def list_transfer_history(owner_id: str) -> list[dict]:
         return list((await _transfer_methods(db, owner_id, cutoff.cleared_at if cutoff else None)).values())
 
 
+async def read_contact_shortcuts(owner_id: str, *, query: str | None = None,
+                                 include_history: bool = True, limit: int = 50) -> dict:
+    """NOVA read view: search only owner-visible data and never return raw numbers."""
+    needle = query.strip().casefold() if query else None
+    async with AsyncSessionLocal() as db:
+        contacts = (await db.scalars(select(ContactORM).where(ContactORM.user_id == owner_id)
+                                     .order_by(ContactORM.name, ContactORM.contact_id))).all()
+        items = []
+        for contact in contacts:
+            searchable = [contact.name, contact.nickname or ""]
+            if contact.phone_known:
+                searchable.extend((contact.phone, mask_phone(contact.phone)))
+            if contact.card_known:
+                searchable.append(contact.account_number)
+            if needle and not any(needle in value.casefold() for value in searchable):
+                continue
+            view = _view(contact)
+            items.append({"source": "saved_contact", "name": view["name"],
+                          "nickname": view["nickname"], "phone_masked": view["phone_masked"],
+                          "card_masked": view["card_masked"]})
+        if include_history:
+            cutoff = await db.get(TransferRecipientHistoryCutoffORM, owner_id)
+            history = (await _transfer_methods(db, owner_id,
+                       cutoff.cleared_at if cutoff else None)).values()
+            for item in history:
+                searchable = [item["name"]]
+                if item["phone_number"]:
+                    searchable.extend((item["phone_number"], item["phone_masked"]))
+                if item["card_number"]:
+                    searchable.append(item["card_number"])
+                if needle and not any(needle in value.casefold() for value in searchable):
+                    continue
+                items.append({"source": "transfer_history", "name": item["name"],
+                              "nickname": None, "phone_masked": item["phone_masked"],
+                              "card_masked": (f"**** **** **** {item['card_number'][-4:]}"
+                                              if item["card_number"] else None)})
+    return {"total": len(items), "has_more": len(items) > limit, "items": items[:limit]}
+
+
 async def resolve_transfer_recipient(owner_id: str, name: str, mode: str,
                                      number: str | None, account_id: str | None = None) -> dict:
     """Resolve a transfer form at submission time and return a bank-owned error reason."""
