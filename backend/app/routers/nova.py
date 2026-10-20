@@ -16,6 +16,14 @@ from ..schemas.nova import PageContext
 from ..services.ai.nova_tools import ToolContext
 from ..services.ai import nova
 from ..services.ai.llm import LLMError
+from ..services.ai.nlu import get_nlu, UnderstandingError
+from ..services.ai.transfer_manager import (
+    ManagerError, MODIFY, STATUS_QUERY, get_session, process_message, wants_transfer,
+)
+from ..models.nova_task import NovaSessionORM
+from ..integrations.bank_api import BankApiError, get_bank_api
+from ..services.orchestration import TaskError
+from ..services.bank.transfer_service import BankError
 
 router = APIRouter(prefix="/api/v1/nova", tags=["nova"])
 logger = logging.getLogger(__name__)
@@ -32,6 +40,11 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     page_context: PageContext = Field(default_factory=PageContext)
     history: list[HistoryMessage] = Field(default_factory=list, max_length=12)
+    request_id: str | None = Field(default=None, min_length=8, max_length=64)
+    session_id: str | None = Field(default=None, min_length=8, max_length=64)
+    session_version: int = Field(default=0, ge=0)
+    focus_task_id: str | None = Field(default=None, max_length=64)
+    candidate_id: str | None = Field(default=None, max_length=64)
 
     @field_validator("message")
     @classmethod
@@ -50,14 +63,57 @@ def _error_detail(error: LLMError) -> dict:
     return {"code": error.code, "message": message}
 
 
+async def _transfer_reply(request: ChatRequest, user_id: str, db: AsyncSession) -> dict | None:
+    row = await db.get(NovaSessionORM, request.session_id) if request.session_id else None
+    if request.session_id and (row is None or row.user_id != user_id):
+        raise ManagerError("聊天任务会话不存在", "SESSION_NOT_FOUND", 404)
+    pending = bool(row and any(task.get("status") in {"COLLECTING", "NEEDS_SELECTION"}
+                               for task in row.state.get("tasks", [])))
+    has_tasks = bool(row and row.state.get("tasks"))
+    explicit_followup = has_tasks and (MODIFY.search(request.message) or request.message.strip() in
+                                       {"确认", "执行", "确认转账", "取消", "算了", "状态", "进度"} or
+                                       STATUS_QUERY.search(request.message))
+    if not request.candidate_id and not wants_transfer(request.message, pending) and not explicit_followup:
+        return None
+    if not request.request_id:
+        raise ManagerError("转账消息需要 request_id 以防重复生成任务", "REQUEST_ID_REQUIRED", 422)
+    return await process_message(db, get_bank_api(), get_nlu(), user_id=user_id,
+                                 message=request.message, request_id=request.request_id,
+                                 session_id=request.session_id,
+                                 session_version=request.session_version,
+                                 focus_task_id=request.focus_task_id,
+                                 candidate_id=request.candidate_id)
+
+
+def _transfer_error(error: Exception) -> HTTPException:
+    return HTTPException(status_code=getattr(error, "status_code", 409),
+                         detail={"code": getattr(error, "code", "TRANSFER_TASK_ERROR"),
+                                 "message": getattr(error, "message", str(error))})
+
+
+@router.get("/task-sessions/{session_id}")
+async def task_session(session_id: str, current_user: dict = Depends(get_current_user),
+                       db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        return await get_session(db, current_user["user_id"], session_id)
+    except ManagerError as error:
+        raise _transfer_error(error) from error
+
+
 @router.post("/chat")
 async def chat(request: ChatRequest, current_user: dict = Depends(get_current_user),
                db: AsyncSession = Depends(get_db)) -> dict:
     try:
+        transfer = await _transfer_reply(request, current_user["user_id"], db)
+        if transfer is not None:
+            return transfer
         return await nova.chat(request.message, [m.model_dump() for m in request.history],
                                context=ToolContext(current_user["user_id"], db, request.page_context))
     except LLMError as error:
         raise HTTPException(status_code=503, detail=_error_detail(error)) from None
+    except (ManagerError, UnderstandingError, TaskError, BankApiError, BankError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
 
 
 def _sse(event: dict) -> str:
@@ -71,6 +127,16 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
 
     认证与参数错误仍在开始推送前以 HTTP 状态码返回；done 的内容与 /chat 的响应体相同。
     """
+    try:
+        transfer = await _transfer_reply(request, current_user["user_id"], db)
+    except (ManagerError, UnderstandingError, TaskError, BankApiError, BankError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+    if transfer is not None:
+        async def one_event():
+            yield _sse({"type": "done", **jsonable_encoder(transfer)})
+        return StreamingResponse(one_event(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
     context = ToolContext(current_user["user_id"], db, request.page_context)
     history = [m.model_dump() for m in request.history]

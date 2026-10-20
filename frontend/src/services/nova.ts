@@ -27,10 +27,33 @@ export type NovaReply = {
   reply: string;
   mode: 'model' | 'offline';
   tool_calls: { name: string; result: Record<string, unknown> & { error?: string; local_time?: string; timezone?: string } }[];
+  session_id?: string;
+  session_version?: number;
+  focus_task_id?: string | null;
+  tasks?: NovaTransferTask[];
 };
 
-export async function askNova(message: string, history: NovaMessage[], signal: AbortSignal, pageContext: NovaPageContext): Promise<NovaReply> {
-  const response = await apiClient.post<NovaReply>('/nova/chat', { message, history, page_context: pageContext }, {
+export type NovaTransferTask = {
+  chat_task_id: string; status: string; recipient?: string | null; amount_fen?: number | null;
+  missing_fields: string[]; candidates: { candidate_id: string; label: string; kind: string }[];
+  transfer_task_id?: string | null;
+  task?: { task_id: string; message: string; phase: string; outcome: string; confirmation_card?: {
+    recipient_name: string; amount: number; currency: string; payer_card_masked?: string | null;
+    recipient_card_masked?: string | null; recipient_phone_masked?: string | null; note?: string | null;
+  } | null } | null;
+};
+
+export type NovaTaskRequest = {
+  request_id: string; session_id?: string; session_version?: number;
+  focus_task_id?: string; candidate_id?: string;
+};
+
+export async function getNovaTaskSession(sessionId: string) {
+  return apiClient.get<Pick<NovaReply, 'session_id' | 'session_version' | 'focus_task_id' | 'tasks'>>(`/nova/task-sessions/${sessionId}`).then(r => r.data);
+}
+
+export async function askNova(message: string, history: NovaMessage[], signal: AbortSignal, pageContext: NovaPageContext, taskRequest?: NovaTaskRequest): Promise<NovaReply> {
+  const response = await apiClient.post<NovaReply>('/nova/chat', { message, history, page_context: pageContext, ...taskRequest }, {
     timeout: 95000, signal,
   });
   return response.data;
@@ -52,19 +75,19 @@ const novaError = (status: number, detail: NovaErrorDetail) => Object.assign(new
  * 浏览器不支持读取响应流时退回一次性接口。
  */
 export async function streamNova(message: string, history: NovaMessage[], signal: AbortSignal,
-  pageContext: NovaPageContext, onEvent: (event: NovaStreamEvent) => void): Promise<NovaReply> {
+  pageContext: NovaPageContext, onEvent: (event: NovaStreamEvent) => void, taskRequest?: NovaTaskRequest): Promise<NovaReply> {
   const token = localStorage.getItem('token');
   const response = await fetch('/api/v1/nova/chat/stream', {
     method: 'POST', signal,
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ message, history, page_context: pageContext }),
+    body: JSON.stringify({ message, history, page_context: pageContext, ...taskRequest }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     if (response.status === 401) localStorage.removeItem('token');
     throw novaError(response.status, typeof body?.detail === 'object' && body.detail ? body.detail : { message: '查询失败，请重新发送。' });
   }
-  if (!response.body) return askNova(message, history, signal, pageContext);
+  if (!response.body) return askNova(message, history, signal, pageContext, taskRequest);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

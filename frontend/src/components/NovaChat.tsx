@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import NovaMarkdown from './NovaMarkdown';
-import { streamNova, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent } from '../services/nova';
+import { streamNova, getNovaTaskSession, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest } from '../services/nova';
 
 type Entry = NovaMessage & { details?: NovaReply; streaming?: boolean; status?: string };
 const TOOL_LABELS: Record<string, string> = {
@@ -51,26 +51,52 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
   return text;
 }
 
-export default function NovaChat({ name, open, onClose, onNavigate, pageContext, onReviewCardOperation }: {
-  name: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
+export default function NovaChat({ name, userId, open, onClose, onNavigate, pageContext, onReviewCardOperation, onReviewTransfer }: {
+  name: string; userId: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
   onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
   onReviewCardOperation?: (operationId: string) => void;
+  onReviewTransfer?: (taskId: string) => void;
 }) {
   const [messages, setMessages] = useState<Entry[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [taskSession, setTaskSession] = useState<{ session_id: string; session_version: number; tasks: NovaTransferTask[]; focus_task_id?: string | null } | null>(null);
+  const [focusTaskId, setFocusTaskId] = useState<string | undefined>();
   const request = useRef<AbortController | null>(null);
+  const uncertainRetry = useRef<{ content: string; request: NovaTaskRequest } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => () => { request.current?.abort(); }, []);
-  useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [messages, busy, open]);
+  useEffect(() => {
+    const key = `nova-task-session-${userId}`;
+    const saved = sessionStorage.getItem(key);
+    if (!saved) return;
+    let cancelled = false;
+    getNovaTaskSession(saved).then(session => {
+      if (!cancelled && session.session_id && session.session_version !== undefined) {
+        setTaskSession({ session_id: session.session_id, session_version: session.session_version,
+          tasks: session.tasks || [], focus_task_id: session.focus_task_id });
+        setFocusTaskId(session.focus_task_id || undefined);
+      }
+    }).catch(() => { if (!cancelled) sessionStorage.removeItem(key); });
+    return () => { cancelled = true; };
+  }, [userId]);
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [messages, busy, open, taskSession, focusTaskId]);
 
-  async function send(text: string) {
+  async function send(text: string, candidateId?: string, selectedTaskId?: string) {
     const content = text.trim();
     if (!content || busy || request.current) return;
+    if (uncertainRetry.current?.content !== content) uncertainRetry.current = null;
     const controller = new AbortController();
     request.current = controller;
     const history = messages.slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 4000) }));
+    const newRequest: NovaTaskRequest = {
+      request_id: crypto.randomUUID(), session_id: taskSession?.session_id,
+      session_version: taskSession?.session_version || 0,
+      focus_task_id: selectedTaskId || focusTaskId,
+      candidate_id: candidateId,
+    };
+    const taskRequest = uncertainRetry.current?.content === content ? uncertainRetry.current.request : newRequest;
     // 先放一条草稿回答，流式片段逐步写入；完成后替换为带查询记录的正式回答。
     setMessages(previous => [...previous, { role: 'user', content }, { role: 'assistant', content: '', streaming: true }]);
     setInput(''); setError(''); setBusy(true);
@@ -84,11 +110,22 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
       else updateDraft(draft => ({ ...draft, status: `正在查询：${TOOL_LABELS[event.name] || event.name}` }));
     };
     try {
-      const reply = await streamNova(content, history, controller.signal, pageContext, onEvent);
-      if (!controller.signal.aborted) updateDraft(() => ({ role: 'assistant', content: reply.reply, details: reply }));
+      const reply = await streamNova(content, history, controller.signal, pageContext, onEvent, taskRequest);
+      if (!controller.signal.aborted) {
+        uncertainRetry.current = null;
+        updateDraft(() => ({ role: 'assistant', content: reply.reply, details: reply }));
+        if (reply.session_id && reply.session_version !== undefined && reply.tasks) {
+          setTaskSession({ session_id: reply.session_id, session_version: reply.session_version,
+            tasks: reply.tasks, focus_task_id: reply.focus_task_id });
+          setFocusTaskId(reply.focus_task_id || undefined);
+          sessionStorage.setItem(`nova-task-session-${userId}`, reply.session_id);
+        }
+      }
     } catch (failure: unknown) {
       if (!controller.signal.aborted) {
         const detail = (failure as { response?: { data?: { detail?: { message?: string; code?: string } } } }).response?.data?.detail;
+        const status = (failure as { response?: { status?: number } }).response?.status;
+        uncertainRetry.current = !status || status >= 500 ? { content, request: taskRequest } : null;
         setError(`${detail?.message || '查询失败，请重新发送。'}${detail?.code ? `（${detail.code}）` : ''}`);
         setInput(content);
         // 失败请求及其半截回答不进入下一轮上下文。
@@ -104,8 +141,9 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
   return <aside id="nova-panel" className="agent-panel" aria-label="NOVA 对话">
       <div className="agent-head"><span className="agent-orb">✦</span><div><strong>NOVA</strong><small>银行与生活服务助手</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
       <div className="agent-body">
-        <p className="agent-greeting">你好，{name}。可以问我账户资金、账单、日历、店铺商品和订单。</p>
-        <p className="hint">我会结合当前页面筛选查询本人数据。卡片操作我只生成待确认的变更，需你在卡片页本人确认；转账及其他操作请进入对应工作台。</p>
+        <p className="agent-greeting">你好，{name}。可以问我账户资金、账单、日历、店铺商品和订单，也可以告诉我转账需求。</p>
+        <p className="hint">转账信息齐全后会生成待确认任务；请核对任务卡并由本人完成确认及必要验证。</p>
+        <button className="agent-prompt" disabled={busy} onClick={() => void send('给张三转100元')}>发起转账示例 <span>→</span></button>
         <button className="agent-prompt" disabled={busy} onClick={() => void send('现在北京时间几点？')}>现在北京时间几点？ <span>→</span></button>
         <button className="agent-prompt" disabled={busy} onClick={() => void send('我现在有多少钱可以用？')}>查看可用资金 <span>→</span></button>
         <button className="agent-prompt" disabled={busy} onClick={() => void send('明天有什么日程安排？')}>明天有什么安排？ <span>→</span></button>
@@ -146,9 +184,23 @@ export default function NovaChat({ name, open, onClose, onNavigate, pageContext,
             })}
           </div>)}
           {error && <p className="nova-error" role="alert">{error}</p>}
+          {!!taskSession?.tasks.length && <section className="nova-transfer-tasks" aria-label="本次聊天的转账任务">
+            <h3>转账任务（{taskSession.tasks.length}）</h3>
+            {taskSession.tasks.slice().sort((a, b) => Number(a.chat_task_id === focusTaskId) - Number(b.chat_task_id === focusTaskId)).map(task => <div key={task.chat_task_id} className="card">
+              <strong>任务 {task.chat_task_id.slice(0, 8)} · {task.recipient || '待提供收款人'}</strong>
+              <p>{task.amount_fen ? money(task.amount_fen) : '待提供金额'} · {task.transfer_task_id ? task.status : '草稿'}</p>
+              {!!task.missing_fields.length && <p>请补充：{task.missing_fields.join('、')}</p>}
+              {task.task?.confirmation_card && <p>收款人：{task.task.confirmation_card.recipient_name} · 金额：{task.task.confirmation_card.amount.toFixed(2)} 元<br />
+                收款账户：{task.task.confirmation_card.recipient_card_masked || task.task.confirmation_card.recipient_phone_masked || '请在确认页核对'} · 备注：{task.task.confirmation_card.note || '无'}</p>}
+              <button className="secondary" disabled={busy} onClick={() => setFocusTaskId(task.chat_task_id)}>{focusTaskId === task.chat_task_id ? '当前补充对象' : '补充或修改这笔'}</button>
+              {task.candidates.map(candidate => <button key={candidate.candidate_id} className="secondary" disabled={busy}
+                onClick={() => void send(`选择${candidate.label}`, candidate.candidate_id, task.chat_task_id)}>{candidate.label}</button>)}
+              {task.transfer_task_id && <button className="agent-prompt" onClick={() => onReviewTransfer?.(task.transfer_task_id!)}>前往转账页核对并确认 <span>→</span></button>}
+            </div>)}
+          </section>}
           <div ref={bottom} />
         </div>
       </div>
-      <form className="agent-compose" onSubmit={submit}><input aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy} onChange={event => setInput(event.target.value)} placeholder="可用资金有多少？这笔流水是什么？"/><button type="submit" aria-label="发送" disabled={busy || !input.trim()}>↑</button></form>
+      <form className="agent-compose" onSubmit={submit}><input aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy} onChange={event => setInput(event.target.value)} placeholder="给张三转100元；或者查询可用资金"/><button type="submit" aria-label="发送" disabled={busy || !input.trim()}>↑</button></form>
   </aside>;
 }
