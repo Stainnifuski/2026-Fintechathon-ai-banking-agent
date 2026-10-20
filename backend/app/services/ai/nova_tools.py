@@ -29,6 +29,9 @@ class ToolContext:
     focus_task_id: str | None = None
     candidate_id: str | None = None
     bank_api: Any | None = None
+    conversation_history: list[dict[str, str]] | None = None
+    current_tool_results: list[dict[str, Any]] | None = None
+    goal_plan: dict[str, Any] | None = None
 
 
 class OverviewArguments(StrictModel):

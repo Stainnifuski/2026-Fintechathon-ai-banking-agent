@@ -85,15 +85,21 @@ def _error_detail(error: LLMError) -> dict:
     return {"code": error.code, "message": message}
 
 
-async def _prepare(request: ChatRequest, user_id: str, db: AsyncSession) -> tuple[ChatRequest, list[dict]]:
+async def _prepare(
+    request: ChatRequest, user_id: str, db: AsyncSession,
+) -> tuple[ChatRequest, list[dict], list[dict]]:
     if request.session_id:
         conversation = await bank_conversations.get(db, user_id, request.session_id)
     else:
         created = await bank_conversations.create(db, user_id)
         conversation = {**created, "messages": []}
-    history = [{"role": item["role"], "content": item["content"]} for item in conversation["messages"][-12:]]
+    full_history = [
+        {"role": item["role"], "content": item["content"]}
+        for item in conversation["messages"]
+    ]
+    history = full_history[-12:]
     return request.model_copy(update={"session_id": conversation["session_id"],
-                                      "request_id": request.request_id or uuid4().hex}), history
+                                      "request_id": request.request_id or uuid4().hex}), history, full_history
 
 
 async def _finish(request: ChatRequest, user_id: str, db: AsyncSession, reply: dict) -> dict:
@@ -150,7 +156,7 @@ async def cancel_task_card(session_id: str, task_id: str, request: TaskCardActio
 async def chat(request: ChatRequest, current_user: dict = Depends(get_current_user),
                db: AsyncSession = Depends(get_db)) -> dict:
     try:
-        request, history = await _prepare(request, current_user["user_id"], db)
+        request, history, full_history = await _prepare(request, current_user["user_id"], db)
         reply = await nova.chat(bank_conversations.redact(request.message), history,
                                 context=ToolContext(
                                     current_user["user_id"], db, request.page_context,
@@ -161,6 +167,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                                     focus_task_id=request.focus_task_id,
                                     candidate_id=request.candidate_id,
                                     bank_api=get_bank_api(),
+                                    conversation_history=full_history,
                                 ))
         return await _finish(request, current_user["user_id"], db, reply)
     except LLMError as error:
@@ -183,7 +190,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
     认证与参数错误仍在开始推送前以 HTTP 状态码返回；done 的内容与 /chat 的响应体相同。
     """
     try:
-        request, history = await _prepare(request, current_user["user_id"], db)
+        request, history, full_history = await _prepare(request, current_user["user_id"], db)
     except (ManagerError, UnderstandingError, TaskError, BankApiError, BankError,
             bank_conversations.ConversationError) as error:
         await db.rollback()
@@ -198,6 +205,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
         focus_task_id=request.focus_task_id,
         candidate_id=request.candidate_id,
         bank_api=get_bank_api(),
+        conversation_history=full_history,
     )
 
     async def run() -> None:

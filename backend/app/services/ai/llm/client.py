@@ -158,6 +158,7 @@ class LLMService:
         self, messages: list[dict[str, Any]], *, structured: bool,
         max_tokens: int | None, temperature: float | None,
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: str = "auto",
         on_delta: DeltaCallback | None = None,
     ) -> LLMResult[Any]:
         if get_mode() == "offline":
@@ -183,7 +184,8 @@ class LLMService:
                     _validate_messages([message])
         if (max_tokens is not None and (type(max_tokens) is not int or max_tokens < 1)
                 or temperature is not None and (type(temperature) not in {int, float}
-                                                or not 0 <= temperature <= 2)):
+                                                or not 0 <= temperature <= 2)
+                or tool_choice not in {"auto", "required", "none"}):
             raise LLMError("MODEL_REQUEST_INVALID")
         body: dict[str, Any] = {
             "model": settings.model, "messages": messages,
@@ -192,7 +194,7 @@ class LLMService:
         }
         if tools is not None:
             body["tools"] = tools
-            body["tool_choice"] = "auto"
+            body["tool_choice"] = tool_choice
         if structured:
             body["response_format"] = {"type": "json_object"}
         if settings.provider == "deepseek":
@@ -273,14 +275,16 @@ class LLMService:
 
     async def generate_with_tools(
         self, *, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
-        max_tokens: int = 800, on_delta: DeltaCallback | None = None,
+        max_tokens: int = 800, tool_choice: str = "auto",
+        on_delta: DeltaCallback | None = None,
     ) -> LLMResult[dict[str, Any]]:
         """返回 assistant 消息，保留原生 tool_calls 供 Agent 回传。
 
         传入 on_delta 时以流式请求模型，正文片段到达即回调；返回值与校验规则同非流式。
         """
         return await self._generate(messages, structured=False, tools=tools,
-                                    max_tokens=max_tokens, temperature=0, on_delta=on_delta)
+                                    max_tokens=max_tokens, temperature=0,
+                                    tool_choice=tool_choice, on_delta=on_delta)
 
     async def generate_text(
         self, *, messages: list[dict[str, Any]], max_tokens: int | None = None,

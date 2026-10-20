@@ -46,7 +46,9 @@ async def test_native_tool_loop(monkeypatch):
         body = json.loads(request.content)
         seen.append(body)
         if len(seen) == 1:
-            assert body['tools'][0]['function']['name'] == 'get_current_time'
+            assert {'declare_goal_plan', 'get_current_time'} <= {
+                tool['function']['name'] for tool in body['tools']
+            }
             return tool_response('{"timezone":"America/New_York"}')
         tool = body['messages'][-1]
         assert tool['role'] == 'tool' and tool['tool_call_id'] == 'call-time'
@@ -62,6 +64,82 @@ async def test_native_tool_loop(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_multi_goal_declares_structured_plan_before_react(monkeypatch):
+    class PlanningModel:
+        def __init__(self):
+            self.turn = 0
+
+        async def generate_with_tools(self, **kwargs):
+            self.turn += 1
+            class Result:
+                pass
+            result = Result()
+            if self.turn == 1:
+                result.data = {'role': 'assistant', 'content': None, 'tool_calls': [{
+                    'id': 'plan', 'type': 'function', 'function': {
+                        'name': 'declare_goal_plan',
+                        'arguments': json.dumps({
+                            'execution_mode': 'sequential',
+                            'goals': [
+                                {'goal_id': 'query', 'objective': '查询余额',
+                                 'depends_on': [], 'completion_condition': '取得本人可用余额'},
+                                {'goal_id': 'transfer', 'objective': '按查询结果发起转账草稿',
+                                 'depends_on': ['query'], 'completion_condition': '生成待确认任务'},
+                            ],
+                        }, ensure_ascii=False),
+                    },
+                }]}
+            else:
+                assert all(tool['function']['name'] != 'declare_goal_plan'
+                           for tool in kwargs['tools'])
+                result.data = {'role': 'assistant', 'content': '计划已登记，后续按依赖执行。'}
+            return result
+
+    result = await nova.chat('查余额，如果够就转账', [], model=PlanningModel())
+    assert result['goal_plan']['goals'][1]['depends_on'] == ['query']
+    assert result['tool_calls'][0]['name'] == 'declare_goal_plan'
+
+
+@pytest.mark.asyncio
+async def test_structured_route_forces_single_transfer_tool(monkeypatch):
+    class RoutedModel:
+        async def generate_structured(self, **kwargs):
+            class Result:
+                data = nova.RequestRoute(
+                    mode='direct_react', domains=['transfer'],
+                    has_dependencies=False,
+                )
+            return Result()
+
+        async def generate_with_tools(self, **kwargs):
+            assert kwargs['tool_choice'] == 'required'
+            assert [tool['function']['name'] for tool in kwargs['tools']] == [
+                'manage_transfer_request'
+            ]
+            class Result:
+                data = {'role': 'assistant', 'content': None, 'tool_calls': [{
+                    'id': 'transfer', 'type': 'function',
+                    'function': {'name': 'manage_transfer_request',
+                                 'arguments': '{"amount_fen":10000}'},
+                }]}
+            return Result()
+
+    async def execute(call, context):
+        assert call['function']['arguments'] == '{}'
+        return {
+            'reply': '已生成待确认计划', 'session_id': 'S1',
+            'session_version': 1, 'focus_task_id': 'T1', 'tasks': [],
+        }
+
+    monkeypatch.setattr(nova, 'get_mode', lambda: 'model')
+    monkeypatch.setattr(nova, 'llm', RoutedModel())
+    monkeypatch.setattr(nova, 'execute_tool', execute)
+    result = await nova.chat('给李四转100元', [])
+    assert result['reply'] == '已生成待确认计划'
+    assert result['tool_calls'][0]['name'] == 'manage_transfer_request'
+
+
+@pytest.mark.asyncio
 async def test_loop_limit_and_failure_feedback(monkeypatch):
     configure(monkeypatch)
     seen = []
@@ -73,9 +151,9 @@ async def test_loop_limit_and_failure_feedback(monkeypatch):
         return tool_response(name='transfer_money')
     client = LLMService(httpx.MockTransport(handler))
     try:
-        with pytest.raises(LLMError, match='AGENT_STEP_LIMIT'):
+        with pytest.raises(LLMError, match='AGENT_NO_PROGRESS'):
             await nova.chat('现在几点', [], model=client)
-        assert len(seen) == nova.MAX_STEPS
+        assert len(seen) == 3
     finally:
         await client.aclose()
 

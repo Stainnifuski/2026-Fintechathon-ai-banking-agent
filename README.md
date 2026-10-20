@@ -42,7 +42,7 @@ Docker用户直接运行`start_bank.cmd`：构建当前镜像、在持久目录�
 
 当前采用队友已合入main的 **NOVA AI BANKING** 前端。登录后通过左侧“概览／转账与收款／账单洞察／卡片／订阅／理财／生活服务”切换工作台；顶部“问NOVA”打开右侧银行与生活服务对话面板，验证器图标用于本人绑定。登录页仍显示“AI模拟银行”，不能仅凭登录页标题判断版本。
 
-NOVA 已接通统一 Agent Loop：模型根据用户目标自主选择并可连续调用多个工具，服务端校验参数并注入本人身份，执行后回传工具结果，由模型继续规划或生成回答。当前覆盖现实时间、账户概览、月度/年度账单和流水、本人卡片/订阅、本人日历，以及模拟鲜花店/蛋糕店商品、报价和本人订单付款状态。转账不再经过规则式意图路由，而由模型选择受控转账工具，再由专用 Skill 与 Task Manager 读取原始消息并处理；可在同一聊天窗口建立多笔草稿、追问信息并生成待确认计划。离线模式不做规则式意图规划，复杂请求需启用模型。使用方式与当前边界见[NOVA使用指南](docs/setup/nova_usage.md)。
+NOVA 已接通分层 Agent Loop：模型先输出严格结构化路由；单一目标直接进入 ReAct，多个独立目标（含同一业务的多个操作对象）或有条件依赖的请求同时生成 Goal Plan，再按依赖进入 ReAct。单笔转账路由后仅暴露受控转账工具并要求模型调用，避免在无关工具间循环；重复同参数调用会提前熔断。服务端校验参数并注入本人身份，执行后回传工具结果，由模型继续规划或生成回答。当前覆盖现实时间、账户概览、月度/年度账单和流水、本人卡片/订阅、本人日历，以及模拟鲜花店/蛋糕店商品、报价和本人订单付款状态。转账不再经过规则式意图路由；模型选择受控转账工具后，专用转账子模型读取原始消息及全部未终结任务摘要，自主判断本轮需新建或调整的任务数量，再由 Skill 与 Task Manager 校验和落库。离线模式仅保留有限规则，不提供上述模型编排。使用方式与当前边界见[NOVA使用指南](docs/setup/nova_usage.md)。
 
 账单、卡片、订阅、日历和店铺页面会传递已应用筛选或选中对象，可问“解释当前账单”“这一天有什么规划”“这个商品两件多少钱”“这个订单付款了吗”“这张卡的限额是多少”“这个订阅什么时候扣费”。桌面端对话面板与业务页面并排显示，窄屏采用上下分区；回答支持Markdown标题、列表和表格。收起保留聊天，刷新或退出登录清空。无模型时明确标记有限离线规则，复杂表达和多轮查询需要模型。
 
@@ -90,7 +90,7 @@ NOVA 已接通统一 Agent Loop：模型根据用户目标自主选择并可连�
 |---|---|
 | 启动、部署、环境 | [运行指南](运行指南.md)、[模型配置](docs/setup/model_configuration.md) |
 | NOVA使用与接口 | [使用指南](docs/setup/nova_usage.md)、[转账聊天任务](docs/contracts/NOVA转账任务_API_v0.1.md)、[工具与页面上下文](docs/contracts/NOVA页面上下文与只读工具_API_v0.1.md)、[日历查询](docs/contracts/NOVA日历查询_API_v0.1.md)、[店铺查询](docs/contracts/NOVA店铺查询_API_v0.1.md) |
-| NOVA验证证据 | [账户与账单](docs/validation/nova_read_context_20261010.md)、[日历](docs/validation/nova_calendar_20261010.md)、[店铺](docs/validation/nova_shops_20261010.md)、[年度输出预算](docs/validation/nova_annual_output_20261010.md)、[Markdown](docs/validation/nova_markdown_20261010.md)、[并排面板](docs/validation/nova_docked_panel_20261010.md) |
+| NOVA验证证据 | [分层规划与转账任务编排](docs/validation/nova_goal_planning_20261020.md)、[账户与账单](docs/validation/nova_read_context_20261010.md)、[日历](docs/validation/nova_calendar_20261010.md)、[店铺](docs/validation/nova_shops_20261010.md)、[年度输出预算](docs/validation/nova_annual_output_20261010.md)、[Markdown](docs/validation/nova_markdown_20261010.md)、[并排面板](docs/validation/nova_docked_panel_20261010.md) |
 | 定时转账与订阅接入 | [现有功能保护](docs/contracts/定时转账与订阅_Agent接入.md)、[本次验证](docs/validation/scheduled_subscription_guards_20261005.md) |
 | 转账对话与接口 | [对话契约](docs/contracts/转账任务状态机_API_v0.1.md)、[AI使用与交付](docs/即时转账AI_使用与交付.md) |
 | 4号模拟银行 | [手机号/备注边界](docs/bank/手机号转账与风险边界.md)、[银行接口交接](docs/bank/接口与数据库交接_v0.5.md) |

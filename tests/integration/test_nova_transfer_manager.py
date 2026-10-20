@@ -9,7 +9,9 @@ from sqlalchemy import func, select
 
 from tests.integration.test_task_transfer_flow import db, InProcessBankApi
 from backend.app.models import ContactORM, TransferTaskORM, UserORM, AccountORM, TransactionORM
-from backend.app.services.ai.nlu import Extraction, NLUEngine
+from backend.app.services.ai.nlu import (
+    Extraction, NLUEngine, TransferTaskExtraction, TransferTurnExtraction,
+)
 from backend.app.services.ai import nova
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.schemas.nova import PageContext
@@ -253,6 +255,69 @@ async def test_two_transfers_have_independent_drafts_and_idempotent_reply(db):
 
 
 @pytest.mark.asyncio
+async def test_model_decides_task_count_and_receives_all_open_tasks(db):
+    observed = []
+    observed_contexts = []
+
+    class TaskPlanner:
+        async def extract_tasks(self, message, context):
+            observed_contexts.append(context)
+            observed.append(context["pending_tasks"])
+            if not context["pending_tasks"]:
+                return TransferTurnExtraction(tasks=[
+                    TransferTaskExtraction(
+                        task_action="create", intent="transfer",
+                        recipient="李四", amount_text="100元",
+                    ),
+                    TransferTaskExtraction(
+                        task_action="create", intent="transfer",
+                        recipient="王五", amount_text="200元",
+                    ),
+                ])
+            target = context["pending_tasks"][1]
+            return TransferTurnExtraction(tasks=[
+                TransferTaskExtraction(
+                    task_action="update", chat_task_id=target["chat_task_id"],
+                    intent="modify", amount_text="300元",
+                ),
+            ])
+
+    nlu = NLUEngine(TaskPlanner())
+    first = await process_message(
+        db, InProcessBankApi(db), nlu, user_id="U1",
+        message="分别安排李四100元以及王五200元",
+        request_id=uuid4().hex, session_id=None, session_version=0,
+        conversation_history=[
+            {"role": "user", "content": "刚才提到手机号13900000002"},
+            {"role": "assistant", "content": "请继续说明转账要求"},
+        ],
+        page_context={"page": "transfer"},
+        current_tool_results=[{"name": "get_current_time", "result": {"local_time": "2026-10-20T15:00:00+08:00"}}],
+        goal_plan={"execution_mode": "parallel", "goals": [{"goal_id": "transfer"}]},
+    )
+    assert len(first["tasks"]) == 2
+    assert [task["amount_fen"] for task in first["tasks"]] == [10000, 20000]
+    assert observed_contexts[0]["conversation_history"] == [
+        {"role": "user", "content": "刚才提到手机号[手机号已隐藏]"},
+        {"role": "assistant", "content": "请继续说明转账要求"},
+    ]
+    assert observed_contexts[0]["page_context"] == {"page": "transfer"}
+    assert observed_contexts[0]["current_tool_results"][0]["name"] == "get_current_time"
+    assert observed_contexts[0]["goal_plan"]["execution_mode"] == "parallel"
+    second = await process_message(
+        db, InProcessBankApi(db), nlu, user_id="U1",
+        message="把王五这笔改成300元",
+        request_id=uuid4().hex, session_id=first["session_id"],
+        session_version=first["session_version"],
+    )
+    assert len(observed[1]) == 2
+    assert {task["chat_task_id"] for task in observed[1]} == {
+        task["chat_task_id"] for task in first["tasks"]
+    }
+    assert second["tasks"][1]["amount_fen"] == 30000
+
+
+@pytest.mark.asyncio
 async def test_full_card_recipient_and_plan_modification(db):
     card = transfer_card_number("A2")
     first = await send(db, f"给李四银行卡号{card}转100元")
@@ -432,11 +497,12 @@ async def test_model_derived_amount_and_payer_are_revalidated_before_transfer_dr
     class PlannedNlu:
         mode = "model"
 
-        async def extract(self, message, context):
-            return Extraction(
-                intent="transfer", recipient="李四", recipient_phone="13900000002",
+        async def extract_tasks(self, message, context):
+            return TransferTurnExtraction(tasks=[TransferTaskExtraction(
+                task_action="create", intent="transfer",
+                recipient="李四", recipient_phone="13900000002",
                 payer="我第二张银行卡", amount_text=None,
-            )
+            )])
 
     monkeypatch.setattr(nova, "get_nlu", lambda: PlannedNlu())
     context = ToolContext(
@@ -452,6 +518,49 @@ async def test_model_derived_amount_and_payer_are_revalidated_before_transfer_dr
     assert len(result["tasks"]) == 1
     assert task["amount_fen"] == 12345
     assert task["form"]["payer_account_id"] == "A4"
+    assert task["task"]["phase"] == "WAITING_CONFIRMATION"
+
+
+@pytest.mark.asyncio
+async def test_history_reference_reuses_server_verified_recipient_and_amount(db, monkeypatch):
+    source = TransactionORM(
+        tx_id="SOURCE-HISTORY-REFERENCE", account_id="A1", type="transfer_out",
+        amount_fen=23456, counterparty="A2", category="transfer", note=None,
+        timestamp=datetime(2026, 10, 18, tzinfo=timezone.utc),
+        status="completed", channel="app",
+    )
+    db.add(source)
+    await db.commit()
+
+    class ReferenceNlu:
+        mode = "model"
+
+        async def extract_tasks(self, message, context):
+            assert context["trusted_history_reference"] == {
+                "resolved": True, "reuse_recipient": True, "reuse_amount": True,
+            }
+            return TransferTurnExtraction(tasks=[TransferTaskExtraction(
+                task_action="create", intent="transfer",
+            )])
+
+    monkeypatch.setattr(nova, "get_nlu", lambda: ReferenceNlu())
+    context = ToolContext(
+        "U1", db, PageContext(),
+        original_message="给倒数第六笔转账的人转相应的钱数",
+        request_id=uuid4().hex, session_id="NOVA-HISTORY-REFERENCE",
+        bank_api=InProcessBankApi(db),
+    )
+    result = await nova.manage_transfer_request(nova.TransferRequestArguments(
+        history_reference={
+            "tx_id": source.tx_id,
+            "reuse_recipient": True,
+            "reuse_amount": True,
+        },
+    ), context)
+    task = result["tasks"][0]
+    assert task["recipient"] == "李四"
+    assert task["amount_fen"] == 23456
+    assert task["task"]["operation"]["to_account"] == "A2"
     assert task["task"]["phase"] == "WAITING_CONFIRMATION"
 
 
