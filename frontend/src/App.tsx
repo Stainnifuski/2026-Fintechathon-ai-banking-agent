@@ -9,6 +9,7 @@ import AddContactForm from './components/AddContactForm';
 import AssetSummaryCard from './components/AssetSummary';
 import {useAssetSummary} from './components/AssetSummary/useAssetSummary';
 import NovaChat from './components/NovaChat';
+import LoginPage from './components/LoginPage';
 import type { NovaPageContext } from './services/nova';
 import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
@@ -34,9 +35,9 @@ function App() {
     localStorage.getItem('token') ? JSON.parse(localStorage.getItem('bank-user') || 'null') : null
   );
   const [loginMode, setLoginMode] = useState<'login' | 'register'>('login');
-  const [phone, setPhone] = useState('13800000001');
+  const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
-  const [password, setPassword] = useState('password123');
+  const [password, setPassword] = useState('');
   const [accounts, setAccounts] = useState<bank.Account[]>([]);
   const [recipients, setRecipients] = useState<bank.Recipient[]>([]);
   const [transferHistoryRecipients, setTransferHistoryRecipients] = useState<bank.TransferHistoryRecipient[]>([]);
@@ -203,15 +204,18 @@ function App() {
     return () => { cancelled = true; };
   }, [user?.user_id]);
 
+  const authenticationPending = useRef(false);
   const authenticate = async (event: FormEvent) => {
-    event.preventDefault(); setStatus(''); setIsAuthenticating(true);
+    event.preventDefault();
+    if (authenticationPending.current) return;
+    authenticationPending.current = true; setStatus(''); setIsAuthenticating(true);
     try {
       const result = loginMode === 'login' ? await bank.login(phone, password) : await bank.register(name, phone, password);
       localStorage.setItem('token', result.access_token);
       localStorage.setItem('bank-user', JSON.stringify(result.user));
       setUser(result.user);
-    } catch (error) { setStatus(`登录失败：${message(error)}`); }
-    finally { setIsAuthenticating(false); }
+    } catch (error) { setStatus(`${loginMode === 'login' ? '登录' : '注册'}失败：${message(error)}`); }
+    finally { authenticationPending.current = false; setIsAuthenticating(false); }
   };
 
   const submitTransfer = async (event: FormEvent) => {
@@ -521,13 +525,9 @@ function App() {
   };
   const reviewCardOperation = (operationId: string) => { openSection('cards'); setPendingCardOperationId(operationId); };
 
-  if (!user) return <main className="auth"><BeijingClock /><section className="card"><h1>AI 模拟银行</h1><p>账户、转账与生活服务</p><form onSubmit={authenticate}>
-    {loginMode === 'register' && <label>姓名<input required value={name} onChange={e => setName(e.target.value)} /></label>}
-    <label>手机号<input required value={phone} onChange={e => setPhone(e.target.value)} /></label>
-    <label>密码<input required minLength={8} type="password" value={password} onChange={e => setPassword(e.target.value)} /></label>
-    <button disabled={isAuthenticating}>{isAuthenticating ? '正在登录…' : loginMode === 'login' ? '登录' : '注册并登录'}</button>
-  </form><button className="link" onClick={() => setLoginMode(loginMode === 'login' ? 'register' : 'login')}>{loginMode === 'login' ? '没有账号？注册' : '已有账号？登录'}</button>
-  <p className="hint">演示账号须已完成当前数据库初始化；通用种子示例：13800000001 / password123</p>{status && <p className="notice">{status}</p>}</section></main>;
+  if (!user) return <LoginPage mode={loginMode} phone={phone} password={password} name={name}
+    busy={isAuthenticating} status={status} onPhone={setPhone} onPassword={setPassword} onName={setName}
+    onSubmit={authenticate} onMode={() => { setLoginMode(loginMode === 'login' ? 'register' : 'login'); setStatus(''); }} />;
 
   if (['U007', 'U008'].includes(user.user_id)) return <><BeijingClock /><Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
     <MerchantDashboard user={user} accounts={accounts} transactions={transactions} revision={bankRevision} onRefresh={load} onLogout={logout} />

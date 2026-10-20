@@ -34,7 +34,9 @@ async page => {
     check(true,'刷新后重新进入账单不白屏');
     await page.getByRole('button',{name:'✦ 问 NOVA',exact:true}).click();
     check(await page.getByRole('complementary',{name:'NOVA 对话'}).isVisible(),'账单页可展开NOVA');
-    check((await page.locator('.nova-context').innerText()).includes('账单洞察'),'NOVA仍取得当前账单上下文');
+    await page.getByRole('button',{name:'更多示例',exact:true}).click();
+    check(await page.getByRole('button',{name:'问：解释当前账单',exact:true}).isVisible(),'NOVA仍提供当前账单的上下文示例');
+    await page.getByRole('button',{name:'收起示例',exact:true}).click();
     await page.getByRole('button',{name:'收起 NOVA',exact:true}).click();
     check(await page.locator('.bills canvas').count() >= 2,'收起助手后图表仍存在');
     await page.route(pattern, async route => {

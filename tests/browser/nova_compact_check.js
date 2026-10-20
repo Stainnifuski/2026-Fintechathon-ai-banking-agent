@@ -22,13 +22,13 @@ async page => {
     await page.getByRole('navigation', { name: '主要功能' }).getByRole('button', { name: '▣ 卡片', exact: true }).click();
     await page.getByRole('heading', { name: '管理卡片', exact: true }).waitFor();
     await page.getByRole('button', { name: '选择供 NOVA 查询', exact: true }).first().click();
-    check((await panel.locator('.nova-context').innerText()).includes('已选卡片'), '切换页面和选卡后更新上下文提示');
+    check(await panel.getByRole('button', {name:'问：这张卡的限额',exact:true}).isVisible(), '切换页面和选卡后提供选中卡片示例');
     check(await panel.locator('.nova-quick-prompts button').first().innerText() === '问：这张卡的限额', '选中对象的问题优先');
     await panel.getByRole('button', { name: '更多示例', exact: true }).click();
     check(await panel.getByRole('button', { name: '问：锁卡预览', exact: true }).isVisible(), '保留卡片预览示例，未执行');
     await page.getByRole('navigation', { name: '主要功能' }).getByRole('button', { name: '↻ 订阅', exact: true }).click();
     await page.getByRole('button', { name: '选择这项订阅问 NOVA', exact: true }).first().click();
-    check((await panel.locator('.nova-context').innerText()).includes('已选订阅'), '切换订阅和选中项后提示更新');
+    check(await panel.getByRole('button', {name:'问：下次扣费时间',exact:true}).isVisible(), '切换订阅和选中项后提供选中订阅示例');
     check(!await panel.locator('#nova-help').count(), '换页面和选中对象不保留旧展开内容');
     await page.setViewportSize({ width: 390, height: 844 });
     const geometry = async () => page.evaluate(() => {

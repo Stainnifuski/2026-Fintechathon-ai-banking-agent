@@ -66,14 +66,11 @@ const COMMON_PROMPTS: Prompt[] = [
   { label: '转账需求示例', text: '给张三转100元' },
 ];
 
-function guideFor(context: NovaPageContext): { label: string; prompts: Prompt[] } {
+function promptsFor(context: NovaPageContext): Prompt[] {
   const prompts: Prompt[] = [];
-  const pages = { home: '财务概览', transfer: '转账与收款', insights: '账单洞察', cards: '卡片管理',
-    subscriptions: '订阅管理', wealth: '理财规划', thirdParty: '生活服务' };
-  let label: string = pages[context.page];
   if (context.page === 'cards') {
     if (context.cards?.selected_card_id) {
-      label += ' · 已选卡片';
+
       prompts.push({ label: '这张卡的限额', text: '这张卡的状态和限额是多少？' },
         { label: '锁卡预览', text: '帮我把这张卡临时锁上' });
     }
@@ -81,41 +78,41 @@ function guideFor(context: NovaPageContext): { label: string; prompts: Prompt[] 
   }
   if (context.page === 'subscriptions') {
     if (context.subscriptions?.selected_subscription_id) {
-      label += ' · 已选订阅';
+
       prompts.push({ label: '下次扣费时间', text: '这个订阅什么时候扣费？' });
     }
     prompts.push({ label: '预计订阅月费', text: '我的订阅每月预计要花多少钱？' });
   }
   if (context.page === 'insights') {
-    label += context.filters?.date ? ' · ' + context.filters.date : '';
+
     if (context.selected) {
-      label += ' · 已选流水';
+
       prompts.push({ label: '解释这笔流水', text: '这笔流水是什么？' });
     }
     prompts.push({ label: '解释当前账单', text: '解释当前筛选的账单' });
   }
   if (context.shop) {
-    label = context.shop.shop === 'flower' ? '鲜花店' : '蛋糕店';
+
     if (context.shop.selected?.type === 'product') {
-      label += ' · 已选商品';
+
       prompts.push({ label: '所选商品报价', text: '这个商品多少钱，我选的数量总共多少钱？' });
     }
     if (context.shop.selected?.type === 'order') {
-      label += ' · 已选订单';
+
       prompts.push({ label: '这笔订单的付款状态', text: '这个订单付款了吗？' });
     }
     prompts.push({ label: '店铺商品', text: '这家店有哪些商品？' },
       { label: '我的店铺订单', text: '查看这家店我的订单和付款状态' });
   }
   if (context.calendar) {
-    label = '日历 · ' + context.calendar.selected_date;
+
     if (context.calendar.selected_event) {
-      label += ' · 已选活动';
+
       prompts.push({ label: '所选活动的时间地点', text: '这个活动什么时候举行，在哪里？' });
     }
     prompts.push({ label: '这一天的安排', text: '这一天有什么规划？' });
   }
-  return { label, prompts };
+  return prompts;
 }
 
 export default function NovaChat({ name, userId, open, onClose, onNavigate, pageContext, onReviewCardOperation, onTransferActivity }: {
@@ -129,8 +126,10 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showHelp, setShowHelp] = useState(false);
-  const guide = guideFor(pageContext);
-  const prompts = [...guide.prompts, ...COMMON_PROMPTS];
+  const [showHistory, setShowHistory] = useState(false);
+  useEffect(() => { if (!open) setShowHistory(false); }, [open]);
+  useEffect(() => { setShowHistory(false); }, [userId]);
+  const prompts = [...promptsFor(pageContext), ...COMMON_PROMPTS];
   const contextKey = JSON.stringify({ ...pageContext, observed_as_of: undefined });
   useEffect(() => { setShowHelp(false); }, [contextKey]);
   const [conversations, setConversations] = useState<NovaConversation[]>([]);
@@ -207,7 +206,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
     try {
       const [conversation, session] = await Promise.all([getNovaConversation(sessionId), getNovaTaskSession(sessionId)]);
       setActiveConversationId(sessionId); setMessages(conversation.messages); setTaskSession(session);
-      setFocusTaskId(session.focus_task_id || undefined); setInput(''); uncertainRetry.current = null;
+      setFocusTaskId(session.focus_task_id || undefined); setInput(''); uncertainRetry.current = null; setShowHistory(false);
     } catch { setError('读取历史对话失败，请稍后重试。'); }
     finally { setLoadingConversation(false); }
   }
@@ -218,7 +217,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
     try {
       const created = await createNovaConversation();
       setConversations(previous => [created, ...previous]); setActiveConversationId(created.session_id);
-      setMessages([]); setTaskSession(null); setFocusTaskId(undefined); setInput(''); uncertainRetry.current = null;
+      setMessages([]); setTaskSession(null); setFocusTaskId(undefined); setInput(''); uncertainRetry.current = null; setShowHistory(false);
     } catch { setError('新建对话失败，请稍后重试。'); }
     finally { setLoadingConversation(false); }
   }
@@ -285,16 +284,16 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
   function submit(event: FormEvent) { event.preventDefault(); void send(input); }
   if (!open) return null;
   return <aside id="nova-panel" className="agent-panel" aria-label="NOVA 对话">
-      <div className="agent-head"><span className="agent-orb">✦</span><div><strong>NOVA</strong><small>银行与生活服务助手</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
-      <nav className="nova-conversation-nav" aria-label="NOVA 对话历史">
+      <div className="agent-head"><span className="agent-orb">✦</span><div><div className="nova-title-row"><strong>NOVA</strong><button type="button" className="nova-history-toggle" title="展开新建对话和历史记录" aria-expanded={showHistory} aria-controls="nova-history" onClick={() => { setShowHistory(value => !value); setShowHelp(false); }}>＋ 新建对话 <svg className="nova-history-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button></div><small>银行与生活服务助手</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
+      {showHistory && <nav id="nova-history" className="nova-conversation-nav" aria-label="NOVA 对话历史">
         <button type="button" className="secondary" disabled={busy || loadingConversation} onClick={() => void newConversation()}>＋ 新建对话</button>
         <div className="nova-conversation-list">
           {conversations.map(conversation => <button key={conversation.session_id} type="button"
             className={conversation.session_id === activeConversationId ? 'active' : ''}
-            disabled={busy || loadingConversation} onClick={() => void selectConversation(conversation.session_id)}
+            disabled={busy || loadingConversation} onClick={() => { if (conversation.session_id === activeConversationId) setShowHistory(false); else void selectConversation(conversation.session_id); }}
             title={conversation.title}>{conversation.title}</button>)}
         </div>
-      </nav>
+      </nav>}
       <div className="agent-body" ref={body} onScroll={updatePinnedTasks}>
         {pinnedTaskIds.length > 0 && <div className="nova-pinned-stack" aria-label="待补全的转账任务">
           <div className="nova-pinned-stack-content">
@@ -339,8 +338,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
       </div>
       <div className="agent-controls">
         <div className="nova-guide-row">
-          <span className="nova-context" title={guide.label}>{guide.label}</span>
-          <button type="button" className="nova-help-toggle" aria-expanded={showHelp} aria-controls="nova-help" onClick={() => setShowHelp(value => !value)}>{showHelp ? '收起示例' : '更多示例'} <span aria-hidden="true">{showHelp ? '−' : '+'}</span></button>
+          <button type="button" className="nova-help-toggle" aria-expanded={showHelp} aria-controls="nova-help" onClick={() => { setShowHelp(value => !value); setShowHistory(false); }}>{showHelp ? '收起示例' : '更多示例'} <span aria-hidden="true">{showHelp ? '−' : '+'}</span></button>
         </div>
         {!showHelp && messages.length === 0 && <div className="nova-quick-prompts" aria-label="快捷提问">
           {prompts.slice(0, 2).map(prompt => <button type="button" key={prompt.text} className="nova-chip" disabled={busy || loadingConversation} onClick={() => void send(prompt.text)}>问：{prompt.label}</button>)}
@@ -356,8 +354,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
           </div>
           <p>账户资金与交易均为模拟。卡片变更会先生成预览，需在卡片页核对、确认；转账需求会生成待确认任务，请核对任务卡并由本人完成确认及必要验证。</p>
         </div>}
-        <small className="nova-confirm-note">变更需本人确认，必要时还需验证码。</small>
       </div>
-      <form className="agent-compose" onSubmit={submit}><input aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="给张三转100元；或者查询可用资金"/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || !input.trim()}>↑</button></form>
+      <form className="agent-compose" onSubmit={submit}><input aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="输入你的问题或需求"/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || !input.trim()}>↑</button></form>
   </aside>;
 }
