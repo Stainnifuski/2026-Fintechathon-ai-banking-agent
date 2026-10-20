@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import NovaMarkdown from './NovaMarkdown';
+import NovaTransferCard from './NovaTransferCard';
+import * as bank from '../services/bank';
 import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest } from '../services/nova';
 
 type Entry = NovaMessage & { details?: NovaReply; streaming?: boolean; status?: string };
@@ -9,6 +11,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情',
   list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
   preview_card_operation: '卡片操作预览', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
+  manage_transfer_request: '转账任务规划',
 };
 const money = (value: unknown) => typeof value === 'number' ? (value / 100).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) : '暂无';
 function queryRecord(call: NovaReply['tool_calls'][number]): string {
@@ -20,7 +23,7 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
     const shop = result.data as { total?: number; order_id?: string; status?: string; requested_quantity?: number; estimated_total_fen?: number; product?: { name?: string; price_fen?: number } } | undefined;
     const labels: Record<string, string> = { PENDING_PAYMENT: '等待付款', COMPLETED: '交易完成', PAYMENT_CLOSED: '付款已关闭', REFUNDED: '已退款' };
     const fact = call.name === 'get_shop_product' ? `${shop?.product?.name} · 单价 ${money(shop?.product?.price_fen)} · ${shop?.requested_quantity}件报价 ${money(shop?.estimated_total_fen)}`
-      : call.name === 'get_shop_order' ? `${shop?.order_id} · ${labels[shop?.status || ''] || shop?.status}` : `共 ${shop?.total ?? 0} 项匹配结果`;
+      : call.name === 'get_shop_order' ? `订单 · ${labels[shop?.status || ''] || '状态待核对'}` : `共 ${shop?.total ?? 0} 项匹配结果`;
     return `模拟店铺 · ${result.shop_name} · ${fact}`;
   }
   if (call.name.includes('calendar')) {
@@ -31,6 +34,10 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
   if (call.name === 'preview_card_operation') {
     const preview = result.data as { action_label?: string; card_number?: string | null; permission_level?: string; changes?: { label: string }[] } | undefined;
     return `模拟银行 · ${preview?.action_label}${preview?.card_number ? ` · ${preview.card_number}` : ''} · ${preview?.permission_level === 'red' ? '需确认 + 验证码' : '需本人确认'} · 尚未执行\n变更：${(preview?.changes ?? []).map(change => change.label).join('、')}`;
+  }
+  if (call.name === 'manage_transfer_request') {
+    const transfer = result as { tasks?: NovaTransferTask[] };
+    return `模拟银行 · 已规划 ${transfer.tasks?.length ?? 0} 笔转账任务 · 尚未执行`;
   }
   let text = '模拟银行数据';
   if (['list_cards', 'get_card', 'list_subscriptions', 'get_subscription'].includes(call.name)) {
@@ -46,16 +53,16 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
     text += ` · 未来${projection.days}天 · 基准估计 ${money(projection.baseline_end_fen)} · 假设情景 ${money(projection.scenario_end_fen)}`;
   }
   if (call.name === 'get_subscription_insights') text += ` · ${data?.total ?? 0}组关联记录，需本人核对`;
-  if (call.name === 'get_transaction') text += ` · ${data?.tx_id} · ${data?.counterparty} · ${money(data?.amount_fen)}`;
+  if (call.name === 'get_transaction') text += ` · ${data?.counterparty || '交易对方'} · ${money(data?.amount_fen)}`;
   if (typeof result.as_of === 'string') text += `\n查询截止：${new Date(result.as_of).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}（北京时间）`;
   return text;
 }
 
-export default function NovaChat({ name, userId, open, onClose, onNavigate, pageContext, onReviewCardOperation, onReviewTransfer }: {
+export default function NovaChat({ name, userId, open, onClose, onNavigate, pageContext, onReviewCardOperation, onTransferActivity }: {
   name: string; userId: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
   onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
   onReviewCardOperation?: (operationId: string) => void;
-  onReviewTransfer?: (taskId: string) => void;
+  onTransferActivity?: () => void;
 }) {
   const [messages, setMessages] = useState<Entry[]>([]);
   const [input, setInput] = useState('');
@@ -65,11 +72,20 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversation, setLoadingConversation] = useState(true);
   const [taskSession, setTaskSession] = useState<{ session_id: string; session_version: number; tasks: NovaTransferTask[]; focus_task_id?: string | null } | null>(null);
+  const [payerAccounts, setPayerAccounts] = useState<bank.Account[]>([]);
   const [focusTaskId, setFocusTaskId] = useState<string | undefined>();
   const request = useRef<AbortController | null>(null);
   const uncertainRetry = useRef<{ content: string; request: NovaTaskRequest } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const taskAnchors = useRef<Record<string, HTMLDivElement | null>>({});
+  const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   useEffect(() => () => { request.current?.abort(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    bank.accounts(userId).then(accounts => { if (!cancelled) setPayerAccounts(accounts); }).catch(() => { if (!cancelled) setPayerAccounts([]); });
+    return () => { cancelled = true; };
+  }, [userId]);
   useEffect(() => {
     let cancelled = false;
     setLoadingConversation(true);
@@ -91,7 +107,34 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
       .finally(() => { if (!cancelled) setLoadingConversation(false); });
     return () => { cancelled = true; };
   }, [userId]);
-  useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [messages, busy, open, taskSession, focusTaskId]);
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [messages, busy, open]);
+
+  const visibleTasks = taskSession?.tasks.filter(task => task.status !== 'CANCELLED') || [];
+  const taskGroups = new Map<number, NovaTransferTask[]>();
+  for (const task of visibleTasks) {
+    let position = task.origin_request_id ? messages.findIndex(entry =>
+      entry.role === 'assistant' && entry.request_id === task.origin_request_id) : -1;
+    if (position < 0) position = messages.findIndex(entry =>
+      entry.role === 'assistant' && entry.content.includes(`任务 ${task.chat_task_id.slice(0, 8)}`));
+    if (position < 0) position = messages.length - 1;
+    taskGroups.set(position, [...(taskGroups.get(position) || []), task]);
+  }
+
+  function updatePinnedTasks() {
+    const viewport = body.current?.getBoundingClientRect();
+    if (!viewport) return;
+    const next = visibleTasks.filter(task => task.missing_fields.length > 0 &&
+      ['COLLECTING', 'NEEDS_SELECTION'].includes(task.status) &&
+      (taskAnchors.current[task.chat_task_id]?.getBoundingClientRect().top ?? Infinity) < viewport.top + 8)
+      .map(task => task.chat_task_id);
+    setPinnedTaskIds(previous => previous.length === next.length && previous.every((id, index) => id === next[index])
+      ? previous : next);
+  }
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(updatePinnedTasks);
+    return () => cancelAnimationFrame(frame);
+  }, [messages, taskSession, activeConversationId, open]);
 
   async function selectConversation(sessionId: string) {
     if (busy || loadingConversation || sessionId === activeConversationId) return;
@@ -129,7 +172,8 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
     };
     const taskRequest = uncertainRetry.current?.content === content ? uncertainRetry.current.request : newRequest;
     // 先放一条草稿回答，流式片段逐步写入；完成后替换为带查询记录的正式回答。
-    setMessages(previous => [...previous, { role: 'user', content }, { role: 'assistant', content: '', streaming: true }]);
+    setMessages(previous => [...previous, { role: 'user', content, request_id: taskRequest.request_id },
+      { role: 'assistant', content: '', request_id: taskRequest.request_id, streaming: true }]);
     setInput(''); setError(''); setBusy(true);
     const updateDraft = (change: (draft: Entry) => Entry) => setMessages(previous => {
       const last = previous[previous.length - 1];
@@ -150,7 +194,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
       const reply = await streamNova(content, controller.signal, pageContext, onEvent, taskRequest);
       if (!controller.signal.aborted) {
         uncertainRetry.current = null;
-        updateDraft(() => ({ role: 'assistant', content: reply.reply, details: reply }));
+        updateDraft(() => ({ role: 'assistant', content: reply.reply, request_id: taskRequest.request_id, details: reply }));
         if (reply.session_id && reply.session_version !== undefined && reply.tasks) {
           setTaskSession({ session_id: reply.session_id, session_version: reply.session_version,
             tasks: reply.tasks, focus_task_id: reply.focus_task_id });
@@ -186,7 +230,20 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
             title={conversation.title}>{conversation.title}</button>)}
         </div>
       </nav>
-      <div className="agent-body">
+      <div className="agent-body" ref={body} onScroll={updatePinnedTasks}>
+        {pinnedTaskIds.length > 0 && <div className="nova-pinned-stack" aria-label="待补全的转账任务">
+          <div className="nova-pinned-stack-content">
+            {pinnedTaskIds.map(id => {
+              const task = visibleTasks.find(item => item.chat_task_id === id);
+              if (!task) return null;
+              return <button type="button" key={id} className="nova-pinned-task" onClick={() =>
+                taskAnchors.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                <strong>{task.recipient || '待填写收款人'} · {task.form.amount_yuan ? `¥${task.form.amount_yuan}` : '待填写金额'}</strong>
+                <small>还需：{task.missing_fields.join('、')} · 点击查看任务卡</small>
+              </button>;
+            })}
+          </div>
+        </div>}
         <p className="agent-greeting">你好，{name}。可以问我账户资金、账单、日历、店铺商品和订单，也可以告诉我转账需求。</p>
         <p className="hint">转账信息齐全后会生成待确认任务；请核对任务卡并由本人完成确认及必要验证。</p>
         <button className="agent-prompt" disabled={busy || loadingConversation} onClick={() => void send('给张三转100元')}>发起转账示例 <span>→</span></button>
@@ -218,7 +275,8 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
         </>}
         {(['transfer', 'insights', 'wealth'] as const).map((section, index) => <button key={section} className="agent-prompt" onClick={() => onNavigate(section)}>{['转账与收款', '账单洞察', '理财规划'][index]} <span>→</span></button>)}
         <div className="nova-messages" aria-live="polite">
-          {messages.map((entry, index) => <div key={index} className={`nova-message nova-${entry.role}`}>
+          {messages.map((entry, index) => <div key={`${entry.request_id || index}-${entry.role}-${index}`} className="nova-turn-entry">
+            <div className={`nova-message nova-${entry.role}`}>
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
             {entry.role === 'assistant' ? (entry.content ? <NovaMarkdown content={entry.content} /> : null) : <p>{entry.content}</p>}
             {entry.streaming && <p className="hint" role="status">{entry.status ? `🔍 ${entry.status}…` : entry.content ? '▍' : 'NOVA 正在思考…'}</p>}
@@ -228,22 +286,18 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
               const preview = call.result.data as { operation_id: string; action_label: string };
               return <button key={`review-${callIndex}`} className="agent-prompt" onClick={() => onReviewCardOperation?.(preview.operation_id)}>去卡片页核对并确认：{preview.action_label} <span>→</span></button>;
             })}
+            </div>
+            {taskGroups.get(index)?.map(task => <div key={task.chat_task_id} className="nova-task-anchor"
+              ref={element => { taskAnchors.current[task.chat_task_id] = element; }}>
+              <NovaTransferCard task={task} session={taskSession!} accounts={payerAccounts}
+                focused={focusTaskId === task.chat_task_id} disabled={busy || loadingConversation}
+                onUpdated={updated => { setTaskSession(updated); setFocusTaskId(updated.focus_task_id || undefined); }}
+                onFocus={() => setFocusTaskId(task.chat_task_id)}
+                onSelectCandidate={candidateId => void send('选择收款账户', candidateId, task.chat_task_id)}
+                onTransferActivity={onTransferActivity} />
+            </div>)}
           </div>)}
           {error && <p className="nova-error" role="alert">{error}</p>}
-          {!!taskSession?.tasks.length && <section className="nova-transfer-tasks" aria-label="本次聊天的转账任务">
-            <h3>转账任务（{taskSession.tasks.length}）</h3>
-            {taskSession.tasks.slice().sort((a, b) => Number(a.chat_task_id === focusTaskId) - Number(b.chat_task_id === focusTaskId)).map(task => <div key={task.chat_task_id} className="card">
-              <strong>任务 {task.chat_task_id.slice(0, 8)} · {task.recipient || '待提供收款人'}</strong>
-              <p>{task.amount_fen ? money(task.amount_fen) : '待提供金额'} · {task.transfer_task_id ? task.status : '草稿'}</p>
-              {!!task.missing_fields.length && <p>请补充：{task.missing_fields.join('、')}</p>}
-              {task.task?.confirmation_card && <p>收款人：{task.task.confirmation_card.recipient_name} · 金额：{task.task.confirmation_card.amount.toFixed(2)} 元<br />
-                收款账户：{task.task.confirmation_card.recipient_card_masked || task.task.confirmation_card.recipient_phone_masked || '请在确认页核对'} · 备注：{task.task.confirmation_card.note || '无'}</p>}
-              <button className="secondary" disabled={busy} onClick={() => setFocusTaskId(task.chat_task_id)}>{focusTaskId === task.chat_task_id ? '当前补充对象' : '补充或修改这笔'}</button>
-              {task.candidates.map(candidate => <button key={candidate.candidate_id} className="secondary" disabled={busy}
-                onClick={() => void send(`选择${candidate.label}`, candidate.candidate_id, task.chat_task_id)}>{candidate.label}</button>)}
-              {task.transfer_task_id && <button className="agent-prompt" onClick={() => onReviewTransfer?.(task.transfer_task_id!)}>前往转账页核对并确认 <span>→</span></button>}
-            </div>)}
-          </section>}
           <div ref={bottom} />
         </div>
       </div>

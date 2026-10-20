@@ -65,6 +65,10 @@ class TransferDirectoryRequest(BaseModel):
     recipient_phone: str | None = Field(default=None, max_length=32)
 
 
+class FundingAccountsRequest(BaseModel):
+    subject_user_id: str
+
+
 class TransferValidationResponse(BaseModel):
     from_account: str
     to_account: str
@@ -227,6 +231,15 @@ async def directory(request: TransferDirectoryRequest, db: AsyncSession = Depend
     from ..services.bank.transfer_service import transfer_directory
     try:
         return await transfer_directory(db, **request.model_dump())
+    except BankError as error:
+        _raise_bank_error(error)
+
+
+@router.post("/transfers/funding-accounts", dependencies=[Depends(require_internal_token)])
+async def funding_accounts(request: FundingAccountsRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    from ..services.bank.transfer_service import transfer_funding_accounts
+    try:
+        return await transfer_funding_accounts(db, subject_user_id=request.subject_user_id)
     except BankError as error:
         _raise_bank_error(error)
 

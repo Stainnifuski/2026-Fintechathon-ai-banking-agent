@@ -56,4 +56,6 @@ async def transaction_detail(db, user_id: str, tx_id: str) -> dict:
         raise BankError("流水不存在或无权访问", "TRANSACTION_NOT_FOUND", 404)
     from .bill_foundation import metadata_views
     metadata = await metadata_views(db, user_id, [row.tx_id])
-    return transaction_view(row, metadata.get(row.tx_id))
+    from .transaction_display import transfer_counterparty_names
+    names = await transfer_counterparty_names(db, [row])
+    return transaction_view(row, metadata.get(row.tx_id), names)

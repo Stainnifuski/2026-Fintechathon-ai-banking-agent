@@ -11,7 +11,7 @@ const time = (s: string) => new Date(s).toLocaleString('zh-CN', { timeZone: 'Asi
 const errorText = (e: unknown) => (e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message || '读取失败，请重试。';
 
 function Evidence({ current, previous, onSelect, selectedId }: { current: bills.Evidence[]; previous: bills.Evidence[]; onSelect: (id: string) => void; selectedId: string | null }) {
-  return <details className="insight-evidence"><summary>查看本期与上期流水依据</summary>{([['本期', current], ['上期', previous]] as [string, bills.Evidence[]][]).map(([label, rows]) => <div key={label}><strong>{label}</strong>{rows.length === 0 ? <p className="hint">当前对比范围没有对应流水</p> : rows.map(tx => <div className="insight-evidence-row" key={tx.tx_id}><span>{time(tx.timestamp)} · {money(tx.amount_fen)}<small>{tx.tx_id} · {tx.account_id}</small></span><button className="secondary" aria-pressed={selectedId === tx.tx_id} onClick={() => onSelect(tx.tx_id)}>{selectedId === tx.tx_id ? '已选中 · 可问 NOVA' : '选中供 NOVA 解释'}</button></div>)}</div>)}</details>;
+  return <details className="insight-evidence"><summary>查看本期与上期流水依据</summary>{([['本期', current], ['上期', previous]] as [string, bills.Evidence[]][]).map(([label, rows]) => <div key={label}><strong>{label}</strong>{rows.length === 0 ? <p className="hint">当前对比范围没有对应流水</p> : rows.map(tx => <div className="insight-evidence-row" key={tx.tx_id}><span>{time(tx.timestamp)} · {money(tx.amount_fen)}<small>本人账户流水</small></span><button className="secondary" aria-pressed={selectedId === tx.tx_id} onClick={() => onSelect(tx.tx_id)}>{selectedId === tx.tx_id ? '已选中 · 可问 NOVA' : '选中供 NOVA 解释'}</button></div>)}</div>)}</details>;
 }
 
 export default function Enhancements({ result, revision, onSelect, onManage, selectedId }: {
@@ -45,9 +45,9 @@ export default function Enhancements({ result, revision, onSelect, onManage, sel
       {subBusy && <p role="status">正在关联订阅及扣费流水…</p>}
       {subError && <p className="error" role="alert">{subError} <button onClick={() => setRetry(n => n + 1)}>重试</button></p>}
       {subscriptions && <>{subscriptions.items.length === 0 && <p className="bill-empty">未找到此范围的订阅关系或扣费</p>}{subscriptions.items.map(item => <article className={`bill-subscription-insight ${item.flags.length ? 'needs-review' : ''}`} key={`${item.account_id}-${item.merchant}`}>
-        <h4>{item.merchant} <small>{item.account_id}</small></h4><p>本期实际 {money(item.current_fen)}／{item.current_count} 笔 · 上期实际 {money(item.previous_fen)}／{item.previous_count} 笔 · 当前人民币月费计划 {money(item.configured_monthly_fen)}</p>
+        <h4>{item.merchant} <small>本人账户</small></h4><p>本期实际 {money(item.current_fen)}／{item.current_count} 笔 · 上期实际 {money(item.previous_fen)}／{item.previous_count} 笔 · 当前人民币月费计划 {money(item.configured_monthly_fen)}</p>
         {item.explanations.map(n => <p key={n}>{n}</p>)}<Evidence current={item.current_evidence} previous={item.previous_evidence} onSelect={onSelect} selectedId={selectedId} />
-        {item.active_subscription_ids.map(id => <button key={id} className="secondary" disabled={!onManage} onClick={() => onManage?.(id)}>核对取消详情 · {id}</button>)}
+        {item.active_subscription_ids.map((id, index) => <button key={id} className="secondary" disabled={!onManage} onClick={() => onManage?.(id)}>核对第 {index + 1} 项订阅</button>)}
       </article>)}<details className="bill-notices"><summary>关联口径</summary>{subscriptions.notices.map(n => <p key={n}>{n}</p>)}</details></>}
     </section>
     <CashflowPanel accountId={result.query.account_id || null} revision={revision} />
@@ -87,7 +87,7 @@ function CashflowPanel({ accountId, revision }: { accountId: string | null; revi
     </form>
     {error && <p role="alert" className="error">{error} <button onClick={() => setRetry(n => n + 1)}>重试</button></p>}{busy && <p role="status">正在读取计划与历史样本…</p>}
     {data && !busy && <>{dirty && <p className="notice" role="status">假设已修改，请点击“计算情景”更新；下方仍是上一次计算结果。</p>}
-      <p>截止 {time(data.as_of)}，预测至 {time(data.end_exclusive)}（不含终点）；{data.account_id || '全部有效储蓄账户'}。</p>
+      <p>截止 {time(data.as_of)}，预测至 {time(data.end_exclusive)}（不含终点）；{data.account_id ? '所选储蓄账户' : '全部有效储蓄账户'}。</p>
       <div className="bill-metrics">{[['当前可用现金', data.opening_available_fen], ['基准期末估计', data.baseline_end_fen], ['情景期末估计', data.scenario_end_fen], ['假设改善金额', data.scenario_saving_fen]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{money(Number(value))}</strong></div>)}</div>
       <p className="hint">{data.calibration?.reason} · 消费校准系数 {data.calibration?.factor||1}</p>
       <p>当前占款 {money(data.held_fen)} · 计划流出 {money(data.planned_outflow_fen)} · 历史收入估计 {money(data.estimated_income_fen)} · 周期支出估计 {money(data.estimated_recurring_spending_fen)} · 日常消费估计 {money(data.estimated_variable_spending_fen)}</p>
@@ -99,7 +99,7 @@ function CashflowPanel({ accountId, revision }: { accountId: string | null; revi
         { name: '历史高支出', type: 'line', data: data.timeline.map(p => p.historical_low_balance_fen), showSymbol: false, lineStyle: { type: 'dotted', opacity: .5 } },
         { name: '历史低支出', type: 'line', data: data.timeline.map(p => p.historical_high_balance_fen), showSymbol: false, lineStyle: { type: 'dotted', opacity: .5 } },
       ], color: ['#1769e0', '#159a8c', '#815ac0', '#dd7184', '#e8a346'] }} /></div>
-      <details className="insight-evidence"><summary>计划与估计依据 · {data.events.length} 项</summary>{data.events.map((e, i) => <p key={`${e.reference_id}-${i}`}>{time(e.at)} · {e.label} · {money(e.amount_fen)}{e.excluded_in_scenario && ' · 本次假设排除'}<small>{['salary_estimate', 'recurring_estimate'].includes(e.source) ? `历史周期估计，依据 ${e.evidence_tx_ids.join('、')}` : e.source==='scenario'?'本次临时假设，不会执行收支':'当前已保存计划，尚未执行'}</small></p>)}{data.spending_baselines.map(b => <p key={b.category}>{labels[b.category]}：{b.sample_count} 笔／{b.observed_months} 个月样本，日均约 {money(b.daily_fen)}；本期基准 {money(b.estimated_total_fen)}，假设 {money(b.scenario_total_fen)}。</p>)}</details>
+      <details className="insight-evidence"><summary>计划与估计依据 · {data.events.length} 项</summary>{data.events.map((e, i) => <p key={`${e.reference_id}-${i}`}>{time(e.at)} · {e.label} · {money(e.amount_fen)}{e.excluded_in_scenario && ' · 本次假设排除'}<small>{['salary_estimate', 'recurring_estimate'].includes(e.source) ? `历史周期估计，依据 ${e.evidence_tx_ids.length} 笔流水` : e.source==='scenario'?'本次临时假设，不会执行收支':'当前已保存计划，尚未执行'}</small></p>)}{data.spending_baselines.map(b => <p key={b.category}>{labels[b.category]}：{b.sample_count} 笔／{b.observed_months} 个月样本，日均约 {money(b.daily_fen)}；本期基准 {money(b.estimated_total_fen)}，假设 {money(b.scenario_total_fen)}。</p>)}</details>
       <ForecastHistory scenario={data.scenario} dirty={!!dirty}/>
       <details className="bill-notices"><summary>估计方法与数据不足说明</summary>{data.notices.map(n => <p key={n}>{n}</p>)}</details>
     </>}

@@ -186,7 +186,7 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
             {orders.map(order => <li key={order.order_id}>
               <div>
                 <strong>{order.product_name} × {order.quantity}</strong>
-                <small>{order.order_id} · {beijingTime(order.created_at)}</small>
+                <small>{beijingTime(order.created_at)}</small>
               </div>
               <div className="order-summary">
                 <strong>¥{order.total.toFixed(2)}</strong>

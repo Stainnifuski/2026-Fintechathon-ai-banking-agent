@@ -1,5 +1,6 @@
 import { apiClient } from './api';
 import type { BillQuery } from './bills';
+import type { TaskSnapshot } from './bank';
 
 export type NovaPageContext = {
   version: 1;
@@ -22,7 +23,7 @@ export type NovaPageContext = {
   observed_as_of?: string;
 };
 
-export type NovaMessage = { role: 'user' | 'assistant'; content: string };
+export type NovaMessage = { role: 'user' | 'assistant'; content: string; request_id?: string };
 export type NovaConversation = { session_id: string; title: string; created_at: string; updated_at: string };
 export type NovaConversationDetail = NovaConversation & { messages: NovaMessage[] };
 export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[] };
@@ -47,13 +48,13 @@ export type NovaReply = {
 };
 
 export type NovaTransferTask = {
-  chat_task_id: string; status: string; recipient?: string | null; amount_fen?: number | null;
+  chat_task_id: string; origin_request_id?: string | null; status: string; recipient?: string | null; amount_fen?: number | null;
+  form: { recipient: string; amount_yuan: string; amount_rule?: string | null; amount_basis_available_fen?: number | null;
+    phone_masked?: string | null; card_masked?: string | null;
+    payer_account_id: string; note: string };
   missing_fields: string[]; candidates: { candidate_id: string; label: string; kind: string }[];
   transfer_task_id?: string | null;
-  task?: { task_id: string; message: string; phase: string; outcome: string; confirmation_card?: {
-    recipient_name: string; amount: number; currency: string; payer_card_masked?: string | null;
-    recipient_card_masked?: string | null; recipient_phone_masked?: string | null; note?: string | null;
-  } | null } | null;
+  task?: TaskSnapshot | null;
 };
 
 export type NovaTaskRequest = {
@@ -63,6 +64,23 @@ export type NovaTaskRequest = {
 
 export async function getNovaTaskSession(sessionId: string) {
   return apiClient.get<NovaTaskSession>(`/nova/task-sessions/${sessionId}`).then(r => r.data);
+}
+
+export type NovaTaskForm = {
+  recipient: string; amount_yuan: string; phone?: string | null; card?: string | null;
+  clear_phone: boolean; clear_card: boolean; payer_account_id: string; note: string;
+};
+export async function saveNovaTaskForm(sessionId: string, taskId: string, sessionVersion: number,
+                                       form: NovaTaskForm, requestId = crypto.randomUUID()): Promise<NovaTaskSession> {
+  return apiClient.post<NovaTaskSession>(`/nova/task-sessions/${sessionId}/tasks/${taskId}/form`, {
+    request_id: requestId, session_version: sessionVersion, ...form,
+  }).then(response => response.data);
+}
+export async function cancelNovaTaskCard(sessionId: string, taskId: string, sessionVersion: number,
+                                         requestId = crypto.randomUUID()): Promise<NovaTaskSession> {
+  return apiClient.post<NovaTaskSession>(`/nova/task-sessions/${sessionId}/tasks/${taskId}/cancel`, {
+    request_id: requestId, session_version: sessionVersion,
+  }).then(response => response.data);
 }
 
 export async function askNova(message: string, signal: AbortSignal, pageContext: NovaPageContext, taskRequest?: NovaTaskRequest): Promise<NovaReply> {

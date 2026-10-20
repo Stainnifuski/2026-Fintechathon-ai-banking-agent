@@ -46,13 +46,13 @@ export default function OperatorPanel({userId,revision,onActivity}:{userId:strin
     {notice&&<p role="status">{notice}</p>}{error&&<p role="alert">{error}</p>}
     {!rows.length&&<p>暂无待领取或本人正在处理的任务。</p>}
     {rows.map(task=>{const selected=review?.context.task.task_id===task.task_id&&review.context.task.version===task.version;const owned=task.control_mode==='HUMAN'&&task.owner_id===userId;
-      return <article key={task.task_id} className="wealth-product"><h4>任务 {task.task_id.slice(-8)} · v{task.version}</h4>
-        <p>{task.control_mode==='HANDOFF_PENDING'?'等待领取':owned?'本人已领取':'其他操作员处理中'} · 原账户 {task.account_id}</p>
+      return <article key={task.task_id} className="wealth-product"><h4>待处理理财任务</h4>
+        <p>{task.control_mode==='HANDOFF_PENDING'?'等待领取':owned?'本人已领取':'其他操作员处理中'}</p>
         <ul>{task.nodes.map(node=><li key={node.node_id}>{node.kind}：{node.status}</li>)}</ul>
         {task.control_mode==='HANDOFF_PENDING'?<button disabled={busy} onClick={()=>{void act(task,'claim');}}>领取任务</button>:owned&&<button disabled={busy} onClick={()=>{void act(task,'facts');}}>读取原账户银行事实</button>}
         {selected&&review&&owned&&<section aria-label="领取任务核对资料">
-          <h4>银行账户事实</h4>{review.facts.cash.map(account=><p key={account.account_id}>{account.account_id} · 账面 {w.money(account.balance_fen)} · 可用 {w.money(account.available_fen)} · 占款 {w.money(account.held_fen)}</p>)}
-          {review.facts.orders.map(order=><p key={order.operation_id}>{order.operation_id} · {order.status}</p>)}
+          <h4>银行账户事实</h4>{review.facts.cash.map(account=><p key={account.account_id}>账面 {w.money(account.balance_fen)} · 可用 {w.money(account.available_fen)} · 占款 {w.money(account.held_fen)}</p>)}
+          {review.facts.orders.map((order,index)=><p key={order.operation_id}>第 {index + 1} 笔订单 · {order.status}</p>)}
           <h4>原任务对话与方案</h4>
           {review.context.conversation?.history.map((turn,index)=><article key={index}><p>用户：{turn.user}</p><p>助手：{turn.reply.message}</p></article>)}
           {review.context.plan&&<p>方案 v{review.context.plan.version} · {review.context.plan.status}</p>}
@@ -60,7 +60,7 @@ export default function OperatorPanel({userId,revision,onActivity}:{userId:strin
             onPropose={input=>setNote(portfolioAdjustmentNote(review.allocation!.plan,input))}/>}
           {review.context.plan&&!review.allocation&&<p>该任务没有保存完整整体快照，仅可核对原执行动作；不会临时拼造比例方案。</p>}
           <CommandReview key={`${task.task_id}:${task.version}`} rows={reviewCommands(review.context)} onAdjustment={setNote}/>
-          <label>处理说明／待用户事项<textarea rows={4} aria-label={`${task.task_id}处理说明`} value={note} maxLength={1000} disabled={busy} onChange={e=>setNote(e.target.value)}/></label>
+          <label>处理说明／待用户事项<textarea rows={4} aria-label="当前任务处理说明" value={note} maxLength={1000} disabled={busy} onChange={e=>setNote(e.target.value)}/></label>
           <button disabled={busy||!note.trim()} onClick={()=>{void act(task,'note');}}>保存处理说明</button>
           <button disabled={busy||!note.trim()} onClick={()=>{void act(task,'release');}}>交还助手并重新核验</button>
         </section>}

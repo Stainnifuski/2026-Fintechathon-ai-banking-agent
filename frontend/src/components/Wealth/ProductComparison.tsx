@@ -44,7 +44,7 @@ export default function ProductComparison({ products, onClose, loadComparison = 
     <div className="picker-compare-options">{products.map(product => <label key={product.product_id}><input type="checkbox" checked={ids.includes(product.product_id)} disabled={!ids.includes(product.product_id) && ids.length >= 4} onChange={event => {const checked=event.target.checked;setIds(current=>checked?(current.includes(product.product_id)||current.length>=4?current:[...current,product.product_id]):current.filter(id=>id!==product.product_id));}} />{product.name}</label>)}</div>
     {ids.length < 2 && <p>请至少选择两只产品。</p>}{busy && <p role="status">正在读取比较资料…</p>}{error && <p role="alert">{error}</p>}
     {!!rows.length && <div className="wealth-table"><table aria-label="所选产品比较"><thead><tr><th>产品／份额</th><th>风险／起购</th><th>费率</th><th>资料说明</th></tr></thead><tbody>{rows.map(row => <tr key={row.product_id}>
-      <td>{row.name}<small>{row.share_class ? `${row.share_class}类 · ` : ''}{row.product_id} · v{row.product_version}</small></td>
+      <td>{row.name}<small>{row.share_class ? `${row.share_class}类` : '产品份额'}</small></td>
       <td>{row.product_risk_level == null ? '风险未提供' : `R${row.product_risk_level}`}<small>{row.source_label}</small><small>起购 {money(row.min_amount_fen)}</small></td>
       <td>申购 {rate(row.purchase_fee_rate)}<small>销售服务 {rate(row.sales_service_fee_rate)}</small><small>{row.redemption_fee_rules || '赎回费规则未提供'}</small></td>
       <td>模拟成交以确认页价格及规则为准；公开费用未知不补零。<small>本金可能亏损，低风险不代表收益保证。</small></td>

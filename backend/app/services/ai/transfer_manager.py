@@ -21,7 +21,11 @@ from ..bank.account_scope import isolated_account_ids
 from ..bank.transfer_service import BankError, transfer_directory
 from ..bank.nova_conversations import redact as redact_sensitive
 from ..orchestration import TaskError, create_transfer_task, modify_task, task_snapshot
-from .nlu import NLUEngine, UnderstandingError, amount_fen, PHONE, scope_guard, offline_extract
+from ..orchestration import cancel_task
+from .nlu import (
+    NLUEngine, UnderstandingError, amount_fen, NOTE_SEPARATOR, PHONE,
+    scope_guard, offline_extract,
+)
 from .skill_registry import load_skill
 
 SKILL_VERSION = "transfer-v1"
@@ -50,7 +54,16 @@ def _masked_message(message: str) -> str:
 def _public_task(task: dict, snapshot: dict | None = None) -> dict:
     slots = task.get("slots", {})
     return {"chat_task_id": task["chat_task_id"], "status": task["status"],
+            "origin_request_id": task.get("origin_request_id"),
             "recipient": slots.get("recipient"), "amount_fen": slots.get("amount_fen"),
+            "form": {"recipient": slots.get("recipient") or "",
+                     "amount_yuan": str(Decimal(slots["amount_fen"]) / 100) if slots.get("amount_fen") else "",
+                     "amount_rule": "付款账户可用余额的一半" if slots.get("amount_ratio") == "half" or slots.get("amount_basis_available_fen") is not None else None,
+                     "amount_basis_available_fen": slots.get("amount_basis_available_fen"),
+                     "phone_masked": "••••" + slots["phone"][-4:] if slots.get("phone") else None,
+                     "card_masked": "••••" + slots["card"][-4:] if slots.get("card") else None,
+                     "payer_account_id": slots.get("from_account") or slots.get("payer") or "",
+                     "note": slots.get("note") or ""},
             "missing_fields": task.get("missing_fields", []),
             "candidates": task.get("candidates", []),
             "transfer_task_id": task.get("transfer_task_id"), "task": snapshot,
@@ -80,11 +93,181 @@ async def get_session(db: AsyncSession, user_id: str, session_id: str) -> dict:
     return await _view(db, row)
 
 
+async def change_task_form(db: AsyncSession, bank: BankApi, *, user_id: str, session_id: str,
+                           chat_task_id: str, session_version: int, request_id: str,
+                           recipient: str, amount_yuan: str, phone: str | None,
+                           card: str | None, clear_phone: bool, clear_card: bool,
+                           payer_account_id: str, note: str) -> dict:
+    receipt_id = _digest([user_id, request_id])
+    payload = ["form", session_id, chat_task_id, session_version, recipient, amount_yuan,
+               phone, card, clear_phone, clear_card, payer_account_id, note]
+    digest = _digest(payload)
+    receipt = await db.get(NovaMessageReceiptORM, receipt_id)
+    if receipt:
+        if receipt.payload_digest != digest:
+            raise ManagerError("相同请求编号不能用于不同修改", "MESSAGE_ID_CONFLICT")
+        return await get_session(db, user_id, session_id)
+    row = await db.get(NovaSessionORM, session_id)
+    if row is None or row.user_id != user_id:
+        raise ManagerError("聊天任务会话不存在", "SESSION_NOT_FOUND", 404)
+    if row.version != session_version:
+        raise ManagerError("会话已更新，请刷新后重试", "STALE_SESSION_VERSION")
+    state = json.loads(json.dumps(row.state))
+    target = next((item for item in state["tasks"] if item["chat_task_id"] == chat_task_id), None)
+    if target is None or target["status"] in {"CANCELLED", "SUCCEEDED", "FAILED"}:
+        raise ManagerError("任务已结束或不存在", "TASK_NOT_EDITABLE", 409)
+    if target.get("transfer_task_id"):
+        current = await task_snapshot(db, target["transfer_task_id"], user_id)
+        if "modify" not in current["allowed_actions"]:
+            raise ManagerError("当前转账计划不能修改", "TASK_NOT_EDITABLE", 409)
+    slots = target["slots"]
+    recipient = recipient.strip()
+    amount_yuan = amount_yuan.strip()
+    note = note.strip()
+    if len(recipient) > 100 or len(note) > 256:
+        raise ManagerError("姓名或备注过长", "FORM_INVALID", 422)
+    if phone and not re.fullmatch(PHONE, phone.strip()):
+        raise ManagerError("请填写完整的手机号", "INVALID_PHONE", 422)
+    if card and not re.fullmatch(CARD, card.strip()):
+        raise ManagerError("请填写完整的银行卡号", "INVALID_CARD", 422)
+    if phone and card:
+        raise ManagerError("请只填写一种收款号码", "RECIPIENT_METHOD_CONFLICT", 422)
+    try:
+        amount = amount_fen(amount_yuan) if amount_yuan else None
+    except (ValueError, UnderstandingError) as error:
+        raise ManagerError(str(error), "INVALID_AMOUNT", 422) from error
+    if amount is not None and amount <= 0:
+        raise ManagerError("转账金额须大于零", "INVALID_AMOUNT", 422)
+    old = dict(slots)
+    slots["recipient"] = recipient or None
+    slots["amount_fen"] = amount
+    old_amount_yuan = str(Decimal(old["amount_fen"]) / 100) if old.get("amount_fen") else ""
+    if amount_yuan and amount_yuan != old_amount_yuan:
+        slots.pop("amount_ratio", None)
+        slots.pop("amount_basis_available_fen", None)
+        slots.pop("amount_basis_at", None)
+    slots["note"] = note or None
+    if note:
+        slots.pop("note_cleared", None)
+    elif old.get("note"):
+        slots["note_cleared"] = True
+    if recipient != (old.get("recipient") or ""):
+        for key in ("phone", "card", "to_account", "phone_source"):
+            slots.pop(key, None)
+        slots.pop("no_auto_recipient", None)
+    if clear_phone:
+        slots.pop("phone", None)
+        slots.pop("phone_source", None)
+        slots.pop("to_account", None)
+        slots["no_auto_recipient"] = True
+    if clear_card:
+        slots.pop("card", None)
+        slots.pop("to_account", None)
+        slots["no_auto_recipient"] = True
+    if phone:
+        slots["phone"] = phone.strip()
+        slots.pop("card", None)
+        slots.pop("to_account", None)
+        slots.pop("no_auto_recipient", None)
+    if card:
+        slots["card"] = card.strip()
+        slots.pop("phone", None)
+        slots.pop("phone_source", None)
+        slots.pop("to_account", None)
+        slots.pop("no_auto_recipient", None)
+    if payer_account_id:
+        slots["from_account"] = payer_account_id
+        slots["payer"] = payer_account_id
+    elif old.get("from_account"):
+        slots.pop("from_account", None)
+        slots.pop("payer", None)
+    if slots == old:
+        return await _view(db, row)
+    changed = await db.execute(update(NovaSessionORM).where(
+        NovaSessionORM.session_id == session_id, NovaSessionORM.version == session_version
+    ).values(version=session_version + 1))
+    if changed.rowcount != 1:
+        raise ManagerError("会话已更新，请刷新后重试", "STALE_SESSION_VERSION")
+    await _resolve(db, bank, user_id, target)
+    if target["missing_fields"] and target.get("transfer_task_id"):
+        current = await task_snapshot(db, target["transfer_task_id"], user_id)
+        await cancel_task(db, bank, task_id=current["task_id"], user_id=user_id,
+                          request_id=f"NOVA-CANCEL-{request_id}", state_version=current["state_version"])
+        target.pop("transfer_task_id", None)
+    if not target["missing_fields"] and slots.get("to_account") and slots.get("from_account"):
+        params = dict(user_id=user_id, request_id=f"NOVA-FORM-{request_id}",
+                      operation_id=f"NOVA-FORM-{request_id}",
+                      from_account=slots["from_account"], to_account=slots["to_account"],
+                      amount=Decimal(slots["amount_fen"]) / 100, note=slots.get("note"),
+                      note_source=("manual" if slots.get("note") else
+                                   "cleared" if slots.get("note_cleared") else "automatic"),
+                      recipient_phone=slots.get("phone"), commit=False)
+        if target.get("transfer_task_id"):
+            current = await task_snapshot(db, target["transfer_task_id"], user_id)
+            planned = await modify_task(db, bank, task_id=current["task_id"],
+                                        state_version=current["state_version"], **params)
+        else:
+            planned = await create_transfer_task(db, bank, recipient_card_number=slots.get("card"), **params)
+        target["transfer_task_id"] = planned["task_id"]
+        target["status"] = planned["phase"]
+        slots.pop("amount_ratio", None)
+    state["focus_task_id"] = chat_task_id
+    row.state, row.version = state, session_version + 1
+    db.add(NovaMessageReceiptORM(receipt_id=receipt_id, user_id=user_id,
+                                 payload_digest=digest, response={"session_id": session_id}))
+    await db.commit()
+    return await _view(db, row)
+
+
+async def cancel_chat_task(db: AsyncSession, bank: BankApi, *, user_id: str, session_id: str,
+                           chat_task_id: str, session_version: int, request_id: str) -> dict:
+    receipt_id = _digest([user_id, request_id])
+    digest = _digest(["cancel", session_id, chat_task_id, session_version])
+    receipt = await db.get(NovaMessageReceiptORM, receipt_id)
+    if receipt:
+        if receipt.payload_digest != digest:
+            raise ManagerError("相同请求编号不能用于不同操作", "MESSAGE_ID_CONFLICT")
+        return await get_session(db, user_id, session_id)
+    row = await db.get(NovaSessionORM, session_id)
+    if row is None or row.user_id != user_id:
+        raise ManagerError("聊天任务会话不存在", "SESSION_NOT_FOUND", 404)
+    if row.version != session_version:
+        raise ManagerError("会话已更新，请刷新后重试", "STALE_SESSION_VERSION")
+    state = json.loads(json.dumps(row.state))
+    target = next((item for item in state["tasks"] if item["chat_task_id"] == chat_task_id), None)
+    if target is None:
+        raise ManagerError("任务不存在", "TASK_NOT_FOUND", 404)
+    if target.get("transfer_task_id"):
+        current = await task_snapshot(db, target["transfer_task_id"], user_id)
+        if "cancel" not in current["allowed_actions"]:
+            raise ManagerError("当前任务无法取消", "TASK_NOT_CANCELLABLE", 409)
+        result = await cancel_task(db, bank, task_id=current["task_id"], user_id=user_id,
+                                   request_id=f"NOVA-CANCEL-{request_id}", state_version=current["state_version"])
+        if result["outcome"] != "CANCELLED":
+            raise ManagerError("取消请求已提交，请稍后查看任务状态", "CANCEL_PENDING", 409)
+    changed = await db.execute(update(NovaSessionORM).where(
+        NovaSessionORM.session_id == session_id, NovaSessionORM.version == session_version
+    ).values(version=session_version + 1))
+    if changed.rowcount != 1:
+        raise ManagerError("会话已更新，请刷新后重试", "STALE_SESSION_VERSION")
+    target["status"] = "CANCELLED"
+    target["missing_fields"] = []
+    target["candidates"] = []
+    state["focus_task_id"] = next((item["chat_task_id"] for item in state["tasks"]
+                                   if item["status"] not in {"CANCELLED", "SUCCEEDED", "FAILED"}), None)
+    row.state, row.version = state, session_version + 1
+    db.add(NovaMessageReceiptORM(receipt_id=receipt_id, user_id=user_id,
+                                 payload_digest=digest, response={"session_id": session_id}))
+    await db.commit()
+    return await _view(db, row)
+
+
 def wants_transfer(message: str, pending: bool = False) -> bool:
     text = message.strip()
     if RECORD_QUERY.search(text) or READ_QUERY.search(text):
         return False
-    if TRANSFER.search(text) or (pending and (MODIFY.search(text) or re.search(PHONE + "|" + CARD + r"|\d+(?:\.\d+)?\s*(?:元|块)?$", text))):
+    if TRANSFER.search(text) or (pending and (MODIFY.search(text) or re.search(
+        PHONE + "|" + CARD + r"|一半|\d+(?:\.\d+)?\s*(?:元|块)?$|^(?:收款人|姓名|名字|金额|付款账户|备注|用途)(?:是|为|：|:|\s)", text))):
         return True
     if pending and re.fullmatch(r"[\u4e00-\u9fff]{2,4}", text) and text not in {"余额", "账单", "日历", "状态", "进度"}:
         return True
@@ -93,10 +276,24 @@ def wants_transfer(message: str, pending: bool = False) -> bool:
 
 def _split(message: str) -> list[str]:
     text = message.strip()
-    each = re.fullmatch(r"(?:请|帮我|麻烦)?\s*给\s*([^，,；;]+?)\s*和\s*([^，,；;]+?)\s*各转\s*(.+)", text)
+    each = re.fullmatch(
+        r"(?:请|帮我|麻烦)?\s*给\s*(.+?)\s*各(?:转账|转|汇款|汇|打款|打)\s*(.+)",
+        text,
+    )
     if each:
-        return [f"给{each[1]}转{each[3]}", f"给{each[2]}转{each[3]}"]
-    chunks = [part.strip() for part in re.split(r"[；;]|[，,](?=\s*(?:再?给|转给|向))", text) if part.strip()]
+        recipients = [
+            item.strip() for item in re.split(r"\s*(?:[、，,]|和|及|与)\s*", each[1])
+            if item.strip()
+        ]
+        if 2 <= len(recipients) <= 8 and all(
+            re.fullmatch(r"[\u4e00-\u9fffA-Za-z]{2,20}", item) for item in recipients
+        ):
+            return [f"给{recipient}转{each[2]}" for recipient in recipients]
+    # 逗号后的“给”也可能只是同一笔转账的后置收款人，例如
+    # “按某金额，从第二张卡里，给赵六转钱”。只有后续分句自身带明确金额时才按多笔拆分。
+    explicit_amount = r"(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二三四五六七八九]+)?)\s*(?:元|块钱|块)"
+    separator = r"[；;]|[，,](?=\s*(?:再?给|转给|向)[^，,；;]*" + explicit_amount + r")"
+    chunks = [part.strip() for part in re.split(separator, text) if part.strip()]
     return chunks
 
 
@@ -134,12 +331,42 @@ async def _card_match(db: AsyncSession, user_id: str, card: str, name: str | Non
     return result
 
 
-async def _resolve(db: AsyncSession, user_id: str, task: dict) -> None:
+async def _resolve(db: AsyncSession, bank: BankApi, user_id: str, task: dict) -> None:
     slots = task["slots"]
     name, phone, card = slots.get("recipient"), slots.get("phone"), slots.get("card")
     missing = []
     task["candidates"] = []
     task["candidate_map"] = []
+    if slots.get("amount_ratio") == "half":
+        funding = await bank.transfer_funding_accounts(subject_user_id=user_id)
+        accounts = funding["accounts"]
+        payer = slots.get("from_account") or slots.get("payer")
+        selected = next((row for row in accounts if row["account_id"] == payer), None)
+        if selected is None and payer:
+            selected = next((row for row in accounts if payer in row["label"]), None)
+        if selected is None and not payer and len(accounts) == 1:
+            selected = accounts[0]
+        if selected is None:
+            task["missing_fields"] = ["付款账户"] + (["收款人姓名"] if not name else [])
+            if len(accounts) > 1:
+                choices = [{"candidate_id": uuid4().hex, "label": row["label"],
+                            "account_id": row["account_id"], "kind": "payer"} for row in accounts]
+                task["candidate_map"] = choices
+                task["candidate_expires_at"] = time.time() + 600
+                task["candidates"] = [{key: choice[key] for key in ("candidate_id", "label", "kind")}
+                                      for choice in choices]
+                task["status"] = "NEEDS_SELECTION"
+            else:
+                task["status"] = "COLLECTING"
+            slots.pop("amount_fen", None)
+            return
+        slots["from_account"] = selected["account_id"]
+        slots["amount_basis_available_fen"] = selected["available_fen"]
+        slots["amount_basis_at"] = funding["as_of"]
+        slots["amount_fen"] = selected["available_fen"] // 2
+        if slots["amount_fen"] <= 0:
+            task["missing_fields"], task["status"] = ["付款账户可用余额不足"], "COLLECTING"
+            return
     if not name:
         missing.append("收款人姓名")
     if not slots.get("amount_fen"):
@@ -151,7 +378,9 @@ async def _resolve(db: AsyncSession, user_id: str, task: dict) -> None:
     verified_name = known[0]["name"] if len({item["name"] for item in known}) == 1 else name
     if not known and not phone and not card:
         missing.append("完整手机号或完整银行卡号")
-    if known and not phone and not card:
+    if known and not phone and not card and slots.get("no_auto_recipient"):
+        missing.append("完整手机号或完整银行卡号")
+    elif known and not phone and not card:
         if len({(item["phone"], item["card"], item["account_hint"]) for item in known}) > 1:
             missing.append("同名收款人的完整手机号或银行卡号")
         else:
@@ -218,17 +447,31 @@ async def _extract(nlu: NLUEngine, text: str, pending: bool) -> dict:
     phone = re.search(PHONE, clean)
     if card:
         clean = re.sub(r"银行卡号|卡号|银行卡", "", clean)
+    parameter_text = re.split(NOTE_SEPARATOR, clean, maxsplit=1)[0]
+    relative_half = bool(re.search(r"一半(?:的)?(?:钱|余额)?", parameter_text))
+    if relative_half:
+        if re.search(r"(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+)\s*(?:元|块钱|块)", parameter_text):
+            raise UnderstandingError("同时出现具体金额和余额一半，请只保留一种金额表达")
+        # Relative amount is resolved from the selected bank account, never by the LLM.
+        clean = re.sub(r"一半(?:的)?(?:钱|余额)?", "", clean)
+        clean = re.sub(r"(?:把)?(?:我|我的)?(?:银行卡|账户|卡)(?:里|中|的)?", "", clean)
+        clean = clean.strip(" ，,。！! ")
+        result = offline_extract(clean, {"missing_recipient": pending})
+    else:
+        result = None
     # Existing NLU handles phone numbers, but explicit extraction also covers a reply with only a number.
     extraction_context = {"missing_recipient": pending, "skill_instructions": load_skill("transfer")}
     # Full recipient identifiers stay inside the bank application, even in model mode.
-    result = (offline_extract(clean, extraction_context) if redact_sensitive(text) != text else
-              await nlu.extract(clean, extraction_context))
+    if result is None:
+        result = (offline_extract(clean, extraction_context) if redact_sensitive(text) != text else
+                  await nlu.extract(clean, extraction_context))
     for key in ("recipient", "recipient_phone", "amount_text", "payer", "note"):
         value = getattr(result, key)
         if value is not None and value not in clean:
             raise UnderstandingError("提取的信息与本轮消息不一致，请重新描述")
     name_match = re.search(r"(?:给|向|转给)\s*([\u4e00-\u9fffA-Za-z]{2,20}?)(?=\s*(?:转|汇|打|手机号|手机|银行卡|卡号|\d))", clean)
-    name = name_match[1] if name_match else result.recipient
+    field_name = re.search(r"^(?:收款人|姓名|名字)(?:是|为|：|:|\s)+\s*([\u4e00-\u9fffA-Za-z]{2,20})$", clean.strip())
+    name = name_match[1] if name_match else field_name[1] if field_name else result.recipient
     if name and re.fullmatch(PHONE, name):
         name = None
     if name and ("手机号" in name or "银行卡" in name or len(name) > 30):
@@ -237,15 +480,20 @@ async def _extract(nlu: NLUEngine, text: str, pending: bool) -> dict:
     return {"intent": intent, "recipient": name, "phone": phone[0] if phone else result.recipient_phone,
             "card": card[0] if card else None,
             "amount_fen": amount_fen(result.amount_text) if result.amount_text else None,
-            "payer": result.payer, "note": result.note}
+            "amount_ratio": "half" if relative_half else None,
+            "payer": result.payer, "note": result.note,
+            "clear_note": bool(re.search(r"清空备注|不要备注|删除备注|无备注", text))}
 
 
 async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, user_id: str,
                           message: str, request_id: str, session_id: str | None,
                           session_version: int, focus_task_id: str | None = None,
-                          candidate_id: str | None = None, create_session: bool = False) -> dict:
+                          candidate_id: str | None = None, create_session: bool = False,
+                          trusted_fields: dict | None = None) -> dict:
     receipt_id = _digest([user_id, request_id])
-    payload_digest = _digest([message, session_id, session_version, focus_task_id, candidate_id])
+    payload_digest = _digest([
+        message, session_id, session_version, focus_task_id, candidate_id, trusted_fields,
+    ])
     receipt = await db.get(NovaMessageReceiptORM, receipt_id)
     if receipt:
         if receipt.payload_digest != payload_digest:
@@ -260,6 +508,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
     state = json.loads(json.dumps(row.state)) if row else {"tasks": [], "focus_task_id": None}
     tasks = state["tasks"]
     chunks = _split(message)
+    if trusted_fields and len(chunks) != 1:
+        raise ManagerError("由查询结果补全的字段一次只能用于一笔转账", "TRUSTED_FIELDS_AMBIGUOUS", 422)
     if len(chunks) > 8:
         raise ManagerError("一次最多处理8笔转账", "TRANSFER_BATCH_LIMIT", 422)
     pending = [task for task in tasks if task["status"] in {"COLLECTING", "NEEDS_SELECTION"}]
@@ -271,7 +521,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         selected = next((task for task in view["tasks"] if task["chat_task_id"] ==
                          (focus_task_id or view["focus_task_id"])), None)
         if selected and selected["transfer_task_id"]:
-            reply = "请在下方转账任务卡点击“前往转账页核对并确认”；文字回复不会执行转账。"
+            reply = "请在下方转账任务卡核对收款人、付款账户和金额后点击确认；文字回复不会执行转账。"
         elif selected:
             reply = "这笔还是草稿，请先补充：" + "、".join(selected["missing_fields"])
         else:
@@ -303,7 +553,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         target["candidates"] = []
         row.state = state
         row.version = session_version + 1
-        response = {"reply": f"草稿任务 {target_id[:8]} 已取消，未创建转账计划。",
+        response = {"reply": "这笔转账草稿已取消，未创建转账计划。",
                     "mode": nlu.mode, "tool_calls": [], "session_id": row.session_id}
         db.add(NovaMessageReceiptORM(receipt_id=receipt_id, user_id=user_id,
                                      payload_digest=payload_digest, response=response))
@@ -313,8 +563,15 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         await db.commit()
         return {**response, **await _view(db, row)}
     extracted = [] if candidate_id else [await _extract(nlu, chunk, bool(pending)) for chunk in chunks]
+    if extracted and trusted_fields:
+        if trusted_fields.get("amount_fen") is not None:
+            extracted[0]["amount_fen"] = trusted_fields["amount_fen"]
+            extracted[0]["amount_ratio"] = None
+            extracted[0]["amount_source_tx_id"] = trusted_fields.get("amount_source_tx_id")
+        if trusted_fields.get("payer_account_id") is not None:
+            extracted[0]["payer"] = trusted_fields["payer_account_id"]
     if not candidate_id and all(item["intent"] in {"unknown", "status", "control"} and
-                                not any(item.get(key) for key in ("recipient", "phone", "card", "amount_fen"))
+                                not any(item.get(key) for key in ("recipient", "phone", "card", "amount_fen", "amount_ratio"))
                                 for item in extracted):
         return {"reply": "请说明要发起、补充或修改哪笔转账。", "mode": nlu.mode, "tool_calls": [],
                 **(await _view(db, row) if row else {"session_id": None, "session_version": 0, "tasks": [], "focus_task_id": None})}
@@ -343,8 +600,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             target["slots"]["to_account" if choice["kind"] == "recipient" else "from_account"] = choice["account_id"]
             target["selected_account"] = choice["account_id"]
         elif is_new and not (target and target["status"] in {"COLLECTING", "NEEDS_SELECTION"}
-                             and item.get("recipient") == target["slots"].get("recipient")
-                             and "再" not in message):
+                             and "再" not in message and
+                             (focus_task_id or item.get("recipient") == target["slots"].get("recipient"))):
             target = None
         elif target is None and len(pending) == 1:
             target = pending[0]
@@ -353,7 +610,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         if target is None:
             if len(tasks) >= 30:
                 raise ManagerError("当前会话任务已满，请新建聊天窗口", "SESSION_TASK_LIMIT")
-            target = {"chat_task_id": uuid4().hex, "status": "COLLECTING", "slots": {},
+            target = {"chat_task_id": uuid4().hex, "origin_request_id": request_id,
+                      "status": "COLLECTING", "slots": {},
                       "missing_fields": [], "candidates": [], "skill_version": SKILL_VERSION}
             tasks.append(target)
         touched.append(target["chat_task_id"])
@@ -361,20 +619,34 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             raise ManagerError("已有待确认计划；修改请明确说“改成…”，新转账请说“再给…”", "TASK_ALREADY_PLANNED")
         slots = target["slots"]
         previous = dict(slots)
-        for key in ("recipient", "phone", "card", "amount_fen", "payer", "note"):
+        for key in ("recipient", "phone", "card", "amount_fen", "amount_source_tx_id", "payer", "note"):
             if item.get(key) is not None:
                 slots[key] = item[key]
+        if item.get("clear_note"):
+            slots["note"] = None
+            slots["note_cleared"] = True
+        elif item.get("note") is not None:
+            slots.pop("note_cleared", None)
+        if item.get("amount_ratio"):
+            slots["amount_ratio"] = item["amount_ratio"]
+        elif item.get("amount_fen") is not None:
+            slots.pop("amount_ratio", None)
+            slots.pop("amount_basis_available_fen", None)
+            slots.pop("amount_basis_at", None)
         if item.get("recipient") and item["recipient"] != previous.get("recipient"):
             for key in ("phone", "card", "to_account", "phone_source"):
                 if item.get(key) is None:
                     slots.pop(key, None)
+            slots.pop("no_auto_recipient", None)
         if item.get("phone") != previous.get("phone") and item.get("phone"):
             slots.pop("to_account", None)
+            slots.pop("no_auto_recipient", None)
         if item.get("card") != previous.get("card") and item.get("card"):
             slots.pop("to_account", None)
+            slots.pop("no_auto_recipient", None)
         if item.get("payer") != previous.get("payer"):
             slots.pop("from_account", None)
-        await _resolve(db, user_id, target)
+        await _resolve(db, bank, user_id, target)
         if candidate_id:
             chosen_key = "to_account" if choice["kind"] == "recipient" else "from_account"
             slots[chosen_key] = choice["account_id"]
@@ -387,7 +659,9 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                           operation_id=f"NOVA-{request_id}-{index}",
                           from_account=slots["from_account"], to_account=slots["to_account"],
                           amount=Decimal(slots["amount_fen"]) / 100,
-                          note=slots.get("note"), note_source="manual" if slots.get("note") else "automatic",
+                          note=slots.get("note"),
+                          note_source=("manual" if slots.get("note") else
+                                       "cleared" if slots.get("note_cleared") else "automatic"),
                           recipient_phone=slots.get("phone"), commit=False)
             if target.get("transfer_task_id"):
                 current = await task_snapshot(db, target["transfer_task_id"], user_id)
@@ -398,9 +672,10 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                                                       recipient_card_number=slots.get("card"), **params)
             target["transfer_task_id"] = snapshot["task_id"]
             target["status"] = snapshot["phase"]
-            messages.append(f"任务 {target['chat_task_id'][:8]} 已生成待确认计划，请核对任务卡。")
+            slots.pop("amount_ratio", None)
+            messages.append(f"第{index + 1}笔转账已生成待确认计划，请核对任务卡。")
         else:
-            messages.append(f"任务 {target['chat_task_id'][:8]} 请补充或选择：{'、'.join(target['missing_fields'])}")
+            messages.append(f"第{index + 1}笔转账请补充或选择：{'、'.join(target['missing_fields'])}")
         state["focus_task_id"] = target["chat_task_id"]
     state["tasks"] = tasks
     row.state = state

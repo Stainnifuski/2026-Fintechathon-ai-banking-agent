@@ -70,7 +70,8 @@ async def get(db: AsyncSession, user_id: str, session_id: str) -> dict:
         NovaConversationMessageORM.conversation_id == session_id)
         .order_by(NovaConversationMessageORM.sequence, NovaConversationMessageORM.position))).all()
     return {**_summary(row), "messages": [
-        {"role": item.role, "content": redact(_decrypt(item.content_ciphertext))} for item in messages]}
+        {"role": item.role, "content": redact(_decrypt(item.content_ciphertext)),
+         "request_id": item.request_id} for item in messages]}
 
 
 async def append_turn(db: AsyncSession, user_id: str, session_id: str,

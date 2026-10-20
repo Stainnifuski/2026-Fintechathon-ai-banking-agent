@@ -27,6 +27,7 @@ class UnderstandingError(ValueError):
 DIGITS = dict(zip("零一二三四五六七八九", range(10))) | {"两": 2, "〇": 0}
 PHONE = r"(?:\+86[ -]?)?1[3-9](?:[ -]?[0-9]){9}"
 NUM = r"[+-]?(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二三四五六七八九]+)?)"
+NOTE_SEPARATOR = r"[，,]?\s*(?:备注|用途)(?:\s*(?:改成|改为|修改为|设为|设置为|是|为|：|:))?\s*"
 
 
 def amount_fen(text: str) -> int:
@@ -73,7 +74,7 @@ def scope_guard(message: str) -> bool:
 
 def validate_amount_language(message: str) -> None:
     """保守拒绝数额歧义；备注中的数字不参与参数提取。"""
-    text = re.split(r"[，,]?\s*(?:备注|用途)[：:\s]*", message, maxsplit=1)[0]
+    text = re.split(NOTE_SEPARATOR, message, maxsplit=1)[0]
     text = re.sub(PHONE, "", text)
     if re.search(r"负|大约|大概|左右|或者|还是|到\d|至\d|\d[-~～]\d|半|角|毛|分(?!钟)", text):
         raise UnderstandingError("金额不明确，请使用一个大于0、最多两位小数的人民币金额")
@@ -87,14 +88,15 @@ def validate_amount_language(message: str) -> None:
 
 def offline_extract(message: str, context: dict) -> Extraction:
     text = message.strip()
-    if scope_guard(re.split(r"[，,]?\s*(?:备注|用途)[：:\s]*", text, maxsplit=1)[0]): return Extraction(intent="unsupported")
+    if scope_guard(re.split(NOTE_SEPARATOR, text, maxsplit=1)[0]): return Extraction(intent="unsupported")
     if text in {"好的", "好", "确认", "确认转账", "取消", "算了", "执行"}: return Extraction(intent="control")
     if re.search(r"结果|成功了吗|状态|进度", text): return Extraction(intent="status")
     clear_note = bool(re.search(r"清空备注|不要备注|删除备注|无备注", text))
     note = None
-    parts = re.split(r"[，,]?\s*(?:备注|用途)[：:\s]*", text, maxsplit=1)
+    parts = re.split(NOTE_SEPARATOR, text, maxsplit=1)
     text = parts[0].strip(" ，,")
-    if len(parts) == 2: note = parts[1]
+    if len(parts) == 2 and not clear_note:
+        note = parts[1].strip()
     payer = None
     payer_match = re.search(r"(?:从|用)(.+?)(?:账户|卡)", text)
     if not payer_match:
@@ -175,7 +177,7 @@ class NLUEngine:
         self.mode = "model" if model else get_mode()
 
     async def extract(self, message: str, context: dict) -> Extraction:
-        parameter_text = re.split(r"[，,]?\s*(?:备注|用途)[：:\s]*", message, maxsplit=1)[0]
+        parameter_text = re.split(NOTE_SEPARATOR, message, maxsplit=1)[0]
         if scope_guard(parameter_text): return Extraction(intent="unsupported")
         validate_amount_language(message)
         if self.mode == "offline": return offline_extract(message, context)
