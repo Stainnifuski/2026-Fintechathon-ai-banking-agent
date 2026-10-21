@@ -12,12 +12,9 @@ from fastapi.encoders import jsonable_encoder
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from sqlalchemy import select
 
 from ...domain.time import BUSINESS_TIMEZONE, utc_iso, utc_now
-from ...models.account import AccountORM
-from ...models.transaction import TransactionORM
-from ...models.user import UserORM
+from ..bank.nova_transfer_facts import owned_outgoing_transfer, historical_recipient
 from .llm import LLMError, get_mode, llm
 from .nova_tools import ToolContext, business_tools, query_from, AnalysisArguments
 from .nlu import UnderstandingError, get_nlu
@@ -169,7 +166,7 @@ async def route_request(
             {"role": "system", "content": ROUTER_PROMPT},
             {"role": "user", "content": json.dumps({
                 "conversation_history": history,
-                "page_context": page.model_dump(exclude_none=True),
+                "page_context": page.model_dump(mode="json", exclude_none=True),
                 "transfer_tasks": task_context,
                 "message": message,
             }, ensure_ascii=False)},
@@ -207,14 +204,7 @@ async def manage_transfer_request(
             return {"error": "TRANSFER_TASK_NOT_FOUND",
                     "message": "指定的转账任务不存在或不属于当前会话"}
     if arguments.amount_source_tx_id is not None:
-        source = await context.db.scalar(select(TransactionORM).join(
-            AccountORM, TransactionORM.account_id == AccountORM.account_id,
-        ).where(
-            TransactionORM.tx_id == arguments.amount_source_tx_id,
-            TransactionORM.type == "transfer_out",
-            TransactionORM.status == "completed",
-            AccountORM.user_id == context.user_id,
-        ))
+        source = await owned_outgoing_transfer(context.db, context.user_id, arguments.amount_source_tx_id)
         if source is None or source.amount_fen != arguments.amount_fen:
             return {"error": "TRANSFER_AMOUNT_SOURCE_INVALID",
                     "message": "金额与本人已完成转出流水不一致，请重新查询"}
@@ -224,25 +214,12 @@ async def manage_transfer_request(
         )
     if arguments.history_reference is not None:
         reference = arguments.history_reference
-        source = await context.db.scalar(select(TransactionORM).join(
-            AccountORM, TransactionORM.account_id == AccountORM.account_id,
-        ).where(
-            TransactionORM.tx_id == reference.tx_id,
-            TransactionORM.type == "transfer_out",
-            TransactionORM.status == "completed",
-            AccountORM.user_id == context.user_id,
-        ))
+        source = await owned_outgoing_transfer(context.db, context.user_id, reference.tx_id)
         if source is None:
             return {"error": "TRANSFER_HISTORY_REFERENCE_INVALID",
                     "message": "历史引用不是本人的已完成转出流水"}
-        recipient_account = await context.db.get(AccountORM, source.counterparty)
-        recipient_user = (
-            await context.db.get(UserORM, recipient_account.user_id)
-            if recipient_account is not None else None
-        )
-        if (recipient_account is None or recipient_user is None
-                or recipient_account.status != "active" or recipient_user.status != "active"
-                or recipient_account.user_id == context.user_id):
+        recipient = await historical_recipient(context.db, context.user_id, source.counterparty)
+        if recipient is None:
             return {"error": "TRANSFER_HISTORY_RECIPIENT_UNAVAILABLE",
                     "message": "该历史流水的收款账户当前不可用于新转账"}
         history_fields = {
@@ -252,8 +229,8 @@ async def manage_transfer_request(
         }
         if reference.reuse_recipient:
             history_fields.update(
-                recipient=recipient_user.name,
-                to_account=recipient_account.account_id,
+                recipient=recipient.name,
+                to_account=recipient.account_id,
             )
         if reference.reuse_amount:
             trusted_fields.update(
@@ -284,7 +261,7 @@ async def manage_transfer_request(
         create_session=True,
         trusted_fields=trusted_fields or None,
         conversation_history=context.conversation_history or [],
-        page_context=context.page.model_dump(exclude_none=True),
+        page_context=context.page.model_dump(mode="json", exclude_none=True),
         current_tool_results=context.current_tool_results or [],
         goal_plan=context.goal_plan,
     )

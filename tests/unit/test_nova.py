@@ -13,6 +13,25 @@ from backend.app.routers.nova import router
 from backend.app.middleware.auth import create_access_token
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('page_data', [
+    {'page': 'insights', 'observed_as_of': '2026-10-20T10:00:00+08:00'},
+    {'page': 'thirdParty', 'calendar': {'visible_month': '2026-10', 'selected_date': '2026-10-20',
+        'selected_event': {'event_id': 'test-event', 'starts_at': '2026-10-20T10:00:00+08:00'}}},
+])
+async def test_router_serializes_page_timestamps_before_model_call(page_data):
+    from backend.app.schemas.nova import PageContext
+    class Client:
+        async def generate_structured(self, **kwargs):
+            payload = json.loads(kwargs['messages'][1]['content'])
+            assert payload['page_context'] == PageContext.model_validate(page_data).model_dump(mode='json', exclude_none=True)
+            class Result:
+                data = nova.RequestRoute(mode='direct_react', domains=['time'], has_dependencies=False)
+            return Result()
+    result = await nova.route_request(Client(), '现在几点？', [], PageContext.model_validate(page_data), None)
+    assert result.domains == ['time']
+
+
 def tool_response(arguments='{}', name='get_current_time'):
     return httpx.Response(200, json={"choices": [{"finish_reason": "tool_calls", "message": {
         "role": "assistant", "content": None, "tool_calls": [{

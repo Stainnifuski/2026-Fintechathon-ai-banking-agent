@@ -147,7 +147,9 @@ class CandidateService:
         excluded=state.displayed | {entry['family_id'] for entry in state.selected.values()}
         pool={f.family_id:f for f in result.family_candidates};remaining=set(pool)-excluded
         try:
-            if hasattr(self.selector,'select_batch'):
+            if state.filter.mode=='general' and state.filter.bucket is not None:
+                selected=secrets.SystemRandom().sample(sorted(remaining),min(3,len(remaining)))
+            elif hasattr(self.selector,'select_batch'):
                 selected,state.rotation_position=self.selector.select_batch(result.family_candidates,excluded,3,state.rotation_position)
             else:selected=self.selector.select(result.family_candidates,excluded,3)
         except ValueError as error:raise CandidateError(str(error),422) from error

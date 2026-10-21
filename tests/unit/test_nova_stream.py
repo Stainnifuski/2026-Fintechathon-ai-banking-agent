@@ -164,7 +164,9 @@ async def test_stream_endpoint_auth_validation_and_events(monkeypatch):
         monkeypatch.setattr(nova, 'chat', streaming)
         response = await client.post('/api/v1/nova/chat/stream', json={'message': '我的卡'})
         assert 'event: tool' in response.text
-        assert parse_events(response.text) == [
+        events = parse_events(response.text)
+        assert events[-1].pop('session_id').startswith('NOVA-')
+        assert events == [
             {'type': 'tool', 'name': 'list_cards'}, {'type': 'delta', 'text': '你有'}, {'type': 'delta', 'text': '两张卡'},
             {'type': 'done', 'reply': '你有两张卡', 'mode': 'model', 'tool_calls': []}]
 

@@ -15,6 +15,12 @@ export function wealthRequestFailure(error:unknown):string {
 /** User-facing explanations; server codes remain in network/audit evidence only. */
 export function wealthFeedback(raw:string):string {
  const rules:[string[],string][]=[
+  [['PRODUCT_SET_INFEASIBLE'],'所选产品尚未覆盖模型需要的配置板块，请补选相应活钱、稳健或进取产品后继续核对。'],
+  [['PLANNING_AVAILABLE_CASH_CHANGED'],'可用现金已经变化，请重新读取账户资料，再填写保留现金或本次投资金额。尚未下单或占款。'],
+  [['PLANNING_CASH_OUT_OF_RANGE'],'保留现金需在0至当前可用现金之间，请检查金额，最多输入两位小数。'],
+  [['PLANNING_SELECT_CASH_PRODUCT'],'保留现金低于模型活钱目标，请在活钱候选中选择合格产品补足，或提高保留现金后重新计算。'],
+  [['PLANNING_CASH_POLICY_INFEASIBLE','PLANNING_NONCASH_UNAVAILABLE'],'当前产品与风险规则无法满足这笔现金安排，请调整所选产品或增加保留现金后重新计算。'],
+  [['PLANNING_MODEL_RATIO_FIXED'],'稳健和进取比例由模型推荐，请返回上方修改现金金额或所选产品后重新计算。'],
   [['BANK_UNAVAILABLE','BANK_TIMEOUT','database is locked'],'银行资料或最新报价读取暂未完成，尚未生成交易预览。请稍后再次点击“核对差额与准备预览”；原方案和已受理交易保留。'],
   [['ASSESSMENT_UNCONFIRMED'],'风险评估已填写，但还没有本人确认。请展开上方“本人风险评估”，点击“本人确认上述评估结果并继续原需求”，再重新发起推荐或规划。'],
   [['ASSESSMENT_PURCHASE_FORBIDDEN'],'当前正式风险评估结果不允许申购。请先查看“本人风险评估”中的结果说明；可以继续查询产品、订单和持仓，不能跳过评估限制购买。'],

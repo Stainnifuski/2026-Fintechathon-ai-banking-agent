@@ -42,7 +42,8 @@ def execution_targets(plan,snapshot,payment_account_id=None):
         return plan,None # compatible already-bound legacy provider
     chosen={(p['product_id'],p['product_version']) for p in plan['selected_positions']}
     missing=[p for p in plan.get('advised_positions',[]) if
-        (p['product_id'],p['product_version']) not in chosen and p['target_fen']!=p.get('current_fen',0)]
+        (p['product_id'],p['product_version']) not in chosen and p['target_fen']!=p.get('current_fen',0)
+        and not ('PLANNING_CASH_BUDGET_V1' in plan.get('reasons',[]) and p.get('account_ids'))]
     if missing:
         reject('方案中还有未纳入已校验选择的建议产品。请先在推荐结果中勾选需要的产品，点击“校验所选产品与比例”，再准备差额；尚未下单或占款。',
                'PORTFOLIO_SELECTION_REQUIRED',409)

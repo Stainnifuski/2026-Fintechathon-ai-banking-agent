@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type {ReactNode} from 'react';
 import type { CandidateGroup } from '../../services/wealth';
 import { money } from '../../services/wealth';
 import ProductDetail from './ProductDetail';
@@ -20,8 +21,9 @@ interface Props {
   loadDetail?: ProductDetailLoader; loadComparison?: ComparisonLoader;
   busy?: boolean; error?: string;
   showBuckets?: boolean;
+  beforeContinue?:ReactNode;continueDisabled?:boolean;planningRefresh?:boolean;
 }
-export default function ProductPicker({ groups, scopeKey, selection, onSelectionChange, onRefreshGroup, onContinue, loadDetail, loadComparison, busy = false, error, showBuckets = true }: Props) {
+export default function ProductPicker({ groups, scopeKey, selection, onSelectionChange, onRefreshGroup, onContinue, loadDetail, loadComparison, busy = false, error, showBuckets = true,beforeContinue,continueDisabled=false,planningRefresh=false }: Props) {
   const state = selectionForScope(selection, scopeKey);
   const [detailId, setDetailId] = useState<{id:string;version:number} | null>(null);
   const [comparing, setComparing] = useState(false);
@@ -33,7 +35,7 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
     {groups.map((group, index) => {
       const message = groupMessage(group);
       return <section className="picker-group" key={`${group.bucket ?? 'general'}-${index}`} aria-label={`${bucketNames[group.bucket || ''] || '产品'}候选组`}>
-        <div className="consumer-card-head"><h3>{bucketNames[group.bucket || ''] || '产品'}候选</h3>{group.next_cursor && <button className="secondary" disabled={busy} onClick={() => onRefreshGroup(group, state.items.map(item => item.candidate.family_id))}>换一批{bucketNames[group.bucket || ''] || '产品'}</button>}</div>
+        <div className="consumer-card-head"><h3>{bucketNames[group.bucket || ''] || '产品'}候选</h3>{group.bucket!=='cash_management' && (group.next_cursor || planningRefresh && group.items.length>0) && <button className="secondary" disabled={busy} onClick={() => onRefreshGroup(group, state.items.map(item => item.candidate.family_id))}>换一批{bucketNames[group.bucket || ''] || '产品'}</button>}</div>
         {message ? <p className="consumer-empty">{message}</p> : !group.items.length ? <p>当前没有候选资料。</p> : <div className="picker-cards">{group.items.map(candidate => {
           const share = displayedShare(candidate, state);
           const selected = state.items.some(item => item.candidate.family_id === candidate.family_id);
@@ -54,7 +56,8 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
     })}
     <section className="picker-selection" aria-label="已选产品"><div className="consumer-card-head"><h3>已选产品 · 换批后保留</h3><button className="secondary" disabled={state.items.length < 2} onClick={() => setComparing(true)}>比较已选产品</button></div>
       {!state.items.length ? <p>勾选产品后会显示在这里；无需先打开详情或比较。</p> : <ul>{state.items.map(({ candidate, share }) => <li key={candidate.family_id}><span><strong>{candidate.name}{share.share_class ? ` · ${share.share_class}类` : ''}</strong><small>{showBuckets?`${bucketNames[candidate.bucket]} · `:''}{share.product_id} · v{share.product_version}</small></span><button className="secondary" onClick={()=>setDetailId({id:share.product_id,version:share.product_version})}>查看已选产品详情</button><button className="secondary" onClick={() => onSelectionChange(toggleProduct(state, candidate))}>移除{candidate.name}</button></li>)}</ul>}
-      {onContinue && <button disabled={busy || !state.items.length} onClick={() => onContinue(state)}>继续核对所选产品</button>}
+      {onContinue&&beforeContinue}
+      {onContinue && <button disabled={busy || !state.items.length || continueDisabled} onClick={() => onContinue(state)}>继续核对所选产品</button>}
     </section>
     {detailId && <ProductDetail productId={detailId.id} productVersion={detailId.version} onClose={() => setDetailId(null)} loadDetail={loadDetail} />}
     {comparing && <ProductComparison products={state.items.map(item => ({ product_id: item.share.product_id, name: `${item.candidate.name}${item.share.share_class ? ' · '+item.share.share_class+'类' : ''}` }))} onClose={() => setComparing(false)} loadComparison={loadComparison} />}

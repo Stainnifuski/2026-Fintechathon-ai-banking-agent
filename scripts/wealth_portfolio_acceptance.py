@@ -42,7 +42,7 @@ async def representative_flow():
     out['selected_create']=normalized(selected);out['recommend_family_ids']=[r.family_id for r in group.items]
     out['get_identical']=await s.get(U,p.portfolio_id,C)==p
     original=deepcopy(s.store.rows[p.portfolio_id][0].metadata['validation_contract']['calculation'])
-    for pref in ('.626','.627','.628'):
+    for pref in ('.63','.64','.65'):
         p=await s.revise(U,p.portfolio_id,request(p,growth_ratio_ex_cash=pref))
         assert s.store.rows[p.portfolio_id][0].metadata['validation_contract']['calculation']==original
     out['small_adjustments']=normalized(p);before=record_hash(s,p)

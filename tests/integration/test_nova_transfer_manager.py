@@ -1,6 +1,6 @@
 """Unified NOVA transfer drafts and handoff to the existing state machine."""
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import pytest
 import httpx
@@ -143,7 +143,7 @@ async def test_legacy_transfer_account_code_is_displayed_as_verified_person_name
     assert display_counterparty(outgoing, names) == "李四"
     assert display_counterparty(incoming, names) == "张三"
     page = await bill_service.transactions(db, "U1", BillQuery(period="month", date="2026-10"),
-                                           now=when)
+                                           as_of=when+timedelta(seconds=1))
     assert page["items"][0]["counterparty"] == "李四"
 
 

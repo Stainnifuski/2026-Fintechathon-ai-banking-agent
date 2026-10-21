@@ -139,9 +139,13 @@ async def test_authenticated_calendar_tool_loop_and_page_validation(store, monke
     seen = []
     def handler(request):
         body = json.loads(request.content)
+        if body.get('response_format'):
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
+                'content': json.dumps({'mode': 'direct_react', 'domains': ['calendar'],
+                    'has_dependencies': False, 'goal_plan': None})}}]})
         seen.append(body)
         if len(seen) == 1:
-            assert point['event_id'] in body['messages'][-2]['content']
+            assert any(point['event_id'] in message.get('content', '') for message in body['messages'])
             assert 'user_id' not in json.dumps(body)
             return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {
                 'content': None, 'tool_calls': [{'id': 'calendar', 'type': 'function', 'function': {

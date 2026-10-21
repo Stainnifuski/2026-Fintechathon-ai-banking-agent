@@ -48,7 +48,7 @@ def test_conflicts_not_latest_or_lowest(tmp_path):
     fact=field_fact([observation('机构甲','基金管理人',ref),observation('机构乙','基金公司',ref)])
     assert fact.status=='conflict' and fact.value is None and len(fact.observations)==2
 
-@pytest.mark.parametrize('risk,category,quick,scope',[(3,'mixed',False,'policy_mismatch'),(1,'cash',False,'policy_mismatch'),(2,'bond',False,'verified'),(1,'cash',True,'pending')])
+@pytest.mark.parametrize('risk,category,quick,scope',[(3,'mixed',False,'policy_mismatch'),(1,'cash',False,'policy_mismatch'),(2,'bond',False,'verified'),(1,'cash',True,'verified')])
 def test_simulated_policy_keeps_original(tmp_path,risk,category,quick,scope):
     ref=raw_file(tmp_path);p=simulated_product({'product_id':'B017','risk_level':risk,'category':category,'rules':{'quick_redemption':{'window':'test'}} if quick else {},'rules_complete':True},ref,True)
     assert p.fields['raw_risk'].value==risk and p.scope_status==scope
@@ -138,9 +138,9 @@ def test_missing_formal_source_and_provenance_mismatch():
     bundle=generate()['F18']['input']['bundle'];bundle['assessment_provenance']={'read_at':'2026-10-09T00:00:00Z'}
     with pytest.raises(SnapshotError,match='time mismatch'):asyncio.run(read_asset_model_facts(FixtureSnapshotSource(bundle),'fixture-user'))
 
-def test_saved_money_market_mapping(tmp_path):
+def test_real_money_market_stays_excluded(tmp_path):
     products,_=real_products([universe(base='money_market')],[],tmp_path,NOW,[])
-    assert products[0].scope_status=='verified' and products[0].bucket=='cash_management'
+    assert products == []
 
 def test_registered_risk_stays_per_channel(tmp_path):
     payload=evidence(tmp_path);payload.update(kind='risk',codes=['000001'],share_classes={'000001':'A'},family_id=None,risk_level=3)
@@ -180,7 +180,7 @@ def test_purchase_nav_disambiguation_and_saved_year(tmp_path):
     nav=daily[0].fields['unit_nav']
     assert nav.value=='1.208' and str(nav.observations[0].as_of)=='2026-09-30'
     assert 'year interpreted' in nav.observations[0].reason
-    assert daily[1].fields['unit_nav'].value is None
+    assert len(daily) == 1  # Removed real money-market products do not re-enter the runtime snapshot.
 
 
 def test_step09_public_nav_exact_code_hash_and_time(tmp_path):

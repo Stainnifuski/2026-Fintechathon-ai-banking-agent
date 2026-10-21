@@ -9,13 +9,13 @@ export interface PortfolioAllocationProps {
   onAdjust: (selection: PortfolioSelection) => Promise<PortfolioPlan>;
   onPreferenceChange: (selection: PortfolioSelection) => Promise<PortfolioPlan>;
   onAccepted?: (plan: PortfolioPlan) => void;
-  showProductEditor?: boolean;
+  showProductEditor?: boolean;modelOnly?:boolean;
   assetTotals?: { available_cash_fen: number | null; held_fen: number | null } | null;
 }
 const names = { cash_management: '活钱', stable: '稳健', growth: '进取' };
 const yuan = (fen: number | null | undefined) => fen == null ? '未知' : `¥${(fen / 100).toFixed(2)}`;
 const percent = (ratio: string | number) => `${(Number(ratio) * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%`;
-export default function PortfolioAllocation({ plan, snapshot, modelView, assetTotals, loading = false, error, readOnly = false, controlHint, contextId, onAdjust, onPreferenceChange, onAccepted, showProductEditor = true }: PortfolioAllocationProps) {
+export default function PortfolioAllocation({ plan, snapshot, modelView, assetTotals, loading = false, error, readOnly = false, controlHint, contextId, onAdjust, onPreferenceChange, onAccepted, showProductEditor = true,modelOnly=false }: PortfolioAllocationProps) {
   const [accepted, setAccepted] = useState<PortfolioPlan | null>(plan);
   const [draft, setDraft] = useState(''); const [preference, setPreference] = useState('');
   const [pending, setPending] = useState(false); const [failure, setFailure] = useState<string | null>(null);
@@ -63,6 +63,11 @@ export default function PortfolioAllocation({ plan, snapshot, modelView, assetTo
     finally { if (stamp === generation.current) { busy.current = false; setPending(false); } }
   };
   const draftAmounts = accepted && (accepted.advised_positions??[]).map(r => { try { return { bucket: r.bucket, fen: ratioFen(percentToRatio(percentages[r.product_id] ?? ''), accepted.basis_fen) }; } catch { return { bucket: r.bucket, fen: null }; } });
+  if(modelOnly)return <section className={styles.panel} aria-label="整体配置"><h2>整体资产配置</h2>
+    <p>总资产 {yuan(accepted?.basis_fen)} · 保留现金 {yuan(accepted?.cash_residual_fen)}。现金计入活钱；以下为模型推荐配置，尚未交易。</p>
+    {accepted&&<><table><thead><tr><th>板块</th><th>当前资产</th><th>配置比例</th><th>目标金额</th></tr></thead><tbody>{accepted.buckets.map(b=><tr key={b.bucket}><td>{names[b.bucket]}</td><td>{yuan(b.current_fen)}</td><td>{percent(b.target_ratio)}</td><td>{yuan(b.target_fen)}</td></tr>)}</tbody></table>
+    {(accepted.advised_positions??[]).filter(p=>p.target_fen>0||p.current_fen>0).map(p=><p key={p.product_id}>{p.name} · 当前 {yuan(p.current_fen)} → 目标 {yuan(p.target_fen)}</p>)}</>}
+  </section>;
   return <section className={styles.panel} aria-label="整体配置">
     <h2>整体资产配置</h2><p className={styles.hint}>{controlHint || (readOnly ? '只读模式，不能修改方案' : '本人配置草稿；目标不等于购买授权')}</p>
     {(error || failure) && <div role="alert" className={styles.error}>{portfolioExplanation(failure || error!)}</div>}

@@ -6,18 +6,13 @@ import time
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models.account import AccountORM
-from ...models.contact import ContactORM
 from ...models.nova_task import NovaMessageReceiptORM, NovaSessionORM, NovaTaskMessageORM
-from ...models.user import UserORM
-from ...models.transfer_recipient_history import TransferRecipientHistoryCutoffORM
 from ...integrations.bank_api import BankApi, BankApiError
-from ..bank.contacts import _transfer_methods
+from ..bank.nova_transfer_facts import known_recipients as _known, card_matches as _card_match, historical_recipient
 from ..bank.transfer_cards import transfer_card_number
-from ..bank.account_scope import isolated_account_ids
 from ..bank.transfer_service import BankError, transfer_directory
 from ..bank.nova_conversations import redact as redact_sensitive
 from ..orchestration import TaskError, create_transfer_task, modify_task, task_snapshot
@@ -297,38 +292,8 @@ def _split(message: str) -> list[str]:
     return chunks
 
 
-async def _known(db: AsyncSession, user_id: str, name: str) -> list[dict]:
-    contacts = (await db.scalars(select(ContactORM).where(
-        ContactORM.user_id == user_id,
-        (ContactORM.name == name) | (ContactORM.nickname == name)))).all()
-    found = [{"name": row.name, "phone": row.phone if row.phone_known else None,
-              "card": row.account_number if row.card_known else None, "account_hint": None,
-              "source": "saved_contact"} for row in contacts]
-    if found:
-        return found
-    cutoff = await db.get(TransferRecipientHistoryCutoffORM, user_id)
-    history = await _transfer_methods(db, user_id, cutoff.cleared_at if cutoff else None)
-    for row in history.values():
-        if row["name"] == name:
-            found.append({"name": row["name"], "phone": row["phone_number"],
-                          "card": row["card_number"],
-                          "account_hint": row["card_account_id"] or row["phone_account_id"],
-                          "source": "transfer_history"})
-    return found
 
 
-async def _card_match(db: AsyncSession, user_id: str, card: str, name: str | None) -> list[dict]:
-    accounts = (await db.scalars(select(AccountORM).where(
-        AccountORM.status == "active", AccountORM.account_id.not_in(isolated_account_ids())))).all()
-    result = []
-    for account in accounts:
-        if account.user_id == user_id or transfer_card_number(account.account_id) != card:
-            continue
-        owner = await db.get(UserORM, account.user_id)
-        if owner and owner.status == "active" and (name is None or owner.name == name):
-            result.append({"account_id": account.account_id, "recipient_name": owner.name,
-                           "label": f"{owner.name} · 账户尾号{card[-4:]}"})
-    return result
 
 
 async def _resolve(db: AsyncSession, bank: BankApi, user_id: str, task: dict) -> None:
@@ -376,20 +341,18 @@ async def _resolve(db: AsyncSession, bank: BankApi, user_id: str, task: dict) ->
         return
     history_recipient = None
     if slots.get("history_reference_tx_id") and slots.get("to_account"):
-        account = await db.get(AccountORM, slots["to_account"])
-        owner = await db.get(UserORM, account.user_id) if account is not None else None
-        if (account is None or owner is None or account.user_id == user_id
-                or account.status != "active" or owner.status != "active"):
+        recipient = await historical_recipient(db, user_id, slots["to_account"])
+        if recipient is None:
             task["missing_fields"], task["status"] = (
                 ["历史收款账户当前不可用"], "COLLECTING"
             )
             return
-        slots["recipient"] = owner.name
-        name = owner.name
+        slots["recipient"] = recipient.name
+        name = recipient.name
         history_recipient = {
-            "account_id": account.account_id,
-            "recipient_name": owner.name,
-            "label": f"{owner.name} · 账户尾号{transfer_card_number(account.account_id)[-4:]}",
+            "account_id": recipient.account_id,
+            "recipient_name": recipient.name,
+            "label": f"{recipient.name} · 账户尾号{transfer_card_number(recipient.account_id)[-4:]}",
         }
     known = await _known(db, user_id, name)
     verified_name = known[0]["name"] if len({item["name"] for item in known}) == 1 else name

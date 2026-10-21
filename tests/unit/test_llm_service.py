@@ -342,7 +342,21 @@ async def test_lifecycle_always_releases_llm_and_database(monkeypatch, failure, 
     monkeypatch.setattr(main, "close_db", close_db)
     monkeypatch.setattr(main, "get_bank_api", lambda: object())
     monkeypatch.setattr(main.llm, "aclose", close_llm)
-    for name in ("scheduled_transfer_loop", "settlement_loop", "wealth_task_loop"):
+    monkeypatch.setenv('WEALTH_CATALOG_AUTO_UPGRADE', 'false')
+    from contextlib import asynccontextmanager
+    from backend.app.services.bank import wealth_retire_pending, bill_foundation
+    async def no_bank_work(*args, **kwargs):
+        return {}
+    class Session:
+        async def commit(self): pass
+    @asynccontextmanager
+    async def sessions():
+        yield Session()
+    monkeypatch.setattr(main, 'AsyncSessionLocal', sessions)
+    monkeypatch.setattr(wealth_retire_pending, 'retire', no_bank_work)
+    monkeypatch.setattr(bill_foundation, 'refresh_all', no_bank_work)
+    monkeypatch.setattr(main.app.state.wealth_portfolio_source, 'preload', no_op)
+    for name in ("scheduled_transfer_loop", "wealth_task_loop"):
         monkeypatch.setattr(main, name, worker)
 
     async def run():
@@ -357,7 +371,7 @@ async def test_lifecycle_always_releases_llm_and_database(monkeypatch, failure, 
     else:
         await run()
     assert events[-2:] == ["llm", "database"]
-    assert events.count("worker") == (0 if failure == "initialization" else 3)
+    assert events.count("worker") == (0 if failure == "initialization" else 2)
     if failure == "worker":
         assert "后台任务" in caplog.text and "RuntimeError" in caplog.text
 

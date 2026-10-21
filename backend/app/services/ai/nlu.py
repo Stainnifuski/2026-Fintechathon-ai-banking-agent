@@ -177,7 +177,7 @@ def offline_extract(message: str, context: dict) -> Extraction:
             ):
                 recipient_phone, recipient = possible_phone, None
     intent = "modify" if clear_note or re.search(r"改成|改为|换|修改|不对", text) else "transfer" if "转" in text or "给" in text else "supplement"
-    if not any([recipient, recipient_phone, amount, payer, note is not None]) and "按手机号转账" not in text: intent = "unknown"
+    if not any([recipient, recipient_phone, amount, payer, note is not None, clear_note]) and "按手机号转账" not in text: intent = "unknown"
     return Extraction(intent=intent, recipient=recipient, recipient_phone=recipient_phone, amount_text=amount, payer=payer, note=note)
 
 

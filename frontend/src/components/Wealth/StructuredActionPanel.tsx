@@ -10,6 +10,8 @@ import {initialTableState,currentTableState} from './tableState';
 import {positionTableData} from './tableData';
 import SingleTradePreview from './SingleTradePreview';
 import TargetPurchase from './TargetPurchase';
+import PlanningCashInput from './PlanningCashInput';
+import {planningCash,availablePlanningCash,type CashDraft} from './planningCash';
 import RedemptionDialog from './RedemptionDialog';
 
 import ProductDetail from './ProductDetail';
@@ -42,6 +44,10 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
   const [portfolio,setPortfolio]=shared('portfolio');
   const [ratios,setRatios]=shared('ratios');
   const [reviewing,setReviewing]=useState(false);
+  const [cashDraft,setCashDraft]=useState<CashDraft>({field:'reserve',text:''});
+  const availableCash=availablePlanningCash(ready?.assets.cash??[]);
+  const cashBudget=planningCash(availableCash,cashDraft);
+  useEffect(()=>{setCashDraft({field:'reserve',text:''});setReviewing(false);},[userId,contextId,availableCash]);
   const [results,setResults]=useState<Partial<Record<ResultSlot,ActionResult>>>({});
   const [pending,setPending]=useState<ResultSlot|null>(null);const [reading,setReading]=useState(true);const [reload,setReload]=useState(0);const busy=pending!==null||reading;
   const [activityNotice,setActivityNotice]=useState('');
@@ -122,14 +128,14 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       if(action==='plan_portfolio'&&response.status==='ok'){
         const plan=readPortfolioPlan(response.data,ready.assets.context_id??'legacy-v1');
         for(const group of plan.candidate_groups)assertCurrentCandidates(group,ready.products);
-        setPortfolio(plan);setCandidateGroups(plan.candidate_groups);setReviewing(true);
+        setPortfolio(plan);if(!params.selected)setCandidateGroups(plan.candidate_groups);setReviewing(params.cash_reserve_fen!==undefined);
         setCandidateSelection(previous=>previous.items.length?previous:planProductSelection(plan));
       }
       if(action==='revise_portfolio'&&response.status==='ok')setPortfolio(readPortfolioPlan(response.data,contextId));
       if(action==='recommend_products'&&response.status==='ok'){
         const group=readCandidateGroup(response.data);assertCurrentCandidates(group,ready.products);
         if(!sameCandidateFilter(group.filter,params.filter))throw new Error('推荐结果与当前筛选条件不一致，请重新查询。');
-        setCandidateGroups(previous=>params.cursor?replaceCandidateGroup(previous,group):[group]);
+        setCandidateGroups(previous=>params.cursor||workflow==='planning'?replaceCandidateGroup(previous,group):[group]);
       }
       if(response.status==='ok'&&action==='list_positions'){
         const page=response.data as Page;const expected=ready.assets.asset_summary?.asset_scope_id;
@@ -139,7 +145,7 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
       }
       setResults(previous=>({...previous,[slot]:response}));return response;
     }catch(reason){const message=wealthRequestFailure(reason);if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,message);if(throwOnError)throw new Error(message);}finally{if(requestNumber===latestRequest.current)setPending(null);}
-  },[ready,reading]);
+  },[ready,reading,workflow]);
   const loadDetail=useCallback<ProductDetailLoader>(async(id,period,version)=>{
     const response=await run('show_product_detail',{product_id:id,product_version:version,period},version?{object_type:'products',ids:[`${id}:${version}`]}:undefined);
     if(response?.status!=='ok')throw new Error(response?.message??'详情查询失败');
@@ -212,9 +218,9 @@ export default function StructuredActionPanel({userId,revision,onActivity}:{user
         <button disabled={mode==='name'&&!nameQuery.trim()} onClick={()=>recommend(mode==='name'?{mode:'name',name_query:nameQuery.trim()}:{mode:'category',category})}>匹配产品</button>
       </>}
       {pending==='planning'&&<p role="status">{workflow==='planning'?'正在计算整体配置…':'正在匹配产品…'}，请等待当前请求完成。</p>}{renderResult('planning')}
-      {candidateGroups.length>0&&ready&&<><ProductPicker showBuckets={workflow==='planning'} groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={next=>{setCandidateSelection(next);setReviewing(false);}} busy={busy}
-        onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:ids})}
-        loadDetail={loadDetail} loadComparison={loadComparison} onContinue={workflow==='planning'?()=>{const selected=candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class}));const keys=(rows:{product_id:string;product_version:number}[])=>rows.map(r=>`${r.product_id}:${r.product_version}`).sort().join(',');if(!portfolio||keys(selected)!==keys(portfolio.selected_positions))void run('plan_portfolio',{selected});else setReviewing(true);}:undefined}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。</p>{workflow==='target'&&<TargetPurchase selection={candidateSelection} assets={ready.assets} accountId={ready.accountId} onActivity={onActivity}/>}</>}
+      {candidateGroups.length>0&&ready&&<><ProductPicker planningRefresh={workflow==='planning'} continueDisabled={!cashBudget} beforeContinue={<PlanningCashInput available={availableCash} draft={cashDraft} onChange={next=>{setCashDraft(next);setReviewing(false);}}/>} showBuckets={workflow==='planning'} groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={next=>{setCandidateSelection(next);setReviewing(false);}} busy={busy}
+        onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:workflow==='planning'?[...ids,...group.items.map(i=>i.family_id)]:ids,selected:workflow==='planning'?candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class})):undefined})}
+        loadDetail={loadDetail} loadComparison={loadComparison} onContinue={workflow==='planning'?()=>{const selected=candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class}));if(cashBudget)void run('plan_portfolio',{selected,cash_reserve_fen:cashBudget.reserve,available_cash_fen:availableCash});}:undefined}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。</p>{workflow==='target'&&<TargetPurchase selection={candidateSelection} assets={ready.assets} accountId={ready.accountId} onActivity={onActivity}/>}</>}
       {workflow==='planning'&&portfolio&&reviewing&&<StructuredPortfolioReview key={`${portfolio.portfolio_id}:${portfolio.snapshot_id}:${revision}:${reload}:${controlKey}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={()=>{setActivityNotice('银行操作已返回，资金与持仓已刷新；请以银行实际结果为准。');onActivity();}}
         onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)},true);if(result?.status!=='ok')throw new Error(result?.message??'比例调整未完成，请按当前范围检查输入后重试。');return readPortfolioPlan(result.data,portfolio.context_id??contextId);}}
         onPrepare={async (plan)=>{if(!ready?.assets.cash.some(a=>a.account_id===ready.accountId&&['savings','checking'].includes(a.account_type)))throw new Error('当前理财绑定的借记账户不可用，请刷新账户资料。');const paymentAccountId=ready.accountId;const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id,...(paymentAccountId?{payment_account_id:paymentAccountId}:{})},undefined,true);if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}

@@ -148,13 +148,16 @@ class PortfolioLifecycle:
         return PortfolioPlan.model_validate(plan.model_dump())
 
     async def create(self,user_id: str,request: PortfolioCreate) -> PortfolioPlan:
+        if request.cash_reserve_fen is not None and request.growth_ratio_ex_cash is not None:
+            raise CandidateError('PLANNING_MODEL_RATIO_FIXED',422)
         grant=await self._access(user_id,request.context_id,True)
         facts,index,now,asset,stamp=await self._facts(user_id,grant)
         await self._candidate_binding(user_id,request,grant,facts)
         refs=None if request.selected is None else self._refs(request.selected,facts,index)
         if refs is not None:self._qualify(user_id,refs,facts,index,now)
         result=await self.provider.plan(user_id,request.growth_ratio_ex_cash,refs,
-            _initial_facts=(facts,index,now,asset),_defer_final_validation=True)
+            _initial_facts=(facts,index,now,asset),_defer_final_validation=True,
+            cash_reserve_fen=request.cash_reserve_fen,available_cash_fen=request.available_cash_fen)
         if result.status!='ok' or result.plan is None:raise CandidateError((result.reason_codes or result.missing_fields or ['PORTFOLIO_'+result.status.upper()])[0],422)
         plan=self._decorate(result.plan,result.metadata,refs or [],facts,index,now)
         plan.portfolio_id='portfolio-'+secrets.token_urlsafe(24);plan.version=1
@@ -232,6 +235,7 @@ class PortfolioLifecycle:
         return value.numerator
 
     def _manual(self,record: PortfolioRecord,request: PortfolioSelection,facts: CurrentFacts,index: ProductIndex,now: datetime,asset: AssetModelFacts) -> tuple[PortfolioPlan,dict,list[ShareReference]]:
+        if record.metadata.get('planning_cash') is not None:raise CandidateError('PLANNING_MODEL_RATIO_FIXED',422)
         old=record.plan;meta=record.metadata;T=old.basis_fen;contract=meta['validation_contract'];calc=contract['calculation']
         P=problem(facts.assessment.capacity_level,calc['h'],contract['available'],contract['caps'],contract['p'])
         same_items=[i.model_dump() for i in request.items]==[i.model_dump() for i in old.selected_positions]
@@ -308,6 +312,7 @@ class PortfolioLifecycle:
     async def revise(self,user_id: str,portfolio_id: str,request: PortfolioSelection) -> PortfolioPlan:
         if portfolio_id!=request.portfolio_id:raise CandidateError('PORTFOLIO_PATH_BODY_MISMATCH',422)
         record=await self.store.read(portfolio_id,user_id)
+        if record.metadata.get('planning_cash') is not None:raise CandidateError('PLANNING_MODEL_RATIO_FIXED',422)
         if request.expected_version!=record.plan.version:raise CandidateError('PORTFOLIO_VERSION_STALE')
         if request.snapshot_id!=record.plan.snapshot_id:raise CandidateError('PORTFOLIO_SNAPSHOT_STALE')
         if request.growth_ratio_ex_cash is not None and Decimal(request.growth_ratio_ex_cash)*100%1:
@@ -342,20 +347,27 @@ class PortfolioLifecycle:
             async with candidates.lock:
                 state=candidates._state(user_id,SessionAction(session_id=binding.session_id,expected_version=binding.expected_version))
                 if self.candidate_contexts.get(binding.session_id)!=access_binding(grant) or state.filter!=request.filter or binding.filter!=request.filter:raise CandidateError('PORTFOLIO_CANDIDATE_BINDING_STALE')
+                if state.filter.mode=='general' and state.filter.bucket:
+                    from ...domain.wealth_portfolio_candidates import reliable_family
+                    state.selected={r.product_id:{'reference':r.model_dump(mode='json'),'family_id':reliable_family(index.products[r.product_id],now)[0],'valid':True,'reason_codes':[]} for r in refs}
             raw=await candidates.next_batch(user_id,NextBatchRequest(session_id=binding.session_id,expected_version=binding.expected_version,cursor=request.cursor),_current=(facts,index,now))
             raw['source_kind']=facts.mode;raw['fixture_only']=facts.mode=='fixture'
         else:
             raw=await candidates.candidates(user_id,request.filter,_current=(facts,index,now))
             if raw.get('session'):
                 sid=raw['session']['session_id'];self.candidate_contexts[sid]=access_binding(grant)
-                if refs:
+                if refs or request.excluded_family_ids:
                     from ...domain.wealth_portfolio_candidates import reliable_family,pipeline
                     async with candidates.lock:
-                        state=candidates.sessions[sid];state.displayed=set();state.rotation_position=0
+                        state=candidates.sessions[sid];state.displayed=set(request.excluded_family_ids);state.rotation_position=0
                         state.selected={r.product_id:{'reference':r.model_dump(mode='json'),'family_id':reliable_family(index.products[r.product_id],now)[0],'valid':True,'reason_codes':[]} for r in refs}
                         result=pipeline(index,request.filter,facts,user_id,now)
                         raw.update(candidates._batch(state,result,facts));raw['session']=candidates._view(state)
         group=adapt_candidate_group(raw,index,request.filter)
+        if request.filter.mode=='general' and request.filter.bucket:
+            for card in group.items:
+                card.reason=card.reason.split('类别／代码展示顺序')[0]+'本组随机展示，不代表收益或质量排名。'
+                card.reason_codes=['QUALIFIED_SHARE','RANDOM_PLANNING_DISPLAY']
         if access_binding(await self._access(user_id,request.context_id,False))!=access_binding(grant):
             raise CandidateError('PORTFOLIO_CONTEXT_STALE')
         # 同协议可读会话引用，不替换CandidateGroup或创建额外结果DTO。

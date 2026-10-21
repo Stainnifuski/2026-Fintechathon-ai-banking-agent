@@ -362,6 +362,8 @@ class JointPortfolio:
     async def recommend(self,*,db,user_id,context_id,bank,params):
         _,service=self.bind_browsing(db,user_id,bank)
         p={k:v for k,v in params.items() if k!='selected_family_ids' and v is not None}
+        if p.get('filter',{}).get('mode')=='general' and p.get('filter',{}).get('bucket'):
+            p['excluded_family_ids']=params.get('selected_family_ids') or []
         # B sends the last server-issued cursor; its bound session is resolved server-side.
         if p.get('cursor') and not p.get('candidate_binding'):
             matching=[s for s in self.sessions.values() if s.user_id==user_id and s.cursor==p['cursor']]

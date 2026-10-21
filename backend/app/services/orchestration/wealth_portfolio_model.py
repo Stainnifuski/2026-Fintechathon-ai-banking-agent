@@ -1,4 +1,5 @@
 """01正式计算provider，独立调用，不注册中央应用、不写数据库。"""
+import secrets
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from decimal import Decimal,localcontext
@@ -173,7 +174,7 @@ class PortfolioModelProvider:
         return by_bucket,eligible,positions,missing
 
     async def plan(self,user_id: str,p: str | None=None,selected: Sequence[ShareReference] | None=None,
-                   *,_initial_facts=None,_defer_final_validation=False) -> ModelResult:
+                   *,_initial_facts=None,_defer_final_validation=False,cash_reserve_fen=None,available_cash_fen=None) -> ModelResult:
         # Lifecycle already captured these facts. Reuse only within this call,
         # then its final _fresh rechecks bank, time, assessment and write control.
         facts,index,now,asset=_initial_facts if _initial_facts is not None else await self._facts(user_id)
@@ -192,10 +193,32 @@ class PortfolioModelProvider:
             cap=sum(f.cap_fen or 0 for f in families[bucket].values() if not f.unlimited)
             caps.append(Fraction(cap,T))
         model=allocate(facts.assessment.capacity_level,T,h,available,caps,p)
+        planning_cash=None;fixed_cash=None
+        if cash_reserve_fen is not None:
+            actual_available=sum(a.available_fen for a in s.accounts)
+            if available_cash_fen != actual_available:raise ModelError('PLANNING_AVAILABLE_CASH_CHANGED')
+            if p is not None:raise ModelError('PLANNING_MODEL_RATIO_FIXED')
+            from ...domain.wealth_planning_cash import cash_budget
+            adjusted,fixed_cash=cash_budget(model['amounts_fen'],T,cash_reserve_fen,actual_available,
+                sum(a.balance_fen-a.available_fen for a in s.accounts)+(s.receivable_fen or 0))
+            if not integer_valid(problem(facts.assessment.capacity_level,h,available,caps),adjusted,T,request=False):
+                raise ModelError('PLANNING_CASH_POLICY_INFEASIBLE')
+            planning_cash={'reserve_fen':cash_reserve_fen,'available_fen':actual_available,'model_amounts_fen':model['amounts_fen'][:]}
+            model={**model,'amounts_fen':adjusted,'ranges':[(a/T,a/T) for a in adjusted],
+                'actual_p':adjusted[2]/(adjusted[1]+adjusted[2]) if adjusted[1]+adjusted[2] else None}
         outputs={};product_missing=list(missing)
         if not missing:
             for i,bucket in enumerate(BUCKETS):
-                try:outputs[bucket]=project_products(sorted(families[bucket].values(),key=lambda f:f.family_id),model['amounts_fen'][i],T)
+                try:
+                    fs=sorted(families[bucket].values(),key=lambda f:f.family_id)
+                    if bucket=='cash_management' and fixed_cash is not None:
+                        liquid_products=[f for f in fs if not f.cash]
+                        needed=model['amounts_fen'][i]-fixed_cash
+                        if needed and not liquid_products:raise ModelError('PLANNING_SELECT_CASH_PRODUCT')
+                        output=project_products(liquid_products,needed,T)
+                        cash_output=project_products([f for f in fs if f.cash],fixed_cash,T)
+                        outputs[bucket]={**output,'targets':output['targets']+cash_output['targets']}
+                    else:outputs[bucket]=project_products(fs,model['amounts_fen'][i],T)
                 except ModelError as error:product_missing.append(bucket+':'+error.code)
         cash_target=None;selections=[];target_by_product={}
         for bucket,output in outputs.items():
@@ -219,27 +242,31 @@ class PortfolioModelProvider:
         for i,b in enumerate(BUCKETS):
             lo,hi=model['ranges'][i];actual=float(ratios[i])
             if actual<lo-1e-10 or actual>hi+1e-10:raise ModelError('ROUNDED_TARGET_OUTSIDE_INTERVAL')
-            buckets.append(BucketTarget(bucket=b,min_ratio=str(max(0.,min(lo,actual))),target_ratio=ratios[i],max_ratio=str(min(1.,max(hi,actual))),target_fen=model['amounts_fen'][i],current_fen=round(h[i]*T) if h else None,reason='固定政策、偏好参考与当前持仓的凸投影；区间属于同一目标损失预算。'))
+            buckets.append(BucketTarget(bucket=b,min_ratio=ratios[i] if planning_cash is not None else str(max(0.,min(lo,actual))),target_ratio=ratios[i],max_ratio=ratios[i] if planning_cash is not None else str(min(1.,max(hi,actual))),target_fen=model['amounts_fen'][i],current_fen=round(h[i]*T) if h else None,reason='固定政策、偏好参考与当前持仓的凸投影；区间属于同一目标损失预算。'))
         group_results=[]
         # 当前事实上的确定性板块选品；不借会话多次读取混合版本。
         for bucket in BUCKETS:
             r=pipeline(index,CandidateFilter(mode='general',bucket=bucket),facts,user_id,now,
                        checked_decisions={d.product_id:d for d in eligible.decisions});pool=r.family_candidates
-            ids=self.candidates.selector.select(pool,set(),3) if pool else []
+            ids=secrets.SystemRandom().sample([f.family_id for f in pool],min(3,len(pool))) if pool else []
             # CandidateGroup consumes these explanations, not the complete
             # per-product decision dump. Avoid allocating the whole directory
             # three more times; eligibility and all exclusions stay unchanged.
             raw={'pipeline':{'reason_codes':r.reason_codes,'exclusions':r.exclusions,'risk_explanation':r.risk_explanation},
                  'status':r.status,'source_kind':facts.mode,'fixture_only':facts.mode=='fixture',
                  'items':[f.model_dump(mode='json') for f in pool if f.family_id in ids]}
-            group_results.append(adapt_candidate_group(raw,index,CandidateFilter(mode='general',bucket=bucket)))
+            group=adapt_candidate_group(raw,index,CandidateFilter(mode='general',bucket=bucket))
+            for card in group.items:
+                card.reason=card.reason.split('类别／代码展示顺序')[0]+'本组随机展示，不代表收益或质量排名。'
+                card.reason_codes=['QUALIFIED_SHARE','RANDOM_PLANNING_DISPLAY']
+            group_results.append(group)
         plan=None
         if not product_missing and cash_target is not None:
             plan=PortfolioPlan(schema_version='wealth-portfolio-plan-v1',portfolio_id='calculation-'+digest({'snapshot':s.snapshot_id,'context':version_context(facts).model_dump(mode='json'),'model':model,'products':outputs})[:24],version=1,snapshot_id=s.snapshot_id,asset_scope_id=s.asset_scope_id,context_id=s.context_id,as_of=now,basis_kind=s.basis_kind,basis_status=s.basis_status,basis_fen=T,provider_id=self.provider_id,provider_version=self.version,model_status='fixture' if facts.mode=='fixture' else 'researched_model',buckets=buckets,
                 growth_ratio_ex_cash=None if model['actual_p'] is None else str(model['actual_p']),candidate_groups=group_results,selected_positions=selections,cash_residual_fen=cash_target,
-                data_versions={**s.data_versions,'assessment':facts.assessment.version,'context':version_context(facts).model_dump(mode='json')},missing_fields=[],reasons=['DETERMINISTIC_CATEGORY_CODE_ORDER','CONVEX_POLICY_PROJECTION','NOT_A_TRADE','FINANCIAL_EFFECT_NOT_EVALUATED'])
+                data_versions={**s.data_versions,'assessment':facts.assessment.version,'context':version_context(facts).model_dump(mode='json')},missing_fields=[],reasons=['DETERMINISTIC_CATEGORY_CODE_ORDER','CONVEX_POLICY_PROJECTION','NOT_A_TRADE','FINANCIAL_EFFECT_NOT_EVALUATED']+(['PLANNING_CASH_BUDGET_V1'] if planning_cash is not None else []))
         contract_input=PortfolioInput(schema_version='wealth-portfolio-input-v1',snapshot=s,products=[item for g in group_results for item in g.items],features={'feature_version':FEATURE_VERSION},user_preferences={'growth_ratio_ex_cash':p})
-        return ModelResult(status='partial' if product_missing else 'ok',plan=plan,candidate_groups=group_results,missing_fields=sorted(set(product_missing)),metadata={'model':model,'validation_contract':{'calculation':model,'qualification_context':version_context(facts).model_dump(mode='json'),'snapshot_id':s.snapshot_id,'selected_references':[part.evidence['reference'] for group in families.values() for family in group.values() for part in family.parts if part.purchase_eligible and 'reference' in part.evidence],'available':available,'caps':[str(c) for c in caps],'p':p},'product_projections':outputs,'positions':positions,'fixture_only':facts.mode=='fixture','input_schema':contract_input.schema_version,'snapshot':s.model_dump(mode='json'),'qualification_context':version_context(facts).model_dump(mode='json'),'model_input':contract_input.model_dump(mode='json'),'total_assets_fen':T,'available_cash_fen':sum(a.available_fen for a in s.accounts),'receivable_not_payable_fen':s.receivable_fen,'eta_disabled_reasons':asset.disable_eta_reasons,'financial_effect_status':'not_evaluated'})
+        return ModelResult(status='partial' if product_missing else 'ok',plan=plan,candidate_groups=group_results,missing_fields=sorted(set(product_missing)),metadata={'planning_cash':planning_cash,'model':model,'validation_contract':{'calculation':model,'qualification_context':version_context(facts).model_dump(mode='json'),'snapshot_id':s.snapshot_id,'selected_references':[part.evidence['reference'] for group in families.values() for family in group.values() for part in family.parts if part.purchase_eligible and 'reference' in part.evidence],'available':available,'caps':[str(c) for c in caps],'p':p},'product_projections':outputs,'positions':positions,'fixture_only':facts.mode=='fixture','input_schema':contract_input.schema_version,'snapshot':s.model_dump(mode='json'),'qualification_context':version_context(facts).model_dump(mode='json'),'model_input':contract_input.model_dump(mode='json'),'total_assets_fen':T,'available_cash_fen':sum(a.available_fen for a in s.accounts),'receivable_not_payable_fen':s.receivable_fen,'eta_disabled_reasons':asset.disable_eta_reasons,'financial_effect_status':'not_evaluated'})
 
     def validate_weights(self,user_id: str,facts: CurrentFacts,index: ProductIndex,now: datetime,asset: AssetModelFacts,
                          model: dict,targets: dict[str,int],bucket_amounts: Sequence[int]) -> dict:

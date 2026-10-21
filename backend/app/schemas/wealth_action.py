@@ -18,6 +18,8 @@ from .wealth_portfolio import RecommendationFilter, PortfolioSelection
 from .wealth_portfolio_lifecycle import SelectedShare, CandidateBinding
 
 class PlanParams(StrictRequest):
+    cash_reserve_fen: int | None = Field(default=None, strict=True, ge=0)
+    available_cash_fen: int | None = Field(default=None, strict=True, ge=0)
     selected: list[SelectedShare]|None=None
     candidate_binding: CandidateBinding|None=None
     growth_ratio_ex_cash: str|None=None
