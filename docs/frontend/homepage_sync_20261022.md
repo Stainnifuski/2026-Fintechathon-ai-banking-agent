@@ -62,3 +62,10 @@ tests/browser/home_workspace_transition_check.js
 不要以强制重置、强推、删除工作树或复制整个目录替代版本整合；本地数据库、模型配置和密钥独立保留。体验时若需登录验证，先按验收规则隔离workspace/reset及业务写入，避免把查看页面变成重置工作区或执行交易。
 
 完整行为、证据适用范围与限制见同目录 `home_redesign_20261022.md`。独立报告原件：`D:\Project\Fintechathon-2026\测试\首页改版同步后独立复验_20261022.md`，本地保留，不把输出/截图连同报告路径所在的队伍资料目录打包提交。
+
+## GitHub发布记录
+
+- 首页及验收文档首轮推送：`fbbae07cb8006596f79b45e7dedb00967ccbb521`，远端分支与本地核验一致。
+- 新评审PR：[PR #19](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/pull/19)，目标main；创建后状态OPEN、MERGEABLE，未合并。未复用旧PR18。
+- 本节随文档记录提交再次推送；最终分支头以PR显示及交付回复的完整SHA为准，源码仍是7a41405，本节后续提交只改文档。
+- 推送前fetch及首轮推送后远端main均为787d75e；未部署/重启服务，未清理原`.playwright-cli/`及输出/账本。
