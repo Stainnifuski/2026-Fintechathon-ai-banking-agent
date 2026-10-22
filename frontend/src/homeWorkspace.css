@@ -1,0 +1,919 @@
+.home-workspace {
+  font-family:Inter,"Microsoft YaHei","PingFang SC",sans-serif;
+  --home-nav:244px;
+  --home-agent:clamp(390px,30vw,560px)
+}
+.home-workspace .profile-button {
+  background:#29345c;
+  color:#fff;
+  border:2px solid #fff;
+  box-shadow:0 0 0 1px #4a5480,0 3px 10px #29345c24;
+  font-weight:700
+}
+.home-workspace .desktop-mode-label {
+  margin:0;
+  color:inherit;
+  font-size:12px
+}
+.home-workspace .narrow-agent-label {
+  display:none
+}
+.financial-overview {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:20px;
+  align-items:start
+}
+.overview-column {
+  display:flex;
+  flex-direction:column;
+  gap:20px;
+  min-width:0
+}
+.home-workspace .home-data-card {
+  padding:24px;
+  border:1px solid #e7e9f0;
+  border-radius:14px;
+  box-shadow:0 5px 22px #20284006;
+  min-width:0
+}
+.home-data-card .section-heading {
+  align-items:center;
+  margin-bottom:8px;
+  gap:8px
+}
+.home-data-card .section-heading h2 {
+  font-size:17px;
+  margin:0
+}
+.home-data-card .section-heading>span {
+  font-size:11px;
+  color:#8490a7
+}
+.home-data-card .text-button {
+  font-size:12px;
+  font-weight:500
+}
+.home-data-row {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  padding:18px 0;
+  border-bottom:1px solid #edf0f4;
+  min-width:0
+}
+.home-data-row>div:not(.home-money) {
+  min-width:0;
+  flex:1
+}
+.home-data-row strong {
+  font-size:14px;
+  font-weight:600;
+  overflow-wrap:anywhere
+}
+.home-data-row small {
+  display:block;
+  font-size:11px;
+  color:#8591a4;
+  line-height:1.6;
+  margin-top:6px;
+  overflow-wrap:anywhere
+}
+.home-money {
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+  flex-shrink:0;
+  max-width:52%
+}
+.bank-card-graphic {
+  display:inline-flex;
+  flex-shrink:0;
+  width:44px;
+  color:#528bea
+}
+.bank-card-graphic svg {
+  width:100%;
+  height:auto
+}
+.home-card-link {
+  margin-top:14px
+}
+.home-spend-total {
+  display:flex;
+  align-items:end;
+  justify-content:space-between;
+  margin:24px 0 20px;
+  gap:8px
+}
+.home-spend-total>strong {
+  font-size:29px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.5px
+}
+.home-spend-bar {
+  height:9px;
+  display:flex;
+  gap:3px;
+  border-radius:4px;
+  overflow:hidden;
+  margin-bottom:8px
+}
+.home-spend-bar i {
+  min-width:1px
+}
+.home-category {
+  padding:14px 0
+}
+.category-label {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-size:12px;
+  color:color-mix(in srgb,var(--category-color),#26304b 35%);
+  background:color-mix(in srgb,var(--category-color) 13%,white);
+  border-radius:6px;
+  padding:5px 8px
+}
+.home-source-note {
+  font-size:11px;
+  color:#8591a4;
+  line-height:1.8;
+  margin:16px 0 0
+}
+.home-subscription-name {
+  color:#6455a1
+}
+.financial-overview .asset-summary-hero {
+  padding:26px;
+  position:relative;
+  overflow:hidden;
+  isolation:isolate;
+  background:radial-gradient(circle at 88% 12%,#664ff5 0,transparent 35%),linear-gradient(135deg,#11172a 0%,#1c2855 58%,#314bc1 100%);
+  border:0;
+  border-radius:14px;
+  box-shadow:0 8px 30px #30285c14;
+  color:#fff;
+  margin:0;
+  backdrop-filter:none
+}
+.financial-overview .asset-summary-total {
+  font-size:clamp(28px,2.8vw,40px);
+  font-weight:550;
+  letter-spacing:-1px;
+  margin:24px 0 12px;
+  font-variant-numeric:tabular-nums
+}
+.financial-overview .asset-summary-heading h2 {
+  font-size:17px
+}
+.financial-overview .asset-summary-heading button {
+  background:#ffffff12;
+  color:#e3def6;
+  border:1px solid #ffffff30;
+  min-width:0;
+  font-size:10px
+}
+.financial-overview .asset-summary-metrics {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:20px 14px
+}
+.financial-overview .asset-summary-metrics dd {
+  font-size:16px;
+  font-weight:550;
+  font-variant-numeric:tabular-nums
+}
+.financial-overview .asset-summary-card p,.financial-overview .asset-summary-card small,.financial-overview .asset-summary-card dt {
+  color:#d9def5;
+  font-size:10px;
+  line-height:1.7
+}
+.financial-overview .asset-summary-card .asset-summary-warning {
+  color:#6c4617
+}
+.home-workspace .agent-panel {
+  background:radial-gradient(ellipse at 18% 12%,#b29aef88,transparent 65%),radial-gradient(ellipse at 95% 85%,#79cee77a,transparent 65%),linear-gradient(135deg,#eee7fc,#e7eefb 55%,#dff3fa)
+}
+.home-workspace .agent-body {
+  background:transparent
+}
+.home-workspace .nova-empty {
+  text-align:center;
+  background:none;
+  border:0;
+  padding:20px 0 30px;
+  margin:0
+}
+.home-workspace .nova-empty .eyebrow {
+  color:#7667ad;
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:2.5px
+}
+.home-workspace .nova-empty h1 {
+  font-size:36px;
+  font-weight:600;
+  letter-spacing:-1px;
+  color:#252841;
+  margin:16px 0
+}
+.home-workspace .nova-empty p {
+  font-size:14px;
+  color:#66718e;
+  line-height:1.8
+}
+.nova-topic-ribbon {
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  justify-content:center;
+  margin-top:26px
+}
+.nova-topic-ribbon span {
+  padding:6px 10px;
+  font-size:12px;
+  border-radius:7px;
+  color:#4161ac;
+  background:#dceaff
+}
+.nova-topic-ribbon span:nth-child(2) {
+  color:#ac6528;
+  background:#ffead6
+}
+.nova-topic-ribbon span:nth-child(3) {
+  color:#8055aa;
+  background:#eedfff
+}
+.nova-topic-ribbon span:nth-child(4) {
+  color:#278b97;
+  background:#d5f2f3
+}
+.home-workspace .agent-compose {
+  border:1px solid #ffffffc9;
+  border-radius:16px;
+  padding:16px;
+  box-shadow:0 8px 28px #5040840a;
+  background:#ffffffed;
+  flex-shrink:0;
+  align-items:end
+}
+.home-workspace .agent-compose input {
+  border:0;
+  border-radius:8px;
+  padding:12px 6px;
+  background:transparent;
+  min-width:0;
+  outline-offset:0;
+  font-size:15px;
+  height:54px
+}
+.home-workspace .agent-compose button {
+  background:#49318c;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  flex-shrink:0;
+  padding:0;
+  line-height:1;
+  width:38px;
+  height:38px;
+  font-size:20px;
+  margin-bottom:6px
+}
+.home-workspace .agent-controls {
+  background:transparent;
+  border:0;
+  padding:0;
+  flex-shrink:0
+}
+.home-workspace .nova-guide-row {
+  padding:0
+}
+.home-workspace .nova-help-toggle {
+  background:transparent;
+  color:#5a50a5;
+  font-size:12px
+}
+.home-workspace .nova-quick-prompts {
+  margin:8px 0 0;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px
+}
+.home-workspace .nova-chip {
+  background:#ffffff87;
+  border:1px solid #ffffffa6;
+  color:#53576f;
+  border-radius:8px;
+  padding:10px 12px;
+  text-align:left;
+  font-weight:500;
+  font-size:12px
+}
+.home-workspace .nova-message,.home-workspace .nova-transfer-card,.home-workspace .nova-wealth-card {
+  border:1px solid #dcd8ed;
+  border-radius:14px;
+  box-shadow:0 3px 12px #38305d05
+}
+.home-workspace .nova-user {
+  background:#e2ddf8;
+  border-color:#d5cdef
+}
+.home-workspace .nova-assistant {
+  background:#ffffffed
+}
+.home-workspace .nova-history-toggle {
+  font-size:12px;
+  height:36px;
+  background:#f3f0ff;
+  border-color:#cfc6f5;
+  color:#5844bf;
+  white-space:nowrap
+}
+.home-workspace .nova-conversation-nav {
+  background:#fff;
+  max-height:300px;
+  overflow:auto;
+  border:1px solid #dfdbea;
+  box-shadow:0 12px 40px #30225025;
+  border-radius:10px
+}
+.home-workspace .nova-conversation-list {
+  flex-direction:column;
+  overflow:visible
+}
+.home-workspace .nova-history-item>button:first-child {
+  flex:1;
+  max-width:none;
+  text-align:left
+}
+.home-workspace .nova-help {
+  background:#ffffffb5;
+  border-radius:10px;
+  padding:12px;
+  max-height:min(28dvh,260px);
+  overflow:auto
+}
+@media(min-width:1101px) {
+  .home-workspace.prototype-app,.home-workspace.prototype-app.nova-open {
+    display:block;
+    min-height:100dvh;
+    background:#f8f9fc
+  }
+  .home-workspace .bank-shell,.home-workspace.nova-open .bank-shell {
+    display:block;
+    min-height:100dvh;
+    margin-left:var(--home-nav)
+  }
+  .home-workspace .bank-sidebar,.home-workspace.nova-open .bank-sidebar {
+    position:fixed;
+    inset:0 auto 0 0;
+    width:var(--home-nav);
+    height:100dvh;
+    padding:28px 20px 22px;
+    font-size:14px;
+    z-index:50;
+    overflow:auto
+  }
+  .home-workspace.nova-open .brand {
+    justify-content:flex-start;
+    padding:0 7px 26px
+  }
+  .home-workspace.nova-open .brand>span:last-child {
+    display:grid
+  }
+  .home-workspace.nova-open .sidebar-foot {
+    display:block
+  }
+  .home-workspace.nova-open .bank-sidebar nav button {
+    font-size:14px;
+    justify-content:flex-start;
+    padding:12px 13px
+  }
+  .home-workspace.nova-open .bank-sidebar nav button span {
+    font-size:18px
+  }
+  .home-workspace.nova-open .bank-workspace {
+    margin-right:var(--home-agent)
+  }
+  .home-workspace .workspace-content {
+    padding:28px;
+    max-width:none
+  }
+  .home-workspace .bank-topbar {
+    position:sticky;
+    min-height:86px;
+    padding:18px 28px;
+    z-index:30;
+    background:#f8f9fc;
+    border-bottom:1px solid #eef0f5;
+    backdrop-filter:none
+  }
+  .home-workspace .bank-topbar .beijing-clock {
+    font-size:10px;
+    color:#8591a4
+  }
+  .home-workspace .top-actions {
+    position:fixed;
+    top:20px;
+    right:30px;
+    height:40px;
+    z-index:65;
+    view-transition-name:home-controls;
+    gap:10px
+  }
+  .home-workspace #nova-toggle {
+    width:108px;
+    height:40px;
+    padding:10px 16px;
+    border:1px solid var(--navy);
+    border-radius:999px;
+    background:var(--navy);
+    color:#fff;
+    box-shadow:0 6px 16px #151a2d1f;
+    font-size:12px;
+    white-space:nowrap
+  }
+  .home-workspace .top-actions>.icon-button {
+    position:static;
+    display:grid;
+    width:38px;
+    height:38px
+  }
+  .home-workspace .profile-button {
+    width:34px;
+    height:34px;
+    margin-left:5px
+  }
+  .home-workspace .agent-panel {
+    position:fixed;
+    top:0;
+    right:0;
+    bottom:0;
+    left:calc(100% - var(--home-agent));
+    width:auto;
+    height:100dvh;
+    min-height:0;
+    z-index:25;
+    border:0;
+    border-left:1px solid #bcb3db;
+    border-radius:20px 0 0 20px;
+    overflow:hidden;
+    view-transition-name:home-agent
+  }
+  .home-workspace .agent-head {
+    flex:none;
+    padding:80px 24px 16px;
+    background:#ffffff38;
+    border-bottom:1px solid #ffffff80;
+    grid-template-columns:auto 1fr;
+    min-height:132px
+  }
+  .home-workspace .agent-head>.icon-button {
+    display:none
+  }
+  .home-workspace .agent-head strong {
+    font-size:19px
+  }
+  .home-workspace .agent-head small {
+    font-size:11px
+  }
+  .home-workspace .nova-history-toggle {
+    position:fixed;
+    top:22px;
+    right:250px;
+    z-index:66;
+    view-transition-name:home-history
+  }
+  .home-workspace .nova-conversation-nav {
+    position:fixed;
+    right:250px;
+    top:66px;
+    width:280px;
+    z-index:70
+  }
+  .home-workspace .agent-body {
+    padding:24px;
+    min-height:0;
+    overflow:auto;
+    scrollbar-gutter:stable
+  }
+  .home-workspace .nova-empty {
+    padding:clamp(20px,5vh,60px) 0 20px
+  }
+  .home-workspace .nova-empty h1 {
+    font-size:28px
+  }
+  .home-workspace .nova-empty p {
+    font-size:12px
+  }
+  .home-workspace .nova-topic-ribbon {
+    gap:6px;
+    margin-top:20px
+  }
+  .home-workspace .nova-topic-ribbon span {
+    font-size:10px;
+    padding:5px 7px
+  }
+  .home-workspace .agent-controls,.home-workspace .agent-compose,.home-workspace .nova-focus-hint {
+    width:calc(100% - 40px);
+    max-width:780px;
+    margin:0 auto
+  }
+  .home-workspace .agent-controls {
+    padding-bottom:12px
+  }
+  .home-workspace .agent-compose {
+    margin-bottom:26px
+  }
+  .home-workspace .nova-focus-hint {
+    flex-shrink:0
+  }
+  .home-workspace.nova-expanded .agent-panel {
+    left:var(--home-nav);
+    border:0;
+    border-radius:0
+  }
+  .home-workspace.nova-expanded .bank-workspace>.workspace-content {
+    visibility:hidden;
+    pointer-events:none
+  }
+  .home-workspace.nova-expanded .bank-topbar {
+    position:fixed;
+    left:var(--home-nav);
+    right:0;
+    top:0;
+    background:transparent;
+    border-bottom:1px solid #ffffff70;
+    pointer-events:none
+  }
+  .home-workspace.nova-expanded .top-actions {
+    pointer-events:auto
+  }
+  .home-workspace.nova-expanded .bank-topbar .beijing-clock {
+    display:none
+  }
+  .home-workspace.nova-expanded .agent-head {
+    min-height:86px;
+    height:86px;
+    background:transparent;
+    border:0;
+    padding:0
+  }
+  .home-workspace.nova-expanded .agent-head>.agent-orb,.home-workspace.nova-expanded .agent-head .nova-title-row>strong,.home-workspace.nova-expanded .agent-head small {
+    display:none
+  }
+  .home-workspace.nova-expanded .agent-body {
+    padding:24px max(32px,calc((100% - 780px)/2))
+  }
+  .home-workspace.nova-expanded .nova-empty {
+    padding:clamp(26px,9vh,100px) 0 40px
+  }
+  .home-workspace.nova-expanded .nova-empty h1 {
+    font-size:36px
+  }
+  .home-workspace.nova-expanded .nova-empty p {
+    font-size:14px
+  }
+  .home-workspace.nova-expanded .nova-topic-ribbon span {
+    font-size:12px;
+    padding:6px 10px
+  }
+  .home-workspace.nova-expanded .agent-compose {
+    margin-bottom:32px;
+    padding:20px;
+    min-height:116px
+  }
+  .home-workspace.nova-expanded .global-notice {
+    position:fixed;
+    left:calc(var(--home-nav) + 24px);
+    top:80px;
+    z-index:31;
+    max-width:450px;
+    font-size:12px
+  }
+  .home-workspace.nova-expanded .bank-shell {
+    height:100dvh;
+    overflow:hidden
+  }
+  .home-workspace .nova-delete-backdrop {
+    z-index:100
+  }
+}
+::view-transition-group(home-agent) {
+  animation-duration:620ms;
+  animation-timing-function:cubic-bezier(.22,1,.36,1);
+  overflow:clip
+}
+::view-transition-image-pair(home-agent) {
+  isolation:isolate;
+  background:#e2ddf5
+}
+::view-transition-old(home-agent) {
+  height:100%;
+  width:100%;
+  object-fit:cover;
+  object-position:right top;
+  animation:none;
+  opacity:1;
+  mix-blend-mode:normal
+}
+::view-transition-new(home-agent) {
+  height:100%;
+  width:100%;
+  object-fit:cover;
+  object-position:right top;
+  animation:home-arrive 360ms ease-out both;
+  mix-blend-mode:normal
+}
+::view-transition-old(root) {
+  animation:none;
+  opacity:1
+}
+::view-transition-new(root) {
+  animation:home-arrive 300ms ease-out both
+}
+::view-transition-group(home-controls),::view-transition-group(home-history) {
+  animation-duration:0s;
+  z-index:80
+}
+::view-transition-old(home-controls),::view-transition-old(home-history) {
+  animation:none;
+  opacity:0
+}
+::view-transition-new(home-controls),::view-transition-new(home-history) {
+  animation:none
+}
+@keyframes home-arrive {
+  from {
+    opacity:0
+  }
+  to {
+    opacity:1
+  }
+}
+@media(max-width:1100px) {
+  .home-workspace .desktop-mode-label {
+    display:none
+  }
+  .home-workspace .narrow-agent-label {
+    display:inline;
+    color:inherit;
+    font-size:12px;
+    margin:0
+  }
+  .financial-overview {
+    grid-template-columns:1fr
+  }
+  .home-workspace .agent-head {
+    padding:10px 16px
+  }
+  .home-workspace .nova-empty {
+    padding:8px 0
+  }
+  .home-workspace .nova-empty h1 {
+    font-size:23px;
+    margin:8px 0
+  }
+  .home-workspace .nova-empty p {
+    font-size:12px;
+    margin:6px 0
+  }
+  .home-workspace .nova-topic-ribbon {
+    display:none
+  }
+  .home-workspace .agent-controls {
+    padding:0 14px 6px
+  }
+  .home-workspace .agent-compose {
+    margin:0 10px 8px;
+    padding:8px;
+    width:calc(100% - 20px)
+  }
+  .home-workspace .agent-compose input {
+    font-size:16px;
+    height:36px;
+    padding:4px
+  }
+  .home-workspace .agent-compose button {
+    height:34px;
+    width:34px;
+    margin:0
+  }
+  .home-workspace .nova-conversation-nav {
+    max-height:120px;
+    flex-shrink:0
+  }
+}
+@media(max-width:640px) {
+  .home-workspace .narrow-agent-label {
+    font-size:0
+  }
+  .home-workspace .narrow-agent-label::after {
+    content:'✦';
+    font-size:17px
+  }
+  .home-workspace .home-data-card {
+    padding:20px
+  }
+  .home-workspace .nova-quick-prompts {
+    display:none
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  .home-workspace * {
+    scroll-behavior:auto!important;
+    transition:none!important;
+    animation:none!important
+  }
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*) {
+    animation:none!important
+  }
+}
+.home-workspace .nova-empty {
+  min-height:0;
+  display:block
+}
+.home-workspace .nova-empty p {
+  font-weight:400
+}
+.home-workspace .home-report-notices {
+  font-size:11px;
+  color:#8591a4;
+  margin-top:10px;
+  line-height:1.7
+}
+.home-report-notices summary {
+  cursor:pointer
+}
+.home-workspace .sidebar-auth {
+  margin:12px 0 0 auto;
+  flex-shrink:0
+}
+@media(min-width:1101px) {
+  .home-workspace .nova-header-slot {
+    display:flex;
+    align-items:center;
+    gap:8px
+  }
+  .home-workspace .nova-header-slot .nova-history-toggle {
+    position:static;
+    view-transition-name:none
+  }
+  .home-workspace .nova-header-slot .nova-conversation-nav {
+    right:250px;
+    top:66px
+  }
+}
+.home-workspace .nova-reference-context {
+  font-size:10px;
+  color:#71668f
+}
+.home-workspace .bank-card-graphic:has(+div>strong:first-child) {
+  align-self:flex-start;
+  margin-top:4px
+}
+@media(min-width:1101px) {
+  .home-workspace .financial-overview .asset-summary-card .asset-summary-metrics {
+    grid-template-columns:repeat(2,minmax(0,1fr))
+  }
+}
+.home-workspace .home-account-row {
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr) auto;
+  gap:8px 10px
+}
+.home-account-row>.home-money {
+  max-width:none;
+  max-width:160px
+}
+.home-account-row>.home-account-cards {
+  grid-column:2/-1
+}
+.home-workspace .home-account-cards small {
+  line-height:1.8;
+  margin:0
+}
+.financial-overview .asset-summary-metrics>div:nth-child(4) {
+  grid-column:2;
+  grid-row:1
+}
+.financial-overview .asset-summary-metrics>div:nth-child(2) {
+  grid-column:1;
+  grid-row:2
+}
+.financial-overview .asset-summary-metrics>div:nth-child(3) {
+  grid-column:2;
+  grid-row:2
+}
+.home-workspace .nova-home-suggestions {display:grid;grid-template-columns:1fr 1fr;width:calc(100% - 64px);max-width:780px;flex-shrink:0;margin:12px auto 28px;gap:8px}
+.home-workspace .nova-home-suggestions button{display:flex;justify-content:space-between;align-items:center;text-align:left;gap:8px;background:#ffffff87;border:1px solid #ffffffa6;color:#53576f;border-radius:8px;padding:12px 14px;font-size:12px;font-weight:500}
+.home-workspace .nova-home-suggestions button span{color:#8c85a5}
+@media(min-width:1101px){.home-workspace .agent-compose{margin-bottom:0}.home-workspace .nova-home-suggestions{width:calc(100% - 40px);grid-template-columns:1fr}.home-workspace.nova-expanded .nova-home-suggestions{grid-template-columns:1fr 1fr;width:calc(100% - 64px)}.home-workspace.nova-docked .nova-home-suggestions button:nth-child(n+3){display:none}.home-workspace .agent-compose:last-child{margin-bottom:26px}.home-workspace.nova-expanded .agent-compose:last-child{margin-bottom:32px}}
+@media(max-width:1100px){.home-workspace .nova-home-suggestions{display:none}}
+.home-workspace.nova-expanded .agent-compose:has(+ .nova-home-suggestions){margin-bottom:0}
+
+/* Independent acceptance fixes: preserve the approved layout, adapt card contents. */
+.home-workspace .mobile-auth-button {display:none}
+.home-workspace .home-bill-actions {display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:4px 8px;font-size:11px;color:#8490a7}
+.home-workspace .home-bill-actions .text-button {padding:3px 0}
+.home-bill-as-of {display:block;margin-top:12px;font-size:10px}
+.home-workspace .home-data-card:has(.home-account-row) {container:home-account / inline-size}
+.home-workspace .home-credit-fields {display:flex;flex-wrap:wrap;gap:2px 10px}
+.home-credit-fields>span {white-space:nowrap}
+.financial-overview .asset-summary-hero {container:home-assets / inline-size}
+.financial-overview .asset-summary-metrics dd {white-space:nowrap;font-size:clamp(11px,4.5cqi,16px)}
+@container home-account (max-width:280px) {
+  .home-workspace .home-account-row {grid-template-columns:36px minmax(0,1fr);gap:8px}
+  .home-account-row>.home-money {grid-column:1/-1;max-width:none;text-align:left}
+  .home-account-row>.home-account-cards {grid-column:1/-1}
+  .home-workspace .bank-card-graphic {width:36px}
+  .home-workspace .home-account-row strong {overflow-wrap:normal}
+  .home-workspace .home-account-row>div:nth-child(2)>small {white-space:nowrap;font-size:10px}
+}
+@media(min-width:1101px) {
+  .home-workspace #nova-toggle:hover {background:#263458;border-color:#263458;color:#fff;transform:none}
+  .home-workspace #nova-toggle:focus-visible {background:#263458;color:#fff;outline:3px solid #b5aaf9;outline-offset:3px;transform:none}
+}
+@media(min-width:1101px) and (max-width:1250px) {
+  .home-workspace .home-data-card,.financial-overview .asset-summary-hero {padding:18px}
+  .home-data-card .section-heading {flex-wrap:wrap}
+  .home-data-card .section-heading h2 {font-size:16px}
+  .home-data-card .home-data-row:not(.home-account-row) {flex-wrap:wrap}
+  .home-workspace .home-data-card .home-money {max-width:none}
+  .financial-overview .asset-summary-total {font-size:clamp(24px,15cqi,32px)}
+  .financial-overview .asset-summary-heading {flex-wrap:wrap}
+}
+@media(max-width:1100px) {
+  .home-workspace .mobile-auth-button {display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 10px;border:1px solid #d8ddef;border-radius:8px;background:#fff;color:#435176;font-size:12px;white-space:nowrap}
+  .home-workspace .mobile-auth-button:focus-visible {outline:2px solid #6150e8;outline-offset:2px}
+  .home-workspace .sidebar-auth {display:none}
+}
+
+/* Restore the original overview palette and compact header controls. */
+.financial-overview .asset-summary-hero::after {content:'';position:absolute;z-index:-1;width:280px;height:280px;right:-120px;bottom:-150px;border:1px solid #ffffff38;border-radius:50%;box-shadow:0 0 0 38px #ffffff08,0 0 0 76px #ffffff08;pointer-events:none}
+.home-workspace .top-actions>.auth-enroll-button {display:grid;flex-shrink:0}
+.home-workspace #nova-toggle>span {color:#b8b0ff;margin-right:5px}
+@media(max-width:640px) {
+  .home-workspace #nova-toggle {width:90px;font-size:12px;padding:8px}
+  .home-workspace #nova-toggle>span {font-size:14px}
+}
+
+/* Shared destination colors: the same function keeps the same visual cue. */
+.home-workspace {--destination-home:#5143b7;--destination-cards:#2458cc;--destination-insights:#ad490d;--destination-wealth:#7135bb;--destination-transfer:#087b87;--destination-subscriptions:#b52169;--destination-services:#287544}
+.home-workspace [data-destination="home"] {--destination-color:var(--destination-home)}
+.home-workspace [data-destination="cards"] {--destination-color:var(--destination-cards)}
+.home-workspace [data-destination="insights"] {--destination-color:var(--destination-insights)}
+.home-workspace [data-destination="wealth"] {--destination-color:var(--destination-wealth)}
+.home-workspace [data-destination="transfer"] {--destination-color:var(--destination-transfer)}
+.home-workspace [data-destination="subscriptions"] {--destination-color:var(--destination-subscriptions)}
+.home-workspace [data-destination="services"] {--destination-color:var(--destination-services)}
+.home-workspace .nova-history-toggle {height:40px;padding:10px 14px;border:1px solid var(--navy);border-radius:999px;background:var(--navy);color:#fff;font-size:12px;box-shadow:0 6px 16px #151a2d1f}
+.home-workspace .nova-history-toggle:hover,.home-workspace .nova-history-toggle[aria-expanded="true"] {background:#263458;border-color:#263458;color:#fff}
+.home-workspace .nova-history-toggle:focus-visible {outline:3px solid #b5aaf9;outline-offset:3px}
+.home-workspace .nova-topic-ribbon span {background:var(--destination-cards);color:#fff;font-weight:600;box-shadow:0 2px 5px #17203312}
+.home-workspace .nova-topic-ribbon span:nth-child(2) {background:var(--destination-insights);color:#fff}
+.home-workspace .nova-topic-ribbon span:nth-child(3) {background:var(--destination-wealth);color:#fff}
+.home-workspace .nova-topic-ribbon span:nth-child(4) {background:var(--destination-transfer);color:#fff}
+.home-workspace .bank-sidebar nav button {gap:12px}
+.home-workspace .bank-sidebar nav button>span {display:inline-grid;place-items:center;width:30px;height:30px;flex-shrink:0;border-radius:8px;background:var(--destination-color);color:#fff;font-size:17px}
+.home-workspace .bank-sidebar nav button.active {background:#f0edff;color:#4436a2;box-shadow:inset 0 0 0 1px #e4defb}
+.home-workspace .home-data-card .home-destination {display:inline-flex;align-items:center;justify-content:center;background:var(--destination-color);color:#fff;border:1px solid transparent;border-radius:7px;padding:7px 10px;font-size:11px;line-height:1.4;white-space:nowrap}
+.home-workspace .home-destination:hover {filter:brightness(.9)}
+.home-workspace .home-destination:focus-visible {outline:3px solid var(--destination-color);outline-offset:3px}
+.home-workspace .category-label {background:var(--category-color);color:#fff;font-weight:600}
+@media(min-width:1101px) {
+ .home-workspace .nova-history-toggle {top:20px}
+ .home-workspace.nova-open .bank-sidebar nav button {padding:10px 10px}
+ .home-workspace.nova-open .bank-sidebar nav button>span {font-size:17px}
+}
+@media(max-width:640px) {
+ .home-workspace .bank-sidebar nav button {gap:0}
+ .home-workspace .bank-sidebar nav button>span {width:27px;height:27px;border-radius:7px;font-size:16px}
+ .home-workspace .nova-history-toggle {height:36px;padding:8px 12px;font-size:11px}
+}
+.home-workspace .bank-sidebar nav button.active>span {color:#fff}
+
+/* Softer secondary actions retain destination colors without competing with content. */
+.home-workspace .home-data-card .home-destination {border-radius:999px;background:color-mix(in srgb,var(--destination-color) 9%,white);color:color-mix(in srgb,var(--destination-color) 80%,#172033);border-color:color-mix(in srgb,var(--destination-color) 12%,white);padding:8px 13px}
+.home-workspace .home-destination:hover {filter:none;background:color-mix(in srgb,var(--destination-color) 16%,white)}
+.home-workspace .nova-topic-ribbon span {border-radius:999px;box-shadow:none;padding:7px 12px;background:#e6edfc;color:#244b9f}
+.home-workspace .nova-topic-ribbon span:nth-child(2) {background:#f8eadd;color:#894111}
+.home-workspace .nova-topic-ribbon span:nth-child(3) {background:#eee5f8;color:#643198}
+.home-workspace .nova-topic-ribbon span:nth-child(4) {background:#dceff0;color:#14616b}
+.home-workspace .home-subscription-name,.home-workspace .nova-help-toggle {color:#172033}
+.home-workspace .nova-help-toggle:hover {color:#000}
+.home-workspace .home-spend-bar {height:9px;border-radius:999px;gap:3px;margin:0 0 8px}
+.home-workspace .home-spend-bar i {min-width:0}
+.home-workspace .bank-card-graphic svg {background:linear-gradient(135deg,#356df0,#6ca5ff);border-radius:6px}
+.home-workspace .bank-card-graphic svg>rect:first-child {fill:transparent}
+.home-workspace .bank-card-graphic[data-account-type="credit"] svg {background:linear-gradient(135deg,#a36a20,#dfb56e)}
+@media(min-width:1101px) {
+ .home-workspace .nova-topic-ribbon span {padding:6px 9px}
+ .home-workspace.nova-expanded .nova-topic-ribbon span {padding:7px 12px}
+}
+
+.home-workspace .agent-compose button:disabled {background:#b8abd9;color:#fff;opacity:1}
+.home-workspace .agent-compose button:not(:disabled):hover {background:#38216f}
+.home-workspace .agent-compose button:focus-visible {outline:3px solid #b5a4e3;outline-offset:3px}

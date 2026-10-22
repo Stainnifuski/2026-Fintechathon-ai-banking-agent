@@ -10,6 +10,9 @@ import AssetSummaryCard from './components/AssetSummary';
 import {useAssetSummary} from './components/AssetSummary/useAssetSummary';
 import NovaChat from './components/NovaChat';
 import LoginPage from './components/LoginPage';
+import FinancialOverview from './components/FinancialOverview';
+import './homeWorkspace.css';
+import {flushSync} from 'react-dom';
 import type { NovaPageContext } from './services/nova';
 import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
@@ -94,7 +97,14 @@ function App() {
   const [appView, setAppView] = useState<'banking' | 'thirdParty'>('banking');
   const [bankingSection, setBankingSection] = useState<BankingSection>(wealthConsumerPreviewEnabled ? 'wealth' : 'home');
   const [wealthTestMode, setWealthTestMode] = useState(false);
-  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(() => window.matchMedia('(min-width: 1101px)').matches);
+  const [agentExpanded, setAgentExpanded] = useState(!wealthConsumerPreviewEnabled);
+  const modeTransition = useRef(false);
+  const [desktopLayout,setDesktopLayout]=useState(()=>window.matchMedia('(min-width: 1101px)').matches);
+  const [novaControls,setNovaControls]=useState<HTMLDivElement|null>(null);
+  useEffect(()=>{const media=window.matchMedia('(min-width: 1101px)'); const update=()=>setDesktopLayout(media.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update);},[]);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState('');
   const [selectedCardId, setSelectedCardId] = useState<string>();
   const [pendingCardOperationId, setPendingCardOperationId] = useState<string>();
   const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string>();
@@ -128,6 +138,7 @@ function App() {
 
   const load = async () => {
     if (!user) return;
+    setOverviewLoading(true); setOverviewError('');
     try {
       if (['U007', 'U008'].includes(user.user_id)) {
         const [merchantAccounts, merchantTransactions] = await Promise.all([
@@ -150,8 +161,8 @@ function App() {
     } catch (error) {
       if (!localStorage.getItem('token')) {
         logout(); setStatus('登录已过期，请重新登录');
-      } else setStatus(message(error));
-    }
+      } else { setStatus(message(error)); setOverviewError('账户与订阅读取失败，请重试。'); }
+    } finally { setOverviewLoading(false); }
   };
 
   useEffect(() => { load(); }, [user?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -480,7 +491,7 @@ function App() {
     setSelectedCardId(undefined); setSelectedSubscriptionId(undefined);
     setBillPageContext({ version: 1, page: 'insights' });
     setThirdPartyPageContext({ version: 1, page: 'thirdParty' });
-    setAppView('banking'); setBankingSection('home'); setWealthTestMode(false); setAgentOpen(false); setHighlightedPaymentRequest('');
+    setAppView('banking'); setBankingSection('home'); setWealthTestMode(false); setAgentOpen(window.matchMedia('(min-width: 1101px)').matches); setAgentExpanded(true); setHighlightedPaymentRequest('');
   };
 
   useEffect(()=>{
@@ -492,7 +503,7 @@ function App() {
   const goToBankPayment = async (paymentRequestId?: string) => {
     setHighlightedPaymentRequest(paymentRequestId || '');
     setAppView('banking');
-    setBankingSection('transfer');
+    setBankingSection('transfer'); setAgentExpanded(false);
     await load();
     window.setTimeout(() => document.getElementById('payment-requests')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   };
@@ -511,17 +522,25 @@ function App() {
   const requestTotal = splitEqually
     ? requestAmountNumber
     : requestAmountNumber * requestPayerIds.length;
-  const activeSubscriptions = subscriptions.filter(subscription => subscription.status === 'ACTIVE');
-  const pendingRequests = paymentRequests.filter(request => ['PENDING', 'ACCEPTED'].includes(request.status)).length;
-  const recentSpend = transactions.slice(0, 8).filter(transaction => ['transfer_out', 'purchase', 'subscription', 'investment_purchase'].includes(transaction.type)).reduce((sum, transaction) => sum + transaction.amount, 0);
+
   const openSection = (section: BankingSection) => {
     if (bankingSection !== section || appView !== 'banking') {
       setSelectedCardId(undefined); setSelectedSubscriptionId(undefined);
       if (section === 'insights') setBillPageContext({ version: 1, page: 'insights' });
     }
-    setAppView('banking'); setBankingSection(section);
+    setAppView('banking'); setBankingSection(section); setAgentExpanded(false);
     bankShellRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const switchAgentMode = () => {
+    if (!window.matchMedia('(min-width: 1101px)').matches) { setAgentOpen(value => !value); return; }
+    if (modeTransition.current) return;
+    const change = () => flushSync(() => { setAgentOpen(true); setAgentExpanded(!agentOpen || !agentExpanded); });
+    const transitionDocument = document as Document & {startViewTransition?: (update: () => void) => {finished: Promise<void>}};
+    if (transitionDocument.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      modeTransition.current = true;
+      void transitionDocument.startViewTransition(change).finished.catch(() => {}).finally(() => { modeTransition.current = false; });
+    } else change();
   };
   const reviewCardOperation = (operationId: string) => { openSection('cards'); setPendingCardOperationId(operationId); };
 
@@ -537,45 +556,26 @@ function App() {
   const payerCardTail = confirmationCard?.payer_card_masked?.slice(-4)
     || accounts.find(account => account.account_id === confirmationCard?.from_account)?.transfer_card_number?.slice(-4);
 
-  return <main className={`app prototype-app${agentOpen ? ' nova-open' : ''}`}>
+  return <main className={`app prototype-app home-workspace${agentOpen ? ' nova-open' : ''}${agentOpen && agentExpanded ? ' nova-expanded' : ' nova-docked'}`}>
     <div className="bank-shell" ref={bankShellRef}>
       <aside className="bank-sidebar">
         <button className="brand" onClick={() => openSection('home')} aria-label="返回首页"><span className="brand-mark">N</span><span>NOVA<small>AI BANKING</small></span></button>
         <nav aria-label="主要功能">
           {([['home','⌂','概览'],['transfer','↗','转账与收款'],['insights','◫','账单洞察'],['cards','▣','卡片'],['subscriptions','↻','订阅'],['wealth','◇','理财']] as [BankingSection,string,string][]).map(([key,icon,label]) =>
-            <button key={key} className={appView === 'banking' && bankingSection === key ? 'active' : ''} onClick={() => openSection(key)}><span>{icon}</span>{label}</button>)}
-          <button className={appView === 'thirdParty' ? 'active' : ''} onClick={() => { if (appView !== 'thirdParty') setThirdPartyPageContext({ version: 1, page: 'thirdParty' }); setAppView('thirdParty'); }}><span>＋</span>生活服务</button>
+            <button key={key} data-destination={key} className={appView === 'banking' && bankingSection === key ? 'active' : ''} onClick={() => openSection(key)}><span>{icon}</span>{label}</button>)}
+          <button data-destination="services" className={appView === 'thirdParty' ? 'active' : ''} onClick={() => { if (appView !== 'thirdParty') setThirdPartyPageContext({ version: 1, page: 'thirdParty' }); setAppView('thirdParty'); setAgentExpanded(false); }}><span>＋</span>生活服务</button>
         </nav>
         <div className="sidebar-foot"><span className="security-dot" />模拟银行演示<small>所有资金与交易均为虚构</small></div>
       </aside>
       <div className="bank-workspace">
-        <header className="bank-topbar"><div><BeijingClock /><span className="workspace-label">{appView === 'thirdParty' ? '生活服务' : ({home:'财务概览',transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',wealth:'理财规划'} as Record<BankingSection,string>)[bankingSection]}</span></div><div className="top-actions"><button id="nova-toggle" className="agent-button" aria-expanded={agentOpen} aria-controls="nova-panel" onClick={() => setAgentOpen(open => !open)}><span>✦</span> 问 NOVA</button><button className="icon-button" disabled={isActing} onClick={openEnroll} title={totpEnabled ? '已绑定验证器' : '绑定验证器'}>⌾</button><button className="profile-button" onClick={logout} title="退出登录">{user.name.slice(0,1)}</button></div></header>
+        <header className="bank-topbar"><div><BeijingClock /><span className="workspace-label">{desktopLayout && agentOpen && agentExpanded ? 'NOVA 银行智能体' : appView === 'thirdParty' ? '生活服务' : ({home:'财务概览',transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',wealth:'理财规划'} as Record<BankingSection,string>)[bankingSection]}</span>{desktopLayout&&agentOpen&&agentExpanded&&(bankingSection!=='home'||appView==='thirdParty')&&<small className="nova-reference-context">参考工作台：{appView==='thirdParty'?'生活服务':({transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',wealth:'理财规划'} as Partial<Record<BankingSection,string>>)[bankingSection]}</small>}</div><div className="top-actions"><div className="nova-header-slot" ref={setNovaControls} /><button id="nova-toggle" className="agent-button" aria-expanded={desktopLayout ? agentExpanded && agentOpen : agentOpen} aria-controls="nova-panel" title={desktopLayout ? (agentExpanded && agentOpen ? '切换为侧边对话，查看财务概览' : '展开 NOVA 对话') : (agentOpen ? '收起 NOVA 对话' : '打开 NOVA 对话')} onClick={switchAgentMode}>{(desktopLayout ? agentExpanded && agentOpen : agentOpen) ? '收起 NOVA' : '展开 NOVA'}</button><button className="icon-button auth-enroll-button" disabled={isActing} onClick={openEnroll} aria-label={totpEnabled ? '已绑定验证器' : '绑定验证器'} title={totpEnabled ? '已绑定验证器' : '绑定验证器'}>⌾</button><button className="profile-button" onClick={logout} title="退出登录">{user.name.slice(0,1)}</button></div></header>
         {status && <p className="notice global-notice">{status}</p>}
         <div className="workspace-content">
         {appView==='banking'&&bankingSection==='wealth'&&import.meta.env.DEV&&import.meta.env.VITE_B6_BROWSER_TEST==='true'&&<p className="notice" role="status">B6 隔离验收：固定契约方案＋独立模拟账户。不是模型建议，与日常演示账户无关；测试业务时钟与现实时间分开。</p>}
         {appView === 'thirdParty' ? <Suspense fallback={<section className="card"><p>正在加载第三方服务…</p></section>}>
           <ThirdPartyServices onContextChange={updateThirdPartyPageContext} revision={bankRevision} onBack={() => openSection('home')} onGoBank={goToBankPayment} />
         </Suspense> : <>
-        {bankingSection === 'home' && <>
-          <section className="dashboard-hero">
-            <div><p className="eyebrow">OVERVIEW</p><h1>你好，{user.name}</h1><p>查看资产、收支和待处理事项。资金与交易均为模拟，敏感操作需要本人确认。</p><div className="hero-actions"><button onClick={() => setAgentOpen(true)}>✦ 和 NOVA 对话</button><button className="glass-button" onClick={() => openSection('transfer')}>发起转账</button></div></div>
-            <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} variant="hero" />
-          </section>
-          <section className="metric-grid">
-            <article><span>近期支出</span><strong>¥{recentSpend.toLocaleString('zh-CN',{minimumFractionDigits:2})}</strong><small>最近 8 笔流水中的支出</small></article>
-            <article><span>生效中订阅</span><strong>{activeSubscriptions.length}</strong><small>{activeSubscriptions.length ? `下次：${activeSubscriptions[0].merchant_name}` : '目前没有待续费项目'}</small></article>
-            <article><span>待处理事项</span><strong>{pendingRequests + (activeTask ? 1 : 0)}</strong><small>{activeTask ? `转账任务 ${activeTask.phase}` : pendingRequests ? `${pendingRequests} 项收款申请` : '当前无需处理'}</small></article>
-          </section>
-          <section className="dashboard-grid">
-            <article className="card overview-card"><div className="section-heading"><div><p className="eyebrow">ACCOUNTS</p><h2>账户一览</h2></div><button className="text-button" onClick={() => openSection('transfer')}>管理资金 →</button></div>{accounts.map(account => <div className="account-row" key={account.account_id}><span className="account-icon">{account.account_type === 'savings' ? '储' : '账'}</span><span><strong>{account.account_type === 'savings' ? '活期账户' : account.account_type}</strong><small>{account.card_number}</small></span><b>¥{account.balance.toLocaleString('zh-CN',{minimumFractionDigits:2})}</b></div>)}</article>
-            <article className="card overview-card"><div className="section-heading"><div><p className="eyebrow">QUICK ACCESS</p><h2>常用功能</h2></div></div>
-              <button className="insight-row" onClick={() => openSection('insights')}><span className="insight-icon coral">↗</span><span><strong>查看支出变化</strong><small>查看消费分类、趋势和待核对事项。</small></span><b>›</b></button>
-              <button className="insight-row" onClick={() => openSection('subscriptions')}><span className="insight-icon violet">↻</span><span><strong>{activeSubscriptions.length} 项订阅正在生效</strong><small>核对下次扣费，按需取消。</small></span><b>›</b></button>
-              <button className="insight-row" onClick={() => openSection('wealth')}><span className="insight-icon mint">◇</span><span><strong>规划资金或挑选产品</strong><small>选择购买方式，核对方案后确认与验证。</small></span><b>›</b></button>
-            </article>
-          </section>
-          <section className="card overview-card activity-card"><div className="section-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>最近流水</h2></div><button className="text-button" onClick={() => openSection('insights')}>查看分析 →</button></div>{transactions.length === 0 && <p className="hint">暂无流水</p>}{transactions.slice(0,5).map(tx => { const outgoing=['transfer_out','purchase','subscription','investment_purchase'].includes(tx.type); return <div className="activity-row" key={tx.tx_id}><span className={`activity-mark ${outgoing?'expense':'income'}`}>{outgoing?'−':'+'}</span><span><strong>{tx.type === 'transfer_out' ? `转给 ${counterpartyLabel(tx.counterparty)}` : tx.type === 'transfer_in' ? `收到 ${counterpartyLabel(tx.counterparty)} 的转账` : tx.note || (outgoing?'资金支出':'资金收入')}</strong><small>{beijingTime(tx.timestamp)}</small></span><b className={outgoing?'out':'in'}>{outgoing?'-':'+'}¥{tx.amount.toFixed(2)}</b></div>;})}</section>
-        </>}
+        {bankingSection === 'home' && <FinancialOverview userId={user.user_id} revision={bankRevision} accounts={accounts} subscriptions={subscriptions} loading={overviewLoading} error={overviewError} onRetry={() => void load()} assetSummary={assetSummary} onNavigate={openSection} />}
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
         {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>理财规划与购买</h1><p>选择整体规划或目标产品，核对方案后确认并完成验证。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}>{workspaceReady===user.user_id?<Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} />:<section className="card">{workspaceError?<><p role="alert">{workspaceError}</p><button onClick={()=>{workspaceBoot.current=null;setWorkspaceRetry(n=>n+1);}}>重新开启操作轮次</button></>:<p role="status">正在开启新的理财操作轮次…</p>}</section>}</Suspense></>}
@@ -665,7 +665,7 @@ function App() {
         </div>
       </div>
     </div>
-    <NovaChat pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
+    <NovaChat headerControls={desktopLayout?novaControls:null} pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => { if (window.matchMedia('(min-width: 1101px)').matches) setAgentExpanded(false); else setAgentOpen(false); }} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>
