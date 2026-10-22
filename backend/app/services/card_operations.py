@@ -68,6 +68,9 @@ async def open_preview(db: AsyncSession, *, user_id: str, request: CardOperation
         if row.card_id != request.card_id:
             raise CardAuthorizationError("原操作号参数冲突", "IDEMPOTENCY_CONFLICT")
         return row
+    if request.action != "card_lock":
+        from ..security.circuit_breaker import check_trade
+        await check_trade(db, user_id)
     preview = await cards.preview_card_operation(
         db, user_id=user_id, action=request.action, card_id=request.card_id, params=params)
     return await auth.open_operation(

@@ -1,4 +1,5 @@
 """5号原号恢复与未知提交持久化，无银行ORM依赖。"""
+from ..audit.spans import audited
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ async def record(db: AsyncSession, user_id: str, operation_id: str, authorizatio
     await db.commit()
 
 
+@audited("wealth")
 async def execute(db: AsyncSession, user_id: str, authorization_id: str, bank: HttpWealthBankApi) -> dict:
     """先核对原编号；查询404后只允许同号同参显式提交。"""
     row = await db.get(WealthAuthorizationORM, authorization_id)

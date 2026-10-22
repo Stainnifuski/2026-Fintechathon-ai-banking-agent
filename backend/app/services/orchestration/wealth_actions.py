@@ -1,4 +1,5 @@
 """Structured adapters over existing handlers; no NLP, trading or new engine."""
+from ..audit.spans import audited
 from decimal import Decimal
 from copy import deepcopy
 from uuid import uuid4
@@ -41,6 +42,7 @@ def positions(facts):
             daily_metric=first.get('daily_metric') if same else None))
     return rows
 
+@audited("wealth")
 async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
     if request.action == 'recommend_products':
         from .wealth_portfolio_joint import BrowsingBankReads

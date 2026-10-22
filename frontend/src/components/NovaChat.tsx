@@ -355,6 +355,10 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             {entry.role === 'assistant' ? (entry.content ? <NovaMarkdown content={entry.content} onConversation={id=>{if(id===activeConversationId)body.current?.scrollTo({top:0,behavior:'smooth'});else void selectConversation(id);}} /> : null) : <p>{entry.content}</p>}
             {entry.streaming && <p className="hint" role="status">{entry.status ? `🔍 ${entry.status}…` : entry.content ? '▍' : '正在处理你的问题…'}</p>}
             {entry.details && <small>{entry.details.mode === 'offline' ? '离线规则' : '模型回答'}{entry.details.tool_calls.length > 0 && ` · 处理记录 ${entry.details.tool_calls.length} 项`}</small>}
+            {entry.details?.grounding && <small className="hint">{({
+              grounded: '依据后端结果生成', partial: '部分结果未核实，请查看处理记录',
+              abstained: '尚无可核验的业务结果', blocked: '本次请求已停止处理',
+            })[entry.details.grounding.status]}</small>}
             {entry.details?.tool_calls.map((call, callIndex) => <details key={callIndex}><summary>{TOOL_LABELS[call.name] || call.name}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
             {entry.details?.tool_calls.filter(call => call.name === 'preview_card_operation' && !call.result.error).map((call, callIndex) => {
               const preview = call.result.data as { operation_id: string; action_label: string };

@@ -24,6 +24,7 @@ from .cake_order import CakeOrderORM
 from .calendar_event import CalendarEventORM
 from .merchant_refund import MerchantRefundORM
 from .sms_challenge import SmsChallengeORM
+from .security_state import SecurityStateORM
 from .workflow import (
     AuthorizationORM,
     HumanTicketORM,
@@ -88,6 +89,7 @@ __all__ = [
     "CalendarEventORM",
     "MerchantRefundORM",
     "SmsChallengeORM",
+    "SecurityStateORM",
 ]
 
 from .conversation import ConversationORM, ChatReceiptORM
@@ -97,3 +99,6 @@ from . import wealth
 from . import wealth_research
 from . import bill_foundation
 from . import bill_features
+from .audit_event import AuditEventORM, AuditEventObjectORM
+# Install once for every SQLAlchemy session, including workers and local tools.
+from ..services.audit import hooks as _audit_hooks

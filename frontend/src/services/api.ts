@@ -1,4 +1,5 @@
 import axios from 'axios';
+import {publishSecurityDenial} from './securityState';
 import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import {changesAssetFacts,invalidateAssetSummary} from './assetSummaryEvents';
 import {AUTHENTICATION_EXPIRED_EVENT,isSessionAuthenticationFailure} from '../utils/sessionAuthentication';
@@ -37,15 +38,14 @@ apiClient.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
+      publishSecurityDenial(error);
 
       switch (status) {
         case 401:
-          if (error.response?.data?.detail?.code !== 'TOTP_INVALID') {
+          if (isSessionAuthenticationFailure(error)) {
             localStorage.removeItem('token');
-            if(isSessionAuthenticationFailure(error)){
-              localStorage.removeItem('bank-user');
-              window.dispatchEvent(new Event(AUTHENTICATION_EXPIRED_EVENT));
-            }
+            localStorage.removeItem('bank-user');
+            window.dispatchEvent(new Event(AUTHENTICATION_EXPIRED_EVENT));
             console.error('认证失败，请重新登录');
           }
           break;

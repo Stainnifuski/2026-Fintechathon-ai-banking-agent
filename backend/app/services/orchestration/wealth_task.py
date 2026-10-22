@@ -1,4 +1,5 @@
 """持久化任务图与控制请求；不读取或修改银行账本ORM。"""
+from ..audit.spans import audited
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ def current_workspace_task(task):
     return not task.data.get('workspace_detached')
 
 
+@audited("wealth")
 async def reset_workspace(db, user_id, context_id):
     """Discard unsubmitted drafts, preserving bank receipts and uncertain submissions."""
     from ...models.wealth import WealthOrderORM as Order
@@ -96,6 +98,7 @@ async def view(db, task):
             'operation_id':n.operation_id, 'attempts':n.attempts, **n.data} for n in nodes]}
 
 
+@audited("wealth")
 async def create_command(db, user_id, session_id, context_id, command, *, sell_then_buy=False, requirements=None, holding_redemption=False, commit=True):
     await lock_profile(db, user_id)
     pending = (await db.scalars(select(Task).where(Task.user_id == user_id,
@@ -134,6 +137,7 @@ async def create_command(db, user_id, session_id, context_id, command, *, sell_t
     return await view(db, task)
 
 
+@audited("wealth")
 async def control(db, user_id, task_id, action, body, *, actor_id=None):
     actor = actor_id or user_id
     if action in {'claim', 'note', 'release'} and not actor_id:
@@ -231,6 +235,7 @@ async def control(db, user_id, task_id, action, body, *, actor_id=None):
     return result
 
 
+@audited("wealth")
 async def revise_command(db, user_id, task_id, expected_version, command):
     """只更新未提交子图；旧操作号与确认留在历史，不修改银行订单。"""
     await lock_profile(db, user_id)
@@ -269,6 +274,7 @@ async def revise_command(db, user_id, task_id, expected_version, command):
     return await view(db,task)
 
 
+@audited("wealth")
 async def register_plan(db, user_id, session_id, context_id, plan, *, commit=True):
     """方案逐笔节点持久化；申购仍由可信整份方案原子执行入口提交。"""
     from sqlalchemy import delete

@@ -1,4 +1,5 @@
 """模拟银行订阅查询、取消与演示扣费。"""
+from ..audit.spans import audited
 
 import calendar
 import hashlib
@@ -84,6 +85,7 @@ def _cancellation_digest(subscription: SubscriptionORM) -> str:
     return hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()
 
 
+@audited("subscriptions")
 async def preview_subscription_cancellation(*, subscription_id: str, user_id: str) -> dict:
     """Read-only confirmation card; only the trusted UI retains its token."""
     async with AsyncSessionLocal() as session:
@@ -122,6 +124,7 @@ def _validate_cancellation_confirmation(token: str | None, subscription: Subscri
         raise BankError("取消确认与当前订阅不匹配，请重新确认", "CONFIRMATION_INVALID", 409)
 
 
+@audited("subscriptions")
 async def cancel_subscription(
     *, subscription_id: str, user_id: str, state_version: int,
     confirmation_token: str | None = None,
@@ -170,6 +173,7 @@ async def cancel_subscription(
         return _view(subscription, account)
 
 
+@audited("subscriptions")
 async def simulate_subscription_charge(
     *,
     subscription_id: str,
@@ -221,6 +225,8 @@ async def simulate_subscription_charge(
                 "message": f"{subscription.merchant_name} 本次模拟扣费已处理",
             }
 
+        from ...security.circuit_breaker import require_trade
+        await require_trade(session, user_id)
         if subscription.status != ACTIVE:
             raise BankError("已取消的订阅不会继续扣费", "SUBSCRIPTION_NOT_ACTIVE", 409)
         if subscription.state_version != state_version:

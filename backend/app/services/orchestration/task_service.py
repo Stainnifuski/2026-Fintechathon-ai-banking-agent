@@ -1,4 +1,5 @@
 """5号应用编排：任务、授权、受理、执行、核对与人工控制。"""
+from ..audit.spans import audited
 
 import hashlib
 import json
@@ -22,6 +23,8 @@ from ...domain import (
     fen_to_yuan,
     yuan_to_fen,
 )
+from ...security.circuit_breaker import check_trade, SecurityError
+
 from ...integrations.authorization import (
     AuthorizationError,
     CapabilityNotImplemented,
@@ -252,6 +255,7 @@ async def _require_complete_proposal(db: AsyncSession, task: TransferTaskORM) ->
 
 
 # 持久化一次转账申请
+@audited("transfer")
 async def create_transfer_task(
     db: AsyncSession,
     bank: BankApi,
@@ -398,6 +402,7 @@ async def create_transfer_task(
     return await task_snapshot(db, task_id, user_id)
 
 # 点击同意后，进行状态更新和落盘
+@audited("transfer")
 async def confirm_task(
     db: AsyncSession,
     *,
@@ -420,6 +425,11 @@ async def confirm_task(
     plan = await _current_plan(db, task)
     if operation.status != OperationStatus.DRAFT:
         raise TaskError("当前操作不能确认", 409, "INVALID_OPERATION_STATE")
+
+    try:
+        await check_trade(db, user_id, issued_at=authorization.created_at, authorization=True)
+    except SecurityError as error:
+        raise TaskError(error.message, error.status_code, error.code) from error
 
     # 调整授权状态（黄->同意即可生效，红->同意后还要验证）
     record_consent(authorization)
@@ -450,6 +460,7 @@ async def confirm_task(
     return await task_snapshot(db, task_id, user_id)
 
 # 真正处理业务
+@audited("transfer")
 async def accept_task(
     db: AsyncSession,
     bank: BankApi,
@@ -469,6 +480,10 @@ async def accept_task(
     await _require_complete_proposal(db, task)
     operation = await _current_operation(db, task)
     authorization = await _authorization(db, operation.operation_id)
+    try:
+        await check_trade(db, user_id, issued_at=authorization.created_at, authorization=True)
+    except SecurityError as error:
+        raise TaskError(error.message, error.status_code, error.code) from error
     if task.cancel_requested or task.control_mode != ControlMode.AUTO:
         raise TaskError("任务已取消或执行权不在自动执行器", 409, "EXECUTION_NOT_ALLOWED")
     if operation.status != OperationStatus.READY:
@@ -579,6 +594,7 @@ async def accept_task(
     return await task_snapshot(db, task_id, user_id)
 
 # 会真正调用银行的转账API
+@audited("transfer")
 async def dispatch_task(
     db: AsyncSession,
     bank: BankApi,
@@ -633,6 +649,7 @@ async def dispatch_task(
         subject_user_id=user_id,
         authorization_id=authorization.authorization_id,
         control_epoch=task.control_epoch,
+        authorization_issued_at=authorization.created_at.isoformat(),
     )
     try:
         # submit_transfer是真正把本地请求向银行服务提交
@@ -663,6 +680,12 @@ async def dispatch_task(
         await db.commit()
         return
     except BankApiError as error:
+        if error.code in {"SECURITY_LOCKED", "SECURITY_RECONFIRM_REQUIRED"}:
+            # A deliberate denial before first bank acceptance is definitive;
+            # do not create a retry that could debit after the cooldown.
+            result = BankOperationResult(operation.operation_id, BankOperationStatus.FAILED, None, error.code)
+            await _merge_bank_result(db, task, operation, outbox, result)
+            return
         try:
             result = await bank.query_operation(operation.operation_id)
         except BankResponseUnknown:
@@ -749,6 +772,7 @@ async def _merge_bank_result(
     await db.commit()
 
 
+@audited("transfer")
 async def reconcile_task(
     db: AsyncSession,
     bank: BankApi,
@@ -817,6 +841,7 @@ async def reconcile_task(
     return await task_snapshot(db, task_id, user_id)
 
 
+@audited("transfer")
 async def cancel_task(
     db: AsyncSession,
     bank: BankApi,
@@ -875,6 +900,7 @@ async def cancel_task(
     return await task_snapshot(db, task_id, user_id)
 
 
+@audited("transfer")
 async def modify_task(
     db: AsyncSession,
     bank: BankApi,
@@ -1016,6 +1042,7 @@ async def modify_task(
     return await task_snapshot(db, task_id, user_id)
 
 
+@audited("transfer")
 async def verify_task(
     db: AsyncSession,
     bank: BankApi,
@@ -1050,6 +1077,11 @@ async def verify_task(
     authorization = await _authorization(db, operation.operation_id)
     if authorization.status != AuthorizationStatus.PENDING_VERIFICATION:
         raise TaskError("授权不在待验证状态", 409, "AUTHORIZATION_WRONG_STATE")
+
+    try:
+        await check_trade(db, user_id, issued_at=authorization.created_at, authorization=True)
+    except SecurityError as error:
+        raise TaskError(error.message, error.status_code, error.code) from error
 
     # 由模拟银行内部 API 校验第二因素；编排不直接读取银行客户表。
     try:
@@ -1092,6 +1124,7 @@ async def verify_task(
     return await task_snapshot(db, task_id, user_id)
 
 
+@audited("transfer")
 async def claim_task(
     db: AsyncSession,
     *,
@@ -1257,6 +1290,12 @@ async def task_snapshot(db: AsyncSession, task_id: str, user_id: str) -> dict:
             else "转账失败"
         ),
     }.get(TaskPhase(task.phase), "正在整理转账信息")
+    if operation.status in {OperationStatus.DRAFT, OperationStatus.READY}:
+        try:
+            await check_trade(db, user_id, issued_at=authorization.created_at, authorization=True)
+        except SecurityError as error:
+            allowed = [a for a in allowed if a in {"modify", "cancel"}]
+            message = error.message
     return {
         "task_id": task.task_id,
         "phase": task.phase,

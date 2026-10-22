@@ -1,4 +1,5 @@
 """Validated extraction with explicit offline and OpenAI-compatible HTTP modes."""
+from ..audit.spans import audited
 import asyncio
 import json
 import re
@@ -183,6 +184,7 @@ def offline_extract(message: str, context: dict) -> Extraction:
 
 class ModelAdapter:
     """转账参数提取适配器；只接收脱敏任务摘要，不接收身份凭据。"""
+    @audited("transfer")
     async def extract(self, message: str, context: dict) -> Extraction:
         payload = {
             "messages": [
@@ -196,6 +198,7 @@ class ModelAdapter:
         except LLMError as error:
             raise UnderstandingError("模型未能可靠理解本次请求，请重试；没有生成或执行转账") from error
 
+    @audited("transfer")
     async def extract_tasks(self, message: str, context: dict) -> TransferTurnExtraction:
         """由模型同时决定本轮要新建或调整的转账任务数量。"""
         identifiers: dict[str, str] = {}
@@ -256,6 +259,7 @@ class NLUEngine:
         self.model = model
         self.mode = "model" if model else get_mode()
 
+    @audited("transfer")
     async def extract(self, message: str, context: dict) -> Extraction:
         parameter_text = re.split(NOTE_SEPARATOR, message, maxsplit=1)[0]
         if scope_guard(parameter_text): return Extraction(intent="unsupported")
@@ -270,6 +274,7 @@ class NLUEngine:
         except Exception as error:
             raise UnderstandingError("模型输出无效或超时，本次没有生成或执行转账") from error
 
+    @audited("transfer")
     async def extract_tasks(self, message: str, context: dict) -> TransferTurnExtraction:
         """模型模式整轮编排任务；离线模式仍由调用方使用有限规则。"""
         if self.mode != "model":

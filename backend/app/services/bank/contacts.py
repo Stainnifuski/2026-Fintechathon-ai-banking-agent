@@ -1,4 +1,5 @@
 """Owner-scoped transfer shortcuts; bank directory remains the payment authority."""
+from ..audit.spans import audited
 
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -44,6 +45,7 @@ async def list_contacts(owner_id: str) -> list[dict]:
         return [_view(row) for row in rows]
 
 
+@audited("contacts")
 async def create_contact(owner_id: str, phone: str | None, account_id: str | None,
                          nickname: str | None, card_number: str | None = None,
                          name: str | None = None) -> dict:
@@ -136,6 +138,7 @@ async def list_contact_recipients(owner_id: str) -> list[dict]:
         return result
 
 
+@audited("contacts")
 async def rename_contact(owner_id: str, contact_id: str, nickname: str | None) -> dict:
     alias = _nickname(nickname)
     async with AsyncSessionLocal() as db:
@@ -147,6 +150,7 @@ async def rename_contact(owner_id: str, contact_id: str, nickname: str | None) -
         return _view(row)
 
 
+@audited("contacts")
 async def delete_contact(owner_id: str, contact_id: str) -> None:
     async with AsyncSessionLocal() as db:
         row = await db.get(ContactORM, contact_id)
@@ -290,6 +294,7 @@ async def read_contact_shortcuts(owner_id: str, *, query: str | None = None,
     return {"total": len(items), "has_more": len(items) > limit, "items": items[:limit]}
 
 
+@audited("contacts")
 async def resolve_transfer_recipient(owner_id: str, name: str, mode: str,
                                      number: str | None, account_id: str | None = None) -> dict:
     """Resolve a transfer form at submission time and return a bank-owned error reason."""
@@ -338,6 +343,7 @@ async def _phone_candidates(owner_id: str, phone: str) -> list[dict]:
     return await lookup_recipient_phone(owner_id, phone)
 
 
+@audited("contacts")
 async def clear_transfer_history(owner_id: str) -> None:
     async with AsyncSessionLocal() as db:
         cutoff = await db.get(TransferRecipientHistoryCutoffORM, owner_id)

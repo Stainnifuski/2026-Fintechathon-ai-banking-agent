@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/v1/internal/bank/wealth", tags=["internal-wealth
 
 def fail(error: BankError | WealthPolicyError) -> None:
     """保留共享结构化领域码，不暴露输入或验证凭据。"""
-    raise HTTPException(error.status_code, detail={"code": error.code, "message": error.message}) from error
+    raise HTTPException(error.status_code, detail={"code": error.code, "message": error.message, **getattr(error, "security_detail", {})}) from error
 
 
 class Subject(StrictRequest):

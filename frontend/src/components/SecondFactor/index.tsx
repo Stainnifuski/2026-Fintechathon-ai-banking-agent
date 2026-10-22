@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as bank from '../../services/bank';
+import {useSecurityStatus} from '../../services/securityState';
 
 interface SecondFactorProps {
   purpose: bank.SmsPurpose;
@@ -14,10 +15,16 @@ const errorMessage = (error: unknown) =>
 
 /** 红色强验证方式选择：验证器 App 或短信验证码（短信码绑定到当前这一笔操作）。 */
 export function SecondFactor({ purpose, referenceId, factor, onChange, disabled }: SecondFactorProps) {
+  const {trade_locked: tradeLocked} = useSecurityStatus();
+  disabled = disabled || tradeLocked;
   const [method, setMethod] = useState<'totp' | 'sms'>(factor?.method ?? 'totp');
   const [countdown, setCountdown] = useState(0);
   const [hint, setHint] = useState('');
   const [inbox, setInbox] = useState<bank.SmsInboxMessage[] | null>(null);
+  useEffect(() => {
+    if (tradeLocked) { onChange(null); setInbox(null); }
+  }, [tradeLocked]); // A lock invalidates the current factor, never resubmits it.
+
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -45,6 +52,7 @@ export function SecondFactor({ purpose, referenceId, factor, onChange, disabled 
   };
 
   return <div className="second-factor">
+    {tradeLocked && <p className="hint" role="status">交易已安全锁定，请等待恢复后重新确认和验证。</p>}
     <div className="confirm">
       <button type="button" className={method === 'totp' ? '' : 'secondary'} disabled={disabled} onClick={() => choose('totp')}>验证器</button>
       <button type="button" className={method === 'sms' ? '' : 'secondary'} disabled={disabled} onClick={() => choose('sms')}>短信验证码</button>

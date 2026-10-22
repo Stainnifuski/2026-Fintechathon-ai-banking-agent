@@ -1,4 +1,5 @@
 """短事务DAG调度；执行工具固定，未知结果始终保留原号。"""
+from ..audit.spans import audited
 import asyncio
 import logging
 from datetime import timedelta
@@ -15,6 +16,7 @@ from .wealth_task import TERMINAL
 logger = logging.getLogger(__name__)
 
 
+@audited("wealth", skip_empty=True)
 async def tick(db, task_id, bank):
     from .wealth_lifecycle import prune_tasks
     initial = await db.get(Task, task_id)
@@ -22,6 +24,8 @@ async def tick(db, task_id, bank):
         await prune_tasks(db);await db.commit()
         return
     user_id = initial.user_id
+    from ..audit.context import bind_subject
+    bind_subject(user_id, system_actor="wealth-worker")
     await lock_profile(db, user_id)
     task = await db.get(Task, task_id, populate_existing=True)
     nodes = (await db.scalars(select(Node).where(Node.task_id==task_id))).all()

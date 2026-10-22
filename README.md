@@ -68,6 +68,10 @@ NOVA 已接通分层 Agent Loop：模型先输出严格结构化路由；单一�
 
 ## 体验与风险授权
 
+- 操作记录：在侧栏查看本人操作的决策、确认验证、执行结果与关联生命周期，支持筛选和脱敏导出。历史资料不足会明确标识；实现和故障恢复见[操作审计](docs/security/operation_audit.md)。
+
+NOVA 已增加[幻觉防护](docs/security/hallucination_guard.md)：关键业务文字依据后端工具结果生成，保留对象、单位、范围、来源与状态；流式正文核验后展示，缺依据时说明未核实。模型不能以自由回答更改金额或宣称交易成功。理财知识采用受控来源摘录，旧流程退出当前检索，历史引用保留。验证范围及未覆盖项见[本次验收](docs/validation/hallucination_guard_20261022.md)。
+
 - NOVA：打开顶部“问NOVA”，查询“可用资金有多少”“请帮我查看今年的账单情况”，或说“给李四转100元”建立转账草稿并按提示补齐资料。业务页选中对象后可追问，详细示例见[NOVA使用指南](docs/setup/nova_usage.md)。
 - 转账：输入“给手机号13800000002转300元，备注房租”，核对收款人、金额和风险等级，再操作任务卡。
 - 账单：进入“账单洞察”查看报告、异常和流水；明细可编辑标签、查看原单／互转对应流水；展开“商户与周期收支管理”维护别名、归并商户、刷新历史关联并设置周期预测。独立问答及NOVA查询保持只读。
@@ -106,7 +110,7 @@ NOVA 已接通分层 Agent Loop：模型先输出严格结构化路由；单一�
 | 理财工作台与临时状态 | [当前交互及清理](docs/wealth/workspace_simplification.md)、[C01–C08验收](docs/validation/wealth_workspace_20261004.md) |
 | 理财语义、推荐与子DAG | [子任务接口](docs/wealth/semantic_subtask_contract.md)、[推荐provider](docs/wealth/recommendation_provider.md)、[推荐与详情展示](docs/wealth/recommendation_display.md)、[固定24项验收](docs/validation/wealth_semantic_dag_20261003.md) |
 | 固定行情与本地基线升级 | [价格和日历](docs/wealth/fixed_prices_and_calendar.md)、[备份与归属清理](docs/wealth/baseline_upgrade.md)、[历史开发记录](docs/wealth/semantic_dag_progress.md) |
-| 安全与授权限制 | [理财安全自评](docs/wealth/security.md)、[统一验证及历史证据](docs/wealth/simulated_authorization.md) |
+| 安全与授权限制 | [异常熔断与安全锁定](docs/security/circuit_breaker.md)、[理财安全自评](docs/wealth/security.md)、[统一验证及历史证据](docs/wealth/simulated_authorization.md) |
 | 验证证据 | [理财原始验收](docs/validation/wealth_20261001.md)、[统一授权接入验收](docs/validation/wealth_unified_authorization_20261005.md)、[历史点击授权验收](docs/validation/wealth_authorization_demo_20261001.md)、[账单验收](docs/validation/bills_20260930.md) |
 | 开发历史 | [实施进度](implementation_progress.md)、[历史README](docs/archive/README_before_authorization_20261001.md) |
 

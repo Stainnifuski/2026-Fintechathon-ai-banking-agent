@@ -1,4 +1,5 @@
 """Transient wealth workspace state; bank facts and unresolved dependencies survive."""
+from ..audit.spans import audited
 from datetime import datetime,timedelta
 from uuid import uuid4
 from sqlalchemy import select, delete
@@ -12,6 +13,7 @@ from ...integrations.wealth_authorization import lock_profile, WealthPolicyError
 ACCEPTED = {'ACCEPTED','PENDING_PRICING','PENDING_CASH','SETTLED','CANCELLED'}
 
 
+@audited("wealth")
 async def prune_tasks(db, user_id=None):
     """Keep only execution structure for complex work; terminal receipts have no graph."""
     rows=list(await db.scalars(select(Task).where(Task.user_id==user_id) if user_id else select(Task)))
@@ -44,6 +46,7 @@ async def prune_tasks(db, user_id=None):
     return removed
 
 
+@audited("wealth")
 async def close(db,user_id,session_id):
     await lock_profile(db,user_id)
     session=await db.get(Conversation,session_id,populate_existing=True)
@@ -109,6 +112,7 @@ async def close(db,user_id,session_id):
     return {'closed':True}
 
 
+@audited("wealth")
 async def start(db,user_id,context_id):
     await lock_profile(db,user_id)
     rows=list(await db.scalars(select(Conversation).where(Conversation.user_id==user_id)))
@@ -121,6 +125,7 @@ async def start(db,user_id,context_id):
     return {'session_id':sid,'version':1}
 
 
+@audited("wealth")
 async def clean_archives(db, *, apply=False):
     """Explicit admin cleanup, including confirmed wealth records on ordinary accounts."""
     from sqlalchemy import func
@@ -143,6 +148,7 @@ async def clean_archives(db, *, apply=False):
         for model in (Conversation,Plan,ChatRequest,Task,Node,Execution)}}
 
 
+@audited("wealth")
 async def expire(db):
     cutoff=utc_now()-timedelta(hours=24)
     for row in list(await db.scalars(select(Conversation))):

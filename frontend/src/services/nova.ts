@@ -38,6 +38,12 @@ export async function getNovaConversation(sessionId: string): Promise<NovaConver
   return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
 }
 export type NovaReply = {
+  grounding?: {
+    version: string;
+    status: 'grounded' | 'partial' | 'abstained' | 'blocked';
+    reason_codes: string[];
+    sources: { evidence_id: string; tool: string; source: string; as_of: string | null; content_hash: string; outcome: string }[];
+  };
   wealth_cards?: NovaWealthCard[];
   reply: string;
   mode: 'model' | 'offline';
@@ -103,7 +109,7 @@ const novaError = (status: number, detail: NovaErrorDetail) => Object.assign(new
 });
 
 /**
- * 流式提问：边接收边回调 tool/delta/reset，最终以 done 事件的完整结果为准。
+ * 流式提问：先回调工具进度，后端核验后的正文通过 delta 发布；done 为完整结果。
  * 浏览器不支持读取响应流时退回一次性接口。
  */
 export async function streamNova(message: string, signal: AbortSignal,

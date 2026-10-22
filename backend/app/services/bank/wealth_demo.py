@@ -1,4 +1,5 @@
 """本人disposable轮次管理；普通银行账户永远不能进入测试写工具。"""
+from ..audit.spans import audited
 import hashlib
 import json
 import os
@@ -86,6 +87,7 @@ async def invalidate(db: AsyncSession, user_id: str, account_id: str) -> None:
             plan.status = "EXPIRED"
 
 
+@audited("wealth")
 async def write(db: AsyncSession, user_id: str, action: str, body: dict) -> dict:
     """锁本人控制→账户；请求重放与范围修改同一事务。"""
     if not enabled():
@@ -240,6 +242,7 @@ async def deletion_preview(db: AsyncSession, user_id: str, items: list[dict]) ->
     return {'runs': rows, 'preview_digest': digest, 'irreversible': True}
 
 
+@audited("wealth")
 async def delete_archives(db: AsyncSession, user_id: str, body: dict) -> dict:
     """提交中重新锁定范围；全部轮次安全才能开始物理删除。"""
     if body.get('confirmed') is not True:
@@ -299,15 +302,12 @@ async def delete_archives(db: AsyncSession, user_id: str, body: dict) -> dict:
         for chat in chats:
             if chat.response.get('session_id') in data['conversations']:
                 await db.delete(chat)
-        audits=(await db.scalars(select(AuditLogORM).where(AuditLogORM.user_id==user_id,
-            AuditLogORM.action.like('investment_%')))).all()
-        for audit in audits:
-            if audit.params and (audit.params.get('operation_id') in data['operations'] or audit.params.get('authorization_id') in data['auths']):
-                await db.delete(audit)
-        adjustments=(await db.scalars(select(AuditLogORM).where(AuditLogORM.user_id==user_id,
-            AuditLogORM.action=='wealth_demo_adjust'))).all()
-        for audit in adjustments:
-            if audit.params and audit.params.get('run_id')==ctx.context_id: await db.delete(audit)
+        # Audit evidence outlives disposable accounts, authorizations and graphs.
+        from ..audit.writer import observe
+        observe(db, action="wealth.archive_cleanup", phase="decision", outcome="checked", domain="wealth",
+            subject_user_id=user_id, source_module="bank.wealth_demo",
+            facts={"context_id": ctx.context_id, "operation_ids": data['operations'],
+                   "rule_id": "preserve-audit-v1"})
         for cls,predicate in [
             (WealthTaskControlORM,WealthTaskControlORM.task_id.in_(data['tasks'])),
             (WealthTaskNodeORM,WealthTaskNodeORM.task_id.in_(data['tasks'])),

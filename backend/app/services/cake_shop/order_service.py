@@ -1,4 +1,5 @@
 """蛋糕店订单编排：创建银行收款申请，并以其状态对账订单。"""
+from ..audit.spans import audited
 
 import hashlib
 import json
@@ -119,6 +120,7 @@ async def _reconcile(order: CakeOrderORM) -> tuple[bool, dict | None]:
     return True, payment
 
 
+@audited("shops")
 async def create_order(
     *,
     customer_user_id: str,
@@ -225,6 +227,7 @@ async def create_order(
     return await get_order(customer_user_id=customer_user_id, order_id=order_id)
 
 
+@audited("shops")
 async def get_order(*, customer_user_id: str, order_id: str) -> dict:
     async with AsyncSessionLocal() as session:
         order = await session.get(CakeOrderORM, order_id)
@@ -239,6 +242,7 @@ async def get_order(*, customer_user_id: str, order_id: str) -> dict:
         return _view(order, payment)
 
 
+@audited("shops")
 async def list_orders(*, customer_user_id: str) -> list[dict]:
     async with AsyncSessionLocal() as session:
         orders = (
@@ -261,6 +265,7 @@ async def list_orders(*, customer_user_id: str) -> list[dict]:
         return [_view(order, payments[order.order_id]) for order in orders]
 
 
+@audited("shops")
 async def list_merchant_orders(*, merchant_user_id: str) -> list[dict]:
     if merchant_user_id != CAKE_MERCHANT_USER_ID:
         raise CakeShopError("只有蛋糕店商户可以查看商户订单", "MERCHANT_FORBIDDEN", 403)
@@ -283,6 +288,7 @@ async def list_merchant_orders(*, merchant_user_id: str) -> list[dict]:
         return [_view(order, payments[order.order_id]) for order in orders]
 
 
+@audited("shops")
 async def refund_order(
     *,
     merchant_user_id: str,

@@ -1,4 +1,5 @@
 """权限分级拦截器"""
+from ..services.audit.spans import audited
 
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ class PermissionDeniedError(Exception):
         super().__init__(self.message)
 
 
+@audited("identity")
 async def check_operation_permission(
     action: str, user_id: str, params: dict | None = None
 ) -> dict:
@@ -56,6 +58,7 @@ async def check_operation_permission(
     }
 
 
+@audited("identity")
 async def enforce_permission(
     action: str, user_id: str, params: dict | None = None
 ) -> None:

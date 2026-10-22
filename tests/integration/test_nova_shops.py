@@ -154,9 +154,13 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
     seen = []
     def handler(request):
         body = json.loads(request.content)
+        if body.get('response_format'):
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
+                'content': json.dumps({'mode': 'direct_react', 'domains': ['shops'],
+                                      'has_dependencies': False})}}]})
         seen.append(body)
         if len(seen) == 1:
-            assert created['order_id'] in body['messages'][-2]['content']
+            assert any(created['order_id'] in (item.get('content') or '') for item in body['messages'])
             return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {'content': None,
                 'tool_calls': [{'id': 'shop', 'type': 'function', 'function': {'name': 'get_shop_order', 'arguments': '{}'}}]}}]})
         tool = body['messages'][-1]
@@ -178,7 +182,8 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
             client.headers['Authorization'] = 'Bearer ' + create_access_token({'sub': 'U1'})
             shop = {'shop': 'cake', 'selected': {'type': 'order', 'id': created['order_id']}}
             result = await client.post('/api/v1/nova/chat', json={'message': '这个订单付款了吗？', 'page_context': {'page': 'thirdParty', 'shop': shop}})
-            assert result.status_code == 200 and result.json()['reply'] == '模拟蛋糕店订单等待付款。'
+            assert result.status_code == 200 and '等待付款' in result.json()['reply']
+            assert result.json()['grounding']['status'] == 'grounded'
             for bad in ({'shop': 'other'}, {'shop': 'cake', 'user_id': 'U2'}, {'shop': 'cake', 'selected': {'type': 'order', 'id': 'x', 'quantity': 2}}):
                 assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'thirdParty', 'shop': bad}})).status_code == 422
             assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'home', 'shop': shop}})).status_code == 422

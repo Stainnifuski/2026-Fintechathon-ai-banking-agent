@@ -1,4 +1,5 @@
 """Persisted proposal bridge. Only orchestration creates/modifies tasks; never executes."""
+from ..audit.spans import audited
 import hashlib
 import json
 import re
@@ -38,6 +39,7 @@ async def read_conversation(db: AsyncSession, session_id: str, user_id: str) -> 
         candidates=public_candidates(state), task=task).model_dump(mode="json")
 
 
+@audited("transfer")
 async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, user_id: str, request: ChatTaskCreate) -> dict:
     receipt_id = digest([user_id, request.request_id])
     payload_digest = digest(request.model_dump(mode="json"))

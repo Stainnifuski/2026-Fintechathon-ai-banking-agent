@@ -1,4 +1,5 @@
 """Explicit holding redemptions grouped under existing confirmation/MFA; no allocation."""
+from ..audit.spans import audited
 import hashlib
 import json
 from uuid import uuid5, NAMESPACE_URL
@@ -9,6 +10,7 @@ from ...schemas.wealth import InvestmentCommand
 from . import wealth_plan
 
 
+@audited("wealth")
 async def prepare(db, user_id, bank, request):
     plan_id = 'WR' + uuid5(NAMESPACE_URL, user_id + ':' + request.request_id).hex
     payload = request.model_dump(mode='json')

@@ -1,5 +1,6 @@
 """NOVA 卡片/订阅：页面事实一致、身份隔离、查询只读、卡片操作仅生成预览和上下文闭环。"""
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -186,7 +187,8 @@ async def test_preview_tool_fills_unmentioned_fields_and_levels_by_direction(db)
     overseas = await nova.execute_tool(call('preview_card_operation', {'action': 'card_set_channels', 'overseas_enabled': True}), ctx)
     assert overseas['data']['permission_level'] == 'red'
     assert [change['field'] for change in overseas['data']['changes']] == ['overseas_enabled']
-    lower = await nova.execute_tool(call('preview_card_operation', {'action': 'card_set_transaction_limits', 'daily_txn_limit': '30000'}), ctx)
+    lower = await nova.execute_tool(call('preview_card_operation', {'action': 'card_set_transaction_limits', 'daily_txn_limit': '30000'}),
+                                   replace(ctx, original_message='将每日交易限额降到30000元'))
     assert lower['data']['permission_level'] == 'yellow'
     assert [change['after'] for change in lower['data']['changes']] == [1_000_000, 3_000_000]
     apply = await nova.execute_tool(call('preview_card_operation', {'action': 'card_apply_virtual', 'account_id': 'A1'}), ctx)

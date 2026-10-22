@@ -1,4 +1,5 @@
 """4号模拟银行：按 operation_id 幂等受理、记账和查询。"""
+from ..audit.spans import audited
 from .account_scope import isolated_account_ids
 
 
@@ -45,6 +46,7 @@ class TrustedExecutionContext:
     subject_user_id: str
     authorization_id: str
     control_epoch: int
+    authorization_issued_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,7 @@ async def require_ordinary_accounts(db: AsyncSession,account_ids: list[str]) -> 
         raise BankError('理财沙箱资金不可用于普通转账或AA','ACCOUNT_CONTEXT_UNSUPPORTED',409)
 
 
+@audited("transfer")
 async def validate_transfer_parties(
     db: AsyncSession,
     *,
@@ -218,6 +221,7 @@ async def validate_transfer_parties(
     )
 
 
+@audited("transfer")
 async def resolve_transfer_parties(
     db: AsyncSession, *, subject_user_id: str, recipient_name: str
 ) -> ResolvedTransferPartiesResult:
@@ -274,6 +278,7 @@ async def resolve_transfer_parties(
     )
 
 
+@audited("transfer")
 async def query_operation(db: AsyncSession, operation_id: str) -> BankOperationResult | None:
     """按应用操作编号查询银行权威状态；None 表示 NOT_FOUND。"""
     operation = await db.get(BankOperationORM, operation_id)
@@ -310,6 +315,7 @@ async def release_payment_request_payment(
         await db.commit()
 
 
+@audited("transfer")
 async def submit_transfer(
     db: AsyncSession,
     command: BankTransferCommand,
@@ -371,6 +377,10 @@ async def submit_transfer(
             result = _result(existing)
             await db.rollback()
             return result
+
+        from ...security.circuit_breaker import require_trade
+        await require_trade(db, context.subject_user_id,
+            issued_at=context.authorization_issued_at, authorization=True)
 
         payment_link = (await db.execute(
             select(PaymentRequestPaymentORM).where(
@@ -598,3 +608,25 @@ async def transfer_funding_accounts(db: AsyncSession, *, subject_user_id: str) -
                           "available_fen": max(0, await available_cash(db, account.account_id, account.balance_fen))}
                          for account in accounts],
             "as_of": datetime.now(timezone.utc).isoformat()}
+
+
+# A rejected bank transaction is rolled back before its security event is saved.
+# Identity comes from the authenticated internal context, never a model parameter.
+def _observe_transfer_boundary(function):
+    from functools import wraps
+    @wraps(function)
+    async def wrapped(db, *args, **kwargs):
+        try:
+            return await function(db, *args, **kwargs)
+        except BankError as error:
+            from ...security.circuit_breaker import report_violation
+            context = args[1] if len(args) > 1 else kwargs.get("context")
+            owner = context.subject_user_id if context else kwargs.get("subject_user_id")
+            if owner:
+                await report_violation(db, owner, error.code)
+            raise
+    return wrapped
+
+
+submit_transfer = _observe_transfer_boundary(submit_transfer)
+validate_transfer_parties = _observe_transfer_boundary(validate_transfer_parties)

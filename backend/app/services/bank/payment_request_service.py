@@ -1,4 +1,5 @@
 """4号模拟银行：收款申请的数据访问与权限校验。"""
+from ..audit.spans import audited
 
 import hashlib
 import json
@@ -60,6 +61,7 @@ def _expire_if_needed(record: PaymentRequestORM, now: datetime) -> bool:
     return False
 
 
+@audited("payments")
 async def create_payment_request(
     *,
     requester_user_id: str,
@@ -176,6 +178,7 @@ async def create_payment_request(
         return _view(record, requester.name, payer.name)
 
 
+@audited("payments")
 async def create_payment_request_batch(
     *,
     requester_user_id: str,
@@ -354,6 +357,7 @@ async def list_payment_requests(*, user_id: str, role: str = "all") -> list[dict
         return [{**_view(record,names[record.requester_user_id],names[record.payer_user_id]),'refunded_fen':refunds.get(record.payment_request_id,0),'remaining_refundable_fen':max(0,record.amount_fen-refunds.get(record.payment_request_id,0))} for record in records]
 
 
+@audited("payments")
 async def respond_to_payment_request(
     *,
     payment_request_id: str,
@@ -422,6 +426,7 @@ async def respond_to_payment_request(
         return _view(record, users[record.requester_user_id], users[record.payer_user_id])
 
 
+@audited("payments")
 async def prepare_payment_request_payment(
     *,
     payment_request_id: str,
@@ -507,6 +512,7 @@ async def prepare_payment_request_payment(
         }
 
 
+@audited("payments")
 async def cancel_payment_request(
     *, payment_request_id: str, requester_user_id: str, state_version: int
 ) -> dict:

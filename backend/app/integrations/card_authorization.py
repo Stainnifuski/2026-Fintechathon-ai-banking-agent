@@ -63,7 +63,12 @@ def permission_level(action: str, *, raises_risk: bool) -> str:
     """服务端定级；未列出的动作按最高级别处理，降低风险的方向型变更只需本人确认。"""
     level = CARD_PERMISSION_LEVELS.get(action, "red")
     if action in CARD_RISK_REDUCING_ACTIONS and not raises_risk:
-        return "yellow"
+        level = "yellow"
+    from ..services.audit.writer import emit
+    emit(action="card.permission", phase="decision", outcome="checked", domain="cards",
+         source_module="authorization.cards", permission_level=level,
+         facts={"action": action, "raises_risk": raises_risk, "rule_id": "card-permission-v1",
+                "requires_confirmation": True, "requires_mfa": level == "red"})
     return level
 
 

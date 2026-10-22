@@ -1,4 +1,5 @@
 """模拟银行卡片查询、预检与受理；额度、状态和上限只来自本模块的银行事实。"""
+from ..audit.spans import audited
 
 import secrets
 from datetime import datetime, timezone
@@ -258,6 +259,7 @@ async def _check(session: AsyncSession, *, user_id: str, action: str, card_id: s
     ], single > card.single_txn_limit_fen or daily > card.daily_txn_limit_fen
 
 
+@audited("cards")
 async def preview_card_operation(session: AsyncSession, *, user_id: str, action: str,
                                  card_id: str | None, params: dict) -> dict:
     """只读预检；返回银行当前值与变更后值，供本人核对。"""
@@ -272,6 +274,7 @@ async def preview_card_operation(session: AsyncSession, *, user_id: str, action:
     }
 
 
+@audited("cards")
 async def execute_card_operation(session: AsyncSession, *, user_id: str, operation_id: str,
                                  action: str, card_id: str | None, card_state_version: int | None,
                                  params: dict) -> dict:
@@ -290,6 +293,12 @@ async def execute_card_operation(session: AsyncSession, *, user_id: str, operati
     if card is not None and card.state_version != card_state_version:
         raise BankError("卡片状态已更新，请重新预览", "STALE_STATE_VERSION", 409)
 
+    from ...security.circuit_breaker import require_trade
+    if action != "card_lock":
+        from ...models.card import CardOperationORM
+        authorization = await session.get(CardOperationORM, operation_id)
+        await require_trade(session, user_id, issued_at=authorization.created_at if authorization else None,
+                            authorization=True)
     now = datetime.now(timezone.utc)
     result_card = card
     if action == "card_apply_virtual":
@@ -421,6 +430,7 @@ async def _decline_reason(session: AsyncSession, card: CardORM, account: Account
     return None
 
 
+@audited("cards")
 async def simulate_card_purchase(session: AsyncSession, *, user_id: str, card_id: str, operation_id: str,
                                  amount_fen: int, merchant: str, channel: str) -> dict:
     """模拟商户发起的用卡交易；批准时扣款或占用信用额度并记流水，拒绝也留授权记录。不提交。"""
@@ -436,6 +446,8 @@ async def simulate_card_purchase(session: AsyncSession, *, user_id: str, card_id
 
     card, _ = await _owned_card(session, user_id, card_id, lock=True)
     account = await _owned_account(session, user_id, card.account_id, lock=True)
+    from ...security.circuit_breaker import require_trade
+    await require_trade(session, user_id)
     now = datetime.now(timezone.utc)
     decline = await _decline_reason(session, card, account, amount_fen, channel, now)
     row = CardAuthorizationORM(

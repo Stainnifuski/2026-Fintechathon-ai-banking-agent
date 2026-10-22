@@ -624,7 +624,8 @@ async def test_model_keeps_transfer_history_read_only_by_not_calling_write_tool(
 
     monkeypatch.setattr(nova, "get_mode", lambda: "model")
     result = await nova.chat("请查看我的转账记录", [], model=ReadPlanner())
-    assert result["reply"] == "我会先查询转账流水。"
+    assert '尚未取得可核验' in result['reply']
+    assert result['grounding']['status'] == 'abstained'
     assert result["tool_calls"] == []
 
 

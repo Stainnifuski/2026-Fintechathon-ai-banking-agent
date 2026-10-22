@@ -3,6 +3,7 @@
 银行所有表只能在 ``backend.app.services.bank`` 包内被直接查询或修改。
 外层 HTTP 路由只接收普通 DTO，不得接触银行会话或 ORM。
 """
+from ..audit.spans import audited
 from .account_scope import isolated_account_ids
 
 
@@ -21,7 +22,7 @@ from ...models.transaction import TransactionORM
 from ...models.user import UserORM
 from ...models.user_phone_registry import UserPhoneRegistryORM
 from ...models.sms_challenge import SmsChallengeORM
-from ...security import sms
+from ...security import sms, circuit_breaker as safety
 from ...security.passwords import hash_password, verify_password
 from ...security.totp import (
     current_timestep,
@@ -133,6 +134,7 @@ async def list_recipients(subject_user_id: str) -> list[dict]:
     return await list_contact_recipients(subject_user_id)
 
 
+@audited("identity")
 async def register_customer(
     *,
     name: str,
@@ -188,28 +190,41 @@ async def register_customer(
         return _user_dict(user)
 
 
+@audited("identity")
 async def authenticate_customer(phone: str, password: str) -> dict:
     try:
         phone = normalize_phone(phone)
     except ValueError as error:
         raise BankError("手机号或密码错误", "INVALID_CREDENTIALS", 401) from error
+    key = safety.login_key(phone)
     async with AsyncSessionLocal() as session:
-        users = (await session.execute(select(UserORM))).scalars().all()
-    matches = []
-    for candidate in users:
-        try:
-            if normalize_phone(candidate.phone) == phone:
-                matches.append(candidate)
-        except ValueError:
-            continue
-    if len(matches) > 1:
-        raise BankError("手机号数据冲突，请联系管理员", "PHONE_CONFLICT", 409)
-    user = matches[0] if matches else None
-    if user is None or not verify_password(password, user.password_hash):
-        raise BankError("手机号或密码错误", "INVALID_CREDENTIALS", 401)
-    if user.status != "active":
-        raise BankError("用户已被停用", "CUSTOMER_INACTIVE", 403)
-    return _user_dict(user)
+        # Unknown identifiers use the same counters and response as real ones.
+        row = await safety.locked_row(session, key, "anonymous", "login")
+        safety.ensure_unlocked(row)
+        users = (await session.scalars(select(UserORM))).all()
+        matches = []
+        for candidate in users:
+            try:
+                if normalize_phone(candidate.phone) == phone:
+                    matches.append(candidate)
+            except ValueError:
+                continue
+        if len(matches) > 1:
+            raise BankError("手机号数据冲突，请联系管理员", "PHONE_CONFLICT", 409)
+        user = matches[0] if matches else None
+        if user is None or not verify_password(password, user.password_hash):
+            owner = user.user_id if user else "anonymous"
+            await session.rollback()
+            row = await safety.record_failure(session, key=key, user_id=owner, scope="login",
+                                               category="login", reason="INVALID_CREDENTIALS")
+            safety.ensure_unlocked(row)
+            raise BankError("手机号或密码错误", "INVALID_CREDENTIALS", 401)
+        if user.status != "active":
+            raise BankError("用户已被停用", "CUSTOMER_INACTIVE", 403)
+        row.user_id = user.user_id
+        safety.success(row, "login")
+        await session.commit()
+        return _user_dict(user)
 
 
 async def get_customer(user_id: str) -> dict | None:
@@ -227,13 +242,15 @@ async def totp_status(user_id: str) -> dict:
         return {"enabled": user.totp_enabled}
 
 
+@audited("identity")
 async def begin_totp_enrollment(user_id: str) -> dict:
     """开始绑定：生成新密钥并置为未启用，返回扫码所需信息。
 
     每次调用都会重置密钥，因此重新绑定会作废旧的验证器条目。
     """
     async with AsyncSessionLocal() as session:
-        user = await session.get(UserORM, user_id)
+        state = await safety.require_trade(session, user_id)
+        user = await session.get(UserORM, user_id, with_for_update=True, populate_existing=True)
         if user is None:
             raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
         secret = generate_secret()
@@ -246,25 +263,31 @@ async def begin_totp_enrollment(user_id: str) -> dict:
     return {"secret": secret, "otpauth_uri": uri, "qr_data_uri": qr_data_uri(uri)}
 
 
+@audited("identity")
 async def confirm_totp_enrollment(user_id: str, code: str) -> dict:
     """确认绑定：校验一次验证码，通过后正式启用 TOTP。"""
     async with AsyncSessionLocal() as session:
-        user = await session.get(UserORM, user_id)
+        state = await safety.require_trade(session, user_id)
+        user = await session.get(UserORM, user_id, with_for_update=True, populate_existing=True)
         if user is None:
             raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
         if not user.totp_secret:
             raise BankError("请先开始绑定流程", "TOTP_NOT_STARTED", 409)
+        row = state
         if not verify_code(user.totp_secret, code):
-            raise BankError(
-                "验证码错误，请确认验证器时间已同步后重试", "TOTP_INVALID", 401
-            )
+            await session.rollback()
+            row = await safety.record_failure(session, key=safety.user_key(user_id), user_id=user_id,
+                scope="trade", category="mfa", reason="TOTP_INVALID")
+            safety.ensure_unlocked(row)
+            raise BankError("验证码错误，请确认验证器时间已同步后重试", "TOTP_INVALID", 401)
+        safety.success(row, "mfa")
         user.totp_enabled = True
         user.totp_last_timestep = current_timestep()
         await session.commit()
     return {"enabled": True}
 
 
-async def verify_totp_for_operation(
+async def _verify_totp_for_operation(
     session: AsyncSession, user_id: str, code: str
 ) -> None:
     """转账强验证时校验 TOTP 验证码，含防重放。校验失败抛 BankError。
@@ -272,7 +295,7 @@ async def verify_totp_for_operation(
     使用调用方（编排层）的事务性会话，成功后写入的防重放时间步随
     该事务一并提交；校验失败时抛出异常，由调用方回滚。
     """
-    user = await session.get(UserORM, user_id)
+    user = await session.get(UserORM, user_id, with_for_update=True, populate_existing=True)
     if user is None:
         raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
     if not user.totp_enabled or not user.totp_secret:
@@ -300,6 +323,7 @@ async def _sms_phone(session: AsyncSession, user: UserORM) -> str:
         raise BankError("未登记可接收短信的手机号", "SMS_NO_PHONE", 409) from error
 
 
+@audited("identity")
 async def send_sms_challenge(
     session: AsyncSession, user_id: str, purpose: str, reference_id: str
 ) -> dict:
@@ -313,6 +337,7 @@ async def send_sms_challenge(
         raise BankError("用户不存在", "CUSTOMER_NOT_FOUND", 404)
     if user.status != "active":
         raise BankError("用户已被停用", "CUSTOMER_INACTIVE", 403)
+    await safety.require_trade(session, user_id)
     phone = await _sms_phone(session, user)
     now = datetime.now(timezone.utc)
 
@@ -361,7 +386,7 @@ async def send_sms_challenge(
     }
 
 
-async def verify_sms_for_operation(
+async def _verify_sms_for_operation(
     session: AsyncSession,
     user_id: str,
     code: str,
@@ -372,8 +397,8 @@ async def verify_sms_for_operation(
 ) -> None:
     """校验短信验证码：须属于本人、对应同一操作、未过期且未使用。
 
-    成功时消费挑战，随调用方事务提交。验证码错误时尝试次数单独提交后再抛错，
-    否则调用方回滚会抹掉计数，使暴力猜测不受限制。
+    成功时消费挑战，随调用方事务提交。错误由公共包装层回滚业务后，
+    原子保存单条挑战次数及用户级安全计数。
     """
     if not sms.sms_enabled():
         raise BankError("短信验证未启用，请使用验证器", "SMS_DISABLED", 403)
@@ -393,12 +418,53 @@ async def verify_sms_for_operation(
     if row.attempts >= sms.MAX_ATTEMPTS:
         raise BankError("短信验证码错误次数过多，请重新获取", "SMS_LOCKED", 429)
     if not sms.code_matches(challenge_id, code, row.code_hash):
-        row.attempts += 1
-        await session.commit()
         raise BankError("短信验证码错误", "SMS_INVALID", 401)
     row.consumed_at = datetime.now(timezone.utc)
 
 
+async def _guard_factor(session: AsyncSession, user_id: str, verify, *, challenge_id: str | None = None,
+                        reference_id: str | None = None, method: str = "totp") -> None:
+    state = await safety.require_trade(session, user_id)
+    try:
+        await verify()
+    except BankError as error:
+        if error.code not in {"TOTP_INVALID", "TOTP_REPLAY", "SMS_INVALID"}:
+            raise
+        # Discard ALL caller changes before saving a rejected attempt. No nested
+        # connection waits for locks held by this transaction (including SQLite).
+        await session.rollback()
+        async def sms_attempt():
+            if error.code == "SMS_INVALID" and challenge_id:
+                challenge = await session.get(SmsChallengeORM, challenge_id,
+                    with_for_update=True, populate_existing=True)
+                if challenge is not None and challenge.user_id == user_id:
+                    challenge.attempts += 1
+        state = await safety.record_failure(session, key=safety.user_key(user_id), user_id=user_id,
+            scope="trade", category="mfa", reason=error.code, on_record=sms_attempt,
+            reference_id=reference_id, method=method)
+        safety.ensure_unlocked(state)
+        raise
+    safety.success(state, "mfa")
+
+
+@audited("identity")
+async def verify_totp_for_operation(session: AsyncSession, user_id: str, code: str, *,
+                                    reference_id: str | None = None) -> None:
+    """Shared TOTP attempt budget, including callers of the internal bank API."""
+    await _guard_factor(session, user_id, lambda: _verify_totp_for_operation(session, user_id, code),
+                        reference_id=reference_id)
+
+
+@audited("identity")
+async def verify_sms_for_operation(session: AsyncSession, user_id: str, code: str, *,
+                                   challenge_id: str | None, purpose: str, reference_id: str) -> None:
+    """SMS attempts share the user's TOTP budget, independently of the operation."""
+    await _guard_factor(session, user_id, lambda: _verify_sms_for_operation(session, user_id, code,
+        challenge_id=challenge_id, purpose=purpose, reference_id=reference_id), challenge_id=challenge_id,
+        reference_id=reference_id, method="sms")
+
+
+@audited("identity")
 async def verify_second_factor(
     session: AsyncSession,
     user_id: str,
@@ -416,7 +482,7 @@ async def verify_second_factor(
             challenge_id=challenge_id, purpose=purpose, reference_id=reference_id,
         )
     elif method == "totp":
-        await verify_totp_for_operation(session, user_id, proof)
+        await verify_totp_for_operation(session, user_id, proof, reference_id=reference_id)
     else:
         raise BankError("不支持的验证方式", "MFA_METHOD_INVALID", 422)
 

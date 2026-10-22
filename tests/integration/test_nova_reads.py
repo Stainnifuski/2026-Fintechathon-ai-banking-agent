@@ -117,6 +117,10 @@ async def test_authenticated_api_native_business_loop_and_context_validation(db,
     seen = []
     def handler(request):
         body = json.loads(request.content)
+        if body.get('response_format'):
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
+                'content': json.dumps({'mode': 'direct_react', 'domains': ['transactions'],
+                                      'has_dependencies': False})}}]})
         seen.append(body)
         if len(seen) == 1:
             assert 'user_id' not in json.dumps(body)
@@ -145,7 +149,8 @@ async def test_authenticated_api_native_business_loop_and_context_validation(db,
                 'filters': {'date': '2026-09'}, 'selected': {'type': 'transaction', 'id': 'own'},
                 'observed_as_of': '2026-10-01T00:00:00+08:00'}}
             response = await client.post('/api/v1/nova/chat', json=payload)
-            assert response.status_code == 200 and response.json()['reply'] == '模拟银行这笔消费为3.21元'
+            assert response.status_code == 200 and '3.21 CNY' in response.json()['reply']
+            assert response.json()['grounding']['status'] == 'grounded'
             assert len(seen) == 2
             invalid = [
                 {'page': 'home', 'user_id': 'U2'}, {'version': 2, 'page': 'home'},

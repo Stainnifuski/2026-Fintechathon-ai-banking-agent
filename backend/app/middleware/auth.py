@@ -87,6 +87,8 @@ async def get_current_user(
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌缺少用户信息")
+    from ..services.audit.context import bind_user
+    bind_user(user_id)
     return {
         "user_id": user_id,
         "name": payload.get("name", ""),

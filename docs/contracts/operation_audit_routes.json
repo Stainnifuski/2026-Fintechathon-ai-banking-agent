@@ -1,0 +1,1442 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{user_id}/accounts",
+    "domain": "accounts",
+    "action": "list_accounts"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/accounts/{user_id}/balance",
+    "domain": "accounts",
+    "action": "query_balance"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/events",
+    "domain": "audit",
+    "action": "events"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/export",
+    "domain": "audit",
+    "action": "export"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/objects/{object_type}/{object_id}",
+    "domain": "audit",
+    "action": "object_events"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/traces/{trace_id}",
+    "domain": "audit",
+    "action": "trace"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "domain": "identity",
+    "action": "login"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "domain": "identity",
+    "action": "me"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/register",
+    "domain": "identity",
+    "action": "register"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/security/status",
+    "domain": "identity",
+    "action": "security_status"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/sms/dev-inbox",
+    "domain": "identity",
+    "action": "sms_dev_inbox_endpoint"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/sms/send",
+    "domain": "identity",
+    "action": "sms_send"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/totp/confirm",
+    "domain": "identity",
+    "action": "totp_confirm"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/totp/enroll",
+    "domain": "identity",
+    "action": "totp_enroll"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/totp/status",
+    "domain": "identity",
+    "action": "totp_status_endpoint"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bank/nova/conversations",
+    "domain": "assistant",
+    "action": "list_conversations"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bank/nova/conversations",
+    "domain": "assistant",
+    "action": "create_conversation"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/bank/nova/conversations/{session_id}",
+    "domain": "assistant",
+    "action": "delete_conversation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bank/nova/conversations/{session_id}",
+    "domain": "assistant",
+    "action": "get_conversation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/analysis",
+    "domain": "bills",
+    "action": "analysis"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/bills/anomaly-reviews",
+    "domain": "bills",
+    "action": "review"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/budgets",
+    "domain": "bills",
+    "action": "budgets"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/bills/budgets",
+    "domain": "bills",
+    "action": "save_budget"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/cashflow",
+    "domain": "bills",
+    "action": "cashflow"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/category-rules",
+    "domain": "bills",
+    "action": "rules"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/bills/category-rules/{merchant_id}",
+    "domain": "bills",
+    "action": "remove_rule"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/forecasts",
+    "domain": "bills",
+    "action": "forecasts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/forecasts",
+    "domain": "bills",
+    "action": "save_forecast"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/foundations",
+    "domain": "bills",
+    "action": "catalog"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/foundations/refresh",
+    "domain": "bills",
+    "action": "refresh"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/merchant-history",
+    "domain": "bills",
+    "action": "history"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/merchant-history/{event_id}/undo",
+    "domain": "bills",
+    "action": "undo"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/merchants/{merchant_id}/aliases",
+    "domain": "bills",
+    "action": "alias"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/merchants/{merchant_id}/merge",
+    "domain": "bills",
+    "action": "merge"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/merchants/{merchant_id}/merge-preview",
+    "domain": "bills",
+    "action": "merge_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/merchants/{merchant_id}/split",
+    "domain": "bills",
+    "action": "split"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/merchants/{merchant_id}/split-preview",
+    "domain": "bills",
+    "action": "split_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/merchants/{merchant_id}/split-preview",
+    "domain": "bills",
+    "action": "split_selection_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/messages",
+    "domain": "bills",
+    "action": "messages"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/recurring",
+    "domain": "bills",
+    "action": "recurring"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bills/recurring/plans",
+    "domain": "bills",
+    "action": "create_plan"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/bills/recurring/plans/{stream_id}",
+    "domain": "bills",
+    "action": "update_plan"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/bills/recurring/{stream_id}",
+    "domain": "bills",
+    "action": "recurring_update"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/subscription-insights",
+    "domain": "bills",
+    "action": "subscriptions_analysis"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/tags",
+    "domain": "bills",
+    "action": "tags"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/transactions",
+    "domain": "bills",
+    "action": "details"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bills/transactions/{tx_id}",
+    "domain": "bills",
+    "action": "linked_detail"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/bills/transactions/{tx_id}/annotations",
+    "domain": "bills",
+    "action": "annotate"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/bills/transactions/{tx_id}/classification",
+    "domain": "bills",
+    "action": "correct"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cake-shop/merchant/orders",
+    "domain": "shops",
+    "action": "merchant_orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cake-shop/merchant/orders/{order_id}/refund",
+    "domain": "shops",
+    "action": "refund"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cake-shop/orders",
+    "domain": "shops",
+    "action": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cake-shop/orders",
+    "domain": "shops",
+    "action": "create"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cake-shop/orders/{order_id}",
+    "domain": "shops",
+    "action": "order"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cake-shop/products",
+    "domain": "shops",
+    "action": "products"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/calendar/events",
+    "domain": "calendar",
+    "action": "list_events"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/calendar/events",
+    "domain": "calendar",
+    "action": "create_event"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/calendar/events/{event_id}",
+    "domain": "calendar",
+    "action": "delete_event"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/calendar/import",
+    "domain": "calendar",
+    "action": "import_calendar"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cards",
+    "domain": "cards",
+    "action": "list_user_cards"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cards/operations",
+    "domain": "cards",
+    "action": "preview_operation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cards/operations/{operation_id}",
+    "domain": "cards",
+    "action": "get_operation"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cards/operations/{operation_id}/cancel",
+    "domain": "cards",
+    "action": "cancel_operation"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cards/operations/{operation_id}/confirm",
+    "domain": "cards",
+    "action": "confirm_operation"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cards/operations/{operation_id}/verify",
+    "domain": "cards",
+    "action": "verify_operation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cards/{card_id}/transactions",
+    "domain": "cards",
+    "action": "list_card_transactions"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/cards/{card_id}/transactions",
+    "domain": "cards",
+    "action": "simulate_purchase"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/flower-shop/merchant/orders",
+    "domain": "shops",
+    "action": "merchant_orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/flower-shop/merchant/orders/{order_id}/refund",
+    "domain": "shops",
+    "action": "refund"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/flower-shop/orders",
+    "domain": "shops",
+    "action": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/flower-shop/orders",
+    "domain": "shops",
+    "action": "create"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/flower-shop/orders/{order_id}",
+    "domain": "shops",
+    "action": "order"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/flower-shop/products",
+    "domain": "shops",
+    "action": "products"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/operations",
+    "domain": "bank",
+    "action": "submit"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/internal/bank/operations/{operation_id}",
+    "domain": "bank",
+    "action": "query"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/payment-requests/{operation_id}/release",
+    "domain": "bank",
+    "action": "release_payment_request"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/sms/verify",
+    "domain": "bank",
+    "action": "verify_sms"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/totp/verify",
+    "domain": "bank",
+    "action": "verify_totp"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/transfers/directory",
+    "domain": "bank",
+    "action": "directory"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/transfers/funding-accounts",
+    "domain": "bank",
+    "action": "funding_accounts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/transfers/resolve",
+    "domain": "bank",
+    "action": "resolve_transfer"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/transfers/validate",
+    "domain": "bank",
+    "action": "validate_transfer"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/admin/clock",
+    "domain": "wealth",
+    "action": "advance"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/admin/settle/{operation_id}",
+    "domain": "wealth",
+    "action": "settle"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/asset-summary",
+    "domain": "wealth",
+    "action": "asset_summary"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/assets",
+    "domain": "wealth",
+    "action": "assets"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/catalog",
+    "domain": "wealth",
+    "action": "contextual_catalog"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/contexts",
+    "domain": "wealth",
+    "action": "contexts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/contexts/select",
+    "domain": "wealth",
+    "action": "context_select"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/demo/adjust",
+    "domain": "wealth",
+    "action": "demo_adjust"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/demo/archives",
+    "domain": "wealth",
+    "action": "demo_archives"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/demo/current",
+    "domain": "wealth",
+    "action": "demo_current"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/demo/delete",
+    "domain": "wealth",
+    "action": "demo_delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/demo/delete-preview",
+    "domain": "wealth",
+    "action": "demo_delete_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/demo/reset",
+    "domain": "wealth",
+    "action": "demo_reset"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/external-evidence",
+    "domain": "wealth",
+    "action": "external_evidence"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/funds/compare",
+    "domain": "wealth",
+    "action": "fund_compare"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/funds/detail",
+    "domain": "wealth",
+    "action": "fund_detail"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/funds/search",
+    "domain": "wealth",
+    "action": "fund_search"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/knowledge",
+    "domain": "wealth",
+    "action": "knowledge"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/orders",
+    "domain": "wealth",
+    "action": "submit"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/orders/batch",
+    "domain": "wealth",
+    "action": "batch"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/orders/{operation_id}/cancel",
+    "domain": "wealth",
+    "action": "cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/orders/{operation_id}/cancellation-eligibility",
+    "domain": "wealth",
+    "action": "cancellation_eligibility"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/orders/{operation_id}/query",
+    "domain": "wealth",
+    "action": "query"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/precheck",
+    "domain": "wealth",
+    "action": "precheck"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/product-detail",
+    "domain": "wealth",
+    "action": "product_detail"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/internal/bank/wealth/products",
+    "domain": "wealth",
+    "action": "products"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/redemptions/preview",
+    "domain": "wealth",
+    "action": "redemption_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/research",
+    "domain": "wealth",
+    "action": "research_query"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/returns",
+    "domain": "wealth",
+    "action": "actual_returns"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/internal/bank/wealth/verification-mode",
+    "domain": "wealth",
+    "action": "verification_mode"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/verify",
+    "domain": "wealth",
+    "action": "verify"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/wealth/verify/batch",
+    "domain": "wealth",
+    "action": "batch_verify"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/chat",
+    "domain": "assistant",
+    "action": "chat"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/chat/stream",
+    "domain": "assistant",
+    "action": "chat_stream"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/task-sessions/{session_id}",
+    "domain": "assistant",
+    "action": "task_session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/tasks/{task_id}/cancel",
+    "domain": "assistant",
+    "action": "cancel_task_card"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/tasks/{task_id}/form",
+    "domain": "assistant",
+    "action": "save_task_form"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/wealth-sessions/{session_id}",
+    "domain": "assistant",
+    "action": "wealth_session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/wealth-sessions/{session_id}/cards/{task_id}",
+    "domain": "assistant",
+    "action": "wealth_card_state"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/wealth-sessions/{session_id}/cards/{task_id}/view",
+    "domain": "assistant",
+    "action": "wealth_card_view"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/operations/{operation_id}",
+    "domain": "transfer",
+    "action": "get_operation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/payment-requests",
+    "domain": "payments",
+    "action": "list_requests"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/payment-requests",
+    "domain": "payments",
+    "action": "create"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/payment-requests/batch",
+    "domain": "payments",
+    "action": "create_batch"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/payment-requests/{payment_request_id}/accept",
+    "domain": "payments",
+    "action": "accept"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/payment-requests/{payment_request_id}/cancel",
+    "domain": "payments",
+    "action": "cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/payment-requests/{payment_request_id}/reject",
+    "domain": "payments",
+    "action": "reject"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/subscriptions",
+    "domain": "subscriptions",
+    "action": "list_user_subscriptions"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/subscriptions/{subscription_id}/cancel",
+    "domain": "subscriptions",
+    "action": "cancel_user_subscription"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/subscriptions/{subscription_id}/cancel-preview",
+    "domain": "subscriptions",
+    "action": "preview_cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/subscriptions/{subscription_id}/simulate-charge",
+    "domain": "subscriptions",
+    "action": "simulate_user_subscription_charge"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/time",
+    "domain": "system",
+    "action": "reality_time"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks/conversations/{session_id}",
+    "domain": "transfer",
+    "action": "get_conversation"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/messages",
+    "domain": "transfer",
+    "action": "create_from_message"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/transfers",
+    "domain": "transfer",
+    "action": "create_transfer"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks/{task_id}",
+    "domain": "transfer",
+    "action": "get_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/accept",
+    "domain": "transfer",
+    "action": "accept"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/cancel",
+    "domain": "transfer",
+    "action": "cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/confirm",
+    "domain": "transfer",
+    "action": "confirm"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks/{task_id}/events",
+    "domain": "transfer",
+    "action": "get_events"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/human/claim",
+    "domain": "transfer",
+    "action": "claim"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/human/return",
+    "domain": "transfer",
+    "action": "return_to_queue"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/modify",
+    "domain": "transfer",
+    "action": "modify"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/reconcile",
+    "domain": "transfer",
+    "action": "reconcile"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tasks/{task_id}/verify",
+    "domain": "transfer",
+    "action": "verify"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/transactions/history",
+    "domain": "accounts",
+    "action": "query_history"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/transactions/{tx_id}",
+    "domain": "accounts",
+    "action": "query_transaction"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/users/contacts",
+    "domain": "contacts",
+    "action": "list_contacts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users/contacts",
+    "domain": "contacts",
+    "action": "create_contact"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/users/contacts/{contact_id}",
+    "domain": "contacts",
+    "action": "delete_contact"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/users/contacts/{contact_id}",
+    "domain": "contacts",
+    "action": "rename_contact"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users/contacts/{contact_id}/resolve",
+    "domain": "contacts",
+    "action": "resolve_contact"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/users/recipients",
+    "domain": "contacts",
+    "action": "list_recipients"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users/recipients/card",
+    "domain": "contacts",
+    "action": "lookup_card"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users/recipients/phone",
+    "domain": "contacts",
+    "action": "lookup_phone"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users/recipients/resolve",
+    "domain": "contacts",
+    "action": "resolve_transfer_recipient"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users/recipients/saved-name",
+    "domain": "contacts",
+    "action": "lookup_saved_name"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/users/transfer-recipients/history",
+    "domain": "contacts",
+    "action": "clear_transfer_history"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/users/transfer-recipients/history",
+    "domain": "contacts",
+    "action": "transfer_history"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/actions",
+    "domain": "wealth",
+    "action": "structured_action"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/assessments",
+    "domain": "wealth",
+    "action": "assess"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/assessments/current",
+    "domain": "wealth",
+    "action": "assessment"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/assessments/{assessment_id}/confirm",
+    "domain": "wealth",
+    "action": "confirm_assessment"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/asset-summary",
+    "domain": "wealth",
+    "action": "asset_summary"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/assets",
+    "domain": "wealth",
+    "action": "assets"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/compare",
+    "domain": "wealth",
+    "action": "compare"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/contexts",
+    "domain": "wealth",
+    "action": "contexts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/contexts/select",
+    "domain": "wealth",
+    "action": "select_context"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/demo/adjust",
+    "domain": "wealth",
+    "action": "demo_adjust"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/demo/archives",
+    "domain": "wealth",
+    "action": "demo_archives"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/demo/current",
+    "domain": "wealth",
+    "action": "demo_current"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/demo/delete",
+    "domain": "wealth",
+    "action": "demo_delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/demo/delete-preview",
+    "domain": "wealth",
+    "action": "demo_delete_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/demo/reset",
+    "domain": "wealth",
+    "action": "demo_reset"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/executions",
+    "domain": "wealth",
+    "action": "executions"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/funds/compare",
+    "domain": "wealth",
+    "action": "fund_compare"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/funds/detail",
+    "domain": "wealth",
+    "action": "fund_detail"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/funds/search",
+    "domain": "wealth",
+    "action": "fund_search"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/goals",
+    "domain": "wealth",
+    "action": "goal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/messages",
+    "domain": "wealth",
+    "action": "message"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/messages/archives",
+    "domain": "wealth",
+    "action": "message_archives"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/messages/history",
+    "domain": "wealth",
+    "action": "message_history"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/operator/tasks",
+    "domain": "wealth",
+    "action": "operator_tasks"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/operator/tasks/{task_id}/context",
+    "domain": "wealth",
+    "action": "operator_context"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/operator/tasks/{task_id}/facts",
+    "domain": "wealth",
+    "action": "operator_facts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/operator/tasks/{task_id}/{action}",
+    "domain": "wealth",
+    "action": "operator_control"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/orders/{operation_id}",
+    "domain": "wealth",
+    "action": "order"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/orders/{operation_id}/cancel",
+    "domain": "wealth",
+    "action": "cancel"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/orders/{operation_id}/cancellation-eligibility",
+    "domain": "wealth",
+    "action": "cancellation_eligibility"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/plans",
+    "domain": "wealth",
+    "action": "plans"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans",
+    "domain": "wealth",
+    "action": "create_plan"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/wealth/plans/{plan_id}",
+    "domain": "wealth",
+    "action": "edit_plan"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans/{plan_id}/adopt",
+    "domain": "wealth",
+    "action": "adopt_plan"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans/{plan_id}/confirm",
+    "domain": "wealth",
+    "action": "confirm_plan"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans/{plan_id}/continue-purchase",
+    "domain": "wealth",
+    "action": "continue_planning_purchase"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans/{plan_id}/execute",
+    "domain": "wealth",
+    "action": "execute_plan"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans/{plan_id}/preview",
+    "domain": "wealth",
+    "action": "preview_plan"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/plans/{plan_id}/progress",
+    "domain": "wealth",
+    "action": "plan_progress"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans/{plan_id}/refresh-review",
+    "domain": "wealth",
+    "action": "refresh_purchase_review"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/plans/{plan_id}/verify",
+    "domain": "wealth",
+    "action": "verify_plan"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/portfolio/plans",
+    "domain": "wealth",
+    "action": "create_plan"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/portfolio/plans/{portfolio_id}",
+    "domain": "wealth",
+    "action": "get_plan"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/wealth/portfolio/plans/{portfolio_id}",
+    "domain": "wealth",
+    "action": "revise_plan"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/portfolio/plans/{portfolio_id}/prepare",
+    "domain": "wealth",
+    "action": "prepare_portfolio"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/portfolio/products/{product_id}",
+    "domain": "wealth",
+    "action": "exact_product"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/portfolio/recommendations",
+    "domain": "wealth",
+    "action": "recommendations"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/portfolio/snapshot",
+    "domain": "wealth",
+    "action": "snapshot"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/previews",
+    "domain": "wealth",
+    "action": "previews"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/previews",
+    "domain": "wealth",
+    "action": "preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/previews/{authorization_id}/confirm",
+    "domain": "wealth",
+    "action": "confirm"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/previews/{authorization_id}/execute",
+    "domain": "wealth",
+    "action": "execute"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/previews/{authorization_id}/verify",
+    "domain": "wealth",
+    "action": "verify"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/products",
+    "domain": "wealth",
+    "action": "products"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/products/{product_id}/detail",
+    "domain": "wealth",
+    "action": "product_detail"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/profile",
+    "domain": "wealth",
+    "action": "profile"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/wealth/profile",
+    "domain": "wealth",
+    "action": "update_profile"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/questionnaire",
+    "domain": "wealth",
+    "action": "questionnaire"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/redemptions/prepare",
+    "domain": "wealth",
+    "action": "prepare_redemptions"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/redemptions/preview",
+    "domain": "wealth",
+    "action": "redemption_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/research",
+    "domain": "wealth",
+    "action": "research"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/returns",
+    "domain": "wealth",
+    "action": "actual_returns"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/sessions",
+    "domain": "wealth",
+    "action": "new_session"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/sessions/{session_id}",
+    "domain": "wealth",
+    "action": "current_session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/sessions/{session_id}/close",
+    "domain": "wealth",
+    "action": "close_session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/sessions/{session_id}/continue",
+    "domain": "wealth",
+    "action": "continue_current"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/sessions/{session_id}/preview-link",
+    "domain": "wealth",
+    "action": "link_window_preview"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/subtasks",
+    "domain": "wealth",
+    "action": "create_subtask"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/subtasks/{task_id}",
+    "domain": "wealth",
+    "action": "get_subtask"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/wealth/subtasks/{task_id}",
+    "domain": "wealth",
+    "action": "patch_subtask"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/subtasks/{task_id}/external-completed",
+    "domain": "wealth",
+    "action": "external_completed"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/target-purchases/prepare",
+    "domain": "wealth",
+    "action": "prepare_target_purchases"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/tasks",
+    "domain": "wealth",
+    "action": "list_tasks"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/tasks/{task_id}",
+    "domain": "wealth",
+    "action": "get_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/tasks/{task_id}/repreview",
+    "domain": "wealth",
+    "action": "repreview_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/tasks/{task_id}/select-main",
+    "domain": "wealth",
+    "action": "select_main"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/tasks/{task_id}/{action}",
+    "domain": "wealth",
+    "action": "control_task"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/wealth/verification-mode",
+    "domain": "wealth",
+    "action": "verification_mode"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/wealth/workspace/reset",
+    "domain": "wealth",
+    "action": "reset_workspace"
+  }
+]

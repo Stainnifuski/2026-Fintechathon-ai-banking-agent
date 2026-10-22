@@ -59,7 +59,7 @@ async def test_client_streams_text_deltas_and_returns_full_message(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_loop_streams_tool_progress_reset_and_answer(monkeypatch):
+async def test_loop_streams_progress_then_only_grounded_answer(monkeypatch):
     configure(monkeypatch)
     calls = []
     def handler(request):
@@ -79,10 +79,10 @@ async def test_loop_streams_tool_progress_reset_and_answer(monkeypatch):
         result = await nova.chat('纽约现在几点？', [], model=client, on_event=on_event)
     finally:
         await client.aclose()
-    assert result['reply'] == '纽约时间查询完成' and len(result['tool_calls']) == 1
-    assert events == [{'type': 'delta', 'text': '我先查一下。'}, {'type': 'reset'},
-                      {'type': 'tool', 'name': 'get_current_time'},
-                      {'type': 'delta', 'text': '纽约'}, {'type': 'delta', 'text': '时间查询完成'}]
+    assert 'America/New\\_York' in result['reply'] and len(result['tool_calls']) == 1
+    assert events == [{'type': 'tool', 'name': 'get_current_time'},
+                      {'type': 'delta', 'text': result['reply']}]
+    assert '我先查一下' not in str(events) and '纽约时间查询完成' not in str(events)
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,9 @@ async def test_non_streaming_model_still_emits_final_answer(monkeypatch):
     async def on_event(event):
         events.append(event)
     result = await nova.chat('你好', [], model=Plain(), on_event=on_event)
-    assert result['reply'] == '一次性回答' and events == [{'type': 'delta', 'text': '一次性回答'}]
+    assert result['reply'].startswith('你好，我是 NOVA')
+    assert events == [{'type': 'delta', 'text': result['reply']}]
+    assert result['grounding']['status'] == 'abstained'
 
 
 @pytest.mark.asyncio

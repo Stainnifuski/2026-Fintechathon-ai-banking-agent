@@ -1,4 +1,5 @@
 """Minimal in-process scheduler for one-time scheduled transfers."""
+from ..audit.spans import audited
 
 import asyncio
 import logging
@@ -28,6 +29,7 @@ def _scheduled_time(plan: TransferPlanORM) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+@audited("transfer", skip_empty=True)
 async def execute_due_scheduled_transfers(
     db: AsyncSession,
     bank: BankApi,
@@ -38,16 +40,21 @@ async def execute_due_scheduled_transfers(
     current_time = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     executed = 0
 
-    tasks = (
+    task_ids = (
         await db.execute(
-            select(TransferTaskORM).where(
+            select(TransferTaskORM.task_id).where(
                 TransferTaskORM.phase == TaskPhase.WAITING_EXECUTION,
                 TransferTaskORM.cancel_requested.is_(False),
             )
         )
     ).scalars().all()
 
-    for task in tasks:
+    for task_id in task_ids:
+        # A denied task rolls back its session. Load each subsequent task afresh
+        # rather than implicitly reading expired ORM objects after that rollback.
+        task = await db.get(TransferTaskORM, task_id, populate_existing=True)
+        if task is None or task.phase != TaskPhase.WAITING_EXECUTION or task.cancel_requested:
+            continue
         plan = (
             await db.execute(
                 select(TransferPlanORM).where(
@@ -57,6 +64,8 @@ async def execute_due_scheduled_transfers(
                 )
             )
         ).scalar_one_or_none()
+        if task.error_code in {"SECURITY_LOCKED", "SECURITY_RECONFIRM_REQUIRED"}:
+            continue
         execute_at = _scheduled_time(plan) if plan else None
         if execute_at is None or execute_at > current_time:
             continue
@@ -74,15 +83,19 @@ async def execute_due_scheduled_transfers(
             executed += 1
         except TaskError as error:
             await db.rollback()
+            if error.code in {"SECURITY_LOCKED", "SECURITY_RECONFIRM_REQUIRED"}:
+                blocked = await db.get(TransferTaskORM, task_id)
+                blocked.error_code = error.code
+                await db.commit()
             logger.warning(
                 "Scheduled transfer %s was not executed: %s (%s)",
-                task.task_id,
+                task_id,
                 error.message,
                 error.code,
             )
         except Exception:
             await db.rollback()
-            logger.exception("Scheduled transfer %s failed unexpectedly", task.task_id)
+            logger.exception("Scheduled transfer %s failed unexpectedly", task_id)
 
     return executed
 

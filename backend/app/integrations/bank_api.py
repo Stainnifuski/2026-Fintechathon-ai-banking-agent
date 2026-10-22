@@ -3,6 +3,7 @@
 本模块不能导入任何银行 ORM 或数据库会话。任务编排只依赖这里定义的
 数据传输对象和接口，银行账本的读取、校验与写入全部留在模拟银行服务内。
 """
+from ..services.audit.spans import audited
 
 import os
 from dataclasses import asdict, dataclass, field
@@ -40,6 +41,7 @@ class TrustedExecutionContext:
     subject_user_id: str
     authorization_id: str
     control_epoch: int
+    authorization_issued_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -113,7 +115,8 @@ class HttpBankApiClient:
 
     @property
     def _headers(self) -> dict[str, str]:
-        return {"X-Internal-Token": self.token}
+        from ..services.audit.context import propagation_headers
+        return {"X-Internal-Token": self.token, **propagation_headers()}
 
     @staticmethod
     def _error(response: httpx.Response) -> BankApiError:
@@ -150,6 +153,7 @@ class HttpBankApiClient:
         if response.is_error:
             raise self._error(response)
 
+    @audited("bank")
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         try:
             async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
