@@ -1,4 +1,5 @@
 """保留导入系列原文，在查询窗口展开重复日程与例外。"""
+from ..audit.spans import audited
 from asyncio import to_thread
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
@@ -134,6 +135,7 @@ def parse_import(data: bytes, time_zone: str) -> list[dict]:
         raise CalendarError(f"无法导入日历：{error}") from error
 
 
+@audited("calendar")
 async def create_event(user_id: str, request: CalendarEventCreate) -> dict:
     async with AsyncSessionLocal() as session:
         event = CalendarEventORM(event_id=f"CE{uuid4().hex}", user_id=user_id, **request.model_dump())
@@ -149,6 +151,7 @@ def manual_view(event: CalendarEventORM) -> dict:
                 all_day=False, recurring=False, source="manual")
 
 
+@audited("calendar")
 async def import_events(user_id: str, data: bytes, time_zone: str) -> dict:
     if not data or len(data) > MAX_FILE_SIZE:
         raise CalendarError("请选择非空且不超过 2 MB 的 .ics 文件", 413)
@@ -178,6 +181,7 @@ async def import_events(user_id: str, data: bytes, time_zone: str) -> dict:
     return counts
 
 
+@audited("calendar")
 async def list_events(user_id: str, start: datetime, end: datetime, time_zone: str,
                       *, session: AsyncSession | None = None) -> list[dict]:
     if start.tzinfo is None or end.tzinfo is None or not timedelta(0) < end - start <= timedelta(days=62):
@@ -215,6 +219,7 @@ def expand_events(rows: list[CalendarEventORM], start: datetime, end: datetime, 
     return sorted(result, key=lambda item: (item["starts_at"], item["title"]))
 
 
+@audited("calendar")
 async def delete_event(user_id: str, event_id: str) -> None:
     async with AsyncSessionLocal() as session:
         event = await session.get(CalendarEventORM, event_id)

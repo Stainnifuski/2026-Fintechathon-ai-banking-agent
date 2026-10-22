@@ -36,6 +36,45 @@ async def close_shared_llm():
     await llm.aclose()
 
 
+@pytest.fixture(scope="session")
+def request_audit_store(tmp_path_factory):
+    """Independent HTTP observations must never use a developer's bank store.
+
+    Existing route tests override get_db with their business fixture. The audit
+    admission/finalisation session is separate and needs its own isolated sink.
+    NullPool avoids sharing async connections across pytest event loops.
+    """
+    from contextlib import asynccontextmanager
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    from backend.app.models import Base
+    directory = tmp_path_factory.mktemp("http_audit")
+    engine = create_async_engine(f"sqlite+aiosqlite:///{directory / 'observations.db'}", poolclass=NullPool)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    ready = False
+
+    @asynccontextmanager
+    async def factory():
+        nonlocal ready
+        if not ready:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            ready = True
+        async with sessions() as db:
+            yield db
+    yield factory, directory
+    engine.sync_engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def isolated_request_audit(monkeypatch, request_audit_store):
+    from backend.app.services.audit import writer
+    factory, directory = request_audit_store
+    monkeypatch.setattr(writer, "default_factory", lambda: factory)
+    monkeypatch.setattr(writer, "_health", {"status": "ok", "fallback_count": 0})
+    monkeypatch.setenv("AUDIT_FALLBACK_DIR", str(directory / "recovery"))
+
+
 @pytest.fixture
 def fake_user() -> dict:
     """返回一个模拟用户字典。"""

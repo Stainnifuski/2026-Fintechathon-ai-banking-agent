@@ -130,17 +130,17 @@ async def test_expired_code_is_rejected(db, provider) -> None:
 async def test_wrong_attempts_survive_caller_rollback_and_lock_challenge(db, provider) -> None:
     sent = await send_sms_challenge(db, "U1", "card", "op-1")
     code = last_code(provider)
-    for _ in range(sms.MAX_ATTEMPTS):
+    for attempt in range(sms.MAX_ATTEMPTS):
         with pytest.raises(BankError) as error:
             await verify_sms_for_operation(db, "U1", other(code), challenge_id=sent["challenge_id"],
                                            purpose="card", reference_id="op-1")
-        assert error.value.code == "SMS_INVALID"
+        assert error.value.code == ("SECURITY_LOCKED" if attempt == sms.MAX_ATTEMPTS - 1 else "SMS_INVALID")
         await db.rollback()
     assert (await challenge(db, sent["challenge_id"])).attempts == sms.MAX_ATTEMPTS
     with pytest.raises(BankError) as locked:
         await verify_sms_for_operation(db, "U1", code, challenge_id=sent["challenge_id"],
                                        purpose="card", reference_id="op-1")
-    assert locked.value.code == "SMS_LOCKED"
+    assert locked.value.code == "SECURITY_LOCKED"
 
 
 @pytest.mark.asyncio

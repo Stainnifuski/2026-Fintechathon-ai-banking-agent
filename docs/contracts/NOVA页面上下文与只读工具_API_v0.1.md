@@ -11,12 +11,12 @@ NOVA 已在时间查询 Agent Loop 上增加本人账户概览、账单统计、
 | 事件 | data | 含义 |
 |---|---|---|
 | `tool` | `{"type":"tool","name":"list_cards"}` | 即将执行某个工具（只含名称，结果在 done 中） |
-| `delta` | `{"type":"delta","text":"…"}` | 回答正文片段，按顺序拼接 |
-| `reset` | `{"type":"reset"}` | 本轮已推送的正文作废（模型输出文字后改为调用工具），客户端清空草稿 |
+| `delta` | `{"type":"delta","text":"…"}` | 后端依据工具结果生成的正文；当前在核验后一次发送 |
+| `reset` | `{"type":"reset"}` | 客户端保留旧协议兼容，当前后端不靠撤回未核验正文实现防护 |
 | `done` | 与 `/chat` 的响应体相同，外加 `"type":"done"` | 最终结果，以此为准 |
 | `error` | `{"type":"error","code":"…","message":"…"}` | 模型或执行失败，错误码与 `/chat` 的 503 detail 相同；未知异常为 `NOVA_STREAM_FAILED`，不含内部信息 |
 
-模型以 `stream: true` 请求，工具调用参数在拼接完整并通过与非流式相同的校验后才执行；输出被截断（如 `finish_reason=length`）时不执行工具，推送 error。离线规则直接推送一个 done。客户端断开时停止后续模型调用和工具执行。响应带 `X-Accel-Buffering: no`，经 nginx 代理时不缓冲。前端优先使用流式接口，浏览器不支持读取响应流时退回 `/chat`。
+模型以 `stream: true` 请求，工具调用参数在拼接完整并通过与非流式相同的校验后才执行；正文增量在请求内组装，未经事实边界处理不发给客户端。输出被截断（如 `finish_reason=length`）时不执行未完成的工具调用，也不发布未核验正文。离线规则直接推送一个 done。客户端断开时停止后续模型调用和工具执行。响应带 `X-Accel-Buffering: no`，经 nginx 代理时不缓冲。前端优先使用流式接口，浏览器不支持读取响应流时退回 `/chat`。最终正文和对话保存内容一致；见 [幻觉防护契约](../security/hallucination_guard.md)。
 
 ## 页面上下文协议
 
@@ -92,7 +92,7 @@ get_transaction 直接查询已完成流水并校验账户归属，不受当前�
 
 source 分别为 accounts、bills.analysis、bills.transactions、bills.transaction；data 为对应业务 DTO。as_of 为查询截止/完成时间，不保证多个工具为同一事务快照。银行错误使用稳定 error/message 回传模型；非法参数 INVALID_ARGUMENTS、未注册工具 UNKNOWN_TOOL、内部失败 TOOL_EXECUTION_FAILED。模型不应根据错误编造金额或成功状态。
 
-接口响应仍为 reply、mode、tool_calls。前端以 Markdown 渲染模型回答，支持标题、加粗、列表、表格和代码；表格可横向滚动，用户输入仍为纯文本。原始 HTML 不渲染，链接沿用渲染库的 URL 校验。工具名称、关键查询事实与截止时间单独展示。NOVA 每轮请求输出预算为4096 token，仍受全局 LLM_MAX_TOKENS 上限约束。默认报告优先给摘要，待核对提示最多举3条并说明总数。模型服务故障返回 503，不自动替换为离线成功；请求限制失败返回 422，未登录返回 401。MODEL_OUTPUT_INCOMPLETE 保留具体停止原因：length 时提示回答超出输出长度限制，其他中断提示未完整生成；服务端仅记录白名单原因、实际输出上限和整数输出token数量，不记录提示词或响应正文。截断的工具调用参数不会执行。
+接口保留 reply、mode、tool_calls，新增 grounding 状态、原因码及本轮证据来源/内容指纹。普通、离线与流式最终响应使用同一事实生成边界，金额/对象/范围/操作状态不采用模型自由正文；模型只能选择证据块顺序。前端继续以 Markdown 渲染，用户名称、备注等作为转义引用数据展示。工具名称、关键查询事实与截止时间单独展示。NOVA 模型输出预算为4096 token，受全局 LLM_MAX_TOKENS 上限约束；服务端证据正文另有限制条数。默认报告优先给摘要，待核对提示最多举3条并说明总数。模型服务故障返回 503，不自动替换为离线成功；请求限制失败返回 422，未登录返回 401。MODEL_OUTPUT_INCOMPLETE 保留具体停止原因；截断的工具调用参数不会执行。输出核验不重试任何业务工具。
 
 ## 离线模式
 

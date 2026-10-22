@@ -1,4 +1,5 @@
 """模拟财务画像与目标标签；外部资产不会进入银行执行命令。"""
+from ..audit.spans import audited
 
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ async def read(db: AsyncSession, user_id: str) -> dict:
         "notice": "请只输入虚构数据；外部资产不属于模拟银行可交易资金"}
 
 
+@audited("wealth")
 async def update_profile(db: AsyncSession, user_id: str, request: ProfileUpdate) -> dict:
     """关键财务信息改版使既有评估失效，不能仅调整User.risk_level。"""
     if len({asset.asset_id for asset in request.external_assets}) != len(request.external_assets):
@@ -46,6 +48,7 @@ async def update_profile(db: AsyncSession, user_id: str, request: ProfileUpdate)
     return await read(db, user_id)
 
 
+@audited("wealth")
 async def save_goal(db: AsyncSession, user_id: str, request: GoalInput, bank: HttpWealthBankApi) -> dict:
     """目标金额与用途独立；同资产多目标不能重复超分配。"""
     facts = await bank.assets(user_id)

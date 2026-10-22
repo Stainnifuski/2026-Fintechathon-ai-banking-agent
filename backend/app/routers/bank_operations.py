@@ -3,7 +3,7 @@
 import os
 import hmac
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,7 @@ class InternalBankSubmit(BaseModel):
     subject_user_id: str
     authorization_id: str
     control_epoch: int = Field(ge=1)
+    authorization_issued_at: str | None = None
     simulate_response_loss: bool = False
 
 
@@ -98,19 +99,21 @@ class InternalSmsVerification(BaseModel):
     reference_id: str = Field(min_length=1, max_length=64)
 
 
-def require_internal_token(x_internal_token: str = Header(default="")) -> None:
+def require_internal_token(request: Request, x_internal_token: str = Header(default="")) -> None:
     if not INTERNAL_BANK_TOKEN or INTERNAL_BANK_TOKEN in {
         "dev-internal-token", "replace-with-a-separate-internal-secret"
     }:
         raise HTTPException(status_code=503, detail={"code": "INTERNAL_BANK_TOKEN_MISSING", "message": "内部银行凭据未安全配置"})
     if not hmac.compare_digest(x_internal_token, INTERNAL_BANK_TOKEN):
         raise HTTPException(status_code=403, detail={"code": "INTERNAL_BANK_TOKEN_INVALID", "message": "无效的内部执行凭据"})
+    from ..services.audit.context import trust_internal
+    trust_internal(request.headers)
 
 
 def _raise_bank_error(error: BankError) -> None:
     raise HTTPException(
         status_code=error.status_code,
-        detail={"code": error.code, "message": error.message},
+        detail={"code": error.code, "message": error.message, **getattr(error, "security_detail", {})},
     ) from error
 
 
@@ -195,6 +198,7 @@ async def submit(
                 subject_user_id=request.subject_user_id,
                 authorization_id=request.authorization_id,
                 control_epoch=request.control_epoch,
+                authorization_issued_at=request.authorization_issued_at,
             ),
             simulate_response_loss=request.simulate_response_loss,
         )

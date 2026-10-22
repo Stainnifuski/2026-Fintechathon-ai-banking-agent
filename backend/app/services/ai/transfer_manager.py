@@ -1,4 +1,5 @@
 """NOVA transfer skill: durable multi-task drafts backed by the existing transfer state machine."""
+from ..audit.spans import audited
 import hashlib
 import json
 import re
@@ -88,6 +89,7 @@ async def get_session(db: AsyncSession, user_id: str, session_id: str) -> dict:
     return await _view(db, row)
 
 
+@audited("transfer")
 async def change_task_form(db: AsyncSession, bank: BankApi, *, user_id: str, session_id: str,
                            chat_task_id: str, session_version: int, request_id: str,
                            recipient: str, amount_yuan: str, phone: str | None,
@@ -214,6 +216,7 @@ async def change_task_form(db: AsyncSession, bank: BankApi, *, user_id: str, ses
     return await _view(db, row)
 
 
+@audited("transfer")
 async def cancel_chat_task(db: AsyncSession, bank: BankApi, *, user_id: str, session_id: str,
                            chat_task_id: str, session_version: int, request_id: str) -> dict:
     receipt_id = _digest([user_id, request_id])
@@ -487,6 +490,7 @@ async def _extract(
                            bool(re.search(r"清空备注|不要备注|删除备注|无备注", text)))}
 
 
+@audited("transfer")
 async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, user_id: str,
                           message: str, request_id: str, session_id: str | None,
                           session_version: int, focus_task_id: str | None = None,

@@ -308,10 +308,10 @@ async def test_repeated_wrong_codes_terminate_authorization(client, db) -> None:
         assert (await client.post("/api/v1/cards/operations/op-brute-1/verify", headers=headers(),
                                   json={"proof": wrong})).status_code == 401
     locked = await client.post("/api/v1/cards/operations/op-brute-1/verify", headers=headers(), json={"proof": wrong})
-    assert locked.json()["detail"]["code"] == "VERIFICATION_LOCKED"
+    assert locked.json()["detail"]["code"] == "SECURITY_LOCKED"
     correct = await client.post("/api/v1/cards/operations/op-brute-1/verify", headers=headers(),
                                 json={"proof": pyotp.TOTP(secret).now()})
-    assert correct.json()["detail"]["code"] == "AUTHORIZATION_WRONG_STATE"
+    assert correct.json()["detail"]["code"] == "SECURITY_LOCKED"
     assert (await card(db, "C1")).status == "ACTIVE"
 
 

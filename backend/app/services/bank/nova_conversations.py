@@ -1,4 +1,5 @@
 """Bank-side conversation API. Plaintext is confined to this service boundary."""
+from ..audit.spans import audited
 import base64
 import hashlib
 import os
@@ -47,6 +48,7 @@ def redact_proof(value: str) -> str:
                   r'\1[验证码已隐藏，请在可信验证卡输入]', value, flags=re.IGNORECASE)
 
 
+@audited("assistant")
 async def create(db: AsyncSession, user_id: str) -> dict:
     now = datetime.now(timezone.utc)
     row = NovaConversationORM(conversation_id="NOVA-" + uuid4().hex, user_id=user_id,
@@ -109,6 +111,7 @@ async def append_turn(db: AsyncSession, user_id: str, session_id: str,
     return _summary(row)
 
 
+@audited("assistant")
 async def remove(db: AsyncSession,user_id: str,session_id: str):
     """Purge conversation/cache only. Bank transactions and audit remain owned facts."""
     from ...integrations.wealth_authorization import lock_profile

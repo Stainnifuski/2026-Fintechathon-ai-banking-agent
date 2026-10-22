@@ -80,6 +80,8 @@ class TaskCardAction(BaseModel):
 
 def _error_detail(error: LLMError) -> dict:
     message = "NOVA 暂时无法完成查询，请稍后重试。"
+    if error.code in {"AGENT_NO_PROGRESS", "AGENT_CONSECUTIVE_FAILURES"}:
+        message = "工具调用连续失败或没有进展，本轮处理已停止。请核对需求后重试；已受理交易可继续查询。"
     if error.code == "MODEL_OUTPUT_INCOMPLETE":
         message = ("模型回答超出输出长度限制，未能完整生成。请尝试分项查询。"
                    if error.finish_reason == "length"
@@ -198,7 +200,7 @@ def _sse(event: dict) -> str:
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_current_user),
                       db: AsyncSession = Depends(get_db)) -> StreamingResponse:
-    """与 /chat 同一套工具与安全规则，以 SSE 推送进度：tool、delta、reset，最后 done 或 error。
+    """与 /chat 同一套工具与事实规则；先tool进度，核验后delta正文，最后done/error。
 
     认证与参数错误仍在开始推送前以 HTTP 状态码返回；done 的内容与 /chat 的响应体相同。
     """

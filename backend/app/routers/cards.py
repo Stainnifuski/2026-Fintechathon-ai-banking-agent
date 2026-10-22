@@ -26,7 +26,7 @@ async def _fail(db: AsyncSession, error: BankError | CardAuthorizationError) -> 
         await db.commit()
     else:
         await db.rollback()
-    raise HTTPException(error.status_code, detail={"code": error.code, "message": error.message}) from error
+    raise HTTPException(error.status_code, detail={"code": error.code, "message": error.message, **getattr(error, "security_detail", {})}) from error
 
 
 async def _execute(db: AsyncSession, row: CardOperationORM) -> CardOperationView:
@@ -44,7 +44,7 @@ async def _execute(db: AsyncSession, row: CardOperationORM) -> CardOperationView
         row = await auth.owned_operation(db, user_id, operation_id)
         auth.mark_failed(db, row, error.code)
         await db.commit()
-        raise HTTPException(error.status_code, detail={"code": error.code, "message": error.message}) from error
+        raise HTTPException(error.status_code, detail={"code": error.code, "message": error.message, **getattr(error, "security_detail", {})}) from error
 
 
 @router.get("", response_model=list[CardView])
@@ -81,12 +81,17 @@ async def confirm_operation(operation_id: str, request: CardConfirmRequest,
         row = await auth.owned_operation(db, current_user["user_id"], operation_id)
         if row.status == auth.COMPLETED and request.digest == row.param_digest:
             return _view(row)
+        if row.action != "card_lock":
+            from ..security.circuit_breaker import check_trade
+            await check_trade(db, row.user_id, issued_at=row.created_at, authorization=True)
         if row.status != auth.AUTHORIZED:
             auth.record_confirmation(db, row, request.digest)
             await db.commit()
         if row.status == auth.AWAITING_MFA:
             return _view(row)
     except CardAuthorizationError as error:
+        from ..security.circuit_breaker import report_violation
+        await report_violation(db, current_user["user_id"], error.code)
         await _fail(db, error)
     return await _execute(db, row)
 
@@ -101,6 +106,8 @@ async def verify_operation(operation_id: str, request: CardVerifyRequest,
         if row.status == auth.COMPLETED:
             return _view(row)
         if row.status != auth.AUTHORIZED:
+            from ..security.circuit_breaker import check_trade
+            await check_trade(db, user_id, issued_at=row.created_at, authorization=True)
             auth.require_verification_pending(db, row)
             try:
                 await verify_second_factor(db, user_id, request.proof, method=request.method,
@@ -108,14 +115,14 @@ async def verify_operation(operation_id: str, request: CardVerifyRequest,
                                            purpose="card", reference_id=operation_id)
             except BankError as error:
                 await db.rollback()
-                if error.code in ("TOTP_INVALID", "TOTP_REPLAY", "SMS_INVALID"):
+                if error.code in ("TOTP_INVALID", "TOTP_REPLAY", "SMS_INVALID", "SECURITY_LOCKED"):
                     row = await auth.owned_operation(db, user_id, operation_id)
                     locked = auth.record_failed_verification(db, row, request.method)
                     await db.commit()
-                    if locked is not None:
+                    if locked is not None and error.code != "SECURITY_LOCKED":
                         raise locked from error
                 raise HTTPException(error.status_code,
-                                    detail={"code": error.code, "message": error.message}) from error
+                                    detail={"code": error.code, "message": error.message, **getattr(error, "security_detail", {})}) from error
             auth.record_verification(db, row, request.method)
             await db.commit()
     except CardAuthorizationError as error:

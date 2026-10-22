@@ -1,4 +1,5 @@
 """NOVA intent bridge. No consent, verification or bank execution capability."""
+from ..audit.spans import audited
 from copy import deepcopy
 import hashlib
 import json
@@ -19,6 +20,8 @@ from .skill_registry import load_skill
 from .llm import llm
 from ..bank.nova_conversations import redact
 from . import wealth_steps
+from .parameter_grounding import require_value, require_cash_role
+from .grounding import money
 
 
 CATEGORY_NAMES = {'债券基金':'bond_fund','混合基金':'mixed_fund','股票基金':'equity_fund',
@@ -87,6 +90,9 @@ class WealthIntent(EmptyArguments):
     period: Literal['day','month','year','cumulative'] = 'day'
     anchor_date: str | None = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}$')
     question: str = Field(default='', max_length=400)
+    cash_quote: str | None = Field(default=None, max_length=200)
+    amount_quotes: list[str] = Field(default_factory=list, max_length=4)
+    redemption_quote: str | None = Field(default=None, max_length=200)
     advance: Literal['none','continue','prepare','confirm','next_batch'] = 'none'
     stage: str | None = Field(default=None,max_length=64,pattern=r'^[a-z_]+$')
     selection_operation: Literal['keep','add','replace','remove'] = 'keep'
@@ -148,6 +154,7 @@ def view(row):
     return dict(task_id=row.session_id, version=row.version, **deepcopy(row.data))
 
 
+@audited("wealth")
 async def save_state(db, user, session, task_id, version, state):
     await lock_profile(db,user)
     await owner(db, user, session)
@@ -231,6 +238,7 @@ async def assert_reversible(db,user,data):
             reject('已有成交、到账或待核实结果，不能回退或改写此前步骤。请保留原号核对；需要新的调整请新建任务。','RECONCILIATION_REQUIRED')
 
 
+@audited("wealth")
 async def propose_backtrack(db,user,row,stage,command=None):
     from uuid import uuid4
     await assert_reversible(db,user,row.data)
@@ -246,6 +254,7 @@ async def propose_backtrack(db,user,row,stage,command=None):
     row.version+=1
 
 
+@audited("wealth")
 async def manage(arguments, context):
     if not context.session_id or not context.request_id or not context.original_message:
         return {'error':'WEALTH_CONTEXT_REQUIRED', 'message':'缺少理财会话上下文'}
@@ -259,7 +268,10 @@ async def manage(arguments, context):
             reject('请求编号不能用于不同的理财需求','IDEMPOTENCY_CONFLICT')
         return {'reply':replay.response.get('reply') or '已恢复本次理财任务，请核对卡片。', 'wealth_cards':current}
     result = await llm.generate_structured(messages=[
-        {'role':'system','content':load_skill('wealth')},
+        {'role':'system','content':load_skill('wealth') + '\n金额和份额只能来自本轮原文。'
+         'cash_yuan提供cash_quote；amounts_yuan逐项提供amount_quotes；redemption_value提供redemption_quote。'
+         'quote必须是本轮连续原文并包含数值和单位，多产品金额quote还须包含该产品名、代码或明确序号。'
+         '不确定则留空，不能从产品代码、历史回答或余额补造用户金额。'},
         {'role':'user','content':json.dumps({
             'message':redact(context.original_message),
             'focused_card':{'task_id':context.wealth_task_id,'stage':context.wealth_stage},
@@ -267,6 +279,29 @@ async def manage(arguments, context):
             'tasks':[{k:c.get(k) for k in ('task_id','version','command','view_context','closed','execution_plan_id')} for c in current[-20:]],
         },ensure_ascii=False)}], schema=IntentBatch, max_tokens=2000)
     result.data.intents=[category_intent(i) for i in result.data.intents]
+    try:
+        for intent in result.data.intents:
+            require_value(intent.cash_yuan, context.original_message, quote=intent.cash_quote)
+            focused = next((card for card in current if card['task_id'] == (intent.task_id or context.wealth_task_id)), {})
+            require_cash_role(intent.cash_field, intent.cash_yuan, context.original_message,
+                              (focused.get('command') or {}).get('cash_field'))
+            for index, value in enumerate(intent.amounts_yuan):
+                quote = intent.amount_quotes[index] if index < len(intent.amount_quotes) else None
+                require_value(value, context.original_message, quote=quote)
+                if value is not None and len(intent.amounts_yuan) > 1:
+                    reference = (intent.product_queries[index] if index < len(intent.product_queries) else
+                                 f'第{intent.candidate_indices[index]}个' if index < len(intent.candidate_indices) else None)
+                    if quote is None or reference is None or reference not in quote:
+                        raise ValueError('AMOUNT_OBJECT_NOT_GROUNDED')
+            require_value(intent.redemption_value, context.original_message,
+                          unit='money' if intent.redemption_input == 'market_value' else
+                               'percent' if intent.redemption_input == 'holding_ratio' else 'units',
+                          quote=intent.redemption_quote)
+            # 自由问题不能作为事实正文进入可信任务卡。
+            intent.question = '请补充具体产品、金额或要处理的任务，或在卡片中选择。'
+    except ValueError:
+        return {'error': 'PARAMETER_NOT_GROUNDED', 'message': '金额或份额缺少本轮原文依据，请明确产品、数值和单位。',
+                'wealth_cards': current}
     bank = HttpWealthBankApi()
     facts = await bank.assets(user)
     catalogue = await bank.call('POST','/catalog',{'subject_user_id':user,'facts_only':True,'policy_references':True}) if any(
@@ -286,7 +321,6 @@ async def manage(arguments, context):
         if intent.kind=='assets':
             cash=sum(a['available_fen'] for a in facts['cash'] if a['account_type']!='credit')
             summary=facts.get('asset_summary') or {}
-            def money(v):return '尚未核实' if v is None else f'¥{v/100:,.2f}'
             replies.append(f"当前可用现金 **{money(cash)}**。\n\n持仓市值：{money(summary.get('positions_market_value_fen'))}；理财总资产：{money(summary.get('total_assets_fen'))}。信用额度不计入可投资现金。")
             continue
         if intent.kind=='assessment':

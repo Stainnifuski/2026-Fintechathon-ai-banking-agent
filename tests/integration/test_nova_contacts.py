@@ -80,4 +80,4 @@ async def test_nova_history_reads_only_proven_transfer_method(db, monkeypatch):
     monkeypatch.setenv("LLM_MODE", "offline")
     reply = await nova.chat("我的联系人有哪些？", [], context=owner)
     assert reply["tool_calls"][0]["name"] == "list_contacts"
-    assert "139****0002" in reply["reply"] and transfer_card_number("A2")[-4:] not in reply["reply"]
+    assert "139****0002" in reply["reply"].replace('\\', '') and transfer_card_number("A2")[-4:] not in reply["reply"]

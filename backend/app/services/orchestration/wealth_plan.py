@@ -1,4 +1,5 @@
 """5号持久化理财计划；通过HTTP获取事实，无银行ORM依赖。"""
+from ..audit.spans import audited
 
 from datetime import date, datetime, timedelta
 from ...domain.time import BEIJING
@@ -40,6 +41,7 @@ async def confirmation_commands(db: AsyncSession, user_id: str, plan_id: str, ve
     return commands
 
 
+@audited("wealth")
 async def preview_all(db: AsyncSession, user_id: str, plan_id: str, version: int, bank: HttpWealthBankApi) -> dict:
     """整页预览，每笔仍绑定独立操作号和披露摘要。"""
     from ...integrations import wealth_authorization as policy
@@ -129,6 +131,7 @@ async def refresh_purchase_review(db, user_id, plan_id, version, bank):
     return {'plan': plan_view(await owned_plan(db, user_id, plan_id)), 'preview': preview}
 
 
+@audited("wealth")
 async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: PlanConfirmation, bank: HttpWealthBankApi) -> dict:
     """一次本人确认，所有逐笔记录原子落库；任一失效则全部拒绝。"""
     from ...integrations import wealth_authorization as policy
@@ -153,6 +156,7 @@ async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: Pla
     return {"plan_id": plan_id, "version": request.version, "status": "AWAITING_MFA"}
 
 
+@audited("wealth")
 async def verify_all(db: AsyncSession, user_id: str, plan_id: str, request, bank: HttpWealthBankApi) -> dict:
     """一次统一第二因素验证当前方案，银行再次核对完整集合。"""
     from ...integrations import wealth_authorization as policy
@@ -174,6 +178,7 @@ def plan_view(row: WealthPlanORM) -> dict:
     return {"plan_id": row.plan_id, "version": row.version, "status": row.status, **row.data}
 
 
+@audited("wealth")
 async def create(db: AsyncSession, user_id: str, bank: HttpWealthBankApi, request: dict,
                  plan_id: str | None = None) -> dict:
     """新资金/持仓调整先读取事实，随后短事务保存版本化计划。"""
@@ -361,6 +366,7 @@ async def progress(db: AsyncSession, user_id: str, plan_id: str, bank: HttpWealt
     return plan_view(row)
 
 
+@audited("wealth")
 async def execute(db: AsyncSession, user_id: str, plan_id: str, version: int, bank: HttpWealthBankApi) -> dict:
     """纯申购全部原子占款，卖出逐笔执行；失败暂停剩余，不撤销成功。"""
     await lock_profile(db, user_id)
@@ -414,6 +420,7 @@ async def execute(db: AsyncSession, user_id: str, plan_id: str, version: int, ba
     return await progress(db, user_id, plan_id, bank)
 
 
+@audited("wealth")
 async def adopt(db: AsyncSession, user_id: str, plan_id: str, request: AdoptPlan) -> dict:
     """部分采用或减少金额/份额产生新版本，拒绝变相增加授权范围。"""
     await lock_profile(db, user_id)

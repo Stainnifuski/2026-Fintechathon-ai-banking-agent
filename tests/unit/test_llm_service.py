@@ -503,7 +503,7 @@ async def test_all_business_modules_use_one_key_endpoint_and_client(service, mon
     assert transfer.recipient == "李四"
     assert bill.category == "dining" and mode == "model"
     assert wealth.intent == "assets" and evidence["live"]
-    assert answer == "资料说明了规则。" and citations[0]["document_id"] == "D1"
+    assert '资料摘录' in answer and '资料说明了规则。' in answer and citations[0]["document_id"] == "D1"
     assert client._client is pooled and len(seen) == 4
     assert len({str(r.url) for r in seen}) == 1
     assert all(r.headers["Authorization"] == "Bearer test-secret" for r in seen)

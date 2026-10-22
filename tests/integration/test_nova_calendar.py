@@ -170,7 +170,9 @@ async def test_authenticated_calendar_tool_loop_and_page_validation(store, monke
             calendar = {'visible_month': '2026-10', 'selected_date': '2026-10-15', 'selected_event': {
                 'event_id': point['event_id'], 'starts_at': '2026-10-15T01:00:00Z'}}
             reply = await client.post('/api/v1/nova/chat', json={'message': '这个活动什么时候举行？', 'page_context': {'page': 'thirdParty', 'calendar': calendar}})
-            assert reply.status_code == 200 and reply.json()['reply'].startswith('项目答辩')
+            assert reply.status_code == 200 and '项目答辩' in reply.json()['reply']
+            assert '2026-10-15T09:00:00+08:00' in reply.json()['reply']
+            assert reply.json()['grounding']['status'] == 'grounded'
             for patch in ({'timezone': 'bad-zone'}, {'selected_date': '2026-02-30'}, {'user_id': 'U2'},
                           {'selected_event': {'event_id': point['event_id'], 'starts_at': '2026-10-15T09:00:00'}}):
                 assert (await client.post('/api/v1/nova/chat', json={'message': '日程', 'page_context': {

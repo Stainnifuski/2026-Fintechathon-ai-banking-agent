@@ -1,4 +1,5 @@
 """4号理财事实服务；受理、占款、计价、到账与审计事务一致。"""
+from ..audit.spans import audited
 
 from dataclasses import asdict
 from ...domain.wealth_paper_policy import PRICING_MODES
@@ -57,6 +58,7 @@ async def business_now(db: AsyncSession, account_id: str | None = None) -> datet
     return utc_now()
 
 
+@audited("wealth")
 async def verify_authorization(db: AsyncSession, user_id: str, authorization_id: str, proof: str,
                                *, method: str = "totp", challenge_id: str | None = None) -> dict:
     result = await verify_authorizations(db, user_id, [authorization_id], proof,
@@ -64,6 +66,7 @@ async def verify_authorization(db: AsyncSession, user_id: str, authorization_id:
     return {**result, "authorization_id": authorization_id}
 
 
+@audited("wealth")
 async def verify_authorizations(db: AsyncSession, user_id: str, authorization_ids: list[str], proof: str,
                                 *, method: str = "totp", challenge_id: str | None = None,
                                 plan_id: str | None = None, version: int | None = None) -> dict:
@@ -77,12 +80,6 @@ async def verify_authorizations(db: AsyncSession, user_id: str, authorization_id
     await policy.lock_profile(db, user_id)
     from ..orchestration.wealth_nova_guard import require_no_pending_backtrack
     await require_no_pending_backtrack(db,user_id,plan_id)
-    if db.get_bind().dialect.name == "sqlite":
-        await db.execute(update(UserORM).where(UserORM.user_id == user_id)
-            .values(totp_last_timestep=UserORM.totp_last_timestep))
-    else:
-        await db.execute(select(UserORM.user_id).where(UserORM.user_id == user_id).with_for_update())
-    await db.get(UserORM, user_id, populate_existing=True)
     rows = [await policy.owned_authorization(db, user_id, aid) for aid in authorization_ids]
     if plan_id:
         from ..orchestration.wealth_plan import confirmation_commands
@@ -94,25 +91,12 @@ async def verify_authorizations(db: AsyncSession, user_id: str, authorization_id
     for row in rows:
         if row.status != "AWAITING_MFA" or not row.confirmed_at:
             raise WealthPolicyError("请先本人确认当前订单", "CONFIRMATION_REQUIRED")
-    since = datetime.now(timezone.utc)-timedelta(minutes=10)
-    failures = await db.scalar(select(func.count()).select_from(AuditLogORM).where(
-        AuditLogORM.user_id == user_id, AuditLogORM.action == "investment_verification",
-        AuditLogORM.result == "failed", AuditLogORM.timestamp >= since))
-    if failures >= 5:
-        raise BankError("验证失败次数过多，请10分钟后重新验证", "VERIFICATION_RATE_LIMITED", 429)
+    from ...security.circuit_breaker import require_trade
+    for row in rows:
+        await require_trade(db, user_id, issued_at=row.created_at, authorization=True)
     reference = verification_reference(rows, grouped=bool(plan_id))
-    try:
-        await verify_second_factor(db, user_id, proof, method=method, challenge_id=challenge_id,
-            purpose="wealth", reference_id=reference)
-    except BankError as error:
-        if error.code in {"TOTP_INVALID", "TOTP_REPLAY", "SMS_INVALID"}:
-            db.add(AuditLogORM(audit_id=f"WVFAIL{uuid4().hex}", session_id=rows[0].operation_id, user_id=user_id,
-                intent="wealth_verification", action="investment_verification", permission_level="red",
-                user_confirmed=True, mfa_method=method, result="failed",
-                params={"authorization_ids": authorization_ids, "code": error.code},
-                decision_chain=["personal_confirmation_checked", "strong_verification_denied", "no_credential_stored"]))
-            await db.commit()
-        raise
+    await verify_second_factor(db, user_id, proof, method=method, challenge_id=challenge_id,
+        purpose="wealth", reference_id=reference)
     from ...security.sms import get_sms_provider
     simulated = method == "sms" and get_sms_provider().name == "mock"
     now = datetime.now(timezone.utc)
@@ -132,6 +116,7 @@ async def verify_authorizations(db: AsyncSession, user_id: str, authorization_id
     return {"status": "VALID", "authorization_ids": authorization_ids}
 
 
+@audited("wealth")
 async def advance_clock(db: AsyncSession, business_at: datetime, user_id: str | None = None, context_id: str | None = None) -> dict:
     """隔离管理员推进业务时间并留痕，不改变安全时钟。"""
     if business_at.tzinfo is None:
@@ -361,6 +346,7 @@ def redemption_rate(rules: dict, days: int) -> str:
     raise BankError("赎回费率缺失", "PRODUCT_UNAVAILABLE", 409)
 
 
+@audited("wealth")
 async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -> dict:
     """预览和受理共用服务端校验，预览不占款。"""
     account = await owned_account(db, user_id, command.account_id)
@@ -492,6 +478,7 @@ async def owned_order(db: AsyncSession, user_id: str, operation_id: str) -> Weal
     return row
 
 
+@audited("wealth")
 async def accept_many(db: AsyncSession, user_id: str,
                       submissions: list[tuple[InvestmentCommand, str]]) -> list[dict]:
     """单笔/纯申购组合共用原子受理，占款与消费授权同事务。"""
@@ -591,6 +578,7 @@ async def cancellation_eligibility(db: AsyncSession, user_id: str, operation_id:
         "consequence":"释放占款，不增加余额、不生成退款流水" if row.direction == "purchase" else "释放未处置份额，不增加现金"}
 
 
+@audited("wealth")
 async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
     """仅计价前可撤单；账户锁排除并发结算，重复撤单返回事实。"""
     from ...integrations.wealth_authorization import lock_profile
@@ -623,6 +611,7 @@ async def cancel(db: AsyncSession, user_id: str, operation_id: str) -> dict:
     return order_view(row)
 
 
+@audited("wealth")
 async def settle(db: AsyncSession, operation_id: str) -> dict:
     """Compatibility endpoint: retire legacy waiting facts, never enqueue pricing."""
     from .wealth_retire_pending import retire

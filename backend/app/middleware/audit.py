@@ -1,82 +1,91 @@
-"""审计日志中间件"""
-
-import logging
-from datetime import datetime
-from uuid import uuid4
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
-
-from ..services.transaction_service import create_audit_log
-
-logger = logging.getLogger(__name__)
+"""Streaming-safe ASGI observations; business facts come from their owners."""
+import asyncio
+from time import monotonic
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.responses import JSONResponse
+from starlette.requests import ClientDisconnect
+from ..services.audit.context import execution, bind_user
+from ..services.audit.writer import AuditUnavailable, emit, persist_pending, health
+from ..services.audit.policy import route_domain
 
 
-class AuditMiddleware(BaseHTTPMiddleware):
-    """HTTP 请求审计中间件，记录所有 API 调用。"""
+class AuditMiddleware:
+    def __init__(self, app):
+        self.app = app
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        """拦截请求，记录审计信息。"""
-        # 仅对业务 API 路径记录审计
-        if not request.url.path.startswith("/api/"):
-            return await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope.get("path", "").startswith("/api/"):
+            return await self.app(scope, receive, send)
+        with execution(actor_type="anonymous") as ctx:
+            from .auth import verify_token
+            header = Headers(scope=scope).get("authorization", "")
+            if header.startswith("Bearer "):
+                payload = verify_token(header[7:])
+                if payload and isinstance(payload.get("sub"), str):
+                    bind_user(payload["sub"])
+            start = monotonic()
+            status, disconnected, complete = 500, False, False
+            emit(action="http.request", phase="start", outcome="started", domain=route_domain(scope["path"]) or "system",
+                 source_module="http.access", facts={"method": scope["method"]})
+            try:
+                await persist_pending(ctx)
+            except AuditUnavailable:
+                return await JSONResponse(status_code=503, content={"detail": {
+                    "code": "AUDIT_UNAVAILABLE", "message": "操作记录暂不可用，请稍后重试"}})(scope, receive, send)
 
-        start_time = datetime.now()
-        response = await call_next(request)
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+            async def audited_receive():
+                nonlocal disconnected
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    disconnected = True
+                return message
 
-        # 异步记录审计日志（不阻塞响应）
-        try:
-            logger.info(
-                "API调用: %s %s -> %s (%.1fms)",
-                request.method,
-                request.url.path,
-                response.status_code,
-                duration_ms,
-            )
-        except Exception as e:
-            logger.error("审计日志记录失败: %s", str(e))
+            async def audited_send(message):
+                nonlocal status, complete
+                if message["type"] == "http.response.start":
+                    status = message["status"]
+                    headers = MutableHeaders(scope=message)
+                    headers["X-Request-ID"] = ctx.request_id
+                    headers["X-Audit-Status"] = "degraded" if ctx.degraded else health()["status"]
+                    if scope["path"].startswith("/api/v1/audit"):
+                        headers["Cache-Control"] = "no-store"
+                if message["type"] == "http.response.body" and not message.get("more_body", False):
+                    complete = True
+                await send(message)
 
-        return response
+            try:
+                await self.app(scope, audited_receive, audited_send)
+            except asyncio.CancelledError:
+                disconnected = True
+                raise
+            except (ClientDisconnect, OSError):
+                disconnected = True
+                ctx.error_code = "CLIENT_DISCONNECTED"
+                raise
+            except Exception as error:
+                ctx.error_code = getattr(error, "code", "UNHANDLED_ERROR")
+                raise
+            finally:
+                route = getattr(scope.get("route"), "path", "/api/unmatched")
+                outcome = "disconnected" if disconnected else "completed" if complete else "interrupted"
+                emit(action="http.response", phase="transport", outcome=outcome,
+                     domain=route_domain(scope["path"]) or "system", source_module="http.access",
+                     error_code=ctx.error_code, duration_ms=int((monotonic() - start) * 1000),
+                     facts={"method": scope["method"], "route": route,
+                            "http_status": status, "transport_status": outcome})
+                # Dependencies have exited; never hold a SQLite business lock
+                # while an independent audit connection tries to write.
+                try:
+                    await asyncio.shield(persist_pending(ctx))
+                except AuditUnavailable:
+                    # A transaction/response may already have committed. Health
+                    # reports the outage without falsifying the business result.
+                    pass
 
 
-async def log_operation(
-    session_id: str,
-    user_id: str,
-    intent: str,
-    permission_level: str,
-    action: str,
-    params: dict,
-    result: str,
-    decision_chain: list[str],
-) -> None:
-    """记录业务操作审计日志。
-
-    所有黄色和红色操作必须调用此函数。
-
-    Args:
-        session_id: 会话ID。
-        user_id: 用户ID。
-        intent: 识别到的意图。
-        permission_level: 权限级别 (green/yellow/red)。
-        action: 执行的操作名。
-        params: 操作参数。
-        result: 操作结果 (success/failed/cancelled/blocked)。
-        decision_chain: 完整决策链路。
-    """
-    try:
-        audit_data = {
-            "session_id": session_id,
-            "user_id": user_id,
-            "intent": intent,
-            "permission_level": permission_level,
-            "action": action,
-            "params": params,
-            "result": result,
-            "decision_chain": decision_chain,
-        }
-        audit_id = await create_audit_log(audit_data)
-        logger.info("审计日志已记录: %s", audit_id)
-    except Exception as e:
-        logger.error("审计日志写入失败: %s", str(e))
+async def log_operation(session_id, user_id, intent, permission_level, action, params, result, decision_chain):
+    """Compatibility entry point. Persistence failure reaches the caller."""
+    from ..services.transaction_service import create_audit_log
+    await create_audit_log(dict(session_id=session_id, user_id=user_id, intent=intent,
+        permission_level=permission_level, action=action, params=params, result=result,
+        decision_chain=decision_chain))

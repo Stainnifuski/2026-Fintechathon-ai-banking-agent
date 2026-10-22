@@ -1,4 +1,5 @@
 """3号理财授权策略；不访问账户、持仓等银行ORM。"""
+from ..services.audit.spans import audited
 
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -59,6 +60,7 @@ async def lock_profile(db: AsyncSession, user_id: str) -> WealthProfileORM:
         WealthProfileORM.user_id == user_id).with_for_update().execution_options(populate_existing=True))).one()
 
 
+@audited("wealth")
 async def submit_assessment(db: AsyncSession, user_id: str, request: AssessmentSubmission) -> dict:
     """本人提交版本化问卷；不把旧User.risk_level当作有效评估。"""
     profile = await lock_profile(db, user_id)
@@ -107,6 +109,7 @@ async def latest_assessment(db: AsyncSession, user_id: str) -> WealthAssessmentO
         .order_by(WealthAssessmentORM.created_at.desc(), WealthAssessmentORM.assessment_id.desc()))).first()
 
 
+@audited("wealth")
 async def confirm_assessment(db: AsyncSession, user_id: str, assessment_id: str) -> dict:
     """本人确认最新评估结果，旧结果不能覆盖新回答。"""
     await lock_profile(db, user_id)
@@ -123,6 +126,7 @@ async def confirm_assessment(db: AsyncSession, user_id: str, assessment_id: str)
     return assessment_view(row)
 
 
+@audited("wealth")
 async def require_suitability(db: AsyncSession, user_id: str, product_risk: int, *, allow_cash_only: bool = False) -> dict:
     """服务端保守硬匹配；强验证不能覆盖此限制。"""
     row = await latest_assessment(db, user_id)
@@ -136,6 +140,7 @@ async def require_suitability(db: AsyncSession, user_id: str, product_risk: int,
     return {**row.result, "assessment_id": row.assessment_id, "expires_at": aware(row.expires_at).isoformat()}
 
 
+@audited("wealth")
 async def require_payment_capacity(db: AsyncSession, user_id: str, available_fen: int, amount_fen: int) -> None:
     """已申报近期支出必须保留；未知支出不伪造估算，画像改变使评估失效。"""
     profile = await db.get(WealthProfileORM, user_id)
@@ -144,6 +149,7 @@ async def require_payment_capacity(db: AsyncSession, user_id: str, available_fen
         raise WealthPolicyError("申购后不足以保留本人已申报的一月支出，请降低金额或保留现金", "PAYMENT_CAPACITY_MISMATCH")
 
 
+@audited("wealth")
 async def require_current_plan(db: AsyncSession, user_id: str, command: InvestmentCommand) -> None:
     """计划改版、暂停、撤销时，旧卡片及授权不能继续执行。"""
     if command.plan_id:
@@ -161,6 +167,7 @@ async def require_current_plan(db: AsyncSession, user_id: str, command: Investme
             raise WealthPolicyError("财务画像或目标已改变，请重新生成方案", "STALE_PLAN")
 
 
+@audited("wealth")
 async def new_preview_authorization(db: AsyncSession, user_id: str, command: InvestmentCommand) -> WealthAuthorizationORM:
     """将预览完整参数固定为逐笔授权；同号异参拒绝。"""
     await lock_profile(db, user_id)
@@ -172,6 +179,8 @@ async def new_preview_authorization(db: AsyncSession, user_id: str, command: Inv
         if existing.user_id != user_id or existing.param_digest != digest:
             raise WealthPolicyError("原操作号参数冲突", "IDEMPOTENCY_CONFLICT")
         return existing
+    from ..security.circuit_breaker import require_trade
+    await require_trade(db, user_id)
     now = datetime.now(timezone.utc)
     row = WealthAuthorizationORM(authorization_id=f"WAuth{uuid4().hex}", user_id=user_id,
         operation_id=command.operation_id, param_digest=digest, command=command.model_dump(),
@@ -195,11 +204,14 @@ async def owned_authorization(db: AsyncSession, user_id: str, authorization_id: 
     return row
 
 
+@audited("wealth")
 async def record_confirmation(db: AsyncSession, user_id: str, authorization_id: str,
                               request: PersonalConfirmation, *, commit: bool = True) -> dict:
     """只接受可信表单的明确逐笔披露确认，默认不勾选。"""
     await lock_profile(db, user_id)
     row = await owned_authorization(db, user_id, authorization_id)
+    from ..security.circuit_breaker import require_trade
+    await require_trade(db, user_id, issued_at=row.created_at, authorization=True)
     if row.param_digest != request.digest or row.command["disclosure_version"] != request.disclosure_version:
         raise WealthPolicyError("预览或披露已改变", "RULE_VERSION_CHANGED")
     if row.status == "AWAITING_CONFIRMATION":
@@ -211,12 +223,15 @@ async def record_confirmation(db: AsyncSession, user_id: str, authorization_id: 
     return {"authorization_id": row.authorization_id, "status": row.status}
 
 
+@audited("wealth")
 async def validate_bank_authorization(db: AsyncSession, user_id: str, authorization_id: str,
                                      command: InvestmentCommand) -> WealthAuthorizationORM:
     """银行调用的策略接口；必须本人确认+验证、完整摘要、当前计划。"""
     from ..services.orchestration.wealth_task import require_write_control
     row = await owned_authorization(db, user_id, authorization_id)
     from ..models.wealth import WealthVerificationORM
+    from ..security.circuit_breaker import require_trade
+    await require_trade(db, user_id, issued_at=row.created_at, authorization=True)
     evidence = await db.get(WealthVerificationORM, authorization_id)
     if evidence and evidence.method == "SIMULATED_CLICK":
         raise WealthPolicyError("历史点击授权已停用，请重新预览并完成统一验证", "SIMULATED_VERIFICATION_DENIED", 403)

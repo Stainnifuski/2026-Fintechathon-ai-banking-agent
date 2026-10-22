@@ -38,7 +38,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://bankuser:bankpass@postgres:5432/banking_agent
       BANK_API_BASE_URL: http://127.0.0.1:8000
       WEALTH_CATALOG_AUTO_UPGRADE: "true"
+      AUDIT_FALLBACK_DIR: /app/var/audit-recovery
     volumes:
+      - audit_recovery:/app/var/audit-recovery
       - type: bind
         source: ./.deps/wealth_portfolio_data/snapshots
         target: /app/.deps/wealth_portfolio_data/snapshots
@@ -82,6 +84,8 @@ services:
       - banking-net
 
 volumes:
+  audit_recovery:
+    driver: local
   postgres_data:
     driver: local
   bank_runtime_data:

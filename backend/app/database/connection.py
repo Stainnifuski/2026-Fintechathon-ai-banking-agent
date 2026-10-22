@@ -75,6 +75,9 @@ async def init_db() -> None:
     async with AsyncSessionLocal() as session:
         await upgrade(session)
         await session.commit()
+    from ..services.audit.writer import replay_sync
+    async with engine.connect() as conn:
+        await conn.run_sync(lambda sync_conn: replay_sync(sync_conn.engine))
 
 
 async def close_db() -> None:

@@ -34,6 +34,7 @@ from .routers.wealth_tasks import router as wealth_tasks_router
 from .routers.flower_shop import router as flower_shop_router
 from .routers.cake_shop import router as cake_shop_router
 from .routers.calendar import router as calendar_router
+from .routers.audit import router as audit_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
 from .services.orchestration.wealth_task_worker import loop as wealth_task_loop
 from .services.ai.llm import get_mode, get_settings, llm
@@ -98,6 +99,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         workers.append(asyncio.create_task(
             scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()), name="scheduled-transfer-loop"))
         workers.append(asyncio.create_task(wealth_task_loop(AsyncSessionLocal), name="wealth-dag-loop"))
+        from .services.audit.writer import recovery_loop
+        workers.append(asyncio.create_task(recovery_loop(AsyncSessionLocal), name="audit-recovery-loop"))
         logger.info("AI Banking Agent API 启动完成 🚀")
         yield
     finally:
@@ -166,6 +169,7 @@ app.include_router(bank_conversations_router)
 app.include_router(flower_shop_router)
 app.include_router(cake_shop_router)
 app.include_router(calendar_router)
+app.include_router(audit_router)
 
 
 # ──────────────────── 健康检查 ────────────────────
@@ -174,7 +178,12 @@ app.include_router(calendar_router)
 @app.get("/health", tags=["system"])
 async def health_check() -> dict:
     """健康检查接口。"""
-    return {"status": "ok", "service": "AI Banking Agent API", "version": "0.1.0",
+    from .services.audit.writer import health as audit_health
+    return {"status": "ok", "service": "AI Banking Agent API", "version": "0.1.0", "audit": audit_health(),
         "portfolio_ready":bool(getattr(app.state.wealth_portfolio_source,'ready',False)),
         "source_revision":os.getenv('SOURCE_REVISION','source-workspace'),
         "local_test_mode":bool(getattr(app.state,'local_test_mode',False))}
+
+
+from .services.audit.routes import install_routes as install_audit_routes
+install_audit_routes(app)

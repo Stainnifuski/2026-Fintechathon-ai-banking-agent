@@ -1,4 +1,5 @@
 """3号授权与风险服务端口的本地 MVP 适配器。"""
+from ..services.audit.spans import audited
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -40,6 +41,7 @@ async def serialize_risk_subject(db: AsyncSession, user_id: str) -> None:
 
 
 # 累计转账超过1000，为RED
+@audited("transfer")
 async def precheck_risk(
     db: AsyncSession,
     *,
@@ -57,7 +59,14 @@ async def precheck_risk(
         )
     ).scalars().all()
     cumulative = daily_transfer_used_fen + sum(item.amount_fen for item in held)
-    return "YELLOW" if cumulative + amount_fen <= YELLOW_LIMIT_FEN else "RED"
+    level = "YELLOW" if cumulative + amount_fen <= YELLOW_LIMIT_FEN else "RED"
+    from ..services.audit.writer import observe
+    observe(db, action="transfer.risk", phase="decision", outcome="checked", domain="transfer",
+        source_module="authorization.transfer", subject_user_id=user_id, permission_level=level.lower(),
+        facts={"rule_id": "transfer-cumulative-v1", "amount_fen": amount_fen,
+               "params": {"amount_fen": cumulative}, "limit": YELLOW_LIMIT_FEN,
+               "requires_confirmation": True, "requires_mfa": level == "RED"})
+    return level
 
 
 def new_authorization(

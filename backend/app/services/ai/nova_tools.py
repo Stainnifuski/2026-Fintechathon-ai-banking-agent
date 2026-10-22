@@ -145,8 +145,11 @@ async def search_contacts(arguments: ContactSearchArguments, context: ToolContex
 
 
 async def subscription_analysis(arguments: AnalysisArguments, context: ToolContext) -> dict:
+    now = utc_now()
+    query = query_from(arguments, context).model_copy(update={'category': None})
     data = SubscriptionInsights.model_validate(await subscription_insights(
-        context.db, context.user_id, query_from(arguments, context))).model_dump(mode='json')
+        context.db, context.user_id, query, now=now)).model_dump(mode='json')
+    data['query'] = bill_service.bounds(query, now)['query']
     total = len(data['items'])
     data['items'] = data['items'][:20]
     data.update(total=total, has_more=total > 20)

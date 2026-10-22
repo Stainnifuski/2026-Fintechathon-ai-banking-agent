@@ -1,4 +1,5 @@
 """Bank-owned full and partial merchant refunds with cumulative caps and replay safety."""
+from ..audit.spans import audited
 from datetime import datetime,timezone
 from uuid import uuid4
 from sqlalchemy import select,func,text
@@ -28,6 +29,7 @@ async def refund_summaries(db,payment_ids):
     return {k:int(v) for k,v in totals.items()}
 
 
+@audited("payments")
 async def refund_merchant_payment(*,payment_request_id,merchant_user_id,operation_id,amount_fen=None,expected_refunded_fen=None):
     if not operation_id or len(operation_id)>64:raise BankError('退款操作号无效','INVALID_OPERATION_ID',422)
     if amount_fen is not None and (type(amount_fen) is not int or amount_fen<=0):raise BankError('退款金额必须为正整数分','INVALID_AMOUNT',422)

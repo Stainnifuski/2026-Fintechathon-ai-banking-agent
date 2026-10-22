@@ -61,7 +61,9 @@ async def protected_digest(db):
     result={}
     ignored={'wealth_datasets','wealth_research_products','wealth_products','wealth_product_versions','wealth_navs',
         'wealth_contexts','wealth_context_selections','wealth_fund_directory','wealth_fund_cache','wealth_knowledge',
-        'wealth_schema_versions','audit_logs','bank_audit_events'}
+        # Audit tables append legitimate upgrade observations; they are guarded
+        # by the append-only writer and must not be compared as a fixed ledger.
+        'wealth_schema_versions','audit_logs','bank_audit_events','audit_events','audit_event_objects'}
     for table in Base.metadata.sorted_tables:
         if table.name in ignored:continue
         rows=(await db.execute(select(table).order_by(*table.primary_key.columns))).mappings().all()

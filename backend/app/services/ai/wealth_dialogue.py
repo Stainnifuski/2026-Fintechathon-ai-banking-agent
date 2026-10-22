@@ -14,6 +14,7 @@ from ...domain.wealth_allocation import candidates
 from .wealth_model import Intent,understand,explain
 from .llm import get_mode
 from ...domain.wealth_requirements import apply_frame, planning_slots
+from .parameter_grounding import validate_wealth_parameters
 
 
 def resolve(ref: str,products: list[dict],candidate_ids: list[str]) -> str:
@@ -552,6 +553,8 @@ async def message(db,user_id,bank,text,session_id,version,client_message_id,*,pa
         elif parsed_intent is not None:
             intent=parsed_intent;evidence={'provider':'validated-typed-input','live':False}
         else: intent=offline(text)
+        if mode == 'model':
+            validate_wealth_parameters(intent, text, {'last_question': data.get('last_question') or {}})
         # Model latency must not revive a window that was closed meanwhile.
         current_window=await db.get(WealthConversationORM,sid,populate_existing=True)
         if current_window and current_window.data.get('closed'):

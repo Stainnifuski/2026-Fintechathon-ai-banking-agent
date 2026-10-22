@@ -4,6 +4,7 @@ import {manualDrafts} from './services/wealthManualDraft';
 import {post as wealthPost} from './services/wealth';
 import {AUTHENTICATION_EXPIRED_EVENT,authenticationExpiredMessage} from './utils/sessionAuthentication';
 import BeijingClock from './components/BeijingClock';
+import SecurityNotice from './components/SecurityNotice';
 import TransferContacts, { type TransferChoice } from './components/TransferContacts';
 import AddContactForm from './components/AddContactForm';
 import AssetSummaryCard from './components/AssetSummary';
@@ -15,6 +16,7 @@ import { SecondFactor } from './components/SecondFactor';
 import { beijingTime, beijingInput, fromBeijingInput } from './utils/time';
 import { counterpartyLabel } from './utils/customerLabels';
 
+const Audit = lazy(() => import('./components/Audit'));
 const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 const Wealth = lazy(() => import('./components/Wealth'));
 const PortfolioConsumerPreview = import.meta.env.DEV ? lazy(() => import('./components/Wealth/PortfolioConsumerPreview')) : null;
@@ -27,7 +29,7 @@ const MerchantDashboard = lazy(() => import('./components/MerchantDashboard'));
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const localDateTimeInput = beijingInput;
 const suggestedScheduleTime = () => localDateTimeInput(new Date(Date.now() + 2 * 60_000));
-type BankingSection = 'home' | 'transfer' | 'insights' | 'cards' | 'subscriptions' | 'wealth';
+type BankingSection = 'home' | 'transfer' | 'insights' | 'cards' | 'subscriptions' | 'wealth' | 'audit';
 
 function App() {
   const [showWealthPreview,setShowWealthPreview]=useState(wealthConsumerPreviewEnabled);
@@ -529,8 +531,8 @@ function App() {
     busy={isAuthenticating} status={status} onPhone={setPhone} onPassword={setPassword} onName={setName}
     onSubmit={authenticate} onMode={() => { setLoginMode(loginMode === 'login' ? 'register' : 'login'); setStatus(''); }} />;
 
-  if (['U007', 'U008'].includes(user.user_id)) return <><BeijingClock /><Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
-    <MerchantDashboard user={user} accounts={accounts} transactions={transactions} revision={bankRevision} onRefresh={load} onLogout={logout} />
+  if (['U007', 'U008'].includes(user.user_id)) return <><BeijingClock /><button className="secondary" onClick={() => setBankingSection(section => section === 'audit' ? 'home' : 'audit')}>{bankingSection === 'audit' ? '返回商户工作台' : '操作记录'}</button><Suspense fallback={<main className="auth"><section className="card"><p>正在加载商户工作台…</p></section></main>}>
+    {bankingSection === 'audit' ? <Audit key={user.user_id} /> : <MerchantDashboard user={user} accounts={accounts} transactions={transactions} revision={bankRevision} onRefresh={load} onLogout={logout} />}
   </Suspense></>;
 
   const confirmationCard = activeTask?.confirmation_card;
@@ -542,14 +544,15 @@ function App() {
       <aside className="bank-sidebar">
         <button className="brand" onClick={() => openSection('home')} aria-label="返回首页"><span className="brand-mark">N</span><span>NOVA<small>AI BANKING</small></span></button>
         <nav aria-label="主要功能">
-          {([['home','⌂','概览'],['transfer','↗','转账与收款'],['insights','◫','账单洞察'],['cards','▣','卡片'],['subscriptions','↻','订阅'],['wealth','◇','理财']] as [BankingSection,string,string][]).map(([key,icon,label]) =>
+          {([['home','⌂','概览'],['transfer','↗','转账与收款'],['insights','◫','账单洞察'],['cards','▣','卡片'],['subscriptions','↻','订阅'],['wealth','◇','理财'],['audit','☷','操作记录']] as [BankingSection,string,string][]).map(([key,icon,label]) =>
             <button key={key} className={appView === 'banking' && bankingSection === key ? 'active' : ''} onClick={() => openSection(key)}><span>{icon}</span>{label}</button>)}
           <button className={appView === 'thirdParty' ? 'active' : ''} onClick={() => { if (appView !== 'thirdParty') setThirdPartyPageContext({ version: 1, page: 'thirdParty' }); setAppView('thirdParty'); }}><span>＋</span>生活服务</button>
         </nav>
         <div className="sidebar-foot"><span className="security-dot" />模拟银行演示<small>所有资金与交易均为虚构</small></div>
       </aside>
       <div className="bank-workspace">
-        <header className="bank-topbar"><div><BeijingClock /><span className="workspace-label">{appView === 'thirdParty' ? '生活服务' : ({home:'财务概览',transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',wealth:'理财规划'} as Record<BankingSection,string>)[bankingSection]}</span></div><div className="top-actions"><button id="nova-toggle" className="agent-button" aria-expanded={agentOpen} aria-controls="nova-panel" onClick={() => setAgentOpen(open => !open)}><span>✦</span> 问 NOVA</button><button className="icon-button" disabled={isActing} onClick={openEnroll} title={totpEnabled ? '已绑定验证器' : '绑定验证器'}>⌾</button><button className="profile-button" onClick={logout} title="退出登录">{user.name.slice(0,1)}</button></div></header>
+        <header className="bank-topbar"><div><BeijingClock /><span className="workspace-label">{appView === 'thirdParty' ? '生活服务' : ({home:'财务概览',transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',wealth:'理财规划',audit:'操作记录'} as Record<BankingSection,string>)[bankingSection]}</span></div><div className="top-actions"><button id="nova-toggle" className="agent-button" aria-expanded={agentOpen} aria-controls="nova-panel" onClick={() => setAgentOpen(open => !open)}><span>✦</span> 问 NOVA</button><button className="icon-button" disabled={isActing} onClick={openEnroll} title={totpEnabled ? '已绑定验证器' : '绑定验证器'}>⌾</button><button className="profile-button" onClick={logout} title="退出登录">{user.name.slice(0,1)}</button></div></header>
+        <SecurityNotice userId={user.user_id} />
         {status && <p className="notice global-notice">{status}</p>}
         <div className="workspace-content">
         {appView==='banking'&&bankingSection==='wealth'&&import.meta.env.DEV&&import.meta.env.VITE_B6_BROWSER_TEST==='true'&&<p className="notice" role="status">B6 隔离验收：固定契约方案＋独立模拟账户。不是模型建议，与日常演示账户无关；测试业务时钟与现实时间分开。</p>}
@@ -579,6 +582,7 @@ function App() {
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
         {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>理财规划与购买</h1><p>选择整体规划或目标产品，核对方案后确认并完成验证。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}>{workspaceReady===user.user_id?<Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} />:<section className="card">{workspaceError?<><p role="alert">{workspaceError}</p><button onClick={()=>{workspaceBoot.current=null;setWorkspaceRetry(n=>n+1);}}>重新开启操作轮次</button></>:<p role="status">正在开启新的理财操作轮次…</p>}</section>}</Suspense></>}
+        {bankingSection === 'audit' && <Suspense fallback={<section className="card"><p>正在加载操作记录…</p></section>}><Audit key={user.user_id} /></Suspense>}
         {bankingSection === 'insights' && <><div className="page-intro"><p className="eyebrow">INSIGHTS</p><h1>查看支出与变化</h1><p>查看消费与周期收支，按自己的标签整理账单。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} /></Suspense></>}
 
         {bankingSection === 'transfer' && <><div className="page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账与收款</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="grid">
@@ -665,7 +669,7 @@ function App() {
         </div>
       </div>
     </div>
-    <NovaChat pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
+    <NovaChat pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection === 'audit' ? 'home' : bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => setAgentOpen(false)} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
     {mfaOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>

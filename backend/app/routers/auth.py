@@ -32,10 +32,11 @@ from ..services.bank import (
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"], responses=BANK_ERROR_RESPONSES)
+from ..services.audit.context import bind_user
 
 
 def _raise_bank_error(error: BankError) -> None:
-    raise HTTPException(status_code=error.status_code, detail={"code": error.code, "message": error.message}) from error
+    raise HTTPException(status_code=error.status_code, detail={"code": error.code, "message": error.message, **getattr(error, "security_detail", {})}) from error
 
 
 @router.post("/register", response_model=TokenSchema, status_code=status.HTTP_201_CREATED)
@@ -55,6 +56,7 @@ async def register(payload: UserCreateSchema) -> TokenSchema:
         )
     except BankError as error:
         _raise_bank_error(error)
+    bind_user(user["user_id"])
     return TokenSchema(
         access_token=create_access_token({"sub": user["user_id"], "name": user["name"]}),
         user=UserSchema(**user),
@@ -68,6 +70,7 @@ async def login(payload: LoginSchema) -> TokenSchema:
         user = await authenticate_customer(payload.phone, payload.password)
     except BankError as error:
         _raise_bank_error(error)
+    bind_user(user["user_id"])
     return TokenSchema(
         access_token=create_access_token({"sub": user["user_id"], "name": user["name"]}),
         user=UserSchema(**user),
@@ -144,3 +147,11 @@ async def sms_dev_inbox_endpoint(
         return [SmsInboxMessage(**m) for m in await sms_dev_inbox(db, current_user["user_id"])]
     except BankError as error:
         _raise_bank_error(error)
+
+
+@router.get("/security/status")
+async def security_status(current_user: dict = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    """Read only the authenticated owner's locks, never verification secrets."""
+    from ..security.circuit_breaker import status as lock_status
+    return await lock_status(db, current_user["user_id"])
