@@ -10,7 +10,7 @@ LABELS = dict(zip(STAGES, ('匹配条件','活钱候选','稳健候选','进取�
 def sequence(kind):
     if kind == 'planning':
         return ['match','cash_management','stable','growth','selected','budget','allocation','details','trade']
-    if kind == 'redeem':return ['redemption_input','trade']
+    if kind in {'redeem','positions'}:return ['redemption_input','trade']
     return ['match','candidates','selected','amounts','purchase_review','trade']
 
 

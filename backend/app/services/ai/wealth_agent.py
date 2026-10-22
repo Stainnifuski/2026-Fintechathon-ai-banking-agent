@@ -21,6 +21,51 @@ from ..bank.nova_conversations import redact
 from . import wealth_steps
 
 
+CATEGORY_NAMES = {'债券基金':'bond_fund','混合基金':'mixed_fund','股票基金':'equity_fund',
+                  '权益基金':'equity_fund','银行理财':'bank_wealth','快赎理财':'quick_redeem'}
+
+
+def category_intent(intent):
+    # Exact category labels are not names of individual products. Preserve real
+    # names/codes and do not infer arbitrary themes or choose any concrete fund.
+    if intent.kind == 'recommend' and len(intent.product_queries) == 1:
+        category = CATEGORY_NAMES.get(intent.product_queries[0])
+        if category and intent.category in (None, category):
+            return intent.model_copy(update={'category':category,'product_queries':[]})
+    return intent
+
+
+def goal_key(command):
+    kind=command.get('kind')
+    if kind not in {'recommend','planning','purchase','redeem'}:return None
+    products=[] if kind=='planning' or kind=='recommend' and command.get('category') else command.get('products',[])
+    return (kind,command.get('category'),tuple(sorted((p['product_id'],str(p['product_version'])) for p in products)))
+
+
+async def unfinished_match(db,user,context_id,command):
+    key=goal_key(command)
+    if key is None:return None
+    rows=await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id==user,
+        WealthConversationORM.session_id.like('NW%')).order_by(WealthConversationORM.session_id))
+    for row in rows:
+        data=row.data
+        if data.get('closed') or data.get('context_id')!=context_id or goal_key(data.get('command',{}))!=key:continue
+        conversation=await db.get(NovaConversationORM,data.get('nova_session_id')) if data.get('nova_session_id') else None
+        if not conversation or conversation.user_id!=user:continue
+        plan_id=data.get('execution_plan_id')
+        if plan_id:
+            plan=await db.get(WealthPlanORM,plan_id)
+            if plan and plan.user_id==user and plan.status=='COMPLETED':
+                if plan.data.get('stage')=='SELL' and (plan.data.get('portfolio_plan') or {}).get('planning'):
+                    child=plan.data.get('incremental_continuation',{}).get('prepared',{}).get('execution_plan_id')
+                    child_plan=await db.get(WealthPlanORM,child) if child else None
+                    if child_plan and child_plan.user_id==user and child_plan.status=='COMPLETED':continue
+                else:continue
+        from ..bank.nova_conversations import _summary
+        return row, _summary(conversation)['title']
+    return None
+
+
 class EmptyArguments(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
 
@@ -221,6 +266,7 @@ async def manage(arguments, context):
             'history':(context.conversation_history or [])[-12:],
             'tasks':[{k:c.get(k) for k in ('task_id','version','command','view_context','closed','execution_plan_id')} for c in current[-20:]],
         },ensure_ascii=False)}], schema=IntentBatch, max_tokens=2000)
+    result.data.intents=[category_intent(i) for i in result.data.intents]
     bank = HttpWealthBankApi()
     facts = await bank.assets(user)
     catalogue = await bank.call('POST','/catalog',{'subject_user_id':user,'facts_only':True,'policy_references':True}) if any(
@@ -356,6 +402,15 @@ async def manage(arguments, context):
         if intent.kind in ('recommend','purchase') and not refs and not command.get('category'):
             command.update(kind='clarify',question='希望查找哪类产品，或哪只产品的名称／代码？')
         command['products'] = refs
+        if not intent.task_id:
+            duplicate=await unfinished_match(db,user,facts['context_id'],command)
+            if duplicate:
+                existing,title=duplicate
+                # Escape Markdown labels; the target is a server-owned ID, and
+                # only this user's conversations were eligible above.
+                title=re.sub(r'[\\\[\]()]',' ',title)
+                replies.append(f'已有相同理财任务尚未结束，位于对话“{title}”。请继续原任务；如需重新办理，请先在原卡片放弃未提交草稿。\n\n[打开对话：{title}](#nova-conversation={existing.data["nova_session_id"]})')
+                continue
         if prior and (prior.get('pending_backtrack')):
             replies.append('请先在卡片确认或取消待处理的回退。');continue
         edit_stage=intent.target_stage or context.wealth_stage

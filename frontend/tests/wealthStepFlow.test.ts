@@ -14,3 +14,10 @@ test('planning pool rollback invalidates successors but keeps independent pools'
  assert.ok(!invalid.includes('cash_management')&&!invalid.includes('growth'));
  assert.deepEqual(affectedSteps('redeem','redemption_input'),['redemption_input','trade']);
 });
+
+test('redemption opened from a holdings query activates the inline input card',()=>{
+ const order=stepOrder('positions');
+ assert.equal(activeStep(order,['match','redemption_input'],[]),'redemption_input');
+ assert.equal(activeStep(order,['match','redemption_input','trade'],['redemption_input']),'trade');
+ assert.deepEqual(affectedSteps('positions','redemption_input'),['redemption_input','trade']);
+});
