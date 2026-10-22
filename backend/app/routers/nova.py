@@ -47,6 +47,8 @@ class ChatRequest(BaseModel):
     session_version: int = Field(default=0, ge=0)
     focus_task_id: str | None = Field(default=None, max_length=64)
     candidate_id: str | None = Field(default=None, max_length=64)
+    wealth_task_id: str | None = Field(default=None,max_length=64)
+    wealth_stage: str | None = Field(default=None,max_length=64,pattern=r'^[a-z_]+$')
 
     @field_validator("message")
     @classmethod
@@ -88,6 +90,7 @@ def _error_detail(error: LLMError) -> dict:
 async def _prepare(
     request: ChatRequest, user_id: str, db: AsyncSession,
 ) -> tuple[ChatRequest, list[dict], list[dict]]:
+    request = request.model_copy(update={'message':bank_conversations.redact_proof(request.message)})
     if request.session_id:
         conversation = await bank_conversations.get(db, user_id, request.session_id)
     else:
@@ -98,11 +101,20 @@ async def _prepare(
         for item in conversation["messages"]
     ]
     history = full_history[-12:]
+    if request.wealth_task_id:
+        from ..services.ai.wealth_agent import cards
+        owned=await cards(db,user_id,conversation['session_id'])
+        if request.wealth_task_id not in {c['task_id'] for c in owned}:
+            raise bank_conversations.ConversationError('理财补充对象不属于此对话',404)
     return request.model_copy(update={"session_id": conversation["session_id"],
                                       "request_id": request.request_id or uuid4().hex}), history, full_history
 
 
 async def _finish(request: ChatRequest, user_id: str, db: AsyncSession, reply: dict) -> dict:
+    from ..services.ai.wealth_agent import cards
+    wealth_cards = await cards(db, user_id, request.session_id)
+    if wealth_cards:
+        reply = {**reply, "wealth_cards": wealth_cards}
     await bank_conversations.append_turn(db, user_id, request.session_id,
                                          request.request_id, request.message, reply["reply"])
     return {**reply, "session_id": request.session_id}
@@ -166,6 +178,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                                     session_version=request.session_version,
                                     focus_task_id=request.focus_task_id,
                                     candidate_id=request.candidate_id,
+                                    wealth_task_id=request.wealth_task_id,wealth_stage=request.wealth_stage,
                                     bank_api=get_bank_api(),
                                     conversation_history=full_history,
                                 ))
@@ -204,6 +217,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
         session_version=request.session_version,
         focus_task_id=request.focus_task_id,
         candidate_id=request.candidate_id,
+        wealth_task_id=request.wealth_task_id,wealth_stage=request.wealth_stage,
         bank_api=get_bank_api(),
         conversation_history=full_history,
     )
@@ -235,3 +249,90 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class WealthCardState(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    version: int = Field(ge=1)
+    execution_plan_id: str | None = Field(default=None, min_length=1, max_length=64)
+    closed: bool = False
+    paused: bool | None = None
+    reset_draft: bool = False
+    backtrack_stage: Literal['match','cash_management','stable','growth','candidates','selected','budget','amounts','purchase_review','allocation','details','redemption_input','trade'] | None = None
+    backtrack_token: str | None = Field(default=None,min_length=1,max_length=64)
+    accept_backtrack: bool = False
+
+
+@router.get("/wealth-sessions/{session_id}")
+async def wealth_session(session_id: str, current_user: dict = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    from ..services.ai.wealth_agent import cards
+    from ..integrations.wealth_authorization import WealthPolicyError
+    try:
+        return await cards(db, current_user['user_id'], session_id)
+    except WealthPolicyError as error:
+        raise _transfer_error(error) from error
+
+
+@router.post("/wealth-sessions/{session_id}/cards/{task_id}")
+async def wealth_card_state(session_id: str, task_id: str, request: WealthCardState,
+                            current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from ..services.ai.wealth_agent import save_state
+    from ..integrations.wealth_authorization import WealthPolicyError
+    try:
+        return await save_state(db, current_user['user_id'], session_id, task_id, request.version, request)
+    except WealthPolicyError as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+class WealthViewProduct(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    product_id: str = Field(min_length=1,max_length=120)
+    product_version: int = Field(ge=1)
+    name: str = Field(max_length=120)
+    bucket: Literal['cash_management','stable','growth'] | None = None
+
+
+class WealthViewContext(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    version: int = Field(ge=1)
+    visible_products: list[WealthViewProduct] = Field(default_factory=list,max_length=60)
+    selected_products: list[WealthViewProduct] = Field(default_factory=list,max_length=160)
+    cash_field: Literal['reserve','investment','total'] | None = None
+    cash_yuan: str = Field(default='',max_length=24,pattern=r'^(?:\d+(?:\.\d{0,2})?)?$')
+    amounts_yuan: dict[str,str] = Field(default_factory=dict,max_length=160)
+    completed_stages: list[Literal['match','cash_management','stable','growth','candidates','selected','budget','amounts','purchase_review','allocation','details','redemption_input','trade']] = Field(default_factory=list,max_length=16)
+
+    @field_validator('amounts_yuan')
+    @classmethod
+    def valid_amounts(cls,value):
+        import re
+        if any(len(k)>120 or not re.fullmatch(r'(?:\d{1,12}(?:\.\d{0,2})?)?',v) for k,v in value.items()):
+            raise ValueError('金额输入格式不合法')
+        return value
+
+
+@router.post('/wealth-sessions/{session_id}/cards/{task_id}/view')
+async def wealth_card_view(session_id:str,task_id:str,request:WealthViewContext,
+        current_user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from sqlalchemy import update
+    from ..models.wealth import WealthConversationORM
+    from ..services.ai.wealth_agent import require_card
+    from ..integrations.wealth_authorization import WealthPolicyError, lock_profile
+    try:
+        await lock_profile(db,current_user['user_id'])
+        row=await require_card(db,current_user['user_id'],task_id)
+        if row.data['nova_session_id']!=session_id or row.version!=request.version:
+            raise WealthPolicyError('理财卡片已变化，请重新读取','STALE_WEALTH_CARD',409)
+        # Non-authorizing visible context only; all product identities are re-read
+        # from the bank if the submodel subsequently resolves an ordinal.
+        saved=await db.execute(update(WealthConversationORM).where(WealthConversationORM.session_id==task_id,
+            WealthConversationORM.version==request.version).values(data={**row.data,'view_context':request.model_dump(exclude={'version'})}))
+        if saved.rowcount!=1:
+            raise WealthPolicyError('理财卡片已变化，请重新读取','STALE_WEALTH_CARD',409)
+        await db.commit()
+        return {'saved':True}
+    except WealthPolicyError as error:
+        await db.rollback()
+        raise _transfer_error(error) from error

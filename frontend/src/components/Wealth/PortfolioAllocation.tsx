@@ -64,9 +64,10 @@ export default function PortfolioAllocation({ plan, snapshot, modelView, assetTo
   };
   const draftAmounts = accepted && (accepted.advised_positions??[]).map(r => { try { return { bucket: r.bucket, fen: ratioFen(percentToRatio(percentages[r.product_id] ?? ''), accepted.basis_fen) }; } catch { return { bucket: r.bucket, fen: null }; } });
   if(modelOnly)return <section className={styles.panel} aria-label="整体配置"><h2>整体资产配置</h2>
-    <p>总资产 {yuan(accepted?.basis_fen)} · 保留现金 {yuan(accepted?.cash_residual_fen)}。现金计入活钱；以下为模型推荐配置，尚未交易。</p>
-    {accepted&&<><table><thead><tr><th>板块</th><th>当前资产</th><th>配置比例</th><th>目标金额</th></tr></thead><tbody>{accepted.buckets.map(b=><tr key={b.bucket}><td>{names[b.bucket]}</td><td>{yuan(b.current_fen)}</td><td>{percent(b.target_ratio)}</td><td>{yuan(b.target_fen)}</td></tr>)}</tbody></table>
-    {(accepted.advised_positions??[]).filter(p=>p.target_fen>0||p.current_fen>0).map(p=><p key={p.product_id}>{p.name} · 当前 {yuan(p.current_fen)} → 目标 {yuan(p.target_fen)}</p>)}</>}
+    <p>总资产 {yuan(accepted?.basis_fen)} · 保留现金 {yuan(accepted?.planning?.reserve_fen??accepted?.cash_residual_fen)}。现金计入活钱；以下为模型推荐配置，尚未交易。</p>
+    {accepted&&<><table><thead><tr><th>板块</th><th>当前资产</th><th>配置比例</th><th>目标金额</th></tr></thead><tbody>{accepted.buckets.map((b,i)=>{const suggestion=accepted.planning?.suggested_amounts_fen[i]??b.target_fen;return <tr key={b.bucket}><td>{names[b.bucket]}</td><td>{yuan(b.current_fen)}</td><td>{percent(suggestion/accepted.basis_fen)}</td><td>{yuan(suggestion)}</td></tr>;})}</tbody></table>
+    <h3>本次实际执行</h3><p>旧持仓默认保留；仅为满足模型硬性限制建议赎回。以下为待确认金额，实际到账扣除费用后重新核对申购。</p>
+    {(accepted.advised_positions??[]).filter(p=>p.target_fen>0||p.current_fen>0).map(p=><p key={p.product_id}>{p.name} · {p.target_fen>p.current_fen?`拟申购 ${yuan(p.target_fen-p.current_fen)}`:p.target_fen<p.current_fen?`为满足硬性限制，拟赎回约 ${yuan(p.current_fen-p.target_fen)}`:'保持现有持仓，无需交易'} · 当前 {yuan(p.current_fen)} → 目标 {yuan(p.target_fen)}</p>)}</>}
   </section>;
   return <section className={styles.panel} aria-label="整体配置">
     <h2>整体资产配置</h2><p className={styles.hint}>{controlHint || (readOnly ? '只读模式，不能修改方案' : '本人配置草稿；目标不等于购买授权')}</p>

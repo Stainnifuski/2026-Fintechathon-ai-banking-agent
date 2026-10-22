@@ -9,7 +9,7 @@ class HttpWealthBankApi(HttpBankApiClient):
     async def call(self, method: str, suffix: str, body: dict | None = None) -> dict | list:
         """统一保留超时/5xx未知语义，不自动换号或重试写入。"""
         options={"json":body} if body is not None else {}
-        readonly=suffix in {'/catalog','/products','/product-detail','/assets','/asset-summary','/contexts'}
+        readonly=suffix in {'/catalog','/products','/product-detail','/assets','/asset-summary','/contexts','/precheck'}
         if readonly:options['timeout']=30.0 if suffix!='/product-detail' else 15.0
         try:response = await self._request(method, f"/api/v1/internal/bank/wealth{suffix}",**options)
         except BankResponseUnknown as error:

@@ -4,6 +4,9 @@ import {authenticationExpiredMessage,isSessionAuthenticationFailure} from './ses
 export function wealthRequestFailure(error:unknown):string {
  if(isSessionAuthenticationFailure(error))return authenticationExpiredMessage;
  const detail=(error as {response?:{data?:{detail?:string|{message?:string;code?:string}}}})?.response?.data?.detail;
+ const status=(error as {response?:{status?:number}})?.response?.status;
+ if(status===500&&(detail==null||typeof detail==='string'&&!/[\u4e00-\u9fff]/.test(detail)))
+  return '系统处理请求时发生异常。请稍后重试；涉及交易时先核对原操作结果，避免重复提交。持续失败请联系维护人员处理。';
  if(typeof detail==='string')return wealthFeedback(detail);
  if(detail?.message&&detail.code&&['INSUFFICIENT_AVAILABLE_FUNDS','INVALID_AMOUNT','NAV_UNAVAILABLE',
   'DATA_STALE','PURCHASE_STOPPED','HOLDING_CAP'].includes(detail.code)&&!/请|后重试/.test(detail.message))
@@ -21,6 +24,11 @@ export function wealthFeedback(raw:string):string {
   [['PLANNING_SELECT_CASH_PRODUCT'],'保留现金低于模型活钱目标，请在活钱候选中选择合格产品补足，或提高保留现金后重新计算。'],
   [['PLANNING_CASH_POLICY_INFEASIBLE','PLANNING_NONCASH_UNAVAILABLE'],'当前产品与风险规则无法满足这笔现金安排，请调整所选产品或增加保留现金后重新计算。'],
   [['PLANNING_MODEL_RATIO_FIXED'],'稳健和进取比例由模型推荐，请返回上方修改现金金额或所选产品后重新计算。'],
+  [['PLANNING_SELECT_BUCKET_PRODUCT'],'请在页面提示的候选池中至少选择一只可申购产品，再继续核对。'],
+  [['PLANNING_REDEMPTION_UNAVAILABLE'],'必要减持涉及当前不可赎回的持仓。请等待持有期或开放条件满足，或调整本次现金安排后重新规划。'],
+  [['PLANNING_HOLDING_PERMISSION_UNPROVEN','PLANNING_FEE_UNPROVEN'],'持仓权限或费用资料尚未核实，请刷新资料后重新规划；不会自动交易。'],
+  [['PLANNING_EXTRA_ASSET_CHANGE','PLANNING_RECALCULATION_REQUIRED'],'赎回后资金或持仓发生额外变化，请重新生成规划。已到账资金保留为现金，不会自动追加交易。'],
+  [['PLANNING_REDEMPTION_NOT_SETTLED'],'赎回结果尚未全部核实到账。请先核对原交易结果，到账后再继续准备申购。'],
   [['BANK_UNAVAILABLE','BANK_TIMEOUT','database is locked'],'银行资料或最新报价读取暂未完成，尚未生成交易预览。请稍后再次点击“核对差额与准备预览”；原方案和已受理交易保留。'],
   [['ASSESSMENT_UNCONFIRMED'],'风险评估已填写，但还没有本人确认。请展开上方“本人风险评估”，点击“本人确认上述评估结果并继续原需求”，再重新发起推荐或规划。'],
   [['ASSESSMENT_PURCHASE_FORBIDDEN'],'当前正式风险评估结果不允许申购。请先查看“本人风险评估”中的结果说明；可以继续查询产品、订单和持仓，不能跳过评估限制购买。'],

@@ -75,6 +75,8 @@ async def verify_authorizations(db: AsyncSession, user_id: str, authorization_id
     if not 1 <= len(authorization_ids) <= MAX_EXECUTION_ITEMS or len(set(authorization_ids)) != len(authorization_ids):
         raise BankError("验证项不能重复或遗漏", "INVALID_PLAN", 422)
     await policy.lock_profile(db, user_id)
+    from ..orchestration.wealth_nova_guard import require_no_pending_backtrack
+    await require_no_pending_backtrack(db,user_id,plan_id)
     if db.get_bind().dialect.name == "sqlite":
         await db.execute(update(UserORM).where(UserORM.user_id == user_id)
             .values(totp_last_timestep=UserORM.totp_last_timestep))
@@ -386,7 +388,7 @@ async def precheck(db: AsyncSession, user_id: str, command: InvestmentCommand) -
     suitability = None
     price = await latest_nav(db, row.version_id, now)
     from .wealth_quotes import require_trade_nav
-    require_trade_nav(row, price, now)
+    require_trade_nav(row, price, now,db.info.get('wealth_quote_updates',{}).get(row.product_id))
     paper=row.rules.get('pricing_mode') in PRICING_MODES
     if paper:
         from ...domain.wealth_paper_policy import validate_policy,registered_policy_reasons

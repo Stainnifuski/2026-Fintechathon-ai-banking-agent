@@ -112,7 +112,7 @@ export interface WealthTask {
 }
 export const money = (fen: number | null | undefined) => fen == null ? '未知' : `¥${(fen / 100).toFixed(2)}`;
 export const get = <T,>(path: string) => apiClient.get<T>(`/wealth${path}`).then(r => r.data);
-export const post = <T,>(path: string, body: unknown) => apiClient.post<T>(`/wealth${path}`, body).then(r => r.data);
+export const post = <T,>(path: string, body: unknown, novaTask?:string) => apiClient.post<T>(`/wealth${path}`, body, novaTask?{headers:{'X-Nova-Wealth-Task':novaTask}}:undefined).then(r => r.data);
 export const put = <T,>(path: string, body: unknown) => apiClient.put<T>(`/wealth${path}`, body).then(r => r.data);
 export function fen(text: string): number {
   if (!/^\d+(\.\d{1,2})?$/.test(text)) throw new Error('金额须精确到分');

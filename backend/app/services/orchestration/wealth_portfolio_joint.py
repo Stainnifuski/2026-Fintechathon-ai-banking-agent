@@ -288,7 +288,7 @@ class JointPortfolio:
         if augmented:self.data_version,self.daily_version=versions(DATA,DAILY,self.root)
         self.store=MemoryPortfolioStore(lambda:datetime.now(timezone.utc));self.sessions={};self.candidate_contexts={}
         import asyncio
-        self.lock=asyncio.Lock()
+        self.lock=asyncio.Lock();self.continuation_lock=asyncio.Lock()
         from ...domain.wealth_portfolio_order import CodeCategorySelector
         self.selector=CodeCategorySelector()
         def load(version):
@@ -359,6 +359,15 @@ class JointPortfolio:
     async def plan(self,*,db,user_id,context_id,bank,params):
         _,service=self.bind(db,user_id,bank)
         return (await invoke(service.create(user_id,PortfolioCreate(context_id=context_id,**{k:v for k,v in params.items() if v is not None})))).model_dump(mode='json')
+    async def resume_planning(self,db,user_id,previous,bank):
+        facts=await bank.assets(user_id)
+        if facts['context_id']!=previous['context_id']:raise WealthPolicyError('理财账户已切换','ACCOUNT_CONTEXT_MISMATCH',409)
+        available=sum(a['available_fen'] for a in facts['cash'] if a['account_type']!='credit')
+        reserve=previous['planning']['reserve_fen']
+        return await self.plan(db=db,user_id=user_id,context_id=previous['context_id'],bank=bank,params={
+            'selected':[{k:p[k] for k in ('product_id','product_version','share_class')} for p in previous['selected_positions']],
+            'cash_reserve_fen':reserve,'available_cash_fen':available})
+
     async def recommend(self,*,db,user_id,context_id,bank,params):
         _,service=self.bind_browsing(db,user_id,bank)
         p={k:v for k,v in params.items() if k!='selected_family_ids' and v is not None}

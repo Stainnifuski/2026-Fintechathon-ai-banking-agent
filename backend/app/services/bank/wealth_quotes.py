@@ -8,6 +8,7 @@ import asyncio
 import hashlib
 import json
 import time
+import logging
 from datetime import date, datetime, timezone
 from sqlalchemy import select
 from ...models.wealth import WealthNavORM, WealthProductVersionORM
@@ -18,6 +19,9 @@ POLICY_VERSION='published-nav-instant-20261017-v2'
 _locks = {}
 _limit = asyncio.Semaphore(3)
 stats = {'http_code_queries': 0, 'cache_hits': 0, 'all_market_queries': 0}
+SUCCESS_TTL=60
+FAILURE_TTL=3
+RETRYABLE_ERRORS={'PROVIDER_TIMEOUT','Timeout','ReadTimeout','ConnectTimeout','ConnectionError','ProxyError','SSLError','JSONDecodeError','ChunkedEncodingError','RemoteDisconnected'}
 
 
 def required_trade_nav_date(at, calendar_version):
@@ -37,7 +41,7 @@ def required_trade_nav_date(at, calendar_version):
     return day
 
 
-def require_trade_nav(version, price, at):
+def require_trade_nav(version, price, at, observation_result=None):
     """A frozen offline anchor is not indefinitely valid for a new fill."""
     if version.rules.get('pricing_mode') != PRICING_MODE:
         return
@@ -45,8 +49,14 @@ def require_trade_nav(version, price, at):
     if price is None or price.nav_date < required:
         from .transfer_service import BankError
         known = price.nav_date.isoformat() if price else '缺失'
+        detail=''
+        if observation_result and not observation_result.get('ok'):
+            reason=observation_result.get('error')
+            detail=('本次联网查询超时' if reason in {'PROVIDER_TIMEOUT','Timeout','ReadTimeout','ConnectTimeout'} else '本次联网净值查询失败')
+            if observation_result.get('attempts',1)>1:detail+='，已自动重试'
+            detail+='。请重试本次核对；'
         raise BankError(f'{version.product_id}当前可用净值日期为{known}，本次交易需核对至{required.isoformat()}。'
-            '最新有效净值尚未取得，不能使用过旧离线报价成交。请稍后重试，或移除此产品并选择净值已更新的产品；已有持仓和资金保留。',
+            '最新有效净值尚未取得，不能使用过旧离线报价成交。'+detail+'也可移除此产品并选择净值已更新的产品；已有持仓和资金保留。',
             'NAV_UPDATE_REQUIRED', 409)
 
 async def refresh_scope(db, user_id, codes=None, account_id=None):
@@ -78,33 +88,38 @@ async def refresh_scope(db, user_id, codes=None, account_id=None):
     db.info['wealth_quote_updates']=result
     await db.commit() # only quote observations, before the coherent read snapshot
     import logging
-    logging.getLogger(__name__).info('On-demand NAV: codes=%s; provider_calls=%d; cache_hits=%d; all_market_calls=0',sorted(result),stats['http_code_queries'],stats['cache_hits'])
+    logging.getLogger(__name__).info('On-demand NAV: outcomes=%s; provider_calls=%d; cache_hits=%d; all_market_calls=0',result,stats['http_code_queries'],stats['cache_hits'])
     return result
 
 async def observation(code):
     from .wealth_provider import AKShareProvider, normalize_history
     async with _locks.setdefault(code, asyncio.Lock()):
         cached = _cache.get(code)
-        if cached and time.monotonic() - cached[0] < 60:
+        if cached and time.monotonic() - cached[0] < (SUCCESS_TTL if cached[1].get('ok') else FAILURE_TTL):
             stats['cache_hits'] += 1
             return cached[1]
         async with _limit:
-            stats['http_code_queries'] += 1
-            try:
-                raw = await asyncio.to_thread(AKShareProvider(timeout=8, retries=1).fetch,
-                    'fund_open_fund_info_em', symbol=code, indicator='单位净值走势')
-            except Exception as error:
-                raw={'ok':False,'error_type':type(error).__name__}
+            for attempt in range(2):
+                stats['http_code_queries'] += 1
+                try:
+                    raw = await asyncio.to_thread(AKShareProvider(timeout=8, retries=1).fetch,
+                        'fund_open_fund_info_em', symbol=code, indicator='单位净值走势')
+                except Exception as error:
+                    raw={'ok':False,'error_type':type(error).__name__}
+                if raw.get('ok') or raw.get('error_type') not in RETRYABLE_ERRORS:break
+            attempts=attempt+1
         try:
             if not raw.get('ok'): raise ValueError(raw.get('error_type', 'QUOTE_UNAVAILABLE'))
             points = normalize_history(raw['records'], raw['finished_at'])
             if not points: raise ValueError('QUOTE_EMPTY')
             result = {'ok': True, 'code': code, 'source': 'akshare_exact_code_unit_nav',
                 'observed_at': raw['finished_at'], 'points': points,
+                'latest_nav_date':points[-1]['date'],'attempts':attempts,
                 'response_sha256': hashlib.sha256(json.dumps(raw['records'], sort_keys=True, ensure_ascii=False).encode()).hexdigest()}
         except (ValueError, KeyError, TypeError, ArithmeticError) as error:
-            result = {'ok': False, 'code': code, 'error': str(error)}
-        expired=[key for key,value in _cache.items() if time.monotonic()-value[0]>=60]
+            result = {'ok': False, 'code': code, 'error': str(error),'attempts':attempts}
+            logging.getLogger(__name__).warning('NAV observation failed: code=%s; reason=%s; attempts=%d',code,result['error'],attempts)
+        expired=[key for key,value in _cache.items() if time.monotonic()-value[0]>=(SUCCESS_TTL if value[1].get('ok') else FAILURE_TTL)]
         for key in expired:_cache.pop(key,None)
         if code not in _cache and len(_cache)>=128:_cache.pop(min(_cache,key=lambda k:_cache[k][0]),None)
         _cache[code] = (time.monotonic(), result)

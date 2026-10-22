@@ -1,3 +1,4 @@
+import AgentStepCard from './AgentStepCard';
 import CommandReview from './CommandReview';
 import { useEffect, useRef, useState } from 'react';
 import * as w from '../../services/wealth';
@@ -34,13 +35,13 @@ export default function PlanExecution({plan:initial,initialPreview=null,onActivi
   }finally{setBusy(false);}};
   const execute=async()=>{const current=await w.post<w.Plan>(`/plans/${plan.plan_id}/execute`,{version:plan.version});setPlan(current);setPreview(null);setCode('');onActivity();
     const message=current.items.every(i=>i.status==='SETTLED')?'模拟即时成交成功，资金与持仓已刷新。':current.last_error?wealthRequestFailure({response:{data:{detail:current.last_error}}}):'部分结果需要核对，请刷新状态，勿重新创建订单。';setNotice(message);if(current.items.every(i=>i.status==='SETTLED'))onCompleted?.(message);};
-  return <section className="plan-execution" aria-label="整份方案可信操作">
+  return <AgentStepCard stage="trade" title="本人确认与验证"><section className="plan-execution" aria-label="整份方案可信操作">
     <h3>银行交易方案</h3><p>每笔绑定付款账户、具体产品及披露；整份方案使用一次本人确认与验证码。</p>
     {!preview&&busy&&<p role="status">正在自动核对交易金额、可用资金和产品条件…</p>}
     {!preview&&!busy&&reviewFailed&&plan.status==='AWAITING_CONFIRMATION'&&<button onClick={()=>act(async()=>{
       setPreview(await w.post<w.PlanPreview>(`/plans/${plan.plan_id}/preview`,{version:plan.version}));setReviewFailed(false);
     },true)}>重试核对交易</button>}
-    <button className="secondary" disabled={busy} onClick={()=>act(async()=>{setPlan(await w.get<w.Plan>(`/plans/${plan.plan_id}/progress`));onActivity();})}>刷新成交结果</button>
+    <button className="secondary" disabled={busy} onClick={()=>act(async()=>{const current=await w.get<w.Plan>(`/plans/${plan.plan_id}/progress`);setPlan(current);onActivity();if(current.items.length&&current.items.every(i=>i.status==='SETTLED'))onCompleted?.('全部成交已核实。');})}>刷新成交结果</button>
     <CommandReview rows={plan.items}/>
     {plan.next_action&&<p>{plan.next_action}</p>}
     {preview&&<section aria-label="整份银行预览"><h3>逐笔核对（{preview.items.length}笔）</h3>{preview.items.map(item=><article key={item.authorization_id}>
@@ -54,5 +55,5 @@ export default function PlanExecution({plan:initial,initialPreview=null,onActivi
       {stage==='VERIFIED'&&<button disabled={busy} onClick={()=>act(execute)}>恢复提交（沿用原号）</button>}
     </section>}
     {notice&&<p role="alert" className="consumer-warning">{notice}</p>}
-  </section>;
+  </section></AgentStepCard>;
 }

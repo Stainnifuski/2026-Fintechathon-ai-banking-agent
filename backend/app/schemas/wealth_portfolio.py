@@ -431,6 +431,8 @@ class PortfolioPlan(DTO):
     reasons: list[str]
     advised_positions: list[AdvisedPosition] = Field(default_factory=list)
     model_view: PortfolioModelView | None = None
+    planning: dict | None = None
+    planning_reference: dict | None = None
     _ratio = field_validator('growth_ratio_ex_cash')(lambda v: ratio(v) if v is not None else v)
 
     @model_validator(mode='after')

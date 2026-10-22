@@ -36,6 +36,15 @@ test('ordinary Chinese success stays unchanged and unknown codes are not display
  assert.doesNotMatch(wealthFeedback('UNRECOGNIZED_SERVER_CODE'),/SERVER_CODE/);
 });
 
+test('unexpected server failures do not pretend refreshing bank facts repairs server code',()=>{
+ for(const data of ['Internal Server Error',{}, {detail:'Internal Server Error'}]){
+  const text=wealthRequestFailure({response:{status:500,data}});
+  assert.match(text,/系统处理请求时发生异常/);
+  assert.doesNotMatch(text,/刷新银行事实/);
+  assert.match(text,/核对原操作结果/);
+ }
+});
+
 test('bank quote failures explain the preview boundary and next step',()=>{
  const message=wealthFeedback('BANK_UNAVAILABLE: database is locked');
  assert.match(message,/尚未生成交易预览/);

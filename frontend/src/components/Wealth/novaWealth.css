@@ -1,0 +1,31 @@
+.nova-wealth-card{min-width:0;border:1px solid #d8e1f3;border-radius:16px;padding:16px;margin:12px 0;background:#fff;overflow-wrap:anywhere}
+.nova-wealth-card .wealth-page{padding:0;min-width:0}
+.nova-wealth-card fieldset{min-width:0}
+.nova-wealth-card input:not([type=checkbox]),.nova-wealth-card select{max-width:100%;box-sizing:border-box}
+.nova-wealth-card .nova-inline-redemption .card{padding:12px;min-width:0}
+.nova-wealth-card .structured-actions>h2,.nova-wealth-card .structured-actions>h2+p,.nova-wealth-card .structured-actions>h2+p+p{display:none}
+.nova-wealth-card .structured-actions>fieldset[hidden]{display:none}
+.nova-wealth-card table{font-size:13px}
+.nova-wealth-card .plan-execution{min-width:0}
+.nova-wealth-card .structured-actions fieldset{padding:10px}
+.nova-wealth-card section[aria-label="整体配置"]{padding:10px;margin:12px 0;font-size:14px;overflow-x:auto}
+.nova-wealth-card .structured-actions th,.nova-wealth-card .structured-actions td{padding:6px 4px;white-space:nowrap}
+
+.nova-wealth-card{border:0;padding:0;background:transparent}
+.nova-wealth-task-head{display:flex;align-items:center;gap:8px;border:1px solid #d8e1f3;border-radius:16px;padding:16px;background:#fff}
+.nova-wealth-task-head>div{flex:1}.nova-wealth-task-head h3{margin:0}.nova-card-remove{border:1px solid #e1e7f2;border-radius:50%;background:white;width:32px;height:32px;color:#64748b}
+.wealth-step-card{border:1px solid #d8e1f3;border-radius:16px;margin:14px 0;padding:14px;background:white;min-width:0}
+.wealth-step-card.is-focused{border-color:#5066f5;box-shadow:0 0 0 2px #5066f515}.wealth-step-card>header{display:flex;align-items:center;justify-content:space-between;gap:8px}.wealth-step-card>header>strong{font-size:17px}
+.nova-wealth-card .structured-actions>fieldset{border:0;padding:0;margin:0}.nova-wealth-card .structured-actions>fieldset>legend{display:none}
+.nova-wealth-card .product-picker{border:0;padding:0}.nova-wealth-card .picker-group,.nova-wealth-card .picker-selection{border:0;padding:0;margin:0}
+.nova-wealth-card .picker-group>.consumer-card-head h3{display:none}.nova-wealth-card .picker-cards{grid-template-columns:1fr}
+.nova-wealth-card .nova-wealth-more{border:0;margin:4px 0;font-size:12px}
+.nova-history-item{display:flex;align-items:center;min-width:0;gap:4px}.nova-history-item>button:first-child{flex:1;min-width:0}.nova-history-item .nova-history-remove{flex:0 0 28px;width:28px;min-width:28px;padding:0;font-size:18px}
+.agent-panel{isolation:isolate}
+.agent-panel:has(.nova-delete-backdrop){z-index:30}
+.nova-delete-backdrop{position:absolute;inset:0;z-index:20;background:#14203988;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto}
+.nova-delete-backdrop>section{position:relative;width:min(440px,100%);max-height:100%;overflow:auto;flex-shrink:0;background:#fff;color:#172033;padding:24px;border-radius:16px;box-shadow:0 12px 50px #0002}
+@media(max-width:1100px){.agent-panel{position:relative}.nova-delete-backdrop>section{padding:16px}}
+.nova-focus-hint{padding:8px 16px;background:#eef2ff;color:#3540a0;font-size:12px}.nova-focus-hint button{margin-left:8px;border:0;background:transparent}
+.nova-wealth-card .wealth-step-card[hidden],.nova-wealth-card .wealth-step-body[hidden]{display:none}
+.nova-wealth-card>div>fieldset,.wealth-step-body>fieldset{border:0;margin:0;padding:0;min-width:0}

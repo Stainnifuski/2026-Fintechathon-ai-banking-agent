@@ -14,3 +14,9 @@ test('missing, partial, negative, excessive and sub-cent inputs cannot continue'
   for(const text of ['', '1.', '-1', '123.46', '0.001', '1e2', 'NaN','999999999999999999999'])assert.equal(planningCash(12345,{field:'reserve',text}),null);
   assert.equal(planningCash(100,{field:'reserve',text:'1.01'}),null);
 });
+test('total investment includes readonly old holdings and only spends new cash',()=>{
+  assert.deepEqual(planningCash(12345,{field:'total',text:'600'},50000),{reserve:2345,investment:10000});
+  assert.deepEqual(planningCash(12345,{field:'total',text:'500'},50000),{reserve:12345,investment:0});
+  assert.equal(planningCash(12345,{field:'total',text:'499.99'},50000),null);
+  assert.equal(planningCash(12345,{field:'total',text:'623.46'},50000),null);
+});

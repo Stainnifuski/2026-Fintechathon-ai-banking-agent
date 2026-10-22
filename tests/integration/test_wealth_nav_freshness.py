@@ -53,6 +53,33 @@ async def test_stale_offline_anchor_and_failed_provider_cannot_create_trade(stor
 
 
 @pytest.mark.asyncio
+async def test_transient_provider_timeout_recovers_before_prepare_without_trading(store,http_store,monkeypatch):
+    import asyncio
+    from backend.app.services.bank.wealth_provider import AKShareProvider
+    client,_,_=http_store
+    async with store() as db:context,command,_=await clocked(db,monkeypatch)
+    calls=[]
+    def fetch(self,*args,**kwargs):
+        calls.append(kwargs['symbol'])
+        if len(calls)==1:return {'ok':False,'error_type':'PROVIDER_TIMEOUT'}
+        return {'ok':True,'records':[{'净值日期':'2026-10-16','单位净值':'1.20000000'}],'finished_at':'2026-10-18T05:59:59+00:00'}
+    monkeypatch.setattr(AKShareProvider,'fetch',fetch)
+    monkeypatch.setattr(quotes,'_cache',{});monkeypatch.setattr(quotes,'_locks',{})
+    monkeypatch.setattr(quotes,'_limit',asyncio.Semaphore(3))
+    response=await client.post('/api/v1/wealth/target-purchases/prepare',json={
+        'request_id':'transient-nav-recovery','context_id':context['context_id'],'items':[{
+            'product_id':command.product_id,'product_version':command.product_version,
+            'disclosure_version':command.disclosure_version,'amount_fen':100000}]})
+    assert response.status_code==200,response.text
+    assert len(calls)==2
+    async with store() as db:
+        latest=await bank.latest_nav(db,f'{command.product_id}:{command.product_version}',datetime(2026,10,18,6,tzinfo=timezone.utc))
+        assert latest.nav_date==date(2026,10,16) and latest.price=='1.20000000'
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+        assert await db.scalar(select(func.count()).select_from(WealthCashHoldORM))==0
+
+
+@pytest.mark.asyncio
 async def test_weekend_uses_same_friday_quote_and_does_not_invent_weekend_price(store, monkeypatch):
     async with store() as db:
         _, cmd, current = await clocked(db, monkeypatch)

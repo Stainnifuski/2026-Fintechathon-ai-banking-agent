@@ -3,7 +3,7 @@
 No recommendation, risk scoring, target normalization or bank ORM access.
 Current positions are valued by the trusted snapshot, not by the browser.
 """
-from decimal import Decimal, ROUND_DOWN, InvalidOperation
+from decimal import Decimal, ROUND_DOWN, ROUND_UP, InvalidOperation
 from copy import deepcopy
 from uuid import uuid4
 from sqlalchemy import select
@@ -82,6 +82,11 @@ def execution_targets(plan,snapshot,payment_account_id=None):
                 if payer is None:reject('请选择本次付款账户','PAYMENT_ACCOUNT_REQUIRED',409)
                 allocations[payer]=0
         elif len(held)==1:allocations={held[0]['account_id']:target}
+        elif 'PLANNING_INCREMENTAL_V2' in plan.get('reasons',[]):
+            from ...domain.wealth_incremental_planning import apportion
+            ordered=sorted(held,key=lambda p:p['account_id'])
+            sold=apportion(total-target,[p['market_value_fen'] for p in ordered])
+            allocations={p['account_id']:p['market_value_fen']-cut for p,cut in zip(ordered,sold)}
         else:reject('同产品跨账户减持需要明确账户分配，不能自动卖出','ACCOUNT_ALLOCATION_REQUIRED',409)
         for account_id,value in allocations.items():
             rows.append({**ref,'account_id':account_id,'target_fen':value,'target_ratio_total':format(Decimal(value)/Decimal(snapshot['basis_fen']),'f'),
@@ -130,7 +135,7 @@ position binds a payment account; reading a scope grants no transfer authority.
         if delta < 0:
             if current is None or not current.get('nav'):
                 reject('缺少可信净值，不能换算赎回份额', 'NAV_UNAVAILABLE', 409)
-            count = units(current['units']) if target == 0 else (Decimal(-delta) / 100 / Decimal(current['nav'])).quantize(Decimal('0.0001'), rounding=ROUND_DOWN)
+            count = units(current['units']) if target == 0 else (Decimal(-delta) / 100 / Decimal(current['nav'])).quantize(Decimal('0.0001'), rounding=ROUND_UP if 'PLANNING_INCREMENTAL_V2' in plan.get('reasons',[]) else ROUND_DOWN)
             if count <= 0 or count > units(current['redeemable_units'], positive=False):
                 reject('所需减持超过可赎份额；请修订目标，不能自动缩小赎回', 'INSUFFICIENT_REDEEMABLE_UNITS', 409)
             action['units'] = format(count, '.4f')

@@ -137,6 +137,10 @@ class PortfolioLifecycle:
                 group.status='ok'
         plan.model_view=PortfolioModelView(initial_ratios=[str(x) for x in model['continuous_solution']],slider_bounds=None if model['slider'] is None else [str(v) for v in model['slider']],
             available_cash_fen=meta['available_cash_fen'],receivable_fen=meta['receivable_not_payable_fen'],held_fen=sum(a['held_fen'] for a in snap['accounts']),snapshot=snap)
+        if meta.get('planning_cash') is not None:
+            plan.model_view.slider_bounds=None
+            plan.model_view.slider_reason='MODEL_FIXED_INCREMENTAL_PLAN'
+            return PortfolioPlan.model_validate(plan.model_dump())
         from ...domain.wealth_portfolio_slider import executable_slider
         slider=executable_slider(plan,meta,decisions)
         plan.model_view.slider_bounds=slider['bounds'];plan.model_view.slider_step=slider['step'];plan.model_view.slider_reason=slider['reason']

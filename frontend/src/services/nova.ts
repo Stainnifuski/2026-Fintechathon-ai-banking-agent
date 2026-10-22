@@ -38,6 +38,7 @@ export async function getNovaConversation(sessionId: string): Promise<NovaConver
   return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
 }
 export type NovaReply = {
+  wealth_cards?: NovaWealthCard[];
   reply: string;
   mode: 'model' | 'offline';
   tool_calls: { name: string; result: Record<string, unknown> & { error?: string; local_time?: string; timezone?: string } }[];
@@ -59,7 +60,7 @@ export type NovaTransferTask = {
 
 export type NovaTaskRequest = {
   request_id: string; session_id?: string; session_version?: number;
-  focus_task_id?: string; candidate_id?: string;
+  focus_task_id?: string; candidate_id?: string; wealth_task_id?:string; wealth_stage?:string;
 };
 
 export async function getNovaTaskSession(sessionId: string) {
@@ -140,3 +141,28 @@ export async function streamNova(message: string, signal: AbortSignal,
     if (done) throw novaError(503, { message: '连接中断，未收到完整回答，请重新发送。', code: 'NOVA_STREAM_INTERRUPTED' });
   }
 }
+
+
+export interface NovaWealthCommand {
+ kind:'assets'|'positions'|'returns'|'detail'|'compare'|'assessment'|'recommend'|'planning'|'purchase'|'redeem'|'resume'|'abandon'|'clarify';
+ products:{product_id:string;product_version:number;name:string}[];
+ category?:string|null; cash_field?:'reserve'|'invest'|'total'|null; cash_yuan?:string|null;
+ amounts_yuan:(string|null)[]; redemption_input:'units'|'market_value'|'holding_ratio';
+ auto_prepare?:boolean;
+ redemption_value?:string|null; redemption_mode:'standard'|'quick';
+ period:'day'|'month'|'year'|'cumulative'; anchor_date?:string|null; question:string;
+}
+export interface NovaWealthCard {
+ task_id:string; version:number; nova_session_id:string; request_id:string; context_id:string;
+ command:NovaWealthCommand; view_context?:NovaWealthView; closed:boolean; paused?:boolean; instruction?:{id:string;action:string;stage:string|null}; draft_epoch?:number; execution_plan_id?:string;
+ pending_backtrack?:{token:string;stage:string;label:string;invalidated:string[]};
+ reopen_stage?:string;
+}
+export const getNovaWealthCards=(session:string)=>apiClient.get<NovaWealthCard[]>(`/nova/wealth-sessions/${session}`).then(r=>r.data);
+export const updateNovaWealthCard=(card:NovaWealthCard,change:{execution_plan_id?:string;closed?:boolean;paused?:boolean;reset_draft?:boolean;backtrack_stage?:string;backtrack_token?:string;accept_backtrack?:boolean})=>
+ apiClient.post<NovaWealthCard[]>(`/nova/wealth-sessions/${card.nova_session_id}/cards/${card.task_id}`,{version:card.version,...change}).then(r=>r.data);
+
+export type NovaWealthView={completed_stages?:string[];cash_field?:'reserve'|'investment'|'total';cash_yuan?:string;amounts_yuan?:Record<string,string>;visible_products:NovaWealthCommand['products'];selected_products:NovaWealthCommand['products']};
+export const saveNovaWealthView=(card:NovaWealthCard,view:NovaWealthView)=>apiClient.post(`/nova/wealth-sessions/${card.nova_session_id}/cards/${card.task_id}/view`,{version:card.version,...view});
+
+export const deleteNovaConversation=(session:string)=>apiClient.delete(`/bank/nova/conversations/${session}`);

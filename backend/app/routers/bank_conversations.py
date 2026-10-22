@@ -34,3 +34,13 @@ async def get_conversation(session_id: str, response: Response, user: dict = Dep
         return await bank.get(db, user["user_id"], session_id)
     except bank.ConversationError as error:
         raise _error(error) from error
+
+
+@router.delete('/{session_id}',status_code=204)
+async def delete_conversation(session_id:str,user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    try:
+        await bank.remove(db,user['user_id'],session_id)
+        return Response(status_code=204)
+    except bank.ConversationError as error:
+        await db.rollback()
+        raise _error(error) from error

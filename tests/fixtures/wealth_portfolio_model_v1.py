@@ -7,10 +7,16 @@ from backend.app.services.orchestration.wealth_portfolio_candidates import Candi
 from backend.app.services.orchestration.wealth_portfolio import FixtureSnapshotSource
 from backend.app.services.orchestration.wealth_portfolio_model import PortfolioModelProvider
 from scripts.generate_wealth_portfolio_fixtures import bundle
+from backend.app.schemas.wealth_portfolio import Fees
 
 
 def model_fixture(level=4,holding=False):
     data,facts=fixture_pool(9,level,min(level,2))
+    # The model consumes formal typed fee facts, including when holdings exist.
+    # The qualification-only fixture intentionally omits them; leaving them out
+    # here hid a production-only DTO/dict mismatch in the holdings path.
+    for offer in facts.offers.values():
+        offer.fee_rules=Fees(purchase_fee_rate='0',sales_service_fee_rate='0',redemption_fee_rules=[{'days_lt':999999,'rate':'0'}],missing_fields=[])
     texts=['本基金投资货币市场流动性工具。','本基金配置高等级短期债券。','本基金以债券票息收入为目标。','本基金重点投资于高股息股票。','本基金重点投资于科技产业股票。','本基金重点投资于基础设施股票。','本基金重点投资国债及政策性金融债。','本基金重点投资消费产业股票。','本基金配置短期现金工具。']
     buckets=['cash_management','stable','stable','growth','growth','growth','stable','growth','cash_management']
     for i,p in enumerate(data.products):

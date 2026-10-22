@@ -32,6 +32,8 @@ class ToolContext:
     conversation_history: list[dict[str, str]] | None = None
     current_tool_results: list[dict[str, Any]] | None = None
     goal_plan: dict[str, Any] | None = None
+    wealth_task_id: str | None = None
+    wealth_stage: str | None = None
 
 
 class OverviewArguments(StrictModel):

@@ -32,6 +32,23 @@ def get_wealth_bank() -> HttpWealthBankApi:
     return HttpWealthBankApi()
 
 
+async def nova_prepare_guard(http_request,db,user_id):
+    task_id=http_request.headers.get('X-Nova-Wealth-Task')
+    if task_id:
+        from ..services.ai.wealth_agent import require_card
+        card=await require_card(db,user_id,task_id)
+        if card.data.get('pending_backtrack'):
+            raise policy.WealthPolicyError('请先在卡片确认或取消回退','BACKTRACK_PENDING',409)
+
+
+async def nova_link_result(http_request,db,user_id,result):
+    task_id=http_request.headers.get('X-Nova-Wealth-Task')
+    if task_id:
+        from ..services.ai.wealth_agent import link_plan
+        plan_id=result.get('execution_plan_id') or (result.get('plan') or {}).get('plan_id')
+        await link_plan(db,user_id,task_id,plan_id)
+
+
 async def require_current_portfolio(http_request,db,user_id,plan_id):
     """Unsubmitted execution cannot authorize a superseded A proposal.
 
@@ -52,31 +69,48 @@ async def structured_action(request: WealthActionV1, http_request: Request,
         bank: HttpWealthBankApi = Depends(get_wealth_bank)):
     from ..services.orchestration.wealth_actions import dispatch
     try:
-        return await dispatch(db,user['user_id'],bank,request,
+        await nova_prepare_guard(http_request,db,user['user_id'])
+        result = await dispatch(db,user['user_id'],bank,request,
             getattr(http_request.app.state,'wealth_action_handlers',None),
             getattr(http_request.app.state,'wealth_portfolio_source',None))
+        task_id=http_request.headers.get('X-Nova-Wealth-Task')
+        if task_id:
+            from ..services.ai.wealth_agent import require_card
+            await policy.lock_profile(db,user['user_id'])
+            card=await require_card(db,user['user_id'],task_id)
+            card.data={**card.data,'action_session_ids':sorted(set(card.data.get('action_session_ids',[])+[result['session_id']]))}
+            await db.commit()
+        if request.action=='prepare_purchase' and result.get('status')=='ok':
+            await nova_link_result(http_request,db,user['user_id'],result.get('data') or {})
+        return result
     except (BankApiError,policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
 
 
 @router.post('/target-purchases/prepare')
-async def prepare_target_purchases(request: TargetPurchaseBatch, user: dict=Depends(get_current_user),
+async def prepare_target_purchases(request: TargetPurchaseBatch, http_request: Request, user: dict=Depends(get_current_user),
         db:AsyncSession=Depends(get_db), bank:HttpWealthBankApi=Depends(get_wealth_bank)):
     from ..services.orchestration.wealth_target_purchase import prepare
     try:
-        return await prepare(db, user['user_id'], bank, request)
+        await nova_prepare_guard(http_request,db,user['user_id'])
+        result = await prepare(db, user['user_id'], bank, request)
+        await nova_link_result(http_request,db,user['user_id'],result)
+        return result
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
 
 
 @router.post('/redemptions/prepare')
-async def prepare_redemptions(request: RedemptionBatch, user: dict=Depends(get_current_user),
+async def prepare_redemptions(request: RedemptionBatch, http_request: Request, user: dict=Depends(get_current_user),
         db:AsyncSession=Depends(get_db), bank:HttpWealthBankApi=Depends(get_wealth_bank)):
     from ..services.orchestration.wealth_redemption_batch import prepare
     try:
-        return await prepare(db, user['user_id'], bank, request)
+        await nova_prepare_guard(http_request,db,user['user_id'])
+        result = await prepare(db, user['user_id'], bank, request)
+        await nova_link_result(http_request,db,user['user_id'],result)
+        return result
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
@@ -116,10 +150,28 @@ async def prepare_portfolio(portfolio_id: str, request: PortfolioPrepare, http_r
     from ..services.orchestration.wealth_selection import prepare
     # Resolve inside the handler to preserve the established domain error shape.
     try:
-        return await prepare(db, user['user_id'], portfolio_id, request, bank, get_portfolio_source(http_request))
+        await nova_prepare_guard(http_request,db,user['user_id'])
+        result = await prepare(db, user['user_id'], portfolio_id, request, bank, get_portfolio_source(http_request))
+        await nova_link_result(http_request,db,user['user_id'],result)
+        return result
     except (BankApiError, policy.WealthPolicyError) as error:
         await db.rollback()
         fail(error)
+
+
+@router.post('/plans/{plan_id}/continue-purchase')
+async def continue_planning_purchase(plan_id:str,request:PlanVersion,http_request:Request,
+        user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db),bank:HttpWealthBankApi=Depends(get_wealth_bank)):
+    from ..services.orchestration.wealth_planning_continuation import continue_purchase
+    try:
+        from ..services.ai.wealth_agent import continuation_allowed
+        await continuation_allowed(db,user['user_id'],plan_id)
+        result = await continue_purchase(db,user['user_id'],plan_id,request.version,bank,get_portfolio_source(http_request))
+        from ..services.ai.wealth_agent import link_continuation
+        await link_continuation(db,user['user_id'],plan_id,(result.get('prepared') or {}).get('execution_plan_id'))
+        return result
+    except (BankApiError,policy.WealthPolicyError) as error:
+        await db.rollback();fail(error)
 
 
 @router.post('/sessions')

@@ -144,6 +144,8 @@ async def confirm_all(db: AsyncSession, user_id: str, plan_id: str, request: Pla
             raise WealthPolicyError('成交规则已更新，请重新预览整份方案', 'PREVIEW_REQUIRED', 409)
     await policy.lock_profile(db, user_id)
     await confirmation_commands(db, user_id, plan_id, request.version)
+    from .wealth_nova_guard import require_no_pending_backtrack
+    await require_no_pending_backtrack(db,user_id,plan_id)
     for item in request.items:
         await policy.record_confirmation(db, user_id, item.authorization_id,
             PersonalConfirmation(digest=item.digest, disclosure_version=item.disclosure_version, accepted=item.accepted), commit=False)
@@ -362,6 +364,8 @@ async def progress(db: AsyncSession, user_id: str, plan_id: str, bank: HttpWealt
 async def execute(db: AsyncSession, user_id: str, plan_id: str, version: int, bank: HttpWealthBankApi) -> dict:
     """纯申购全部原子占款，卖出逐笔执行；失败暂停剩余，不撤销成功。"""
     await lock_profile(db, user_id)
+    from .wealth_nova_guard import require_no_pending_backtrack
+    await require_no_pending_backtrack(db,user_id,plan_id)
     row = await owned_plan(db, user_id, plan_id)
     if row.version != version or row.status not in {"AWAITING_CONFIRMATION", "EXECUTING", "WAITING_SETTLEMENT"}:
         raise WealthPolicyError("旧版本或不可执行方案", "STALE_PLAN")
