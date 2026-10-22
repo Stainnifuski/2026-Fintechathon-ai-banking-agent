@@ -67,5 +67,7 @@ tests/browser/home_workspace_transition_check.js
 
 - 首页及验收文档首轮推送：`fbbae07cb8006596f79b45e7dedb00967ccbb521`，远端分支与本地核验一致。
 - 新评审PR：[PR #19](https://github.com/Stainnifuski/2026-Fintechathon-ai-banking-agent/pull/19)，目标main；创建后状态OPEN、MERGEABLE，未合并。未复用旧PR18。
-- 本节随文档记录提交再次推送；最终分支头以PR显示及交付回复的完整SHA为准，源码仍是7a41405，本节后续提交只改文档。
+- 本节随文档记录提交再次推送；最终分支头以PR显示及交付回复的完整SHA为准，独立验收仍对应7a41405的行为源码，后续仅文档及App末尾空白整理，不改行为。
 - 推送前fetch及首轮推送后远端main均为787d75e；未部署/重启服务，未清理原`.playwright-cli/`及输出/账本。
+
+最终全PR差异检查发现App末尾多余空白行，由单独纯空白提交移除，仅保留正常换行；不重复构建或全量测试。最终分支SHA直接以GitHub远端heads与PR head核验，不依赖主仓库远端跟踪ref。
