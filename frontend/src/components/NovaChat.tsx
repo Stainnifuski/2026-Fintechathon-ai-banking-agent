@@ -1,11 +1,13 @@
 import './Wealth/novaWealth.css';
-const NovaWealthCard=lazy(()=>import('./NovaWealthCard'));
+import {createPortal} from 'react-dom';
 import {getNovaWealthCards,deleteNovaConversation,type NovaWealthCard as WealthCard} from '../services/nova';
 import { FormEvent, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import NovaMarkdown from './NovaMarkdown';
 import NovaTransferCard from './NovaTransferCard';
 import * as bank from '../services/bank';
 import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest } from '../services/nova';
+
+const NovaWealthCard=lazy(()=>import('./NovaWealthCard'));
 
 type Entry = NovaMessage & { details?: NovaReply; streaming?: boolean; status?: string };
 const TOOL_LABELS: Record<string, string> = {
@@ -62,11 +64,17 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
 }
 
 type Prompt = { label: string; text: string };
+const HOME_PROMPTS: Prompt[] = [
+  { label: '🧾 最近的钱花在哪里', text: '帮我看看最近的支出' },
+  { label: '🔁 帮我发起一笔转账', text: '我想发起一笔转账' },
+  { label: '💳 查看我的账户与卡片', text: '查看我的账户与卡片' },
+  { label: '↻ 查看即将扣款的订阅', text: '有哪些订阅即将扣款' },
+];
 const COMMON_PROMPTS: Prompt[] = [
   { label: '可用资金', text: '我现在有多少钱可以用？' },
   { label: '明天的安排', text: '明天有什么日程安排？' },
   { label: '北京时间', text: '现在北京时间几点？' },
-  { label: '转账需求示例', text: '给张三转100元' },
+  { label: '发起转账', text: '我想发起一笔转账' },
 ];
 
 function promptsFor(context: NovaPageContext): Prompt[] {
@@ -119,8 +127,8 @@ function promptsFor(context: NovaPageContext): Prompt[] {
   return prompts;
 }
 
-export default function NovaChat({ name, userId, open, onClose, onNavigate, pageContext, onReviewCardOperation, onTransferActivity }: {
-  name: string; userId: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
+export default function NovaChat({ headerControls, name, userId, open, onClose, onNavigate, pageContext, onReviewCardOperation, onTransferActivity }: {
+  headerControls?:HTMLElement|null; name: string; userId: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
   onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
   onReviewCardOperation?: (operationId: string) => void;
   onTransferActivity?: () => void;
@@ -153,6 +161,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
   const request = useRef<AbortController | null>(null);
   const uncertainRetry = useRef<{ content: string; request: NovaTaskRequest } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const composerInput = useRef<HTMLInputElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const taskAnchors = useRef<Record<string, HTMLDivElement | null>>({});
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
@@ -310,9 +319,8 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
   }
   function submit(event: FormEvent) { event.preventDefault(); void send(input); }
   if (!open) return null;
-  return <aside id="nova-panel" className="agent-panel" aria-label="NOVA 对话">
-      <div className="agent-head"><span className="agent-orb">✦</span><div><div className="nova-title-row"><strong>NOVA</strong><button type="button" className="nova-history-toggle" title="展开新建对话和历史记录" aria-expanded={showHistory} aria-controls="nova-history" onClick={() => { setShowHistory(value => !value); setShowHelp(false); }}>＋ 新建对话 <svg className="nova-history-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button></div><small>银行与生活服务助手</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
-      {showHistory && <nav id="nova-history" className="nova-conversation-nav" aria-label="NOVA 对话历史">
+  const historyButton=<button type="button" className="nova-history-toggle" title="展开新建对话和历史记录" aria-expanded={showHistory} aria-controls="nova-history" onClick={() => { setShowHistory(value => !value); setShowHelp(false); }}>＋ 新建/历史对话 <svg className="nova-history-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>;
+  const historyMenu=showHistory && <nav id="nova-history" className="nova-conversation-nav" aria-label="NOVA 对话历史">
         <button type="button" className="secondary" disabled={busy || loadingConversation} onClick={() => void newConversation()}>＋ 新建对话</button>
         <div className="nova-conversation-list">
           {conversations.map(conversation => <div className="nova-history-item" key={conversation.session_id}><button type="button"
@@ -320,7 +328,11 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
             disabled={busy || loadingConversation} onClick={() => { if (conversation.session_id === activeConversationId) setShowHistory(false); else void selectConversation(conversation.session_id); }}
             title={conversation.title}>{conversation.title}</button><button className="nova-history-remove" type="button" aria-label={`删除对话：${conversation.title}`} disabled={busy||loadingConversation} onClick={()=>setDeleteTarget(conversation)}>×</button></div>)}
         </div>
-      </nav>}
+      </nav>;
+  return <aside id="nova-panel" className="agent-panel" aria-label="NOVA 对话">
+      <div className="agent-head"><span className="agent-orb">✦</span><div><div className="nova-title-row"><strong>NOVA</strong>{!headerControls&&historyButton}</div><small>你的银行智能体</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
+      {!headerControls&&historyMenu}
+      {headerControls&&createPortal(<>{historyButton}{historyMenu}</>,headerControls)}
       <div className="agent-body" ref={body} onScroll={updatePinnedTasks}>
         {pinnedTaskIds.length > 0 && <div className="nova-pinned-stack" aria-label="待补全的转账任务">
           <div className="nova-pinned-stack-content">
@@ -335,7 +347,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
             })}
           </div>
         </div>}
-        {messages.length === 0 && !error && <div className="nova-empty"><p>{name}，想了解什么？</p><small>直接输入问题，或从下方示例开始。</small></div>}
+        {messages.length === 0 && !error && <div className="nova-empty" aria-label={`${name}的银行助手`}><div className="eyebrow">YOUR AI BANKING AGENT</div><h1>今天想办理什么？</h1><p>查账、转账、管理财务，直接告诉 NOVA。</p><div className="nova-topic-ribbon"><span>💳 账户与卡片</span><span>🧾 账单洞察</span><span>📈 理财</span><span>🔁 转账</span></div></div>}
         <div className="nova-messages" aria-live="polite">
           {messages.map((entry, index) => <div key={`${entry.request_id || index}-${entry.role}-${index}`} className="nova-turn-entry">
             <div className={`nova-message nova-${entry.role}`}>
@@ -372,7 +384,7 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
         <div className="nova-guide-row">
           <button type="button" className="nova-help-toggle" aria-expanded={showHelp} aria-controls="nova-help" onClick={() => { setShowHelp(value => !value); setShowHistory(false); }}>{showHelp ? '收起示例' : '更多示例'} <span aria-hidden="true">{showHelp ? '−' : '+'}</span></button>
         </div>
-        {!showHelp && messages.length === 0 && <div className="nova-quick-prompts" aria-label="快捷提问">
+        {!showHelp && messages.length === 0 && pageContext.page !== 'home' && <div className="nova-quick-prompts" aria-label="快捷提问">
           {prompts.slice(0, 2).map(prompt => <button type="button" key={prompt.text} className="nova-chip" disabled={busy || loadingConversation} onClick={() => void send(prompt.text)}>问：{prompt.label}</button>)}
         </div>}
         {showHelp && <div id="nova-help" className="nova-help">
@@ -389,6 +401,9 @@ export default function NovaChat({ name, userId, open, onClose, onNavigate, page
       </div>
       {deleteTarget&&<div className="nova-delete-backdrop"><section role="dialog" aria-modal="true" aria-labelledby="nova-delete-title"><h3 id="nova-delete-title">永久移除这段对话？</h3><p>将删除“{deleteTarget.title}”的聊天记录和相关草稿缓存，无法恢复。已成交的银行记录、资金和审计保持。</p><button className="secondary" disabled={loadingConversation} onClick={()=>setDeleteTarget(null)}>取消</button><button disabled={loadingConversation} onClick={()=>void removeConversation()}>确认永久移除</button></section></div>}
       {wealthFocus&&<div className="nova-focus-hint">正在补充：{wealthFocus.label}<button type="button" onClick={()=>setWealthFocus(null)} aria-label="取消理财补充对象">×</button></div>}
-      <form className="agent-compose" onSubmit={submit}><input aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="输入你的问题或需求"/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || !input.trim()}>↑</button></form>
+      <form className="agent-compose" onSubmit={submit}><input ref={composerInput} aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="输入你的问题和需求"/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || !input.trim()}>↑</button></form>
+      {!showHelp&&messages.length===0&&pageContext.page==='home'&&<div className="nova-home-suggestions" aria-label="开始对话">
+        {HOME_PROMPTS.map(prompt=><button type="button" key={prompt.text} disabled={busy||loadingConversation} title="填入输入框，编辑后发送" onClick={()=>{setInput(prompt.text);composerInput.current?.focus();}}>{prompt.label}<span aria-hidden="true">↗</span></button>)}
+      </div>}
   </aside>;
 }

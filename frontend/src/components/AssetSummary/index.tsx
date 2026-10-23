@@ -7,7 +7,7 @@ interface Props {data:AssetSummary|null;loading?:boolean;error?:string;onRefresh
 export default function AssetSummaryCard({data,loading=false,error='',onRefresh,variant='page',label='总资产'}:Props){
   return <section className={`asset-summary-card ${variant==='hero'?'safe-card':variant==='fixture'?'consumer-card':'card'} asset-summary-${variant}`} aria-label={variant==='fixture'?'示例资产概况':'银行总资产'}
       data-asset-scope-id={data?.asset_scope_id} data-snapshot-id={data?.snapshot_id}>
-    <div className="asset-summary-heading"><h2>{label}</h2>{onRefresh&&<button className="secondary" disabled={loading} onClick={onRefresh}>{loading&&data?'正在更新…':'刷新总资产'}</button>}</div>
+    <div className="asset-summary-heading"><h2>{label}</h2>{onRefresh&&error&&<button className="secondary" disabled={loading} onClick={onRefresh}>{loading?'正在重试…':'重试'}</button>}</div>
     <strong className="asset-summary-total">{summaryTotal(data,error)}</strong>
     {loading&&!data&&<p role="status">正在读取银行资产…</p>}
     {error&&<p role="alert">{error}</p>}
