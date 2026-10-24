@@ -269,7 +269,9 @@
   height:54px
 }
 .home-workspace .agent-compose button {
-  background:#49318c;
+  background:#482080;
+  color:#fff;
+  border:0;
   border-radius:50%;
   display:grid;
   place-items:center;
@@ -914,6 +916,6 @@
  .home-workspace.nova-expanded .nova-topic-ribbon span {padding:7px 12px}
 }
 
-.home-workspace .agent-compose button:disabled {background:#b8abd9;color:#fff;opacity:1}
-.home-workspace .agent-compose button:not(:disabled):hover {background:#38216f}
+.home-workspace .agent-compose button:disabled {background:#9682b8;color:#fff;opacity:1}
+.home-workspace .agent-compose button:not(:disabled):hover {background:#35165f}
 .home-workspace .agent-compose button:focus-visible {outline:3px solid #b5a4e3;outline-offset:3px}
