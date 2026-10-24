@@ -1,69 +1,89 @@
-.third-party { display: grid; gap: 20px; }
-.third-party-title, .section-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
-.third-party-title h1 { margin: 2px 0 8px; font-size: clamp(28px, 5vw, 44px); }
-.third-party-title p:not(.eyebrow), .flower-hero p { color: #627087; margin: 0; max-width: 660px; }
-.eyebrow { margin: 0; color: #1769e0; font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.third-party nav { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid #dfe6f0; }
-.third-party-notice { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid #b8d0f5; border-radius: 12px; background: #edf5ff; color: #164f9e; }
-.flower-hero { min-height: 210px; display: flex; align-items: center; justify-content: space-between; gap: 28px; overflow: hidden; background: linear-gradient(125deg, #fff 45%, #fff0f4); }
-.flower-hero h2 { margin: 8px 0 12px; font-size: clamp(24px, 4vw, 36px); }
-.flower-hero-mark { width: 190px; aspect-ratio: 1; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ff9db6, #b51e50 65%, #6f1434); color: #fff; font-size: 18px; font-weight: 900; letter-spacing: .18em; box-shadow: 0 18px 55px #aa255044; transform: rotate(-8deg); }
-.flower-products { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
-.flower-product { padding: 0; overflow: hidden; display: grid; grid-template-rows: 160px 1fr; }
-.flower-art { display: grid; place-items: center; color: #fff; font-weight: 900; letter-spacing: .16em; }
-.flower-art.rose { background: radial-gradient(circle at 30% 20%, #ff8ead, transparent 24%), linear-gradient(135deg, #82173d, #e04e75); }
-.flower-art.sunflower { background: radial-gradient(circle at 55% 45%, #7e4d0e 0 12%, #ffc627 13% 35%, transparent 36%), linear-gradient(135deg, #4a8b66, #b7d37d); }
-.flower-art.premium { background: linear-gradient(135deg, #1f2940, #765f87 55%, #d6a76c); }
-.flower-product-body { padding: 18px; display: grid; align-content: start; gap: 12px; }
-.flower-product-body h2, .flower-product-body p { margin: 0; }
-.flower-product-body p { color: #627087; font-size: 14px; min-height: 44px; }
-.flower-product-body > strong { color: #a51d4f; font-size: 24px; }
-.flower-product-body label { grid-template-columns: auto 86px; align-items: center; justify-content: space-between; }
-.flower-orders ul { padding: 0; margin: 8px 0 0; list-style: none; }
-.flower-orders li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-top: 1px solid #e5eaf2; }
-.flower-orders li > div:first-child { display: grid; gap: 5px; }
-.order-summary { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 10px; }
-.order-status { padding: 5px 9px; border-radius: 999px; background: #fff4d6; color: #835b00; font-size: 12px; font-weight: 700; }
-.order-status.completed { background: #ddf7e9; color: #087443; }
-.order-status.payment_closed { background: #f1f3f6; color: #68758a; }
-.coming-soon { min-height: 360px; display: grid; place-items: center; align-content: center; text-align: center; color: #68758a; }
-.coming-soon > span { width: 110px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 24px; background: #edf3fd; color: #1769e0; font-size: 20px; font-weight: 900; }
-.coming-soon h2 { margin: 18px 0 0; }
-.flower-modal { position: fixed; inset: 0; z-index: 1100; padding: 18px; display: grid; place-items: center; background: #15233baa; }
-.flower-modal > section { width: min(480px, 100%); }
-.flower-modal dl { display: grid; gap: 10px; margin: 18px 0; }
-.flower-modal dl div { display: flex; justify-content: space-between; border-bottom: 1px solid #e5eaf2; padding-bottom: 9px; }
-.flower-modal dd { margin: 0; }
-@media (max-width: 850px) {
-  .flower-products { grid-template-columns: 1fr; }
-  .flower-product { grid-template-columns: 150px 1fr; grid-template-rows: auto; }
-  .flower-hero-mark { width: 120px; }
+.third-party { container: services / inline-size; display: grid; gap: 20px; min-width: 0; color: #171b30; }
+.third-party .third-party-title, .third-party .section-heading { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.third-party .third-party-title h1 { margin: 6px 0 10px; font-size: 28px; line-height: 1.3; letter-spacing: -.5px; color: #171b30; }
+.third-party .third-party-title p:not(.eyebrow), .third-party .flower-hero p { color: #667085; margin: 0; max-width: 660px; font-size: 13px; line-height: 1.7; }
+.third-party .eyebrow { margin: 0; color: #287544; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
+.third-party h2 { color: #171b30; font-size: 18px; line-height: 1.4; }
+.third-party .hint, .third-party small { color: #667085; font-size: 12px; line-height: 1.7; }
+.third-party .card { min-width: 0; padding: 24px; background: #fff; border: 1px solid #e7e9f0; border-radius: 16px; box-shadow: 0 5px 22px #20284006; }
+.third-party :where(button:not(.calendar-day)) { min-height: 36px; max-width: 100%; padding: 8px 13px; border: 1px solid transparent; border-radius: 999px; background: #171b30; color: #fff; font-size: 12px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; box-shadow: none; }
+.third-party button.secondary { color: #34394b; background: #fff; border-color: #dcdfe6; }
+.third-party :where(button:not(.calendar-day)):not(:disabled):hover { filter: brightness(.96); }
+.third-party :where(button, input, select, textarea):focus-visible { outline: 2px solid #287544; outline-offset: 2px; }
+.third-party button:disabled { opacity: .55; cursor: not-allowed; }
+.third-party :where(input:not([type=radio]):not([type=file]), select, textarea) { min-width: 0; width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid #ccd5e1; border-radius: 8px; background: #fff; color: #171b30; font: inherit; font-size: 14px; }
+.third-party label { min-width: 0; gap: 7px; font-size: 13px; color: #536176; }
+.third-party nav { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid #e7e9f0; }
+.third-party nav button { min-width: 68px; }
+.third-party nav button[aria-pressed=true] { background: #287544; border-color: #287544; color: #fff; }
+.third-party .third-party-notice { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 16px; border: 1px solid #cfe3d5; border-radius: 12px; background: #eaf4ed; color: #287544; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.third-party .storefront { display: grid; gap: 20px; min-width: 0; }
+.third-party .flower-hero { min-height: 190px; display: flex; align-items: center; justify-content: space-between; gap: 28px; overflow: hidden; background: linear-gradient(125deg, #fff 45%, #fff0f4); }
+.third-party .flower-hero h2 { margin: 8px 0 12px; font-size: 24px; line-height: 1.35; }
+.third-party .flower-hero-mark { width: 150px; aspect-ratio: 1; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ff9db6, #b51e50 65%, #6f1434); color: #fff; font-size: 16px; font-weight: 900; letter-spacing: .18em; box-shadow: 0 18px 55px #aa255044; transform: rotate(-8deg); }
+.third-party .flower-products { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.third-party .flower-product { padding: 0; overflow: hidden; display: grid; grid-template-rows: 160px 1fr; }
+.third-party .flower-art { display: grid; place-items: center; color: #fff; font-weight: 900; letter-spacing: .16em; }
+.third-party .flower-art.rose { background: radial-gradient(circle at 30% 20%, #ff8ead, transparent 24%), linear-gradient(135deg, #82173d, #e04e75); }
+.third-party .flower-art.sunflower { background: radial-gradient(circle at 55% 45%, #7e4d0e 0 12%, #ffc627 13% 35%, transparent 36%), linear-gradient(135deg, #4a8b66, #b7d37d); }
+.third-party .flower-art.premium { background: linear-gradient(135deg, #1f2940, #765f87 55%, #d6a76c); }
+.third-party .flower-product-body { padding: 18px; display: grid; align-content: start; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.third-party .flower-product-body h2, .third-party .flower-product-body p { margin: 0; }
+.third-party .flower-product-body h2 { font-size: 16px; line-height: 1.5; }
+.third-party .flower-product-body p { color: #667085; font-size: 13px; line-height: 1.7; }
+.third-party .flower-product-body > strong { color: #a51d4f; font-size: 24px; font-variant-numeric: tabular-nums; }
+.third-party .flower-product-body label { grid-template-columns: auto 86px; align-items: center; justify-content: space-between; }
+.third-party .storefront button[aria-pressed], .third-party .calendar-event-list button[aria-pressed] { background: #eaf4ed; border-color: #e0ece3; color: #287544; }
+.third-party .storefront button[aria-pressed=true], .third-party .calendar-event-list button[aria-pressed=true] { border-color: #287544; box-shadow: inset 0 0 0 1px #287544; }
+.third-party .section-heading h2 { margin: 6px 0 0; }
+.third-party .flower-orders ul { padding: 0; margin: 16px 0 0; list-style: none; }
+.third-party .flower-orders li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0; border-top: 1px solid #e7e9f0; }
+.third-party .flower-orders li:last-child { padding-bottom: 0; }
+.third-party .flower-orders li > div:first-child { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.third-party .order-summary { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.third-party .order-summary > strong { font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.third-party .order-status { padding: 5px 9px; border-radius: 999px; background: #fff4d6; color: #835b00; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.third-party .order-status.completed { background: #eaf4ed; color: #287544; }
+.third-party .order-status.payment_closed { background: #f1f3f6; color: #596577; }
+.third-party .order-status.refunded { background: #eae5f8; color: #68439a; }
+.third-party .order-status.partially_refunded { background: #f2edf9; color: #735593; }
+.third-party .flower-modal { position: fixed; inset: 0; z-index: 1100; padding: 18px; display: grid; place-items: center; background: #15233baa; }
+.third-party .flower-modal > section { width: min(480px, 100%); max-height: calc(100dvh - 36px); overflow: auto; }
+.third-party .flower-modal h2 { margin: 8px 0 0; overflow-wrap: anywhere; }
+.third-party .flower-modal dl { display: grid; gap: 10px; margin: 18px 0; font-size: 14px; }
+.third-party .flower-modal dl div { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e7e9f0; padding-bottom: 9px; }
+.third-party .flower-modal dd { margin: 0; min-width: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.third-party .flower-modal .hint { padding: 12px; border-radius: 8px; background: #fff8ec; color: #78582a; line-height: 1.7; }
+.third-party .flower-modal .confirm { justify-content: end; flex-wrap: wrap; gap: 8px; }
+.third-party .cake-shop .flower-hero { background: linear-gradient(125deg, #fff 40%, #fff0df); }
+.third-party .cake-shop .flower-hero .eyebrow { color: #a65a32; }
+.third-party .cake-shop .flower-hero-mark { background: radial-gradient(circle at 35% 35%, #f8d5a9, #bc724b 65%, #79432d); box-shadow: 0 18px 55px #a65a3233; }
+.third-party .cake-shop .flower-product-body > strong { color: #9c4d31; }
+.third-party .cake-shop .flower-art { position: relative; overflow: hidden; isolation: isolate; }
+.third-party .cake-shop .flower-art::before { content: ''; position: absolute; width: 126px; height: 76px; bottom: 26px; border-radius: 50% / 18%; background: linear-gradient(to bottom, #fff9ed 0 28%, #e6be89 29% 41%, #fff9ed 42% 63%, #e6be89 64% 76%, #fff9ed 77%); box-shadow: 0 12px 18px #733f3526; z-index: -1; }
+.third-party .cake-shop .flower-art span { color: #7d4033; font-size: 13px; letter-spacing: .18em; margin-top: 28px; }
+.third-party .cake-shop .flower-art.strawberry { background: radial-gradient(ellipse at 50% 18%, #fbc5c7, transparent 65%), #fff0e9; }
+.third-party .cake-shop .flower-art.strawberry::after { content: ''; position: absolute; width: 22px; height: 28px; border-radius: 50% 50% 45% 45%; background: radial-gradient(circle, #ffdb91 1px, transparent 2px) 0 0 / 7px 8px, #d94e60; top: 42px; box-shadow: -33px 8px 0 #d94e60, 33px 8px 0 #d94e60; z-index: -1; }
+.third-party .cake-shop .flower-art.chocolate { background: linear-gradient(135deg, #eed7c7, #be8e76); }
+.third-party .cake-shop .flower-art.chocolate::before { background: linear-gradient(to bottom, #69402f 0 28%, #b88157 29% 41%, #69402f 42% 63%, #b88157 64% 76%, #69402f 77%); }
+.third-party .cake-shop .flower-art.chocolate span { color: #fff3e5; }
+.third-party .cake-shop .flower-art.celebration { background: linear-gradient(135deg, #fdf0cf, #e7c398); }
+.third-party .cake-shop .flower-art.celebration::after { content: ''; position: absolute; width: 82px; height: 52px; top: 35px; border-radius: 50% / 18%; background: linear-gradient(to bottom, #fff9ed 0 35%, #e6be89 36% 50%, #fff9ed 51%); z-index: -1; }
+@container services (width < 960px) {
+  .third-party .flower-products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .third-party .flower-hero-mark { width: 120px; }
 }
-@media (max-width: 600px) {
-  .third-party-title, .third-party-notice, .flower-hero, .flower-orders li { align-items: stretch; flex-direction: column; }
-  .flower-hero-mark { display: none; }
-  .flower-product { grid-template-columns: 1fr; grid-template-rows: 130px 1fr; }
-  .order-summary { justify-content: start; }
+@container services (width < 640px) {
+  .third-party .flower-products { grid-template-columns: minmax(0, 1fr); }
+  .third-party .flower-hero { align-items: start; flex-direction: column; }
+  .third-party .flower-hero-mark { display: none; }
+  .third-party .flower-orders li { align-items: stretch; flex-direction: column; }
+  .third-party .order-summary { justify-content: start; }
 }
-
-.storefront { display: grid; gap: 20px; }
-.cake-shop .flower-hero { background: linear-gradient(125deg, #fff 40%, #fff0df); }
-.cake-shop .eyebrow { color: #a65a32; }
-.cake-shop .flower-hero-mark { background: radial-gradient(circle at 35% 35%, #f8d5a9, #bc724b 65%, #79432d); box-shadow: 0 18px 55px #a65a3233; }
-.cake-shop .flower-product-body > strong { color: #9c4d31; }
-.cake-shop .flower-art { position: relative; overflow: hidden; isolation: isolate; }
-.cake-shop .flower-art::before { content: ''; position: absolute; width: 126px; height: 76px; bottom: 26px; border-radius: 50% / 18%; background: linear-gradient(to bottom, #fff9ed 0 28%, #e6be89 29% 41%, #fff9ed 42% 63%, #e6be89 64% 76%, #fff9ed 77%); box-shadow: 0 12px 18px #733f3526; z-index: -1; }
-.cake-shop .flower-art span { color: #7d4033; font-size: 13px; letter-spacing: .18em; margin-top: 28px; }
-.cake-shop .flower-art.strawberry { background: radial-gradient(ellipse at 50% 18%, #fbc5c7, transparent 65%), #fff0e9; }
-.cake-shop .flower-art.strawberry::after { content: ''; position: absolute; width: 22px; height: 28px; border-radius: 50% 50% 45% 45%; background: radial-gradient(circle, #ffdb91 1px, transparent 2px) 0 0 / 7px 8px, #d94e60; top: 42px; box-shadow: -33px 8px 0 #d94e60, 33px 8px 0 #d94e60; z-index: -1; }
-.cake-shop .flower-art.chocolate { background: linear-gradient(135deg, #eed7c7, #be8e76); }
-.cake-shop .flower-art.chocolate::before { background: linear-gradient(to bottom, #69402f 0 28%, #b88157 29% 41%, #69402f 42% 63%, #b88157 64% 76%, #69402f 77%); }
-.cake-shop .flower-art.chocolate span { color: #fff3e5; }
-.cake-shop .flower-art.celebration { background: linear-gradient(135deg, #fdf0cf, #e7c398); }
-.cake-shop .flower-art.celebration::after { content: ''; position: absolute; width: 82px; height: 52px; top: 35px; border-radius: 50% / 18%; background: linear-gradient(to bottom, #fff9ed 0 35%, #e6be89 36% 50%, #fff9ed 51%); z-index: -1; }
-.order-status.refunded { background: #eae5f8; color: #68439a; }
-@media (max-width: 600px) {
-  .cake-shop .flower-art::before { bottom: 14px; }
-  .cake-shop .flower-art.strawberry::after { top: 24px; }
-  .cake-shop .flower-art.celebration::after { top: 17px; }
+@container services (width < 420px) {
+  .third-party .card { padding: 18px; }
+  .third-party .flower-product { padding: 0; grid-template-rows: 130px 1fr; }
+  .third-party .cake-shop .flower-art::before { bottom: 14px; }
+  .third-party .cake-shop .flower-art.strawberry::after { top: 24px; }
+  .third-party .cake-shop .flower-art.celebration::after { top: 17px; }
 }

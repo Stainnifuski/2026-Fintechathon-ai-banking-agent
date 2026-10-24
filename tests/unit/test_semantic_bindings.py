@@ -105,4 +105,3 @@ def test_product_number_and_chinese_comma_never_become_thousands_amount():
         require_value('100',text,quote='100元')
         assert explicit_numbers(text)=={Decimal('100')}
     require_value('1234.56','投资1,234.56元',quote='投资1,234.56元')
-

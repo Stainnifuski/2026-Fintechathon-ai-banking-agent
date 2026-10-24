@@ -167,7 +167,7 @@ export default function CardManagement({ accounts, revision, onActivity, selecte
     <p className="hint">选择一张卡片后，可向 NOVA 询问“这张卡的限额是多少？”，或让 NOVA 生成锁卡、调整限额等变更，再回到这里确认。</p>
     {closedCount > 0 && <label className="hint"><input type="checkbox" checked={showClosed} onChange={e => setShowClosed(e.target.checked)} /> 显示已挂失/已注销卡片（{closedCount}）</label>}
     {status && <p className="notice">{status}</p>}
-    {visibleCards.length === 0 ? <p className="hint">暂无卡片</p> : <ul className="history">{visibleCards.map(card => {
+    {visibleCards.length === 0 ? <p className="hint">暂无卡片</p> : <ul className="history card-list">{visibleCards.map(card => {
       const active = card.status === 'ACTIVE';
       return <li key={card.card_id} className={selectedCardId === card.card_id ? 'nova-selected-row' : undefined}>
         <span><strong>{cardKind(card)} · {card.card_number}</strong>
@@ -179,18 +179,18 @@ export default function CardManagement({ accounts, revision, onActivity, selecte
           {card.lost_reported_at && <small>挂失时间（北京时间）：{beijingTime(card.lost_reported_at)}</small>}
           {card.replaced_by_card_id && <small>已补发新卡 {cards.find(c => c.card_id === card.replaced_by_card_id)?.card_number ?? '，卡片信息待刷新'}</small>}
           {card.cancelled_at && <small>注销时间（北京时间）：{beijingTime(card.cancelled_at)}</small>}</span>
-        <div className="subscription-action"><button className="secondary" aria-pressed={selectedCardId === card.card_id} onClick={() => onSelectCard(selectedCardId === card.card_id ? undefined : card.card_id)}>{selectedCardId === card.card_id ? '已选中 · 再点取消' : '选择供 NOVA 查询'}</button><strong className={active ? 'in' : closed(card) ? 'out' : 'hint'}>{STATUS_LABELS[card.status]}</strong>
+        <div className="subscription-action"><button className="secondary" aria-pressed={selectedCardId === card.card_id} onClick={() => onSelectCard(selectedCardId === card.card_id ? undefined : card.card_id)}>{selectedCardId === card.card_id ? '已选中 · 再点取消' : '选择供 NOVA 查询'}</button><strong data-card-status={card.status} className={active ? 'in' : closed(card) ? 'out' : 'hint'}>{STATUS_LABELS[card.status]}</strong>
           <div className="card-actions">
             {active && <button className="secondary" disabled={busy} onClick={() => open('card_set_transaction_limits', card)}>交易限额</button>}
             {active && card.card_type === 'CREDIT' && <button className="secondary" disabled={busy} onClick={() => open('card_adjust_credit_limit', card)}>调整额度</button>}
             {active && <button className="secondary" disabled={busy} onClick={() => open('card_set_channels', card)}>交易渠道</button>}
             {active && <button className="secondary" disabled={busy} onClick={() => open('card_lock', card)}>锁卡</button>}
             {card.status === 'LOCKED' && <button className="secondary" disabled={busy} onClick={() => open('card_unlock', card)}>解锁</button>}
-            {!closed(card) && card.is_virtual && <button className="secondary" disabled={busy} onClick={() => open('card_cancel_virtual', card)}>注销</button>}
-            {!closed(card) && <button className="secondary" disabled={busy} onClick={() => open('card_report_lost', card)}>挂失</button>}
+            {!closed(card) && card.is_virtual && <button className="secondary card-danger" disabled={busy} onClick={() => open('card_cancel_virtual', card)}>注销</button>}
+            {!closed(card) && <button className="secondary card-danger" disabled={busy} onClick={() => open('card_report_lost', card)}>挂失</button>}
             {card.status === 'LOST' && !card.replaced_by_card_id && <button className="secondary" disabled={busy} onClick={() => open('card_reissue', card)}>补卡</button>}
-            {card.status !== 'CANCELLED' && card.status !== 'LOST' && <button className="secondary" disabled={busy} onClick={() => openPurchase(card)}>模拟消费</button>}
-            <button className="secondary" disabled={busy} aria-pressed={historyCard?.card_id === card.card_id} onClick={() => toggleHistory(card)}>交易记录</button>
+            {card.status !== 'CANCELLED' && card.status !== 'LOST' && <button className="secondary card-purchase" disabled={busy} onClick={() => openPurchase(card)}>模拟消费</button>}
+            <button className="secondary card-history" disabled={busy} aria-pressed={historyCard?.card_id === card.card_id} onClick={() => toggleHistory(card)}>交易记录</button>
           </div></div>
       </li>;
     })}</ul>}
@@ -240,7 +240,7 @@ export default function CardManagement({ accounts, revision, onActivity, selecte
     </div>}
     </div>
 
-    {historyCard && <div className="subscription-confirm">
+    {historyCard && <div className="subscription-confirm card-transaction-history">
       <p><strong>交易记录 · {historyCard.card_number}</strong>（最近20笔，含被拒绝的交易）</p>
       {history.length === 0 ? <p className="hint">暂无用卡交易</p> : <ul className="history">{history.map(row => <li key={row.auth_id}>
         <span><strong>{row.merchant}</strong><small>{beijingTime(row.authorized_at)} · {PURCHASE_CHANNELS.find(([value]) => value === row.channel)?.[1] ?? row.channel}</small></span>

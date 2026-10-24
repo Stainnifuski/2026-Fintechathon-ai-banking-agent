@@ -18,4 +18,3 @@ ENV PYTHONUNBUFFERED=1 HF_HOME=/models/huggingface OMP_NUM_THREADS=2 MKL_NUM_THR
     SENSEVOICE_MODEL_REVISION=3847d57b6bdf2dd8875cb1508d2af43d80a16bf7
 EXPOSE 50000
 CMD ["uvicorn", "bank_voice_server:app", "--host", "0.0.0.0", "--port", "50000", "--no-access-log"]
-

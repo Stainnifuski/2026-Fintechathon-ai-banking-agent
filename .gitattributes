@@ -6,3 +6,6 @@ config/wealth/portfolio_public_evidence/** -text
 
 # Raw SHA-addressed evidence intentionally preserves source whitespace.
 config/wealth/portfolio_public_evidence/** -whitespace
+
+# The shared Bash launcher must remain executable text on Windows and Unix.
+scripts/start_bank.sh text eol=lf
