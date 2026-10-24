@@ -25,11 +25,35 @@ async def reset_workspace(db, user_id, context_id):
     """Discard unsubmitted drafts, preserving bank receipts and uncertain submissions."""
     from ...models.wealth import WealthOrderORM as Order
     await lock_profile(db, user_id)
+    # Browser bootstrap resets the manual workbench. NOVA conversations have
+    # their own explicit close/delete lifecycle and must survive that reset.
+    # Derive this exception solely from owned persisted links, never a client
+    # preserve flag or a claimed plan ID.
+    from ...models.wealth import WealthConversationORM
+    from ...models.nova_conversation import NovaConversationORM
+    protected_plans=set()
+    protected_operations=set()
+    for card in await db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id==user_id)):
+        data=card.data
+        if data.get('closed') or data.get('context_id')!=context_id or not data.get('nova_session_id'):continue
+        conversation=await db.get(NovaConversationORM,data['nova_session_id'])
+        if not conversation or conversation.user_id!=user_id:continue
+        pending=[data.get('execution_plan_id'),*data.get('committed_stage_ids',[])]
+        while pending:
+            plan_id=pending.pop()
+            if not plan_id or plan_id in protected_plans:continue
+            plan=await db.get(WealthPlanORM,plan_id)
+            if not plan or plan.user_id!=user_id:continue
+            protected_plans.add(plan_id)
+            protected_operations.update(i.get('command',{}).get('operation_id') for i in plan.data.get('items',[]))
+            continuation=(plan.data.get('incremental_continuation') or {}).get('prepared',{})
+            pending.append(continuation.get('execution_plan_id'))
     rows=list(await db.scalars(select(Task).where(Task.user_id==user_id,
         Task.context_id==context_id, Task.status.not_in(TERMINAL))))
     detached=[]
     for task in rows:
         if not current_workspace_task(task):continue
+        if task.data.get('plan_id') in protected_plans:continue
         nodes=list(await db.scalars(select(Node).where(Node.task_id==task.task_id)))
         recovering=False
         for node in nodes:
@@ -63,6 +87,7 @@ async def reset_workspace(db, user_id, context_id):
     # Detail/redemption previews may precede graph creation. They are drafts too.
     for auth in await db.scalars(select(Authorization).where(Authorization.user_id==user_id,
             Authorization.status.in_(['AWAITING_CONFIRMATION','AWAITING_MFA','VALID']))):
+        if auth.operation_id in protected_operations:continue
         if await db.get(Order,auth.operation_id) is None:auth.status='EXPIRED'
     await db.commit()
     return {'reset':True,'detached_task_ids':detached}

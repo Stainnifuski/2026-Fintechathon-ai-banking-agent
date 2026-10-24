@@ -56,7 +56,7 @@ async def complete(db, row, account, command, version, now, preview):
                 lot_units=quantity(lot.units_scaled), lot_cost_fen=lot.cost_fen)
             lot.units_scaled -= take
             lot.cost_fen -= value.cost_fen
-            values.append({'lot_id': lot.lot_id, **asdict(value)})
+            values.append({'lot_id': lot.lot_id, 'units_scaled':take, 'units':quantity(take), **asdict(value)})
             remaining -= take
         if remaining:
             raise BankError('可赎份额已变化，请重新预览', 'INSUFFICIENT_REDEEMABLE_UNITS', 409)

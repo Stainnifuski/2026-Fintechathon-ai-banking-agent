@@ -46,6 +46,7 @@ class CardPreviewArguments(StrictModel):
     atm_enabled: bool | None = None
     overseas_enabled: bool | None = None
     contactless_enabled: bool | None = None
+    value_quotes: dict[Literal['credit_limit','single_txn_limit','daily_txn_limit'],str] = Field(default_factory=dict,max_length=3)
 
 
 class SubscriptionListArguments(ListArguments):
@@ -130,6 +131,7 @@ def _masked_change(change):
 async def preview_card_operation(arguments, context):
     """开出与卡片页同一套校验的待确认单；确认、强验证只能由本人在卡片页完成。"""
     values = arguments.model_dump(exclude_none=True)
+    values.pop('value_quotes',None)
     action = values['action']
     if action != 'card_apply_virtual' and 'card_id' not in values:
         selected = context.page.cards.selected_card_id if context.page.cards else None

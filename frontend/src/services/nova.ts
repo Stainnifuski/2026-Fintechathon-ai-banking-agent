@@ -38,6 +38,8 @@ export async function getNovaConversation(sessionId: string): Promise<NovaConver
   return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
 }
 export type NovaReply = {
+  task_switch?: NovaTaskSwitch | null;
+  execution_queue?: NovaExecutionQueue | null;
   grounding?: {
     version: string;
     status: 'grounded' | 'partial' | 'abstained' | 'blocked';
@@ -54,6 +56,12 @@ export type NovaReply = {
   tasks?: NovaTransferTask[];
 };
 
+export type NovaExecutionQueue={queue_id:string;version:number;status:string;request_id:string;message:string;
+  steps:{goal_id:string;objective:string;status:string;request_id:string;depends_on:string[];reply:string;review_operation_id?:string|null}[]};
+export const getNovaExecutionQueue=(session:string)=>apiClient.get<NovaExecutionQueue|null>(`/nova/execution-queues/${session}`).then(r=>r.data);
+export const advanceNovaExecutionQueue=(session:string,version:number)=>apiClient.post<NovaReply>(`/nova/execution-queues/${session}/advance`,{version},{timeout:95000}).then(r=>r.data);
+export const stopNovaExecutionQueue=(session:string,version:number)=>apiClient.post<NovaExecutionQueue>(`/nova/execution-queues/${session}/stop`,{version}).then(r=>r.data);
+
 export type NovaTransferTask = {
   chat_task_id: string; origin_request_id?: string | null; status: string; recipient?: string | null; amount_fen?: number | null;
   form: { recipient: string; amount_yuan: string; amount_rule?: string | null; amount_basis_available_fen?: number | null;
@@ -65,9 +73,13 @@ export type NovaTransferTask = {
 };
 
 export type NovaTaskRequest = {
+  task_switch_token?:string;accept_task_switch?:boolean;
   request_id: string; session_id?: string; session_version?: number;
   focus_task_id?: string; candidate_id?: string; wealth_task_id?:string; wealth_stage?:string;
 };
+
+export type NovaTaskSwitch={token:string;current_label:string;target_label:string};
+export const getNovaTaskSwitch=(session:string)=>apiClient.get<NovaTaskSwitch|null>(`/nova/task-flow/${session}`).then(r=>r.data);
 
 export async function getNovaTaskSession(sessionId: string) {
   return apiClient.get<NovaTaskSession>(`/nova/task-sessions/${sessionId}`).then(r => r.data);
@@ -159,6 +171,8 @@ export interface NovaWealthCommand {
  period:'day'|'month'|'year'|'cumulative'; anchor_date?:string|null; question:string;
 }
 export interface NovaWealthCard {
+ parent_task_id?:string;
+ origin_kind?:'positions';
  task_id:string; version:number; nova_session_id:string; request_id:string; context_id:string;
  command:NovaWealthCommand; view_context?:NovaWealthView; closed:boolean; paused?:boolean; instruction?:{id:string;action:string;stage:string|null}; draft_epoch?:number; execution_plan_id?:string;
  pending_backtrack?:{token:string;stage:string;label:string;invalidated:string[]};
@@ -168,7 +182,13 @@ export const getNovaWealthCards=(session:string)=>apiClient.get<NovaWealthCard[]
 export const updateNovaWealthCard=(card:NovaWealthCard,change:{execution_plan_id?:string;closed?:boolean;paused?:boolean;reset_draft?:boolean;backtrack_stage?:string;backtrack_token?:string;accept_backtrack?:boolean})=>
  apiClient.post<NovaWealthCard[]>(`/nova/wealth-sessions/${card.nova_session_id}/cards/${card.task_id}`,{version:card.version,...change}).then(r=>r.data);
 
-export type NovaWealthView={completed_stages?:string[];cash_field?:'reserve'|'investment'|'total';cash_yuan?:string;amounts_yuan?:Record<string,string>;visible_products:NovaWealthCommand['products'];selected_products:NovaWealthCommand['products']};
-export const saveNovaWealthView=(card:NovaWealthCard,view:NovaWealthView)=>apiClient.post(`/nova/wealth-sessions/${card.nova_session_id}/cards/${card.task_id}/view`,{version:card.version,...view});
+export type NovaWealthView={selection_kind?:'positions'|'products';completed_stages?:string[];cash_field?:'reserve'|'investment'|'total';cash_yuan?:string;amounts_yuan?:Record<string,string>;visible_products:NovaWealthCommand['products'];selected_products:NovaWealthCommand['products']};
+const pendingWealthViews=new Map<string,Promise<unknown>>();
+export function saveNovaWealthView(card:NovaWealthCard,view:NovaWealthView){
+ const previous=pendingWealthViews.get(card.task_id);
+ const next=(previous??Promise.resolve()).catch(()=>{}).then(()=>apiClient.post(`/nova/wealth-sessions/${card.nova_session_id}/cards/${card.task_id}/view`,{version:card.version,...view}));
+ pendingWealthViews.set(card.task_id,next);void next.catch(()=>{});return next;
+}
+export async function flushNovaWealthView(taskId?:string){if(taskId)await pendingWealthViews.get(taskId);}
 
 export const deleteNovaConversation=(session:string)=>apiClient.delete(`/bank/nova/conversations/${session}`);

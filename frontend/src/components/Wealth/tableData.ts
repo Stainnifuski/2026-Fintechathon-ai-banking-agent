@@ -41,7 +41,7 @@ export function positionTableData(assets:Assets,scope:string):PositionTableData 
       total_ratio:basis&&value!=null?String(value/basis):null,nav:sameNav?first.nav??null:null,nav_date:sameNav?first.nav_date:null,
       daily_metric:sameNav?first.daily_metric??null:null};
   }).sort((a,b)=>a.position_key.localeCompare(b.position_key));
-  return {object_type:'positions',scope_key:scope,rows};
+  return {object_type:'positions',scope_key:scope,rows,business_date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date(assets.business_at))};
 }
 export function pageRows<T>(rows:T[],page:number,pageSize:number):{rows:T[];page:number;pages:number} {
   if(!Number.isInteger(page)||page<1||![5,10,20].includes(pageSize))throw new Error('分页参数无效');

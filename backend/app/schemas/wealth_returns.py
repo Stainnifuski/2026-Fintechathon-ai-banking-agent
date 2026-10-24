@@ -14,9 +14,12 @@ class ReturnsQuery(BaseModel):
     product_id: str | None = Field(default=None, min_length=1, max_length=120)
     period: ReturnPeriod = 'day'
     anchor_date: date | None = None
+    overview: bool = False
 
     @model_validator(mode='after')
     def product_scope(self):
+        if self.overview and (self.scope!='all' or self.product_id is not None or self.anchor_date is not None):
+            raise ValueError('整体表现仅支持自动日期的全部产品范围')
         if (self.scope == 'product') != (self.product_id is not None):
             raise ValueError('单产品范围需要具体份额代码，整体范围不得附带产品代码')
         if self.period == 'cumulative' and self.anchor_date is not None:
@@ -52,6 +55,32 @@ class ProductReturn(BaseModel):
     reason: str | None = None
 
 
+class PerformancePoint(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    date: date
+    rate_percent: str | None = Field(pattern=r'^-?\d+(\.\d+)?$')
+
+
+class PositionDailyReturn(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    position_key: str
+    yesterday_pnl_fen: int | None = Field(strict=True)
+
+
+class PerformanceOverview(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    period: ReturnPeriod
+    start_date: date
+    end_date: date
+    amount_fen: int | None = Field(strict=True)
+    rate_percent: str | None = Field(pattern=r'^-?\d+(\.\d+)?$')
+    points: list[PerformancePoint]
+    notice: str
+    positions: list[PositionDailyReturn]
+    rate_method: Literal['modified-dietz-nonannualized-v1']
+    as_of: datetime
+
+
 class WealthReturns(BaseModel):
     model_config = ConfigDict(extra='forbid')
     schema_version: Literal['wealth-returns-v1'] = 'wealth-returns-v1'
@@ -73,6 +102,7 @@ class WealthReturns(BaseModel):
     data_source: str
     valuation_as_of: date | None
     formula_version: str
+    performance: PerformanceOverview | None = None
 
     @model_validator(mode='after')
     def coherent(self):

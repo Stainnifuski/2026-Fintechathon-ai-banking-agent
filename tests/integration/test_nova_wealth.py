@@ -1,5 +1,6 @@
 """NOVA bridge isolation, replay, ownership and formal trade guard regressions."""
 from types import SimpleNamespace
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -174,7 +175,7 @@ async def test_model_cannot_pick_unspecified_fund_but_explicit_ordinal_resolves(
         row.data={**row.data,'view_context':{'visible_products':[{'product_id':'MF002','product_version':1,'name':'测试债券'}]}}
         await db.commit()
         model.return_value=SimpleNamespace(data=agent.IntentBatch(intents=[agent.WealthIntent(kind='purchase',task_id=card['task_id'],candidate_indices=[1])]))
-        second=await agent.manage(agent.EmptyArguments(),context(db,'request-second-wealth'))
+        second=await agent.manage(agent.EmptyArguments(),replace(context(db,'request-second-wealth'),original_message='选择第一只产品'))
         assert second['wealth_cards'][0]['command']['products'][0]['product_id']=='MF002'
 
 

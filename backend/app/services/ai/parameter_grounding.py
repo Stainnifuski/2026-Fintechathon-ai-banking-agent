@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from .nlu import amount_fen, UnderstandingError
 from ...domain.time import utc_now
+from .semantic_bindings import canonical_text, quote_in_message, bind_field, canonical_field,CARD_FIELDS
 
 _NUMBER = r'(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二三四五六七八九]+)?)'
 
@@ -31,7 +32,11 @@ def quoted_number(text: str) -> Decimal:
 
 def explicit_numbers(message: str, unit: str = 'money') -> set[Decimal]:
     suffix = r'(?:万元|千元|百元|元|块钱|块|万|千)' if unit == 'money' else r'份' if unit == 'units' else r'%'
-    normalized = message.replace('，', ',').replace('％', '%')
+    import unicodedata
+    # Chinese punctuation is a clause separator, never a thousands separator.
+    # Also never join a product/card code (B017,100元) into a new amount.
+    normalized = unicodedata.normalize('NFKC',message.replace('，','；'))
+    normalized = re.sub(r'(?<![A-Za-z\d_.])[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?',lambda m:m[0].replace(',',''),normalized)
     values = set()
     for match in re.finditer(r'(?<![\d.])' + _NUMBER + r'\s*' + suffix, normalized):
         if _negated(normalized, match.start()):
@@ -56,42 +61,45 @@ def explicit_numbers(message: str, unit: str = 'money') -> set[Decimal]:
             values.add(quoted_number(normalized))
         except (ValueError, InvalidOperation, UnderstandingError):
             pass
+    if unit == 'percent':
+        for match in re.finditer(r'百分之('+_NUMBER+r')',normalized):
+            if not _negated(normalized,match.start()):
+                try:values.add(quoted_number(match[1]))
+                except (ValueError,InvalidOperation,UnderstandingError):pass
+        for match in re.finditer(r'一半|半数|全部|所有',normalized):
+            if not _negated(normalized,match.start()):values.add(Decimal(50 if match[0] in {'一半','半数'} else 100))
     return values
 
 
 def require_value(value: str | None, message: str, *, unit: str = 'money', quote: str | None = None) -> None:
     if value is None:
         return
-    if quote is not None and (not quote.strip() or quote not in message):
-        raise ValueError('PARAMETER_QUOTE_INVALID')
+    if quote is not None:
+        if not quote_in_message(quote,message):raise ValueError('PARAMETER_QUOTE_INVALID')
+        original,span=canonical_text(message),canonical_text(quote)
+        if all(_negated(original,m.start()) for m in re.finditer(re.escape(span),original)):
+            raise ValueError('PARAMETER_NOT_GROUNDED')
     try:
         number = Decimal(value)
-        if not number.is_finite() or number < 0 or number not in explicit_numbers(quote or message, unit):
+        if (not number.is_finite() or number < 0 or number not in explicit_numbers(quote or message, unit)
+                or number not in explicit_numbers(message,unit)):
             raise ValueError('PARAMETER_NOT_GROUNDED')
     except InvalidOperation:
         raise ValueError('PARAMETER_NOT_GROUNDED') from None
 
 
-def require_cash_role(field: str | None, value: str | None, message: str, previous_field: str | None = None) -> None:
+def require_cash_role(field: str | None, value: str | None, message: str, previous_field: str | None = None,
+                      *,quote: str | None=None) -> str | None:
     """资产、留存与投资预算分别绑定；“我有两万”不能直接变成投资两万。"""
-    if value is None:
-        return
-    roles = {'reserve': r'预留|保留|留存|留|备用', 'invest': r'投入|投资|预算|买入|申购|拨',
-             'total': r'总额|总资产|总资金|我有|现有|可支配'}
-    for match in re.finditer('(?:' + roles.get(field, r'(?!)') + r')[^，,；;。\n]{0,24}', message):
-        if _negated(message, match.start()):
-            continue
-        if Decimal(value) in explicit_numbers(match.group()):
-            return
-    if field == 'invest':
-        for match in re.finditer('(' + _NUMBER + r'\s*(?:万元|千元|元|块钱|块|万|千))'
-                                 r'\s*(?:做|用于|用来|来)?(?:投资|投入|申购|买入)', message):
-            if _negated(message, match.start()):
-                continue
-            if Decimal(value) == quoted_number(match[1]):
-                return
-    if previous_field == field and re.search(r'改成|改为|调整|^\s*' + _NUMBER + r'\s*$', message):
-        return
+    if value is None:return canonical_field(field)
+    if quote is not None:require_value(value,message,quote=quote)
+    spans=[quote] if quote else re.split(r'[，,；;。\n]',message)
+    resolved=set()
+    for span in spans:
+        if Decimal(value) not in explicit_numbers(span):continue
+        try:resolved.add(bind_field(field,span,previous=previous_field,semantic_evidence=quote is not None))
+        except ValueError:continue
+    if len(resolved)==1:return resolved.pop()
     raise ValueError('CASH_ROLE_NOT_GROUNDED')
 
 
@@ -118,7 +126,7 @@ def validate_wealth_parameters(intent: object, message: str, context: dict | Non
             if budget.mode == 'fixed':
                 values = [budget.amount_fen]
                 previous = 'invest' if ((context or {}).get('last_question') or {}).get('field') == 'investment_budget' else None
-                require_cash_role('invest', str(Decimal(budget.amount_fen) / 100), message, previous)
+                require_cash_role('invest', str(Decimal(budget.amount_fen) / 100), message, previous,quote=patch.quote)
             elif budget.mode == 'range':
                 values = [budget.min_fen, budget.max_fen]
             elif budget.mode == 'proportion':
@@ -140,11 +148,14 @@ def validate_tool_parameters(name: str, values: dict, message: str | None, resul
     if name == 'preview_card_operation':
         from ...schemas.cards import ACTION_FIELDS
         if any(value is not None and key not in ACTION_FIELDS[values['action']]
-               for key, value in values.items() if key != 'action'):
+               for key, value in values.items() if key not in {'action','value_quotes'}):
             # 由既有业务Schema返回INVALID_ARGUMENTS，不把结构错误掩盖为来源错误。
             return
         for field in ('credit_limit', 'single_txn_limit', 'daily_txn_limit'):
-            require_value(values.get(field), message or '')
+            quote=(values.get('value_quotes') or {}).get(field)
+            require_value(values.get(field), message or '',quote=quote)
+            if values.get(field) is not None:
+                bind_field(field,quote or message or '',specs=CARD_FIELDS,semantic_evidence=quote is not None)
     if name == 'project_cashflow':
         for reduction in values.get('reductions', []):
             labels = {'dining': '餐饮', 'shopping': '购物', 'transport': '交通',

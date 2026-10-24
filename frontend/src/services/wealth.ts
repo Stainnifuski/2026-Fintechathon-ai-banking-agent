@@ -72,7 +72,7 @@ export interface PositionRow { object_type: 'positions'; position_key: string; a
   units: string; redeemable_units: string; held_units: string; locked_units: string; market_value_fen: number | null;
   unrealized_pnl_fen: number | null; cost_fen: number; total_ratio: string | null; nav: string | null; nav_date: string | null; daily_metric: DailyMetric | null }
 export interface OrderTableData { object_type: 'orders'; scope_key: string; rows: OrderRow[] }
-export interface PositionTableData { object_type: 'positions'; scope_key: string; rows: PositionRow[] }
+ export interface PositionTableData { object_type: 'positions'; scope_key: string; rows: PositionRow[]; business_date?:string }
 export interface Assessment { assessment_id: string; capacity_level: number; purchase_allowed: boolean; confirmed: boolean; expires_at: string }
 export interface Questionnaire { version: string; profile_version: number; daily_limit?: number|null; rolling_year_limit?: number|null; notice?: string; questions: { id: string; title: string; options: string[] }[] }
 export interface Preview { authorization_id: string; authorization_status: string; command: Command; digest: string;

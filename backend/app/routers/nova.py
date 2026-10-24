@@ -26,6 +26,7 @@ from ..integrations.bank_api import BankApiError, get_bank_api
 from ..services.orchestration import TaskError
 from ..services.bank.transfer_service import BankError
 from ..services.bank import nova_conversations as bank_conversations
+from ..services.bank import nova_reference_context
 
 router = APIRouter(prefix="/api/v1/nova", tags=["nova"])
 logger = logging.getLogger(__name__)
@@ -49,6 +50,8 @@ class ChatRequest(BaseModel):
     candidate_id: str | None = Field(default=None, max_length=64)
     wealth_task_id: str | None = Field(default=None,max_length=64)
     wealth_stage: str | None = Field(default=None,max_length=64,pattern=r'^[a-z_]+$')
+    task_switch_token: str | None = Field(default=None,min_length=32,max_length=32)
+    accept_task_switch: bool | None = None
 
     @field_validator("message")
     @classmethod
@@ -113,6 +116,13 @@ async def _prepare(
 
 
 async def _finish(request: ChatRequest, user_id: str, db: AsyncSession, reply: dict) -> dict:
+    if await db.get(NovaSessionORM,request.session_id):
+        reply={**reply,**await get_session(db,user_id,request.session_id)}
+    from ..services.ai import execution_queue
+    queue=await execution_queue.load(ToolContext(user_id,db,request.page_context,session_id=request.session_id))
+    if queue:reply={**reply,'execution_queue':execution_queue.public(queue)}
+    from ..services.bank import nova_reference_context
+    await nova_reference_context.save(db,user_id,request.session_id,reply.get('tool_calls',[]))
     from ..services.ai.wealth_agent import cards
     wealth_cards = await cards(db, user_id, request.session_id)
     if wealth_cards:
@@ -137,6 +147,16 @@ async def task_session(session_id: str, current_user: dict = Depends(get_current
             return {"session_id": session_id, "session_version": 0, "focus_task_id": None, "tasks": []}
         return await get_session(db, current_user["user_id"], session_id)
     except (ManagerError, bank_conversations.ConversationError) as error:
+        raise _transfer_error(error) from error
+
+
+@router.get('/task-flow/{session_id}')
+async def task_flow_state(session_id: str, current_user: dict = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    from ..services.ai.task_flow import public
+    try:
+        return await public(ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id))
+    except bank_conversations.ConversationError as error:
         raise _transfer_error(error) from error
 
 
@@ -181,6 +201,8 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                                     focus_task_id=request.focus_task_id,
                                     candidate_id=request.candidate_id,
                                     wealth_task_id=request.wealth_task_id,wealth_stage=request.wealth_stage,
+                                    task_switch_token=request.task_switch_token,accept_task_switch=request.accept_task_switch,
+                                    reference_results=await nova_reference_context.load(db,current_user['user_id'],request.session_id),
                                     bank_api=get_bank_api(),
                                     conversation_history=full_history,
                                 ))
@@ -220,6 +242,8 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
         focus_task_id=request.focus_task_id,
         candidate_id=request.candidate_id,
         wealth_task_id=request.wealth_task_id,wealth_stage=request.wealth_stage,
+        task_switch_token=request.task_switch_token,accept_task_switch=request.accept_task_switch,
+        reference_results=await nova_reference_context.load(db,current_user['user_id'],request.session_id),
         bank_api=get_bank_api(),
         conversation_history=full_history,
     )
@@ -265,6 +289,43 @@ class WealthCardState(BaseModel):
     accept_backtrack: bool = False
 
 
+class ExecutionAction(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    version:int=Field(ge=1)
+
+
+@router.get('/execution-queues/{session_id}')
+async def execution_status(session_id:str,current_user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from ..services.ai import execution_queue as queue
+    try:
+        row=await queue.load(ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id))
+        return queue.public(row)
+    except bank_conversations.ConversationError as error:raise _transfer_error(error) from error
+
+
+@router.post('/execution-queues/{session_id}/advance')
+async def execution_advance(session_id:str,request:ExecutionAction,current_user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from ..services.ai import execution_queue as queue
+    try:
+        context=ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id,bank_api=get_bank_api())
+        row=await queue.load(context)
+        if not row or row.version!=request.version:raise bank_conversations.ConversationError('队列已更新，请刷新进度。',409)
+        reply=await queue.advance(context)
+        reply.pop('_execution_grounded',None)
+        from ..services.ai.wealth_agent import cards
+        reply['wealth_cards']=await cards(db,current_user['user_id'],session_id)
+        if await db.get(NovaSessionORM,session_id):reply.update(await get_session(db,current_user['user_id'],session_id))
+        return reply
+    except bank_conversations.ConversationError as error:raise _transfer_error(error) from error
+
+
+@router.post('/execution-queues/{session_id}/stop')
+async def execution_stop(session_id:str,request:ExecutionAction,current_user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from ..services.ai import execution_queue as queue
+    try:return await queue.stop(ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id),request.version)
+    except bank_conversations.ConversationError as error:raise _transfer_error(error) from error
+
+
 @router.get("/wealth-sessions/{session_id}")
 async def wealth_session(session_id: str, current_user: dict = Depends(get_current_user),
                          db: AsyncSession = Depends(get_db)):
@@ -299,6 +360,7 @@ class WealthViewProduct(BaseModel):
 class WealthViewContext(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     version: int = Field(ge=1)
+    selection_kind: Literal['positions','products'] | None = None
     visible_products: list[WealthViewProduct] = Field(default_factory=list,max_length=60)
     selected_products: list[WealthViewProduct] = Field(default_factory=list,max_length=160)
     cash_field: Literal['reserve','investment','total'] | None = None

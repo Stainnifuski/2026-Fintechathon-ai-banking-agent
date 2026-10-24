@@ -1,5 +1,6 @@
 """Non-authorizing step dependencies and rollback proposals for NOVA wealth."""
 from copy import deepcopy
+from decimal import Decimal,InvalidOperation
 
 STAGES = ('match','cash_management','stable','growth','candidates','selected','budget',
           'amounts','purchase_review','allocation','details','redemption_input','trade')
@@ -12,6 +13,29 @@ def sequence(kind):
         return ['match','cash_management','stable','growth','selected','budget','allocation','details','trade']
     if kind in {'redeem','positions'}:return ['redemption_input','trade']
     return ['match','candidates','selected','amounts','purchase_review','trade']
+
+
+def parameter_stage(prior,command,fallback=None):
+    """Dependencies come from actual changed parameters, not a model's stage claim."""
+    old=prior.get('command') or {};view=prior.get('view_context') or {}
+    def number(v):
+        try:return Decimal(v) if v not in (None,'') else None
+        except (InvalidOperation,TypeError):return v
+    def ids(items):return {(p['product_id'],p['product_version']) for p in items}
+    stages=[];kind=command['kind']
+    if command.get('category')!=old.get('category'):stages.append('match')
+    if ids(command.get('products',[]))!=ids(view.get('selected_products',old.get('products',[]))):
+        stages.append('selected' if kind=='planning' else 'redemption_input' if kind=='redeem' else 'candidates')
+    field=lambda f:'invest' if f=='investment' else f
+    if kind=='planning' and (number(command.get('cash_yuan'))!=number(view.get('cash_yuan',old.get('cash_yuan')))
+            or field(command.get('cash_field'))!=field(view.get('cash_field',old.get('cash_field')))):
+        stages.append('budget')
+    if kind in {'recommend','purchase'}:
+        before=view.get('amounts_yuan') or {p['product_id']:v for p,v in zip(old.get('products',[]),old.get('amounts_yuan',[]))}
+        if any(number(v)!=number(before.get(p['product_id'])) for p,v in zip(command.get('products',[]),command.get('amounts_yuan',[]))):stages.append('amounts')
+    if kind=='redeem' and any(command.get(k)!=old.get(k) for k in ('redemption_value','redemption_mode','redemption_input')):stages.append('redemption_input')
+    order=sequence(kind)
+    return next((s for s in order if s in stages),fallback)
 
 
 def affected(kind, stage):

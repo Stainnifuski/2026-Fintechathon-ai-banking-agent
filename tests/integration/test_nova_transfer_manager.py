@@ -367,6 +367,7 @@ async def test_nova_http_transfer_reply_and_restore(db, monkeypatch):
         })
         assert response.status_code == 200
         draft = response.json()
+        assert 'tasks' in draft,draft
         assert draft["tasks"][0]["status"] == "COLLECTING"
         assert draft["tasks"][0]["origin_request_id"] == first_request_id
         history = await bank_conversations.get(db, "U1", draft["session_id"])

@@ -23,6 +23,7 @@ from .nlu import (
     scope_guard, offline_extract,
 )
 from .skill_registry import load_skill
+from .semantic_bindings import quote_in_message
 
 SKILL_VERSION = "transfer-v1"
 CARD = r"(?<!\d)\d{16}(?!\d)"
@@ -464,7 +465,7 @@ async def _extract(
     evidence_text = text if model_result is not None else clean
     for key in ("recipient", "recipient_phone", "amount_text", "payer", "note"):
         value = getattr(result, key)
-        if value is not None and value not in evidence_text:
+        if value is not None and not (quote_in_message(value,evidence_text) if key=='amount_text' else value in evidence_text):
             raise UnderstandingError("提取的信息与本轮消息不一致，请重新描述")
     if model_result is not None:
         for value in (result.recipient_phone, getattr(result, "recipient_card", None)):
@@ -499,7 +500,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                           conversation_history: list[dict] | None = None,
                           page_context: dict | None = None,
                           current_tool_results: list[dict] | None = None,
-                          goal_plan: dict | None = None) -> dict:
+                          goal_plan: dict | None = None, serial_only: bool = False,
+                          serial_focus_only: bool = False, context=None) -> dict:
     receipt_id = _digest([user_id, request_id])
     payload_digest = _digest([
         message, session_id, session_version, focus_task_id, candidate_id, trusted_fields,
@@ -619,6 +621,10 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             "skill_instructions": load_skill("transfer"),
         })
         task_decisions = list(turn.tasks)
+        if context and focus_task_id and any(d.task_action=='create' for d in task_decisions):
+            from .task_flow import propose
+            proposed=await propose(context,'新的转账')
+            if proposed:return proposed
         chunks = [message] * len(task_decisions)
         extracted = [
             await _extract(nlu, message, bool(pending), decision)
@@ -668,6 +674,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             raise ManagerError("会话已更新，请刷新后重试", "STALE_SESSION_VERSION")
     messages = []
     touched = []
+    if serial_only and len(extracted)>1:
+        raise ManagerError('串行步骤只能办理一个转账对象，请明确当前操作。','SERIAL_STEP_AMBIGUOUS')
     for index, item in enumerate(extracted if not candidate_id else [{}]):
         target_id = focus_task_id or state.get("focus_task_id")
         target = next((task for task in tasks if task["chat_task_id"] == target_id), None)
@@ -677,6 +685,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             len(chunks) > 1 or (item.get("intent") == "transfer" and not MODIFY.search(message))
         )
         if candidate_id:
+            if serial_focus_only and (not target or target['chat_task_id']!=focus_task_id):
+                raise ManagerError('请先完成当前转账卡片。','SERIAL_STEP_PENDING')
             target = next((task for task in tasks if any(c["candidate_id"] == candidate_id
                                                          for c in task.get("candidate_map", []))), None)
             if target is None or target.get("candidate_expires_at", 0) < time.time():
@@ -703,6 +713,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             target = pending[0]
         elif target is None and pending:
             raise ManagerError("有多笔待补充转账，请先选择任务卡", "TASK_SELECTION_REQUIRED")
+        if serial_focus_only and (target is None or target['chat_task_id']!=focus_task_id):
+            raise ManagerError('当前只能补充本队列的转账卡片，请先完成当前操作。','SERIAL_STEP_PENDING')
         if target is None:
             if len(tasks) >= 30:
                 raise ManagerError("当前会话任务已满，请新建聊天窗口", "SESSION_TASK_LIMIT")

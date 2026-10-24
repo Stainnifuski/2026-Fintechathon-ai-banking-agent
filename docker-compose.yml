@@ -1,6 +1,28 @@
 name: 2026-fintechathon-ai-banking-agent
 
 services:
+  sensevoice:
+    image: banking-sensevoice:local
+    build:
+      context: .
+      dockerfile: services/sensevoice/Dockerfile
+    restart: unless-stopped
+    environment:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    expose:
+      - "50000"
+    volumes:
+      - sensevoice_models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:50000/health',timeout=3))['ready']"]
+      interval: 15s
+      timeout: 5s
+      start_period: 600s
+      retries: 40
+    networks:
+      - banking-net
+
   postgres:
     image: postgres:15
     container_name: banking-postgres
@@ -39,6 +61,7 @@ services:
       BANK_API_BASE_URL: http://127.0.0.1:8000
       WEALTH_CATALOG_AUTO_UPGRADE: "true"
       AUDIT_FALLBACK_DIR: /app/var/audit-recovery
+      SENSEVOICE_URL: http://sensevoice:50000
     volumes:
       - audit_recovery:/app/var/audit-recovery
       - type: bind
@@ -84,6 +107,8 @@ services:
       - banking-net
 
 volumes:
+  sensevoice_models:
+    driver: local
   audit_recovery:
     driver: local
   postgres_data:

@@ -1,0 +1,2 @@
+# Exact tested CPU service dependencies; torch/torchaudio are installed from the CPU index in Dockerfile.
+-r requirements.lock

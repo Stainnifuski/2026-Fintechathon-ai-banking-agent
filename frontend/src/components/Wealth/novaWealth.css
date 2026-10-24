@@ -29,3 +29,7 @@
 .nova-focus-hint{padding:8px 16px;background:#eef2ff;color:#3540a0;font-size:12px}.nova-focus-hint button{margin-left:8px;border:0;background:transparent}
 .nova-wealth-card .wealth-step-card[hidden],.nova-wealth-card .wealth-step-body[hidden]{display:none}
 .nova-wealth-card>div>fieldset,.wealth-step-body>fieldset{border:0;margin:0;padding:0;min-width:0}
+.nova-execution-queue{margin:12px 0;padding:16px 20px;background:#f5f7ff;border:1px solid #d9dfff;border-radius:18px;overflow-wrap:anywhere}
+.nova-execution-queue ol{padding-left:22px;display:grid;gap:10px}
+.nova-execution-queue li[aria-current=step]{font-weight:600;color:#364ee8}
+.nova-execution-queue details{font-weight:400;color:#233451}

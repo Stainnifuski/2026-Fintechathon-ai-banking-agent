@@ -6,6 +6,7 @@ the remaining shares today. Missing evidence is returned as unknown, not repaire
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, localcontext
+from functools import lru_cache
 
 from sqlalchemy import select
 
@@ -40,6 +41,9 @@ class Replay:
         self.versions = {v.version_id: v for v in versions}
         self.names = {v.product_id: v.name for v in sorted(versions, key=lambda v:(v.product_id,v.version))}
         self.events = []
+        self.published_as_of_now = False
+        self.source=(orders,lots,settlements,versions,navs,now)
+        self.snapshot=lru_cache(maxsize=32768)(self.snapshot)
         self.errors = {}
         self.current_lots = [(l.lot_id, l.units_scaled, l.cost_fen, l.version_id, l.account_id) for l in lots]
         self.navs = {}
@@ -50,7 +54,13 @@ class Replay:
         grouped = {}
         for event in settlements:
             grouped.setdefault(event.operation_id, []).append(event)
-        for order in orders:
+        def order_key(o):
+            evidence=grouped.get(o.operation_id,[])
+            at=next((e.data.get('business_at') for e in evidence if e.kind=='pricing'),None) or o.details.get('business_at')
+            try:effective=moment(at)
+            except (ValueError,TypeError):effective=datetime.max.replace(tzinfo=BEIJING)
+            return (effective,as_utc(o.accepted_at,legacy_utc=True),o.operation_id)
+        for order in sorted(orders,key=order_key):
             version = self.versions.get(order.version_id)
             if version is None:
                 # Cannot assign this order to any known product safely.
@@ -73,7 +83,7 @@ class Replay:
                     raise ValueError('赎回缺少定价或到账记录')
                 if order.direction == 'redeem' and order.status == 'SETTLED' and not {'cash', 'quick_cash'}.intersection(kinds):
                     raise ValueError('已结算赎回缺少到账记录')
-                for event in evidence:
+                for event in sorted(evidence,key=lambda e:e.kind=='cash'):
                     data = event.data
                     at = moment(order.details.get('business_at') if event.kind == 'quick_cash' else data.get('business_at'))
                     if at > self.now:
@@ -100,11 +110,31 @@ class Replay:
                             raise ValueError('赎回收益记录缺失')
                         if not data['lots']:
                             raise ValueError('赎回成本批次缺失')
+                        # Legacy instant fills omitted per-lot shares. Recover
+                        # only from the actual order quantity, recorded lot order
+                        # and replayed pre-fill balances, validating exact costs.
+                        legacy=any('units_scaled' not in i and 'units' not in i for i in data['lots'])
+                        available=self.state(pid,at,inclusive=True)['lots'] if legacy else {}
+                        remaining=order.units_scaled
                         for item in data['lots']:
-                            units = integer(item['units_scaled']) if 'units_scaled' in item else scaled(item['units'])
+                            if 'units_scaled' in item:units=integer(item['units_scaled'])
+                            elif 'units' in item:units=scaled(item['units'])
+                            else:
+                                from ...domain.wealth import redeem
+                                from .wealth_service import quantity
+                                old=available.get(item['lot_id'])
+                                if not old or remaining<=0:raise ValueError('历史赎回份额证据不足')
+                                units=min(remaining,old[0])
+                                checked=redeem(quantity(units),order.details['actual_nav'],'0',lot_units=quantity(old[0]),lot_cost_fen=old[1])
+                                if checked.cost_fen!=item['cost_fen']:raise ValueError('历史赎回份额与成本不能唯一核对')
+                            remaining-=units
+                            if 'units_scaled' in item and 'units' in item and scaled(item['units'])!=units:
+                                raise ValueError('赎回份额记录不一致')
                             if units <= 0:
                                 raise ValueError('赎回份额无效')
                             action['remove'].append((item['lot_id'], units, integer(item['cost_fen'])))
+                        if sum(x[1] for x in action['remove'])!=order.units_scaled:
+                            raise ValueError('赎回批次份额与成交总份额不一致')
                         if sum(v[2] for v in action['remove']) != integer(data['cost_fen']):
                             raise ValueError('赎回成本与批次不一致')
                         if action['cash'] - data['cost_fen'] != action['realized']:
@@ -174,7 +204,8 @@ class Replay:
                 continue
             candidates = [v for v in self.navs.get(version_id, []) if v[0] < day] if opening else [
                 v for v in self.navs.get(version_id, []) if v[0] <= day]
-            candidates = [v for v in candidates if v[1] < cutoff or (inclusive and v[1] == cutoff)]
+            available_cutoff=as_utc(self.now) if self.published_as_of_now else cutoff
+            candidates = [v for v in candidates if v[1] < available_cutoff or ((inclusive or self.published_as_of_now) and v[1] == available_cutoff)]
             version = self.versions[version_id]
             target_day = day - timedelta(days=1) if opening else day
             try:
@@ -204,7 +235,7 @@ class Replay:
         return end - start + state['withdrawn'] - before['withdrawn'] - state['paid'] + before['paid'], None
 
 
-def build(replay, query, asset_scope_id):
+def build(replay, query, asset_scope_id, window=None):
     today = replay.now.date()
     earliest = min((e['at'].date() for e in replay.events), default=today)
     ids = sorted(replay.errors)
@@ -222,6 +253,7 @@ def build(replay, query, asset_scope_id):
         start, end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
     else:
         start = end = anchor
+    if window:start,end=window
     # Work only inside verified coverage. Dates outside it remain explicit unknown.
     daily = {}
     missing = set()
@@ -262,7 +294,7 @@ def build(replay, query, asset_scope_id):
     points = []
     groups = {}
     for day, value in daily.items():
-        key = day.replace(day=1) if query.period == 'year' else date(day.year, 1, 1) if query.period == 'cumulative' else day
+        key = day if query.overview else day.replace(day=1) if query.period == 'year' else date(day.year, 1, 1) if query.period == 'cumulative' else day
         groups.setdefault(key, []).append((day, value))
     for rows in groups.values():
         known = [v for _, (v, _) in rows if v is not None]
@@ -305,4 +337,8 @@ async def read(db, user_id, query):
     version_ids = {o.version_id for o in orders} | {l.version_id for l in lots}
     versions = list(await db.scalars(select(WealthProductVersionORM).where(WealthProductVersionORM.version_id.in_(version_ids))))
     navs = list(await db.scalars(select(WealthNavORM).where(WealthNavORM.version_id.in_(version_ids))))
-    return build(Replay(orders, lots, settlements, versions, navs, moment(facts['business_at'])), query, scope['asset_scope_id'])
+    replay=Replay(orders, lots, settlements, versions, navs, moment(facts['business_at']))
+    if query.overview:
+        from .wealth_performance import overview
+        return overview(replay,query,scope['asset_scope_id'])
+    return build(replay, query, scope['asset_scope_id'])

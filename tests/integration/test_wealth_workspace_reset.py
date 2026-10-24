@@ -10,6 +10,35 @@ from backend.app.integrations.wealth_authorization import WealthPolicyError
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('foreign_conversation',[False,True])
+async def test_reset_preserves_only_owned_nova_links_not_claimed_ids(store,foreign_conversation):
+    from backend.app.models.wealth import WealthPlanORM,WealthConversationORM
+    from backend.app.services.bank import nova_conversations
+    async with store() as db:
+        await assess(db)
+        cmd=command('nova-linked-draft')
+        task=await tasks.create_command(db,'U1','nova-graph','legacy-v1',cmd)
+        aid=await authorize(db,cmd)
+        row=await tasks.owned(db,'U1',task['task_id']);row.data={**row.data,'plan_id':'nova-linked-plan'}
+        db.add(WealthPlanORM(plan_id='nova-linked-plan',user_id='U1',status='AWAITING_CONFIRMATION',data={
+            'items':[{'command':cmd.model_dump(mode='json')}]}))
+        conversation=await nova_conversations.create(db,'U2' if foreign_conversation else 'U1')
+        db.add(WealthConversationORM(session_id='NW-linked-reset',user_id='U1',version=1,data={
+            'nova_session_id':conversation['session_id'],'context_id':'legacy-v1','closed':False,'execution_plan_id':'nova-linked-plan'}))
+        await db.commit()
+        result=await tasks.reset_workspace(db,'U1','legacy-v1')
+        plan=await db.get(WealthPlanORM,'nova-linked-plan',populate_existing=True)
+        authorization=await db.get(WealthAuthorizationORM,aid,populate_existing=True)
+        if foreign_conversation:
+            assert task['task_id'] in result['detached_task_ids']
+            assert plan.status=='CANCELLED' and authorization.status=='EXPIRED'
+        else:
+            assert task['task_id'] not in result['detached_task_ids']
+            assert plan.status=='AWAITING_CONFIRMATION' and authorization.status=='VALID'
+            assert not (await tasks.owned(db,'U1',task['task_id'])).data.get('workspace_detached')
+
+
+@pytest.mark.asyncio
 async def test_reset_discards_paused_draft_and_allows_new_task(store):
     async with store() as db:
         await assess(db)

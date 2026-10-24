@@ -137,5 +137,14 @@ async def remove(db: AsyncSession,user_id: str,session_id: str):
     for r in transfer_receipts:
         if r.response.get('session_id')==session_id:await db.delete(r)
     await db.execute(delete(NovaConversationMessageORM).where(NovaConversationMessageORM.conversation_id==session_id))
+    from ...models.nova_reference_context import NovaReferenceContextORM
+    from ...models.nova_execution import NovaExecutionORM
+    from ...models.nova_task_flow import NovaTaskFlowORM
+    await db.execute(delete(NovaTaskFlowORM).where(NovaTaskFlowORM.conversation_id==session_id,
+        NovaTaskFlowORM.user_id==user_id))
+    await db.execute(delete(NovaExecutionORM).where(NovaExecutionORM.conversation_id==session_id,
+        NovaExecutionORM.user_id==user_id))
+    await db.execute(delete(NovaReferenceContextORM).where(NovaReferenceContextORM.conversation_id==session_id,
+        NovaReferenceContextORM.user_id==user_id))
     await db.delete(row)
     await db.commit()

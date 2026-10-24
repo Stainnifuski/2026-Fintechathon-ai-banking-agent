@@ -34,6 +34,12 @@ class ToolContext:
     goal_plan: dict[str, Any] | None = None
     wealth_task_id: str | None = None
     wealth_stage: str | None = None
+    reference_results: list[dict[str, Any]] | None = None
+    execution_step: bool = False
+    serial_focus_only: bool = False
+    task_switch_token: str | None = None
+    accept_task_switch: bool | None = None
+    task_switch_approved: bool = False
 
 
 class OverviewArguments(StrictModel):

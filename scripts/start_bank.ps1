@@ -1,3 +1,4 @@
+param([switch]$SkipVoice)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $taskRoot
@@ -22,6 +23,13 @@ if (Test-Path -LiteralPath '.deps/bank-runtime.override.yml') {
 if ($LASTEXITCODE -ne 0) { throw 'Invalid Docker Compose configuration.' }
 & docker @taskArgs build backend frontend
 if ($LASTEXITCODE -ne 0) { throw 'Build failed; existing database volumes are preserved.' }
+if (!$SkipVoice) {
+    & docker @taskArgs build sensevoice
+    if ($LASTEXITCODE -eq 0) {
+        & docker @taskArgs up -d --no-deps sensevoice
+        if ($LASTEXITCODE -ne 0) { Write-Warning 'Voice service did not start. Text input remains available; inspect voice logs.' }
+    } else { Write-Warning 'Voice build failed. Continuing ordinary bank startup; retry voice after checking network access.' }
+}
 & docker @taskArgs up -d --wait --wait-timeout 300 backend
 if ($LASTEXITCODE -ne 0) { throw 'Backend upgrade failed. Inspect logs and backups; do not delete volumes.' }
 # Recreate only Nginx after backend readiness: discard stale DNS/health state
@@ -32,3 +40,4 @@ $taskHealth = Invoke-RestMethod 'http://localhost:3000/health' -TimeoutSec 15
 if (!$taskHealth.portfolio_ready) { throw 'Portfolio material is not ready.' }
 if ($taskHealth.source_revision -ne $taskRevision) { throw 'Running backend source does not match this checkout.' }
 Write-Output "Ready: http://localhost:3000  API: http://localhost:3000/docs  source=$($taskHealth.source_revision)"
+Write-Output 'Voice is optional. First run downloads the pinned CPU model; NOVA shows readiness and supports retry. Text input remains available.'

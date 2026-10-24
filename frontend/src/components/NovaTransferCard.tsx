@@ -142,7 +142,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
     finally { setBusy(false); }
   }
 
-  return <article className="card nova-transfer-card" aria-label={`转账任务：${task.recipient || '待填写收款人'}`}>
+  return <article className={`card nova-transfer-card${focused?' is-focused':''}`} aria-label={`转账任务：${task.recipient || '待填写收款人'}`} onFocusCapture={onFocus} onPointerDown={onFocus}>
     <div className="nova-transfer-card-head"><div><strong>转账任务</strong>
       <small>{task.recipient || '待填写收款人'} · {task.form.amount_yuan ? `¥${task.form.amount_yuan}` : '待填写金额'}
         {succeeded ? ' · 已完成' : task.missing_fields.length ? ' · 待补充' : ' · 待核对'}</small></div>
@@ -195,7 +195,6 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       <p className="hint">风险级别：{visible.confirmation_card.risk_level}。点击确认后将按银行规则执行；高风险转账还需验证码。</p>
     </div>}
     <div className="nova-transfer-actions">
-      <button type="button" className="secondary" disabled={disabled || busy} onClick={onFocus}>{focused ? '当前对话补充对象' : '让 NOVA 补充这笔'}</button>
       {visible?.allowed_actions.includes('confirm') && <button type="button" disabled={disabled || busy || dirty}
         onClick={() => void confirm()}>确认转账</button>}
       {visible?.allowed_actions.includes('reconcile') && <button type="button" disabled={disabled || busy}

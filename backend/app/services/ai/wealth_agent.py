@@ -22,6 +22,7 @@ from ..bank.nova_conversations import redact
 from . import wealth_steps
 from .parameter_grounding import require_value, require_cash_role
 from .grounding import money
+from .semantic_bindings import card_frame,canonical_text,product_name_key,object_mentioned,resolve_object,require_object_binding
 
 
 CATEGORY_NAMES = {'债券基金':'bond_fund','混合基金':'mixed_fund','股票基金':'equity_fund',
@@ -271,6 +272,9 @@ async def manage(arguments, context):
         {'role':'system','content':load_skill('wealth') + '\n金额和份额只能来自本轮原文。'
          'cash_yuan提供cash_quote；amounts_yuan逐项提供amount_quotes；redemption_value提供redemption_quote。'
          'quote必须是本轮连续原文并包含数值和单位，多产品金额quote还须包含该产品名、代码或明确序号。'
+         '先根据语义识别字段，不限固定措辞；cash_quote应包含支撑字段含义的原文。'
+         '省略字段时只使用当前焦点可信卡片，不从历史回答推测。只提取本轮修改值，保留值留空由服务端继承。'
+         '中文或数字序号都转成从1起始的candidate_indices；不同候选池不可混用。'
          '不确定则留空，不能从产品代码、历史回答或余额补造用户金额。'},
         {'role':'user','content':json.dumps({
             'message':redact(context.original_message),
@@ -279,20 +283,71 @@ async def manage(arguments, context):
             'tasks':[{k:c.get(k) for k in ('task_id','version','command','view_context','closed','execution_plan_id')} for c in current[-20:]],
         },ensure_ascii=False)}], schema=IntentBatch, max_tokens=2000)
     result.data.intents=[category_intent(i) for i in result.data.intents]
+    # Read-only drill-downs never replace their parent selection/holding task.
+    for intent in result.data.intents:
+        if intent.kind in {'detail','compare','returns'}:intent.advance='none'
+        if intent.kind in {'detail','compare'} and not intent.task_id and context.wealth_task_id:
+            intent.task_id=context.wealth_task_id
+        if intent.kind=='returns':
+            intent.product_queries=[];intent.candidate_indices=[];intent.task_id=None;intent.anchor_date=None
+    if (context.execution_step or context.serial_focus_only) and len(result.data.intents)!=1:
+        return {'error':'SERIAL_STEP_AMBIGUOUS','message':'当前步骤包含多个操作，请明确单个目标。','wealth_cards':current}
+    if context.serial_focus_only:
+        focused=next((c for c in current if c['task_id']==context.wealth_task_id),None)
+        for intent in result.data.intents:
+            if intent.kind in {'assets','positions','returns','detail','compare','assessment'}:continue
+            if not focused or intent.task_id not in (None,focused['task_id']):
+                return {'error':'SERIAL_STEP_PENDING','message':'请先完成当前队列卡片或停止后续办理。','wealth_cards':current}
+            if focused['command']['kind']!='clarify' and intent.kind not in {focused['command']['kind'],'resume','abandon'} and not (
+                (focused['command']['kind']=='recommend' and intent.kind=='purchase') or
+                (focused['command']['kind']=='positions' and intent.kind=='redeem')):
+                return {'error':'SERIAL_STEP_PENDING','message':'当前只可补充本步骤，请先完成当前卡片。','wealth_cards':current}
+            intent.task_id=focused['task_id']
     try:
         for intent in result.data.intents:
+            focused=next((c for c in current if c['task_id']==context.wealth_task_id),None)
+            if focused and focused['command']['kind'] in {'positions','redeem'} and context.wealth_stage=='redemption_input' and intent.kind in {'planning','recommend','purchase'}:
+                return {'error':'HOLDINGS_TASK_CONTEXT','message':'当前正在办理已选持仓赎回，请填写赎回数量；如果希望切换，请明确说明要结束当前赎回并办理的目标操作。','wealth_cards':current}
+            if intent.kind=='redeem' and focused and focused['command']['kind'] in {'positions','redeem'}:
+                if intent.task_id not in (None,focused['task_id']):raise ValueError('REFERENCE_NOT_GROUNDED')
+                intent.task_id=focused['task_id']
+            if focused and not context.execution_step and not context.task_switch_approved:
+                old_kind=focused['command']['kind']
+                continuation=(old_kind==intent.kind or old_kind=='clarify' or
+                    (old_kind,intent.kind) in {('positions','redeem'),('recommend','purchase')})
+                if not continuation and intent.kind in {'planning','recommend','purchase','redeem'}:
+                    from .task_flow import propose,TITLES
+                    proposed=await propose(context,TITLES[intent.kind])
+                    return {**proposed,'wealth_cards':current}
+            if (not intent.task_id and context.wealth_task_id and
+                    (intent.cash_yuan is not None or intent.amounts_yuan or intent.redemption_value is not None or intent.candidate_indices)):
+                focused=next((c for c in current if c['task_id']==context.wealth_task_id),None)
+                if focused and intent.kind==focused.get('command',{}).get('kind'):
+                    intent.task_id=context.wealth_task_id
             require_value(intent.cash_yuan, context.original_message, quote=intent.cash_quote)
             focused = next((card for card in current if card['task_id'] == (intent.task_id or context.wealth_task_id)), {})
-            require_cash_role(intent.cash_field, intent.cash_yuan, context.original_message,
-                              (focused.get('command') or {}).get('cash_field'))
+            frame=card_frame(focused,focused_stage=context.wealth_stage) if focused else None
+            intent.cash_field=require_cash_role(intent.cash_field, intent.cash_yuan, context.original_message,
+                              frame.focused_field if frame else None,quote=intent.cash_quote)
+            visible=(focused.get('view_context') or {}).get('visible_products',[])
+            if context.wealth_stage in {'cash_management','stable','growth'}:
+                visible=[p for p in visible if p.get('bucket')==context.wealth_stage]
+            if any(not object_mentioned(context.original_message,ordinal=i) for i in intent.candidate_indices):
+                raise ValueError('REFERENCE_NOT_GROUNDED')
             for index, value in enumerate(intent.amounts_yuan):
                 quote = intent.amount_quotes[index] if index < len(intent.amount_quotes) else None
                 require_value(value, context.original_message, quote=quote)
                 if value is not None and len(intent.amounts_yuan) > 1:
-                    reference = (intent.product_queries[index] if index < len(intent.product_queries) else
-                                 f'第{intent.candidate_indices[index]}个' if index < len(intent.candidate_indices) else None)
-                    if quote is None or reference is None or reference not in quote:
-                        raise ValueError('AMOUNT_OBJECT_NOT_GROUNDED')
+                    reference=intent.product_queries[index] if index<len(intent.product_queries) else None
+                    rank=intent.candidate_indices[index] if index<len(intent.candidate_indices) else None
+                    aliases=[reference] if reference else []
+                    if reference:
+                        for p in [*visible,*((focused.get('view_context') or {}).get('selected_products',[]))]:
+                            if canonical_text(reference) in {canonical_text(p['product_id']),canonical_text(p.get('name',''))}:
+                                aliases.extend([p['product_id'],p.get('name','')])
+                    if quote is None:raise ValueError('AMOUNT_OBJECT_NOT_GROUNDED')
+                    require_object_binding(quote,aliases=aliases,ordinal=rank,
+                        other_aliases=[q for j,q in enumerate(intent.product_queries) if j!=index])
             require_value(intent.redemption_value, context.original_message,
                           unit='money' if intent.redemption_input == 'market_value' else
                                'percent' if intent.redemption_input == 'holding_ratio' else 'units',
@@ -304,8 +359,13 @@ async def manage(arguments, context):
                 'wealth_cards': current}
     bank = HttpWealthBankApi()
     facts = await bank.assets(user)
+    return_results={}
+    for index,intent in enumerate(result.data.intents):
+        if intent.kind=='returns':
+            return_results[index]=await bank.call('POST','/returns',{'subject_user_id':user,'scope':'all',
+                'period':intent.period,'overview':True})
     catalogue = await bank.call('POST','/catalog',{'subject_user_id':user,'facts_only':True,'policy_references':True}) if any(
-        i.product_queries or i.candidate_indices for i in result.data.intents) else None
+        i.product_queries or i.candidate_indices or (i.kind in {'redeem','detail','compare'} and i.task_id) for i in result.data.intents) else None
     # Serialize only the short persistence phase, after all model/network work.
     await db.rollback()
     await lock_profile(db,user)
@@ -391,7 +451,7 @@ async def manage(arguments, context):
             grounded_ids={p['product_id'] for p in [*selected_refs,*previously_named]}
             # The submodel may understand a goal, but cannot silently pick a
             # concrete fund for a category-only request.
-            if any(q not in context.original_message and not any(
+            if any(product_name_key(q) not in product_name_key(context.original_message) and not any(
                 p['product_id'] in grounded_ids and q in (p['product_id'],p['name']) for p in catalogue)
                 for q in queries):
                 queries=[]
@@ -405,15 +465,26 @@ async def manage(arguments, context):
                 if not visible or any(i < 1 or i > len(visible) for i in intent.candidate_indices):
                     command.update(kind='clarify',question='候选序号范围不明确，请在对应候选卡勾选产品。')
                 else:
-                    queries.extend(visible[i-1]['product_id'] for i in intent.candidate_indices)
+                    queries.extend(resolve_object(f'第{i}个',visible,id_field='product_id')['product_id'] for i in intent.candidate_indices)
             for query in queries:
-                matches = [p for p in catalogue if query in (p['product_id'],p['name'])]
+                matches = [p for p in catalogue if canonical_text(query)==canonical_text(p['product_id']) or product_name_key(query)==product_name_key(p['name'])]
                 if len(matches) != 1:
                     command.update(kind='clarify',question=f'“{query}”未唯一匹配，请提供准确名称或代码，或在候选卡中选择。')
                     break
                 p = matches[0]
                 refs.append({'product_id':p['product_id'],'product_version':p['version'],'name':p['name']})
         prior=next((c for c in current if c['task_id']==intent.task_id),None)
+        if prior and intent.kind=='redeem' and prior['command']['kind'] in {'positions','redeem'} and not refs and not intent.product_queries and not intent.candidate_indices:
+            selected=(prior.get('view_context') or {}).get('selected_products',[]) if (prior.get('view_context') or {}).get('selection_kind')=='positions' else []
+            if not selected:
+                replies.append('请先在当前持仓卡勾选需要赎回的产品，再继续赎回；不会新建其他任务。')
+                continue
+            held={(lot['product_id'],str(lot['version_id'])) for lot in facts.get('lots',[])}
+            for p in selected:
+                matches=[c for c in catalogue if c['product_id']==p['product_id'] and c['version']==p['product_version']]
+                if len(matches)!=1 or (p['product_id'],f"{p['product_id']}:{p['product_version']}") not in held:
+                    reject('已选持仓已变化或不属于当前账户，请重新勾选当前持仓。','STALE_HOLDING_SELECTION')
+                refs.append({'product_id':p['product_id'],'product_version':p['product_version'],'name':matches[0]['name']})
         if prior and intent.kind in ('recommend','purchase','planning'):
             saved=prior.get('view_context') or {}
             previous=saved['selected_products'] if 'selected_products' in saved else prior.get('command',{}).get('products',[])
@@ -433,9 +504,26 @@ async def manage(arguments, context):
                 command['cash_yuan']=saved['cash_yuan']
                 command['cash_field']='invest' if saved.get('cash_field')=='investment' else saved.get('cash_field')
             if command['category'] is None:command['category']=prior.get('command',{}).get('category')
-        if intent.kind in ('recommend','purchase') and not refs and not command.get('category'):
+        if command['kind']!='clarify' and intent.kind in ('recommend','purchase') and not refs and not command.get('category'):
             command.update(kind='clarify',question='希望查找哪类产品，或哪只产品的名称／代码？')
         command['products'] = refs
+        parent_id=None
+        if intent.kind in {'detail','compare'} and prior:
+            parent_id=prior['task_id']
+            if not refs:
+                selected=(prior.get('view_context') or {}).get('selected_products',[])
+                if (intent.kind=='detail' and len(selected)==1) or (intent.kind=='compare' and 2<=len(selected)<=4):
+                    refs=[]
+                    for p in selected:
+                        matches=[c for c in catalogue or [] if c['product_id']==p['product_id'] and c['version']==p['product_version']]
+                        if len(matches)!=1:reject('已选产品版本已变化，请在原候选中重新核对。','STALE_PRODUCT_SELECTION')
+                        refs.append({'product_id':p['product_id'],'product_version':p['product_version'],'name':matches[0]['name']})
+                    command['products']=refs
+            intent.task_id=None;prior=None
+        if intent.kind=='compare' and len(refs)<2:
+            command.update(kind='clarify',question='请在推荐或规划的候选中选择2至4只产品，或明确要比较的产品名称／代码。')
+        if intent.kind=='detail' and not refs:
+            command.update(kind='clarify',question='请指定产品名称／代码，或从候选及持仓中打开详情。')
         if not intent.task_id:
             duplicate=await unfinished_match(db,user,facts['context_id'],command)
             if duplicate:
@@ -448,6 +536,7 @@ async def manage(arguments, context):
         if prior and (prior.get('pending_backtrack')):
             replies.append('请先在卡片确认或取消待处理的回退。');continue
         edit_stage=intent.target_stage or context.wealth_stage
+        if prior:edit_stage=wealth_steps.parameter_stage(prior,command,edit_stage)
         if prior and (prior.get('execution_plan_id') or edit_stage in (prior.get('view_context') or {}).get('completed_stages',[])):
             row=await require_card(db,user,prior['task_id'])
             await propose_backtrack(db,user,row,edit_stage or ('match' if intent.kind!='redeem' else 'redemption_input'),command)
@@ -462,11 +551,27 @@ async def manage(arguments, context):
             or (intent.kind=='redeem' and refs and intent.redemption_value is not None))
         task_id = intent.task_id or 'NW'+hashlib.sha256(f'{user}:{session}:{context.request_id}:{index}'.encode()).hexdigest()[:40]
         data = dict(nova_session_id=session,request_id=context.request_id,context_id=facts['context_id'],command=command,closed=False)
+        if parent_id:data['parent_task_id']=parent_id
+        if intent.kind in {'detail','compare'} and refs:
+            data['read_result']={'products':refs}
+        if index in return_results:
+            performance=return_results[index].get('performance') or {}
+            data['read_result']=performance
+            amount=performance.get('amount_fen');rate=performance.get('rate_percent')
+            replies.append(f"整体理财收益（{performance.get('start_date','')}—{performance.get('end_date','')}，含已清仓产品）："
+                + (money(amount) if amount is not None else '待更新')+'；收益率：'
+                +(f'{float(rate):+.2f}%' if rate is not None else '—' if amount is not None else '待更新')+'。'
+                +(performance.get('notice') or ''))
+        if intent.kind=='redeem' or prior and (prior['command']['kind']=='positions' or prior.get('origin_kind')=='positions'):
+            data['origin_kind']='positions'
         if prior and prior.get('view_context'):
             data['view_context']=deepcopy(prior['view_context'])
-            if intent.kind in ('planning','recommend','purchase'):
+            if intent.kind in ('planning','recommend','purchase','redeem'):
                 data['view_context']['selected_products']=refs
-                data['view_context']['amounts_yuan']={p['product_id']:command['amounts_yuan'][i] or '' for i,p in enumerate(refs)}
+                if intent.kind!='redeem':data['view_context']['amounts_yuan']={p['product_id']:command['amounts_yuan'][i] or '' for i,p in enumerate(refs)}
+                if intent.cash_yuan is not None:
+                    data['view_context']['cash_yuan']=command['cash_yuan']
+                    data['view_context']['cash_field']='investment' if command['cash_field']=='invest' else command['cash_field']
         if refs and intent.kind in ('recommend','purchase'):
             view_context=data.setdefault('view_context',{})
             view_context['completed_stages']=list(dict.fromkeys([*view_context.get('completed_stages',[]),'match','candidates','selected']))

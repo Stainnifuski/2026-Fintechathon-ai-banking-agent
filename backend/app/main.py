@@ -35,6 +35,7 @@ from .routers.flower_shop import router as flower_shop_router
 from .routers.cake_shop import router as cake_shop_router
 from .routers.calendar import router as calendar_router
 from .routers.audit import router as audit_router
+from .routers.voice import router as voice_router
 from .services.orchestration.scheduler import scheduled_transfer_loop
 from .services.orchestration.wealth_task_worker import loop as wealth_task_loop
 from .services.ai.llm import get_mode, get_settings, llm
@@ -170,6 +171,7 @@ app.include_router(flower_shop_router)
 app.include_router(cake_shop_router)
 app.include_router(calendar_router)
 app.include_router(audit_router)
+app.include_router(voice_router)
 
 
 # ──────────────────── 健康检查 ────────────────────

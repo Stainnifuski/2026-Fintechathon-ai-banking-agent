@@ -1,10 +1,12 @@
 /** 00 §6.11读取契约。银行GET /returns接线待B3d账务计算完成。 */
 export type ReturnPeriod='day'|'month'|'year'|'cumulative';
 export type ReturnStatus='complete'|'partial'|'unavailable';
-export interface ReturnsQuery {scope:'all'|'product';product_id?:string;period:ReturnPeriod;anchor_date?:string}
+export interface ReturnsQuery {scope:'all'|'product';product_id?:string;period:ReturnPeriod;anchor_date?:string;overview?:boolean}
+export interface WealthPerformance {period:ReturnPeriod;start_date:string;end_date:string;amount_fen:number|null;rate_percent:string|null;notice:string;points:{date:string;rate_percent:string|null}[];positions:{position_key:string;yesterday_pnl_fen:number|null}[];as_of:string;rate_method:string}
 export interface ReturnPoint {period_start:string;period_end:string;pnl_fen:number|null;status:ReturnStatus;reason:string|null}
 export interface ProductReturn {product_id:string;product_name:string;period_pnl_fen:number|null;cumulative_pnl_fen:number|null;status:ReturnStatus;reason:string|null}
 export interface WealthReturns {
+  performance?:WealthPerformance|null;
   schema_version:'wealth-returns-v1';asset_scope_id:string;snapshot_id:string;scope:'all'|'product';product_id:string|null;
   period:ReturnPeriod;start_date:string;end_date:string;as_of:string;timezone:'Asia/Shanghai';coverage_start:string|null;
   status:ReturnStatus;missing_fields:string[];

@@ -3,7 +3,7 @@
 .table-scroll-hint { display: none; font-size: 12px; color: #667085; }
 @container (max-width: 760px) { .table-scroll-hint { display: block; } }
 .wealth-table-scroll { overflow-x: auto; margin: 16px 0; }
-.wealth-data-table table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13px; }
+.wealth-data-table table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13px; }
 .wealth-data-table th, .wealth-data-table td { border-bottom: 1px solid #e0e5ef; padding: 12px 10px; text-align: left; vertical-align: top; }
 .wealth-data-table th { background: #f8faff; }
 .wealth-data-table small { display: block; color: #667085; margin-top: 5px; line-height: 1.5; overflow-wrap: anywhere; }

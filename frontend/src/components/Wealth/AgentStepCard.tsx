@@ -30,10 +30,9 @@ export default function AgentStepCard({stage,title,children,onAdvance,nextFocus,
  if(!context)return <>{children}</>;
  const done=context.completed.includes(stage),visible=done||context.active===stage;
  const focused=context.focusedStage===stage;
- return <section hidden={!visible} className={`wealth-step-card ${focused?'is-focused':''}`} aria-label={title}>
+ return <section hidden={!visible} className={`wealth-step-card ${focused?'is-focused':''}`} aria-label={title} onFocusCapture={()=>{if(!done)context.focus(stage,title);}} onPointerDown={()=>{if(!done)context.focus(stage,title);}}>
   <header><strong>{title}{done?' · 已完成':''}</strong><button type="button" className="secondary" onClick={()=>setCollapsed(v=>!v)}>{done?(collapsed?'收起摘要':'查看摘要'):(collapsed?'展开':'折叠')}</button></header>
   <div hidden={done?!collapsed:collapsed} className="wealth-step-body"><fieldset disabled={done||!visible}>{children}</fieldset></div>
   {done?<button type="button" className="secondary" onClick={()=>context.backtrack(stage)}>修改此步骤</button>:canContinue&&<button type="button" onClick={()=>context.complete(stage)}>继续</button>}
-  <button type="button" className="secondary" aria-pressed={focused} onClick={()=>context.focus(stage,title)}>{focused?'当前对话补充对象':'用对话补充此卡'}</button>
  </section>;
 }

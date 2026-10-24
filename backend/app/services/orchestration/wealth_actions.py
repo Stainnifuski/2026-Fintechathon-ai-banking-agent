@@ -1,6 +1,7 @@
 """Structured adapters over existing handlers; no NLP, trading or new engine."""
 from ..audit.spans import audited
 from decimal import Decimal
+from datetime import datetime
 from copy import deepcopy
 from uuid import uuid4
 from types import SimpleNamespace
@@ -12,7 +13,7 @@ from ...models.wealth import WealthConversationORM, WealthTaskORM
 from ...models.wealth_research import WealthChatRequestORM
 from ...integrations import wealth_authorization as policy
 from ...domain.wealth_synthetic import fingerprint
-from ...domain.time import utc_now
+from ...domain.time import utc_now,BEIJING
 
 READ_ACTIONS=['list_orders','list_positions','show_wealth_returns','show_product_detail','compare_products']
 
@@ -113,7 +114,8 @@ async def dispatch(db,user_id,bank,request,handlers=None,portfolio_source=None):
             # Shared complete tables page the full authorized snapshot locally,
             # preserving independent cross-page selections. Existing paged fields
             # remain compatible; no second bank read or per-card narrowed scope.
-            data['table_data'] = dict(object_type=data['object_type'],scope_key=data['scope_key'],rows=items)
+            data['table_data'] = dict(object_type=data['object_type'],scope_key=data['scope_key'],rows=items,
+                business_date=datetime.fromisoformat(facts['business_at']).astimezone(BEIJING).date().isoformat())
             data['snapshot_id'] = facts['asset_summary']['snapshot_id']
     elif action=='show_wealth_returns':
         if selection:
