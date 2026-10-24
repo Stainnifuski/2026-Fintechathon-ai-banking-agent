@@ -302,7 +302,10 @@ def body(name: str, result: dict) -> list[str]:
         statuses = {'ACTIVE': '正常', 'LOCKED': '已锁定', 'LOST': '已挂失', 'CANCELLED': '已注销'}
         for change in d.get('changes', [])[:MAX_ROWS]:
             fmt = money if change.get('unit') == 'fen' else (
-                (lambda value: literal(statuses.get(value, value))) if change.get('field') == 'status' else literal)
+                (lambda value: literal(statuses.get(value, value))) if change.get('field') == 'status'
+                # 渠道开关等布尔字段按开启/关闭展示。
+                else (lambda value: literal({True: '开启', False: '关闭'}.get(value, value)))
+                if isinstance(change.get('before'), bool) or isinstance(change.get('after'), bool) else literal)
             lines.append(f'变更字段 {literal(change.get("label", "未提供"))}：'
                          f'{fmt(change.get("before"))} → {fmt(change.get("after"))}。')
         return lines

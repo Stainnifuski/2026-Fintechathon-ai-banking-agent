@@ -355,3 +355,12 @@ async def test_subscription_cancellation_is_a_chat_task_the_agent_cannot_confirm
     assert [item['subscription_id'] for item in remaining] == ['S1']
     assert (await db.get(SubscriptionORM, 'S4', populate_existing=True)).status == 'ACTIVE'
     assert '订阅业务 Skill' in nova.SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_channel_preview_text_shows_on_off(db):
+    from backend.app.services.ai.grounding import evidence_for
+    ctx = context(db, 'cards', cards=CardContext(selected_card_id='C1'))
+    result = await nova.execute_tool(call('preview_card_operation', {'action': 'card_set_channels', 'overseas_enabled': True}), ctx)
+    text = evidence_for(0, {'name': 'preview_card_operation', 'result': result}).text
+    assert '“关闭” → “开启”' in text and 'True' not in text
