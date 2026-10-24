@@ -125,8 +125,8 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .agent-suggestion span, .agent-suggestion small { display: block; color: #cdd4f2; }.agent-suggestion strong { display: block; margin: 7px 0; font-size: 30px; }
 .agent-prompt { width: 100%; margin-top: 9px; padding: 14px 15px; display: flex; justify-content: space-between; color: #30384d; background: #fff; border: 1px solid #e5e7ed; text-align: left; }
 .agent-prompt:hover { border-color: #cbd3f8; box-shadow: 0 8px 20px #20294a0d; }
-.agent-compose { padding: 16px; display: grid; grid-template-columns: 1fr auto; gap: 8px; background: #fff; border-top: 1px solid var(--line); }
-.agent-compose input { border-radius: 999px; }.agent-compose button { width: 40px; height: 40px; padding: 0; border-radius: 50%; }
+.agent-compose { padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; background: #fff; border-top: 1px solid var(--line); }
+.home-workspace .agent-compose input { border: 2px solid #aa98c7; border-radius: 999px; }.home-workspace .agent-compose input:focus { border-color: #8f78b5; box-shadow: none; outline: none; }.agent-compose button { width: 40px; height: 40px; padding: 0; border-radius: 50%; }
 @media (max-width: 920px) {
   .bank-shell { grid-template-columns: 78px minmax(0, 1fr); }
   .bank-sidebar { padding-inline: 12px; }.brand { justify-content: center; padding-inline: 0; }.brand > span:last-child, .bank-sidebar nav button:not(.active)::after, .bank-sidebar nav button, .sidebar-audit-button { font-size: 0; }.bank-sidebar nav button { justify-content: center; padding: 12px; }.bank-sidebar nav button span, .sidebar-audit-button span { font-size: 19px; }.sidebar-audit-button { justify-content: center; padding: 12px; }.sidebar-foot { display: none; }

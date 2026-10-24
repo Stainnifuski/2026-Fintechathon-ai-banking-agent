@@ -12,6 +12,8 @@ services:
       MKL_NUM_THREADS: "2"
     expose:
       - "50000"
+    ports:
+      - "127.0.0.1:50000:50000"
     volumes:
       - sensevoice_models:/models
     healthcheck:
@@ -54,6 +56,8 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:
@@ -95,7 +99,7 @@ services:
     container_name: banking-frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3101:80"
     depends_on:
       backend:
         condition: service_healthy
