@@ -1,0 +1,89 @@
+/* Consumer wealth page: preserve the existing workflow while giving each step a clear reading boundary. */
+.wealth-page {
+  min-width: 0;
+  display: grid;
+  gap: 18px;
+  color: #171b30;
+}
+.wealth-page > h1 { margin: 0; font-size: 22px; line-height: 1.35; }
+.wealth-page > p { margin: 0; max-width: 900px; color: #667085; font-size: 13px; line-height: 1.75; }
+.wealth-page > .consumer-note { padding: 12px 14px; border-left: 3px solid #287544; border-radius: 8px; background: #f3f8f4; color: #475467; }
+.wealth-page > details { padding: 18px 20px; border: 1px solid #e7e9f0; border-radius: 16px; background: #fff; box-shadow: 0 5px 22px #20284006; }
+.wealth-page > details > summary { color: #171b30; font-size: 17px; font-weight: 650; cursor: pointer; }
+.wealth-page > details p { color: #667085; font-size: 13px; line-height: 1.7; }
+.wealth-page > details > details { margin-top: 16px; padding: 16px; border: 1px solid #edf0f4; border-radius: 12px; background: #fafbfc; }
+.wealth-page > details label { margin: 12px 0; color: #536176; font-size: 13px; }
+.wealth-page > details select { min-height: 40px; border: 1px solid #ccd5e1; border-radius: 8px; }
+.wealth-page .structured-actions { display: grid; gap: 16px; min-width: 0; }
+.wealth-page .structured-actions > h2 { margin: 0; font-size: 20px; line-height: 1.4; }
+.wealth-page .structured-actions > h2 + p { margin: -8px 0 0; color: #536176; font-size: 13px; line-height: 1.7; }
+.wealth-page .structured-actions > .consumer-note { margin: -4px 0 0; color: #667085; font-size: 12px; line-height: 1.7; }
+.wealth-page .structured-actions fieldset { min-width: 0; margin: 0; padding: 22px 24px; border: 1px solid #e7e9f0; border-radius: 16px; background: #fff; box-shadow: 0 5px 22px #20284006; }
+.wealth-page .structured-actions fieldset > legend { padding: 0 8px; color: #171b30; font-size: 18px; font-weight: 650; }
+.wealth-page .structured-actions fieldset > p { color: #667085; font-size: 13px; line-height: 1.7; }
+.wealth-page .structured-actions fieldset > label { color: #536176; font-size: 13px; }
+.wealth-page .structured-actions fieldset > label select,
+.wealth-page .structured-actions fieldset > label input:not([type=checkbox]) { min-height: 40px; border: 1px solid #ccd5e1; border-radius: 8px; }
+.wealth-page .structured-actions button { min-height: 36px; margin: 4px 8px 4px 0; padding: 8px 13px; border-radius: 999px; font-size: 12px; }
+.wealth-page .wealth-step-card { margin: 12px 0; padding: 18px; border: 1px solid #edf0f4; border-radius: 12px; background: #fafbfc; }
+.wealth-page .wealth-step-card > header strong { font-size: 16px; }
+.wealth-page .wealth-step-card p { color: #667085; font-size: 13px; line-height: 1.7; }
+.wealth-page .action-result { margin-top: 16px; padding: 18px; border: 1px solid #cfe3d5; border-left: 4px solid #287544; border-radius: 12px; background: #f3f8f4; }
+.wealth-page .action-result h3 { margin: 0 0 10px; color: #171b30; font-size: 17px; }
+.wealth-page .action-result p { color: #475467; font-size: 13px; line-height: 1.7; }
+.wealth-page .product-picker { margin-top: 8px; }
+.wealth-page .picker-group { margin-top: 18px; }
+.wealth-page .picker-group h3, .wealth-page .picker-selection h3 { color: #171b30; font-size: 16px; }
+.wealth-page .picker-cards { gap: 14px; }
+.wealth-page .picker-card { padding: 18px; border: 1px solid #e7e9f0; border-radius: 12px; background: #fff; }
+.wealth-page .picker-card.selected { border-color: #287544; background: #f3f8f4; box-shadow: inset 0 0 0 1px #287544; }
+.wealth-page .picker-performance { background: #f7f9fb; border-radius: 8px; }
+.wealth-page .picker-selection { margin-top: 18px; padding: 18px; border: 1px solid #dceadf; border-radius: 12px; background: #f3f8f4; }
+.wealth-page .allocation-review, .wealth-page .plan-execution { margin-top: 18px; padding: 18px; border: 1px solid #e7e9f0; border-radius: 12px; background: #fafbfc; }
+.wealth-page .allocation-buckets { gap: 12px; }
+.wealth-page .allocation-buckets article { background: #fff; border-color: #e7e9f0; }
+.wealth-page .wealth-returns { margin: 0; }
+.wealth-page .returns-heading h2 { color: #171b30; font-size: 18px; }
+.wealth-page .returns-summary > div { padding: 18px; background: #f7f9fb; border: 1px solid #edf0f4; border-radius: 12px; }
+.wealth-page .returns-calendar .returns-day { background: #fafbfc; border-color: #e7e9f0; }
+.wealth-page .wealth-data-table { margin: 18px 0; }
+.wealth-page .wealth-data-table th { background: #f7f9fb; color: #475467; }
+.wealth-page .wealth-data-table th, .wealth-page .wealth-data-table td { padding: 13px 10px; }
+.wealth-page .wealth-modal > section { border-radius: 16px; }
+.asset-summary-page { margin-bottom: 0; padding: 24px; border: 1px solid #e7e9f0; border-radius: 16px; box-shadow: 0 5px 22px #20284006; }
+.asset-summary-page .asset-summary-total { font-size: clamp(32px, 4vw, 48px); }
+.asset-summary-page .asset-summary-metrics { gap: 18px; margin: 20px 0; }
+.asset-summary-page .asset-summary-metrics > div { padding: 12px 0; border-top: 1px solid #edf0f4; }
+@media (max-width: 700px) {
+  .wealth-page .structured-actions fieldset { padding: 18px; }
+  .asset-summary-page { padding: 18px; }
+  .asset-summary-page .asset-summary-metrics { gap: 10px; }
+}
+
+/* Wealth uses the same purple as the active 理财 destination: #7135bb. */
+.wealth-page > .consumer-note { border-left-color: #7135bb; background: #f7f1fb; }
+.wealth-page button:not(.secondary) { background: #7135bb; border-color: #7135bb; color: #fff; }
+.wealth-page button:not(.secondary):hover { background: #5f289f; border-color: #5f289f; }
+.wealth-page button:not(.secondary):focus-visible,
+.wealth-page input:focus-visible, .wealth-page select:focus-visible,
+.wealth-page summary:focus-visible { outline: 2px solid #7135bb; outline-offset: 2px; }
+.wealth-page button.secondary { border-color: #d8c6e8; background: #fbf8fd; color: #643198; }
+.wealth-page .structured-actions > fieldset:nth-of-type(1) { border-color: #d8c6e8; background: linear-gradient(180deg, #fff 0%, #fdfaff 100%); }
+.wealth-page .structured-actions > fieldset:nth-of-type(1) > legend { color: #643198; }
+.wealth-page .structured-actions > fieldset:nth-of-type(2) { border-color: #dce3ef; background: #fff; }
+.wealth-page .structured-actions > fieldset:nth-of-type(2) > legend { color: #344054; }
+.wealth-page .structured-actions > fieldset:nth-of-type(3) { border-color: #e1d8ef; background: #fbf9fd; }
+.wealth-page .structured-actions > fieldset:nth-of-type(3) > legend { color: #643198; }
+.wealth-page .wealth-step-card { border-color: #e2d5ed; background: #fcf9fe; }
+.wealth-page .action-result { border-color: #d8c6e8; border-left-color: #7135bb; background: #f7f1fb; }
+.wealth-page .action-result h3 { color: #643198; }
+.wealth-page .picker-card.selected { border-color: #7135bb; background: #f7f1fb; box-shadow: inset 0 0 0 1px #7135bb; }
+.wealth-page .picker-selection { border-color: #d8c6e8; background: #f7f1fb; }
+.wealth-page .allocation-review, .wealth-page .plan-execution { border-color: #e2d5ed; background: #fcf9fe; }
+.wealth-page .returns-summary > div { background: #f7f1fb; border-color: #e2d5ed; }
+.wealth-page .wealth-data-table th { background: #f7f1fb; color: #643198; }
+.wealth-page .asset-summary-page .asset-summary-metrics > div { border-top-color: #e2d5ed; }
+.wealth-page > details:first-of-type { border-color: #d8c6e8; border-left: 4px solid #7135bb; background: #f7f1fb; }
+.wealth-page > details:first-of-type > summary { color: #643198; font-size: 18px; font-weight: 700; }
+
+.wealth-intro .eyebrow { color: #7135bb; }

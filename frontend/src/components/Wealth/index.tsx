@@ -5,6 +5,7 @@ import * as w from '../../services/wealth';
 import type {Account} from '../../services/bank';
 import StructuredActionPanel from './StructuredActionPanel';
 import './styles.css';
+import './wealthPage.css';
 import {competitionEnvironment,type WealthContexts} from '../../utils/wealthEnvironment';
 interface Props {accounts:Account[];revision:number;onActivity:()=>void;userId:string;developmentManual?:boolean;agentCommand?:NovaWealthCommand;agentContext?:string;agentTaskId?:string;agentSelection?:NovaWealthView['selected_products'];onView?:(view:NovaWealthView)=>void;onPrepared?:(id:string)=>Promise<void>}
 type Contexts=WealthContexts;
