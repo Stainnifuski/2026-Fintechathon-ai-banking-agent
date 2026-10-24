@@ -89,11 +89,16 @@ async def _view(db: AsyncSession, row: NovaSessionORM) -> dict:
                 task = {**task, "status": snapshot["phase"]}
         tasks.append(_public_task(task, snapshot))
     from .collection_manager import collection_cards
-    from .card_subscription_tools import chat_card_operations
+    from .card_subscription_tools import chat_card_operations, chat_subscription_tasks
+    from .calendar_tools import chat_calendar_tasks
+    from .shop_tools import chat_shop_tasks
     return {"session_id": row.session_id, "session_version": row.version,
             "focus_task_id": state.get("focus_task_id"), "tasks": tasks,
             "collection_cards": await collection_cards(db, row.user_id, row.session_id),
-            "card_operations": await chat_card_operations(db, row.user_id, state)}
+            "card_operations": await chat_card_operations(db, row.user_id, state),
+            "subscription_tasks": await chat_subscription_tasks(db, row.user_id, state),
+            "calendar_tasks": await chat_calendar_tasks(db, row.user_id, state),
+            "shop_tasks": await chat_shop_tasks(db, row.user_id, state)}
 
 
 async def get_session(db: AsyncSession, user_id: str, session_id: str) -> dict:

@@ -11,8 +11,11 @@ import NovaMarkdown from './NovaMarkdown';
 import NovaTransferCard from './NovaTransferCard';
 import NovaCollectionCard from './NovaCollectionCard';
 import NovaCardOperationCard from './NovaCardOperationCard';
+import NovaSubscriptionCancelCard from './NovaSubscriptionCancelCard';
+import NovaCalendarCard from './NovaCalendarCard';
+import NovaShopCard from './NovaShopCard';
 import * as bank from '../services/bank';
-import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask } from '../services/nova';
+import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask } from '../services/nova';
 
 const NovaWealthCard=lazy(()=>import('./NovaWealthCard'));
 
@@ -22,7 +25,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表',
   get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情',
   list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
-  preview_card_operation: '卡片操作预览', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
+  preview_card_operation: '卡片操作预览', request_subscription_cancellation: '取消订阅任务卡', create_calendar_event: '创建日程', prepare_shop_purchase: '店铺下单', list_card_transactions: '用卡记录', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
   manage_transfer_request: '转账任务规划', manage_collection_request: '收款草稿', manage_wealth_request:'理财任务',
 };
 const money = (value: unknown) => typeof value === 'number' ? (value / 100).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) : '暂无';
@@ -191,7 +194,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         if(queueSession.current!==session)return;
         setExecutionQueue(result.execution_queue??null);
         if(result.wealth_cards)setWealthCards(result.wealth_cards);
-        if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,focus_task_id:result.focus_task_id}));
+        if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,subscription_tasks:previous?.subscription_tasks,calendar_tasks:previous?.calendar_tasks,shop_tasks:previous?.shop_tasks,focus_task_id:result.focus_task_id}));
         if(result.execution_queue?.steps.some(step=>step.review_operation_id))void getNovaTaskSession(session).then(fresh=>{if(queueSession.current===session)setTaskSession(fresh);}).catch(()=>{});
       }catch{if(queueSession.current===session){
         if(debugRequestId)setLastDebugRequest(debugRequestId);
@@ -261,6 +264,24 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     collectionGroups.set(position, [...(collectionGroups.get(position) || []), card]);
   }
 
+  const shopGroups = new Map<number, NovaChatShopTask[]>();
+  for (const task of taskSession?.shop_tasks || []) {
+    let position = messages.findIndex(entry => entry.role === 'assistant' && entry.request_id === task.origin_request_id);
+    if (position < 0) position = messages.length - 1;
+    shopGroups.set(position, [...(shopGroups.get(position) || []), task]);
+  }
+  const calendarGroups = new Map<number, NovaChatCalendarTask[]>();
+  for (const task of taskSession?.calendar_tasks || []) {
+    let position = messages.findIndex(entry => entry.role === 'assistant' && entry.request_id === task.origin_request_id);
+    if (position < 0) position = messages.length - 1;
+    calendarGroups.set(position, [...(calendarGroups.get(position) || []), task]);
+  }
+  const subscriptionGroups = new Map<number, NovaChatSubscriptionTask[]>();
+  for (const task of taskSession?.subscription_tasks || []) {
+    let position = messages.findIndex(entry => entry.role === 'assistant' && entry.request_id === task.origin_request_id);
+    if (position < 0) position = messages.length - 1;
+    subscriptionGroups.set(position, [...(subscriptionGroups.get(position) || []), task]);
+  }
   const cardOperationGroups = new Map<number, NovaChatCardTask[]>();
   for (const task of taskSession?.card_operations || []) {
     let position = messages.findIndex(entry => entry.role === 'assistant' && entry.request_id === task.origin_request_id);
@@ -356,11 +377,14 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           setTaskSession(previous => ({ session_id: reply.session_id!, session_version: reply.session_version!,
             tasks: reply.tasks || [], collection_cards: reply.collection_cards || [],
             card_operations: previous?.session_id === reply.session_id ? previous?.card_operations : undefined,
+            subscription_tasks: previous?.session_id === reply.session_id ? previous?.subscription_tasks : undefined,
+            calendar_tasks: previous?.session_id === reply.session_id ? previous?.calendar_tasks : undefined,
+            shop_tasks: previous?.session_id === reply.session_id ? previous?.shop_tasks : undefined,
             focus_task_id: reply.focus_task_id }));
           setFocusTaskId(undefined);
         }
         const sessionId = taskRequest.session_id;
-        if (sessionId && reply.tool_calls.some(call => call.name === 'preview_card_operation' && !call.result.error)) {
+        if (sessionId && reply.tool_calls.some(call => ['preview_card_operation', 'request_subscription_cancellation', 'create_calendar_event', 'prepare_shop_purchase'].includes(call.name) && !call.result.error)) {
           // 卡片任务卡状态以服务端授权单为准，随会话一起读取。
           void getNovaTaskSession(sessionId).then(setTaskSession).catch(() => setError('卡片任务卡读取失败，请重新打开对话。'));
         }
@@ -471,6 +495,17 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
               task={task} sessionId={taskSession!.session_id} accounts={payerAccounts}
               disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, card_operations: tasks } : previous)}
+              onActivity={onTransferActivity} />)}
+            {shopGroups.get(index)?.map(task => <NovaShopCard key={task.entry_id}
+              task={task} sessionId={taskSession!.session_id} accounts={payerAccounts} disabled={busy || loadingConversation}
+              onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, shop_tasks: tasks } : previous)}
+              onActivity={onTransferActivity} />)}
+            {calendarGroups.get(index)?.map(task => <NovaCalendarCard key={task.entry_id}
+              task={task} sessionId={taskSession!.session_id} disabled={busy || loadingConversation}
+              onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, calendar_tasks: tasks } : previous)} />)}
+            {subscriptionGroups.get(index)?.map(task => <NovaSubscriptionCancelCard key={task.entry_id}
+              task={task} sessionId={taskSession!.session_id} disabled={busy || loadingConversation}
+              onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, subscription_tasks: tasks } : previous)}
               onActivity={onTransferActivity} />)}
           </div>)}
           {error && <p className="nova-error" role="alert">{error}</p>}

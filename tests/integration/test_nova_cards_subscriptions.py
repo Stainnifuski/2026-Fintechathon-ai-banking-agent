@@ -314,3 +314,44 @@ async def test_incomplete_or_rejected_values_open_form_in_chat_and_user_complete
     dismissed = await client.post(f"/api/v1/nova/task-sessions/{session_id}/card-tasks/{tasks[-1]['entry_id']}/dismiss",
                                   headers=headers())
     assert len(dismissed.json()['card_operations']) == 1
+
+
+@pytest.mark.asyncio
+async def test_subscription_cancellation_is_a_chat_task_the_agent_cannot_confirm(client, db):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.ai.grounding import evidence_for
+    from backend.app.services.bank import nova_conversations
+    await seed_subscriptions(db)
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db, 'subscriptions', subscriptions=SubscriptionContext(selected_subscription_id='S1')),
+                  session_id=session_id, request_id='REQ-sub-1')
+    result = await nova.execute_tool(call('request_subscription_cancellation'), ctx)
+    data = result['data']
+    assert data['executed'] is False and data['merchant_name'] == '音乐会员' and not data['form_opened']
+    assert 'token' not in json.dumps(result) and '本人确认' in data['next_step']
+    assert '尚未取消' in evidence_for(0, {'name': 'request_subscription_cancellation', 'result': result}).text
+    assert (await db.get(SubscriptionORM, 'S1', populate_existing=True)).status == 'ACTIVE'
+    task = (await get_session(db, 'U1', session_id))['subscription_tasks'][0]
+    assert task['subscription']['subscription_id'] == 'S1' and task['origin_request_id'] == 'REQ-sub-1'
+
+    cancelled = await nova.execute_tool(call('request_subscription_cancellation', {'subscription_id': 'S2'}), ctx)
+    assert cancelled['error'] == 'SUBSCRIPTION_NOT_ACTIVE'
+    foreign = await nova.execute_tool(call('request_subscription_cancellation', {'subscription_id': 'S3'}), ctx)
+    assert foreign['error'] == 'SUBSCRIPTION_NOT_FOUND'
+
+    # Unnamed: the card lists active subscriptions; the user's selection is owner-checked.
+    picker = await nova.execute_tool(call('request_subscription_cancellation'),
+                                     replace(context(db), session_id=session_id, request_id='REQ-sub-2'))
+    assert picker['data']['form_opened']
+    entry = (await get_session(db, 'U1', session_id))['subscription_tasks'][-1]
+    assert entry['subscription'] is None
+    base = f"/api/v1/nova/task-sessions/{session_id}/subscription-tasks/{entry['entry_id']}"
+    for key, code in (('S3', 404), ('S2', 409)):
+        assert (await client.post(base + '/select', headers=headers(), json={'subscription_id': key})).status_code == code
+    chosen = await client.post(base + '/select', headers=headers(), json={'subscription_id': 'S4'})
+    assert chosen.json()['subscription_tasks'][-1]['subscription']['merchant_name'] == '云盘会员'
+    assert (await client.post(base + '/dismiss', headers=headers('U2'))).status_code == 404
+    remaining = (await client.post(base + '/dismiss', headers=headers())).json()['subscription_tasks']
+    assert [item['subscription_id'] for item in remaining] == ['S1']
+    assert (await db.get(SubscriptionORM, 'S4', populate_existing=True)).status == 'ACTIVE'
+    assert '订阅业务 Skill' in nova.SYSTEM_PROMPT

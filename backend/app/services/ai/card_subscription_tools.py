@@ -73,6 +73,10 @@ class SubscriptionArguments(StrictModel):
     subscription_id: str | None = Field(default=None, min_length=1, max_length=40)
 
 
+class SubscriptionCancelArguments(SubscriptionArguments):
+    pass
+
+
 def masked(value):
     return '****' + re.sub(r'\D', '', value)[-4:]
 
@@ -385,12 +389,87 @@ async def get_subscription(arguments, context):
     return envelope('subscriptions.detail', row)
 
 
+def _subscription_entries(state: dict) -> list[dict]:
+    return [dict(item) for item in state.get('subscription_tasks', [])]
+
+
+async def _owned_subscription(context_or_db, user_id: str, subscription_id: str) -> dict | None:
+    rows = await subscription_service.list_subscriptions(user_id=user_id, session=context_or_db)
+    row = next((item for item in rows if item['subscription_id'] == subscription_id), None)
+    return SubscriptionView.model_validate(row).model_dump(mode='json') if row else None
+
+
+async def request_subscription_cancellation(arguments, context):
+    """在聊天中显示取消订阅任务卡；确认凭证只发给本人页面，取消须本人在任务卡中确认。"""
+    key = arguments.subscription_id or (context.page.subscriptions.selected_subscription_id if context.page.subscriptions else None)
+    subscription = None
+    if key is not None:
+        subscription = await _owned_subscription(context.db, context.user_id, key)
+        if subscription is None:
+            raise BankError('订阅不存在', 'SUBSCRIPTION_NOT_FOUND', 404)
+        if subscription['status'] != 'ACTIVE':
+            return dict(error='SUBSCRIPTION_NOT_ACTIVE', message='该订阅已取消，无需再次取消。')
+    if context.session_id and context.request_id:
+        row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
+        state = json.loads(json.dumps(row.state or {}))
+        entries = [item for item in _subscription_entries(state)
+                   if item['closed'] or key is None or item.get('subscription_id') != key]
+        entries.append({'entry_id': uuid4().hex, 'origin_request_id': context.request_id,
+                        'subscription_id': key, 'closed': False})
+        state['subscription_tasks'] = entries[-MAX_CHAT_CARD_OPERATIONS:]
+        row.state = state
+        await context.db.commit()
+    data = dict(executed=False, form_opened=subscription is None,
+                next_step='尚未取消。请在聊天中的取消订阅任务卡' + ('选择要取消的订阅，' if subscription is None else '')
+                          + '查看取消详情并由本人确认；NOVA 不能代为确认。')
+    if subscription:
+        data.update({k: subscription[k] for k in ('subscription_id', 'merchant_name', 'amount_fen', 'currency',
+                                                   'billing_cycle', 'next_charge_at', 'status')})
+    return envelope('subscriptions.cancel_request', data)
+
+
+async def chat_subscription_tasks(db, user_id: str, state: dict) -> list[dict]:
+    views = []
+    for entry in _subscription_entries(state):
+        if entry['closed']:
+            continue
+        subscription = await _owned_subscription(db, user_id, entry['subscription_id']) if entry.get('subscription_id') else None
+        views.append({'entry_id': entry['entry_id'], 'origin_request_id': entry['origin_request_id'],
+                      'subscription_id': entry.get('subscription_id'), 'subscription': subscription})
+    return views
+
+
+async def update_chat_subscription_task(db, *, user_id: str, session_id: str, entry_id: str,
+                                        subscription_id: str | None = None, close: bool = False) -> list[dict]:
+    """本人在任务卡中选择订阅或关闭任务卡；取消本身只走订阅确认接口。"""
+    row = await _owned_session(db, user_id, session_id)
+    state = json.loads(json.dumps(row.state or {})) if row else {}
+    entries = _subscription_entries(state)
+    entry = next((item for item in entries if item['entry_id'] == entry_id and not item['closed']), None)
+    if entry is None:
+        raise CardTaskError('订阅任务不存在', 'SUBSCRIPTION_TASK_NOT_FOUND', 404)
+    if close:
+        entry['closed'] = True
+    else:
+        subscription = await _owned_subscription(db, user_id, subscription_id or '')
+        if subscription is None:
+            raise CardTaskError('订阅不存在', 'SUBSCRIPTION_NOT_FOUND', 404)
+        if subscription['status'] != 'ACTIVE':
+            raise CardTaskError('该订阅已取消，无需再次取消', 'SUBSCRIPTION_NOT_ACTIVE', 409)
+        entry['subscription_id'] = subscription_id
+    state['subscription_tasks'] = entries
+    row.state = state
+    await db.commit()
+    return await chat_subscription_tasks(db, user_id, state)
+
+
 def card_subscription_tools():
     entries = [
         ('list_cards', CardListArguments, list_cards, '分页查询本人银行卡片，可按状态（ACTIVE/LOCKED/LOST/CANCELLED）、借记/信用、虚拟卡、卡号末四位筛选。返回脱敏卡号、关联账户、信用额度及已用/可用信用额度、交易限额及银行上限、有效期和渠道开关。信用额度不是现金。'),
         ('get_card', CardArguments, get_card, '查询本人卡片详情。省略 card_id 沿用 cards.selected_card_id。未选择先询问；按末四位查询先 list_cards，多个匹配先询问。只读。'),
         ('list_card_transactions', CardTransactionArguments, list_card_transactions, '查询本人某张卡最近20笔用卡授权记录（含被拒绝的交易及拒绝原因，如超限额、渠道关闭、卡片锁定）。省略 card_id 沿用 cards.selected_card_id；按末四位先 list_cards。只读。'),
         ('preview_card_operation', CardPreviewArguments, preview_card_operation, '为本人卡片操作生成待核对预览，不会执行。action：card_apply_virtual（传 account_id）；card_lock/card_unlock/card_report_lost/card_cancel_virtual/card_reissue（传 card_id）；card_set_transaction_limits（single_txn_limit/daily_txn_limit，元，未提及的一项沿用当前值）；card_adjust_credit_limit（credit_limit，元）；card_set_channels（online_enabled/atm_enabled/overseas_enabled/contactless_enabled，未提及的沿用当前值）。省略 card_id 沿用 cards.selected_card_id。金额取用户原话，不得猜测。缺少目标卡、账户或金额时不要编造：直接调用本工具，聊天中会打开同结构的表单让用户补充；银行要求调整数值时同样打开表单。返回 executed=false：用户须在聊天中的卡片任务卡本人确认，red 还需验证码；NOVA 不能代为确认。'),
+        ('request_subscription_cancellation', SubscriptionCancelArguments, request_subscription_cancellation, '用户要取消本人订阅时调用：在聊天中显示取消订阅任务卡，不会取消。省略 subscription_id 沿用 subscriptions.selected_subscription_id；按商户名先 list_subscriptions 定位，多个匹配先询问；用户没说是哪一项时不传，任务卡中会列出生效订阅供选择。已取消的订阅不能再取消。返回 executed=false：用户须在任务卡中查看取消详情并本人确认；NOVA 不能代为确认。'),
         ('list_subscriptions', SubscriptionListArguments, list_subscriptions, '分页查询本人订阅，可筛选 ACTIVE/CANCELLED 和商户 keyword。summary 是筛选后所有分页的生效订阅每月预计支出，仅 MONTHLY/CNY，非实际扣款。实际扣费请查询账单流水。'),
         ('get_subscription', SubscriptionArguments, get_subscription, '查询本人订阅详情：商户、周期金额、扣费账户、状态、计划下次扣费、取消时间及识别来源流水。省略 subscription_id 沿用 subscriptions.selected_subscription_id；按商户名先 list_subscriptions，多匹配先询问。不取消、不扣费。'),
     ]

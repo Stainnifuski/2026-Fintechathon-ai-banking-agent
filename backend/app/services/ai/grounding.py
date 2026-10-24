@@ -22,9 +22,9 @@ TOOL_LABELS = {
     'get_bill_analysis': '账单分析', 'list_transactions': '流水查询', 'get_transaction': '流水详情',
     'list_contacts': '联系人查询', 'search_contacts': '联系人查询',
     'list_cards': '卡片查询', 'get_card': '卡片详情', 'list_card_transactions': '用卡记录',
-    'preview_card_operation': '卡片操作预览',
+    'preview_card_operation': '卡片操作预览', 'request_subscription_cancellation': '取消订阅',
     'list_subscriptions': '订阅查询', 'get_subscription': '订阅详情',
-    'list_calendar_events': '日历查询', 'search_calendar_events': '日历搜索', 'get_calendar_event': '活动详情',
+    'create_calendar_event': '日程', 'prepare_shop_purchase': '店铺订单', 'list_calendar_events': '日历查询', 'search_calendar_events': '日历搜索', 'get_calendar_event': '活动详情',
     'list_shop_products': '商品查询', 'get_shop_product': '商品报价',
     'list_shop_orders': '订单查询', 'get_shop_order': '订单详情',
     'get_subscription_insights': '订阅扣费核对', 'project_cashflow': '现金流情景',
@@ -316,6 +316,16 @@ def body(name: str, result: dict) -> list[str]:
                          f'金额 {money(row.get("amount_fen"))}，' +
                          ('已批准。' if row.get('approved') is True else f'被拒绝：{literal(row.get("message") or "原因未提供")}。'))
         return lines
+    if name == 'request_subscription_cancellation':
+        if d.get('executed') is not False:
+            raise ValueError('CANCEL_STATE_NOT_VERIFIED')
+        if d.get('form_opened'):
+            return ['已在下方打开取消订阅任务卡，尚未取消；请在卡片中选择要取消的订阅。',
+                    '查看取消详情后由本人确认；NOVA 不能代为确认。']
+        return [f'已在下方显示取消订阅任务卡：{literal(d.get("merchant_name") or "未提供")}，'
+                f'{money(d.get("amount_fen"), d.get("currency", "CNY"))} / {literal(d.get("billing_cycle") or "周期未提供")}，'
+                f'计划下次扣费 {literal(d.get("next_charge_at") or "未提供")}（UTC）。尚未取消。',
+                '请在任务卡中查看取消详情并由本人确认；确认后停止后续模拟扣费，历史流水保留，不代表取消真实商户合同。']
     if name in {'list_subscriptions', 'get_subscription'}:
         rows = d.get('items', []) if name == 'list_subscriptions' else [d]
         lines = ([page_notice(d, min(len(rows), MAX_ROWS))] if name == 'list_subscriptions' else [])
@@ -323,6 +333,35 @@ def body(name: str, result: dict) -> list[str]:
             lines.append('筛选后全部分页的生效、每月、人民币订阅预计月费：'
                          + money(d['summary'].get('monthly_commitment_fen')) + '，不等于实际扣款。')
         return lines + [subscription_text(row) for row in rows[:MAX_ROWS]]
+    if name == 'prepare_shop_purchase':
+        if d.get('created'):
+            order = d['order']
+            return [f'已提交订单：{literal(order["product_name"])} × {int(order["quantity"])}，'
+                    f'单价 {money(order["unit_price_fen"])}，合计 {money(order["total_fen"])}。',
+                    '店铺已向银行发起付款申请，尚未扣款。请在下方订单卡片选择付款账户并由本人确认付款；需要时还须本人输入验证码。']
+        lines = ['已在下方打开订单表单，尚未下单，也未付款。']
+        if d.get('missing_fields'):
+            lines.append('请在表单中补充：' + '、'.join(literal(item) for item in d['missing_fields']) + '。')
+        if d.get('notice'):
+            lines.append(literal(d['notice']))
+        lines.append('提交订单后，付款仍须本人在订单卡片中确认。')
+        return lines
+    if name == 'create_calendar_event':
+        if d.get('created'):
+            event = d['event']
+            when = literal(event['starts_at_local']) + (f' 至 {literal(event["ends_at_local"])}' if event.get('ends_at_local') else '')
+            lines = [f'已创建日程 {literal(event["title"])}，时间 {when}。']
+            if event.get('location'):
+                lines.append(f'地点：{literal(event["location"])}。')
+            lines.append('如有误，可在下方日程卡片中删除。')
+            return lines
+        lines = ['已在下方打开日程表单，尚未创建。']
+        if d.get('missing_fields'):
+            lines.append('请在表单中补充：' + '、'.join(literal(item) for item in d['missing_fields']) + '。')
+        if d.get('notice'):
+            lines.append(literal(d['notice']) + '')
+        lines.append('核对后点击“创建日程”。')
+        return lines
     if name in {'list_calendar_events', 'search_calendar_events', 'get_calendar_event'}:
         rows = d.get('items', [])[:MAX_ROWS]
         lines = [page_notice(d, len(rows)), *[calendar_text(row) for row in rows]]

@@ -1,6 +1,7 @@
 import { apiClient } from './api';
 import type { BillQuery } from './bills';
-import type { BankCard, CardAction, CardOperation, TaskSnapshot } from './bank';
+import type { BankCard, CardAction, CardOperation, Subscription, TaskSnapshot } from './bank';
+import type { CalendarEvent } from './calendar';
 
 export type NovaPageContext = {
   version: 1;
@@ -26,13 +27,30 @@ export type NovaPageContext = {
 export type NovaMessage = { role: 'user' | 'assistant'; content: string; request_id?: string };
 export type NovaConversation = { session_id: string; title: string; created_at: string; updated_at: string };
 export type NovaConversationDetail = NovaConversation & { messages: NovaMessage[] };
+/** 聊天中的店铺订单：已下单时含订单（付款由本人在卡片中确认），否则为预填表单。 */
+export type NovaChatShopTask = {
+  entry_id: string; origin_request_id: string; shop?: 'flower' | 'cake' | null; shop_name?: string | null;
+  prefill: { product_id?: string; quantity?: number }; notice?: string | null;
+  order?: { order_id: string; product_id: string; product_name: string; quantity: number; unit_price_fen: number;
+    total_fen: number; status: string; payment_request_id?: string | null } | null;
+};
+/** 聊天中的日程：信息完整时已创建（event），否则为预填表单（prefill）。 */
+export type NovaChatCalendarTask = {
+  entry_id: string; origin_request_id: string; timezone: string; notice?: string | null;
+  prefill: { title?: string; start_date?: string; start_time?: string; end_date?: string; end_time?: string; location?: string; description?: string };
+  event_id?: string | null; event?: CalendarEvent | null; deleted: boolean;
+};
+/** 聊天中的取消订阅任务：确认凭证只由本人页面向订阅接口获取。 */
+export type NovaChatSubscriptionTask = {
+  entry_id: string; origin_request_id: string; subscription_id?: string | null; subscription?: Subscription | null;
+};
 /** 聊天中的卡片任务：未生成预览时是可编辑表单，生成后由本人确认/验证。 */
 export type NovaChatCardTask = {
   entry_id: string; origin_request_id: string; action: CardAction; card_id?: string | null;
   card?: BankCard | null; prefill: Record<string, string | boolean>; notice?: string | null;
   operation?: CardOperation | null;
 };
-export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[]; collection_cards: NovaCollectionCard[]; card_operations?: NovaChatCardTask[] };
+export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[]; collection_cards: NovaCollectionCard[]; card_operations?: NovaChatCardTask[]; subscription_tasks?: NovaChatSubscriptionTask[]; calendar_tasks?: NovaChatCalendarTask[]; shop_tasks?: NovaChatShopTask[] };
 
 export async function listNovaConversations(): Promise<NovaConversation[]> {
   return apiClient.get<NovaConversation[]>('/bank/nova/conversations').then(response => response.data);
@@ -98,6 +116,27 @@ export const linkNovaCardTask = (sessionId: string, entryId: string, operationId
 export const dismissNovaCardTask = (sessionId: string, entryId: string) =>
   apiClient.post<{ card_operations: NovaChatCardTask[] }>(`/nova/task-sessions/${sessionId}/card-tasks/${entryId}/dismiss`)
     .then(r => r.data.card_operations);
+
+export const selectNovaSubscriptionTask = (sessionId: string, entryId: string, subscriptionId: string) =>
+  apiClient.post<{ subscription_tasks: NovaChatSubscriptionTask[] }>(`/nova/task-sessions/${sessionId}/subscription-tasks/${entryId}/select`,
+    { subscription_id: subscriptionId }).then(r => r.data.subscription_tasks);
+export const dismissNovaSubscriptionTask = (sessionId: string, entryId: string) =>
+  apiClient.post<{ subscription_tasks: NovaChatSubscriptionTask[] }>(`/nova/task-sessions/${sessionId}/subscription-tasks/${entryId}/dismiss`)
+    .then(r => r.data.subscription_tasks);
+
+export const linkNovaCalendarTask = (sessionId: string, entryId: string, eventId: string) =>
+  apiClient.post<{ calendar_tasks: NovaChatCalendarTask[] }>(`/nova/task-sessions/${sessionId}/calendar-tasks/${entryId}/event`,
+    { event_id: eventId }).then(r => r.data.calendar_tasks);
+export const dismissNovaCalendarTask = (sessionId: string, entryId: string) =>
+  apiClient.post<{ calendar_tasks: NovaChatCalendarTask[] }>(`/nova/task-sessions/${sessionId}/calendar-tasks/${entryId}/dismiss`)
+    .then(r => r.data.calendar_tasks);
+
+export const linkNovaShopTask = (sessionId: string, entryId: string, shop: 'flower' | 'cake', orderId: string) =>
+  apiClient.post<{ shop_tasks: NovaChatShopTask[] }>(`/nova/task-sessions/${sessionId}/shop-tasks/${entryId}/order`,
+    { shop, order_id: orderId }).then(r => r.data.shop_tasks);
+export const dismissNovaShopTask = (sessionId: string, entryId: string) =>
+  apiClient.post<{ shop_tasks: NovaChatShopTask[] }>(`/nova/task-sessions/${sessionId}/shop-tasks/${entryId}/dismiss`)
+    .then(r => r.data.shop_tasks);
 
 export const sendNovaCollection = (sessionId: string, collectionId: string, payload: {
   session_version: number; payer_user_ids: string[]; receive_account_id: string;

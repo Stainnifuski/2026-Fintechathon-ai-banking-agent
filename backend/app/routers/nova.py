@@ -23,7 +23,11 @@ from ..services.ai.transfer_manager import (
     ManagerError, get_session, change_task_form, cancel_chat_task,
 )
 from ..services.ai.collection_manager import CollectionError, refresh_collection, submit_collection
-from ..services.ai.card_subscription_tools import CardTaskError, dismiss_chat_card_task, link_chat_card_operation
+from ..services.ai.calendar_tools import update_chat_calendar_task
+from ..services.ai.shop_tools import update_chat_shop_task
+from ..services.ai.card_subscription_tools import (
+    CardTaskError, dismiss_chat_card_task, link_chat_card_operation, update_chat_subscription_task,
+)
 from ..integrations.card_authorization import CardAuthorizationError
 from ..models.nova_task import NovaSessionORM
 from ..integrations.bank_api import BankApiError, get_bank_api
@@ -99,6 +103,22 @@ class CollectionRefresh(BaseModel):
     session_version: int = Field(ge=0)
 
 
+class SubscriptionTaskSelect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subscription_id: str = Field(min_length=1, max_length=40)
+
+
+class ShopTaskLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shop: Literal["flower", "cake"]
+    order_id: str = Field(min_length=1, max_length=40)
+
+
+class CalendarTaskLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str = Field(min_length=1, max_length=40)
+
+
 class CardTaskLink(BaseModel):
     model_config = ConfigDict(extra="forbid")
     operation_id: str = Field(min_length=8, max_length=64)
@@ -168,7 +188,7 @@ async def task_session(session_id: str, current_user: dict = Depends(get_current
         await bank_conversations.get(db, current_user["user_id"], session_id)
         if await db.get(NovaSessionORM, session_id) is None:
             return {"session_id": session_id, "session_version": 0, "focus_task_id": None,
-                    "tasks": [], "collection_cards": [], "card_operations": []}
+                    "tasks": [], "collection_cards": [], "card_operations": [], "subscription_tasks": [], "calendar_tasks": [], "shop_tasks": []}
         return await get_session(db, current_user["user_id"], session_id)
     except (ManagerError, bank_conversations.ConversationError) as error:
         raise _transfer_error(error) from error
@@ -226,6 +246,89 @@ async def dismiss_card_task(session_id: str, entry_id: str,
         return {"card_operations": await dismiss_chat_card_task(
             db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id)}
     except (CardTaskError, CardAuthorizationError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/subscription-tasks/{entry_id}/select")
+async def select_subscription_task(session_id: str, entry_id: str, request: SubscriptionTaskSelect,
+                                   current_user: dict = Depends(get_current_user),
+                                   db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"subscription_tasks": await update_chat_subscription_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id,
+            subscription_id=request.subscription_id)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/subscription-tasks/{entry_id}/dismiss")
+async def dismiss_subscription_task(session_id: str, entry_id: str,
+                                    current_user: dict = Depends(get_current_user),
+                                    db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"subscription_tasks": await update_chat_subscription_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, close=True)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/calendar-tasks/{entry_id}/event")
+async def link_calendar_task(session_id: str, entry_id: str, request: CalendarTaskLink,
+                             current_user: dict = Depends(get_current_user),
+                             db: AsyncSession = Depends(get_db)) -> dict:
+    """本人在聊天日程表单中创建日程后，把它挂到对应任务卡。"""
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"calendar_tasks": await update_chat_calendar_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id,
+            event_id=request.event_id)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/calendar-tasks/{entry_id}/dismiss")
+async def dismiss_calendar_task(session_id: str, entry_id: str,
+                                current_user: dict = Depends(get_current_user),
+                                db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"calendar_tasks": await update_chat_calendar_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, close=True)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/shop-tasks/{entry_id}/order")
+async def link_shop_task(session_id: str, entry_id: str, request: ShopTaskLink,
+                         current_user: dict = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    """本人在聊天订单表单中下单后挂到任务卡；付款仍走银行付款申请与任务确认接口。"""
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"shop_tasks": await update_chat_shop_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id,
+            shop=request.shop, order_id=request.order_id)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/shop-tasks/{entry_id}/dismiss")
+async def dismiss_shop_task(session_id: str, entry_id: str,
+                            current_user: dict = Depends(get_current_user),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"shop_tasks": await update_chat_shop_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, close=True)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
         await db.rollback()
         raise _transfer_error(error) from error
 
