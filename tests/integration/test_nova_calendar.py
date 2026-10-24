@@ -202,3 +202,67 @@ async def test_detail_uses_local_day_and_default_future_scope_does_not_hide_save
         result = await nova.execute_tool(call('get_calendar_event', {'event_id': event_id,
             'start_date': '2027-01-01', 'end_date': '2027-01-02'}), ctx(db))
         assert result['data']['total'] == 1
+
+
+@pytest.mark.asyncio
+async def test_create_event_directly_when_complete_otherwise_prefilled_chat_form(store, monkeypatch):
+    from dataclasses import replace
+    from backend.app.middleware.auth import get_current_user
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    monkeypatch.setattr(calendar_tools, 'utc_now', lambda: datetime(2026, 10, 14, 1, tzinfo=timezone.utc))
+    async with store() as db:
+        session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+
+        def at(message, request_id):
+            return replace(ctx(db), original_message=message, session_id=session_id, request_id=request_id)
+
+        complete = await nova.execute_tool(call('create_calendar_event', {
+            'title': '和李四吃饭', 'start_date': '2026-10-15', 'start_time': '18:30', 'end_time': '20:00',
+            'location': '海底捞', 'time_quote': '明天晚上六点半到八点'}), at('明天晚上六点半到八点在海底捞和李四吃饭', 'R1'))
+        event = complete['data']['event']
+        assert complete['data']['created'] and event['starts_at_local'] == '2026-10-15T18:30:00+08:00'
+        assert event['ends_at_local'] == '2026-10-15T20:00:00+08:00' and event['location'] == '海底捞'
+        assert await db.scalar(select(func.count()).select_from(CalendarEventORM)) == 1
+
+        missing = await nova.execute_tool(call('create_calendar_event', {
+            'title': '看牙医', 'start_date': '2026-10-16', 'time_quote': '后天'}), at('后天去看牙医', 'R2'))
+        assert not missing['data']['created'] and missing['data']['missing_fields'] == ['开始时间']
+        assert missing['data']['prefill'] == {'title': '看牙医', 'start_date': '2026-10-16'}
+
+        # A time the user never said is dropped, not created.
+        invented = await nova.execute_tool(call('create_calendar_event', {
+            'title': '开会', 'start_date': '2026-10-15', 'start_time': '09:00', 'location': '三楼',
+            'time_quote': '明早九点'}), at('帮我记一下开会', 'R3'))
+        assert not invented['data']['created'] and '时间' in invented['data']['notice']
+        assert invented['data']['prefill'] == {'title': '开会'}
+        past = await nova.execute_tool(call('create_calendar_event', {
+            'title': '跑步', 'start_date': '2026-10-13', 'start_time': '07:00', 'time_quote': '昨天早上七点'}),
+            at('昨天早上七点跑步', 'R4'))
+        assert not past['data']['created'] and '已经过去' in past['data']['notice']
+        assert await db.scalar(select(func.count()).select_from(CalendarEventORM)) == 1
+
+        tasks = (await get_session(db, 'U1', session_id))['calendar_tasks']
+        assert [bool(task['event']) for task in tasks] == [True, False, False, False]
+        assert tasks[0]['event']['title'] == '和李四吃饭'
+
+        app = FastAPI()
+        app.include_router(router)
+        user = {'user_id': 'U1'}
+        app.dependency_overrides[get_current_user] = lambda: user
+        async def use_db():
+            yield db
+        app.dependency_overrides[get_db] = use_db
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            # The user fills the chat form; it creates through the calendar API, then links the card.
+            created = await events.create_event('U1', CalendarEventCreate(title='看牙医', starts_at='2026-10-16T10:00:00+08:00'))
+            base = f"/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{tasks[1]['entry_id']}"
+            foreign = await events.create_event('U2', CalendarEventCreate(title='别人', starts_at='2026-10-16T10:00:00+08:00'))
+            assert (await client.post(base + '/event', json={'event_id': foreign['event_id']})).status_code == 404
+            linked = (await client.post(base + '/event', json={'event_id': created['event_id']})).json()['calendar_tasks']
+            assert linked[1]['event']['title'] == '看牙医'
+            remaining = (await client.post(f"/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{tasks[3]['entry_id']}/dismiss")).json()
+            assert len(remaining['calendar_tasks']) == 3
+            await events.delete_event('U1', tasks[0]['event_id'])
+            assert (await get_session(db, 'U1', session_id))['calendar_tasks'][0]['deleted'] is True
+    assert '日历业务 Skill' in nova.SYSTEM_PROMPT

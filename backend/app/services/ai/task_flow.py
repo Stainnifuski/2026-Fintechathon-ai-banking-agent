@@ -4,6 +4,7 @@ The router proposes a change; only a fresh, owner-scoped confirmation may end
 an editable draft. Neither a proposal nor a confirmation authorizes a trade.
 """
 import json
+import logging
 import time
 import hashlib
 from dataclasses import replace
@@ -17,6 +18,8 @@ from ...models.card import CardOperationORM
 from ..bank import nova_conversations as chats
 from ...domain.time import utc_now
 from ...integrations.card_authorization import aware
+
+logger = logging.getLogger(__name__)
 
 TITLES = {'planning':'理财规划','recommend':'目标产品推荐','purchase':'申购','positions':'查看持仓／赎回',
           'redeem':'赎回','assessment':'本人风险评估','clarify':'补充理财需求'}
@@ -183,7 +186,10 @@ async def decide(ctx):
             cancel(ctx.db,operation);await ctx.db.commit()
         if q_version:
             await queue.stop(ctx,q_version)
-    except Exception:
+    except Exception as error:
+        # 只记录类型与业务码，不记录用户原文或金额。
+        logger.warning('NOVA task switch close failed type=%s code=%s current=%s',
+                       type(error).__name__, getattr(error,'code',None), current['type'])
         await ctx.db.rollback()
         row,data=await load(ctx);data.pop('switch_in_progress',None);await save(ctx,row,data)
         return ctx,reply('当前任务无法安全结束，未启动目标操作。请在原卡片核对已确认、已到账或待核实的结果；不要重复提交。')
@@ -197,7 +203,8 @@ async def decide(ctx):
 
 async def guard_tool(ctx,name):
     if not ctx or not ctx.session_id or ctx.execution_step or ctx.task_switch_approved:return None
-    domain={'manage_wealth_request':'wealth','manage_transfer_request':'transfer','preview_card_operation':'card'}.get(name)
+    domain={'manage_wealth_request':'wealth','manage_transfer_request':'transfer',
+            'manage_collection_request':'collection','preview_card_operation':'card'}.get(name)
     if not domain:return None
     current=await active(ctx)
     if current and current['type']=='ambiguous':

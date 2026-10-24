@@ -57,6 +57,8 @@ NOVA 已接通分层 Agent Loop：模型先输出严格结构化路由；单一�
 
 NOVA支持可选的本地语音输入：点击麦克风录音，识别文字填入输入框后手动发送，不替代卡片确认或MFA。启动器会准备独立SenseVoiceSmall CPU服务，首次需联网下载固定模型，之后复用缓存；未就绪不影响文字聊天。Windows沿用`start_bank.cmd`，Linux/macOS可用`bash scripts/start_bank.sh`。环境、隐私边界及队友复现见[语音输入部署](docs/setup/voice_input.md)。
 
+定位 NOVA 问题时可在对话面板勾选“调试模式”。后续对话及自动接续会记录请求、模型输入输出、工具结果和最终响应；点击“下载最近记录”获取 JSON。记录只对当前登录用户可下载，服务端以加密文件保存在独立 `nova_debug` Docker 卷，普通日志不会输出正文。令牌、密码、验证码及完整手机号／银行卡号会隐藏；调试文件仍可能包含其他个人与财务信息，分享前请检查。关闭开关只停止新记录，已有文件不会自动删除。
+
 已有 `.env` 时保留原文件；首次运行复制 `.env.example`，设置独立的 `JWT_SECRET` 与 `INTERNAL_BANK_TOKEN`，不要提交密钥。无模型密钥时使用有限离线规则；默认 DeepSeek 服务只需填写一次 `LLM_API_KEY`，NOVA、转账、账单与理财共用。需要全局离线时设置 `LLM_MODE=offline`，详见[统一模型配置](docs/setup/model_configuration.md)。
 
 **唯一正式入口：[http://localhost:3000/](http://localhost:3000/)**。所有场景共用同一NOVA应用、登录身份和银行账本；前端通过同源`/api/v1`调用最新后端。健康检查为[3000/health](http://localhost:3000/health)，API文档为[3000/docs](http://localhost:3000/docs)。后端8000是Docker内部端口，不作为另一个浏览器入口。

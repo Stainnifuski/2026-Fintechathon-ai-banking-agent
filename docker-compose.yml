@@ -68,6 +68,7 @@ services:
       SENSEVOICE_URL: http://sensevoice:50000
     volumes:
       - audit_recovery:/app/var/audit-recovery
+      - nova_debug:/app/var/nova-debug
       - type: bind
         source: ./.deps/wealth_portfolio_data/snapshots
         target: /app/.deps/wealth_portfolio_data/snapshots
@@ -114,6 +115,8 @@ volumes:
   sensevoice_models:
     driver: local
   audit_recovery:
+    driver: local
+  nova_debug:
     driver: local
   postgres_data:
     driver: local

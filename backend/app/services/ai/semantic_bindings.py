@@ -150,8 +150,10 @@ def bind_field(proposed: str | None, quote: str, *, previous: str | None=None,
 
 REFERENCE_TOOLS={
     'get_card':('card_id',('list_cards',),('card_id','card_number')),
+    'list_card_transactions':('card_id',('list_cards',),('card_id','card_number')),
     'preview_card_operation':('card_id',('list_cards',),('card_id','card_number')),
     'get_subscription':('subscription_id',('list_subscriptions',),('merchant_name',)),
+    'request_subscription_cancellation':('subscription_id',('list_subscriptions',),('merchant_name',)),
     'get_transaction':('tx_id',('list_transactions',),('tx_id',)),
     'get_calendar_event':('event_id',('list_calendar_events','search_calendar_events'),('title',)),
     'get_shop_product':('product_id',('list_shop_products',),('name',)),

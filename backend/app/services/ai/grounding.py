@@ -21,14 +21,16 @@ TOOL_LABELS = {
     'get_current_time': '当前时间', 'get_financial_overview': '账户概览',
     'get_bill_analysis': '账单分析', 'list_transactions': '流水查询', 'get_transaction': '流水详情',
     'list_contacts': '联系人查询', 'search_contacts': '联系人查询',
-    'list_cards': '卡片查询', 'get_card': '卡片详情', 'preview_card_operation': '卡片操作预览',
+    'list_cards': '卡片查询', 'get_card': '卡片详情', 'list_card_transactions': '用卡记录',
+    'preview_card_operation': '卡片操作预览', 'request_subscription_cancellation': '取消订阅',
     'list_subscriptions': '订阅查询', 'get_subscription': '订阅详情',
-    'list_calendar_events': '日历查询', 'search_calendar_events': '日历搜索', 'get_calendar_event': '活动详情',
+    'create_calendar_event': '日程', 'prepare_shop_purchase': '店铺订单', 'list_calendar_events': '日历查询', 'search_calendar_events': '日历搜索', 'get_calendar_event': '活动详情',
     'list_shop_products': '商品查询', 'get_shop_product': '商品报价',
     'list_shop_orders': '订单查询', 'get_shop_order': '订单详情',
     'get_subscription_insights': '订阅扣费核对', 'project_cashflow': '现金流情景',
     'list_recurring_records': '周期收支查询', 'get_budget_status': '预算查询',
     'list_forecast_reviews': '预测复盘', 'manage_transfer_request': '转账任务',
+    'manage_collection_request': '收款草稿',
     'manage_wealth_request': '理财任务',
 }
 
@@ -221,7 +223,7 @@ def report_rows(data: dict) -> list[str]:
 def body(name: str, result: dict) -> list[str]:
     """按工具语义生成不可由模型改写的证据块。"""
     d = result.get('data', {})
-    if name not in {'get_current_time', 'manage_transfer_request', 'manage_wealth_request'} and not isinstance(d, dict):
+    if name not in {'get_current_time', 'manage_transfer_request', 'manage_collection_request', 'manage_wealth_request'} and not isinstance(d, dict):
         raise ValueError('INVALID_EVIDENCE_SHAPE')
     if name == 'get_current_time':
         return [f'当前时间 {literal(result["local_time"])}，时区 {literal(result["timezone"])}。']
@@ -286,14 +288,44 @@ def body(name: str, result: dict) -> list[str]:
     if name == 'preview_card_operation':
         if d.get('executed') is not False:
             raise ValueError('PREVIEW_STATE_NOT_VERIFIED')
-        lines = ['已生成卡片操作预览，尚未执行；须在卡片页核对并由本人确认。']
+        if d.get('form_opened'):
+            lines = [f'已在下方打开{literal(d.get("action_label", "卡片操作"))}表单，尚未生成预览，也未执行。']
+            if d.get('bank_message'):
+                lines.append(f'银行提示：{literal(d["bank_message"])}；请在表单中调整后再生成确认信息。')
+            if d.get('missing_fields'):
+                lines.append('请在表单中补充：' + '、'.join(literal(item) for item in d['missing_fields']) + '。')
+            lines.append('生成确认信息后，由本人在任务卡中确认；需要验证码的操作还须本人输入。')
+            return lines
+        lines = ['已生成卡片操作预览，尚未执行；请在下方卡片任务卡中核对并由本人确认。']
         if d.get('requires_mfa'):
             lines.append('此操作还需要本人完成验证码强验证。')
+        statuses = {'ACTIVE': '正常', 'LOCKED': '已锁定', 'LOST': '已挂失', 'CANCELLED': '已注销'}
         for change in d.get('changes', [])[:MAX_ROWS]:
-            fmt = money if change.get('unit') == 'fen' else literal
+            fmt = money if change.get('unit') == 'fen' else (
+                (lambda value: literal(statuses.get(value, value))) if change.get('field') == 'status' else literal)
             lines.append(f'变更字段 {literal(change.get("label", "未提供"))}：'
                          f'{fmt(change.get("before"))} → {fmt(change.get("after"))}。')
         return lines
+    if name == 'list_card_transactions':
+        suffix = re.sub(r'\D', '', str(d.get('card_number') or ''))[-4:]
+        title = f'卡片尾号 {suffix}' if len(suffix) == 4 else '本卡'
+        kind = {True: '已批准的', False: '被拒绝的'}.get((d.get('filters') or {}).get('approved'), '')
+        lines = [f'{title}最近20笔用卡授权中，{kind}记录共 {int(d.get("total", 0))} 笔。']
+        for row in d.get('items', [])[:MAX_ROWS]:
+            lines.append(f'{literal(row.get("authorized_at", "时间未提供"))}，商户 {literal(row.get("merchant") or "未提供")}，'
+                         f'金额 {money(row.get("amount_fen"))}，' +
+                         ('已批准。' if row.get('approved') is True else f'被拒绝：{literal(row.get("message") or "原因未提供")}。'))
+        return lines
+    if name == 'request_subscription_cancellation':
+        if d.get('executed') is not False:
+            raise ValueError('CANCEL_STATE_NOT_VERIFIED')
+        if d.get('form_opened'):
+            return ['已在下方打开取消订阅任务卡，尚未取消；请在卡片中选择要取消的订阅。',
+                    '查看取消详情后由本人确认；NOVA 不能代为确认。']
+        return [f'已在下方显示取消订阅任务卡：{literal(d.get("merchant_name") or "未提供")}，'
+                f'{money(d.get("amount_fen"), d.get("currency", "CNY"))} / {literal(d.get("billing_cycle") or "周期未提供")}，'
+                f'计划下次扣费 {literal(d.get("next_charge_at") or "未提供")}（UTC）。尚未取消。',
+                '请在任务卡中查看取消详情并由本人确认；确认后停止后续模拟扣费，历史流水保留，不代表取消真实商户合同。']
     if name in {'list_subscriptions', 'get_subscription'}:
         rows = d.get('items', []) if name == 'list_subscriptions' else [d]
         lines = ([page_notice(d, min(len(rows), MAX_ROWS))] if name == 'list_subscriptions' else [])
@@ -301,6 +333,35 @@ def body(name: str, result: dict) -> list[str]:
             lines.append('筛选后全部分页的生效、每月、人民币订阅预计月费：'
                          + money(d['summary'].get('monthly_commitment_fen')) + '，不等于实际扣款。')
         return lines + [subscription_text(row) for row in rows[:MAX_ROWS]]
+    if name == 'prepare_shop_purchase':
+        if d.get('created'):
+            order = d['order']
+            return [f'已提交订单：{literal(order["product_name"])} × {int(order["quantity"])}，'
+                    f'单价 {money(order["unit_price_fen"])}，合计 {money(order["total_fen"])}。',
+                    '店铺已向银行发起付款申请，尚未扣款。请在下方订单卡片选择付款账户并由本人确认付款；需要时还须本人输入验证码。']
+        lines = ['已在下方打开订单表单，尚未下单，也未付款。']
+        if d.get('missing_fields'):
+            lines.append('请在表单中补充：' + '、'.join(literal(item) for item in d['missing_fields']) + '。')
+        if d.get('notice'):
+            lines.append(literal(d['notice']))
+        lines.append('提交订单后，付款仍须本人在订单卡片中确认。')
+        return lines
+    if name == 'create_calendar_event':
+        if d.get('created'):
+            event = d['event']
+            when = literal(event['starts_at_local']) + (f' 至 {literal(event["ends_at_local"])}' if event.get('ends_at_local') else '')
+            lines = [f'已创建日程 {literal(event["title"])}，时间 {when}。']
+            if event.get('location'):
+                lines.append(f'地点：{literal(event["location"])}。')
+            lines.append('如有误，可在下方日程卡片中删除。')
+            return lines
+        lines = ['已在下方打开日程表单，尚未创建。']
+        if d.get('missing_fields'):
+            lines.append('请在表单中补充：' + '、'.join(literal(item) for item in d['missing_fields']) + '。')
+        if d.get('notice'):
+            lines.append(literal(d['notice']) + '')
+        lines.append('核对后点击“创建日程”。')
+        return lines
     if name in {'list_calendar_events', 'search_calendar_events', 'get_calendar_event'}:
         rows = d.get('items', [])[:MAX_ROWS]
         lines = [page_notice(d, len(rows)), *[calendar_text(row) for row in rows]]
@@ -326,7 +387,7 @@ def body(name: str, result: dict) -> list[str]:
             '这是只读估计，历史高低线不是置信区间；缺失项目不表示未来为零，情景差额不表示已节省或到账。']
     if name in {'get_budget_status', 'list_forecast_reviews', 'list_recurring_records', 'get_subscription_insights'}:
         return report_rows(d) + ['计划、历史估计和实际扣款分别核对；此查询不执行取消、扣费或资金操作。']
-    if name in {'manage_transfer_request', 'manage_wealth_request'}:
+    if name in {'manage_transfer_request', 'manage_collection_request', 'manage_wealth_request'}:
         # 专用服务端流程生成文案，模型自由问题已在子流程入口替换。
         return [result.get('reply') or '请核对可信任务卡；聊天不代为确认、验证或执行交易。']
     raise ValueError('UNSUPPORTED_EVIDENCE_SOURCE')
@@ -348,7 +409,8 @@ class Evidence:
 
 def evidence_for(index: int, item: dict) -> Evidence | None:
     name, result = item['name'], item['result']
-    if name == 'declare_goal_plan':
+    # 计划登记和收款语义解析是内部步骤；用户可见结论来自随后的业务工具结果。
+    if name in {'declare_goal_plan', 'inspect_collection_request'}:
         return None
     title = TOOL_LABELS.get(name, '工具查询')
     digest = hashlib.sha256(json.dumps(result, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
@@ -362,6 +424,10 @@ def evidence_for(index: int, item: dict) -> Evidence | None:
             'TOOL_NOT_ALLOWED': '本轮不允许调用该工具，请重新说明需求。',
             'PARAMETER_NOT_GROUNDED': '参数缺少本轮原文依据，请明确产品、数值、单位或情景假设。',
         }.get(result['error'], '暂时无法查询，请稍后重试；未取得可核验结果。')
+        if name == 'preview_card_operation' and result.get('message') and result['error'] not in {
+                'INVALID_ARGUMENTS', 'TOOL_NOT_ALLOWED', 'PARAMETER_NOT_GROUNDED'}:
+            # 银行业务规则拒绝（如状态不允许、超出上限）原样告知；未生成任务卡，卡片未变更。
+            clarification = f'银行未受理：{literal(result["message"])}。未生成任务卡，卡片未变更。'
         lines = [clarification]
     else:
         try:
@@ -385,7 +451,7 @@ def evidence_for(index: int, item: dict) -> Evidence | None:
             if value:
                 prefix.append(f'{label}：{value if isinstance(scope[key], dict) else literal(value)}。')
     kind = result.get('data_kind')
-    if kind == 'simulated_bank' or name in {'manage_transfer_request', 'manage_wealth_request'}:
+    if kind == 'simulated_bank' or name in {'manage_transfer_request', 'manage_collection_request', 'manage_wealth_request'}:
         prefix.append('数据类型：模拟银行数据。')
     elif kind == 'simulated_merchant':
         prefix.append(f'数据类型：模拟店铺，店铺 {literal(result.get("shop_name", "未提供"))}。')
