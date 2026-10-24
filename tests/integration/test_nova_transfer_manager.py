@@ -1,4 +1,5 @@
 """Unified NOVA transfer drafts and handoff to the existing state machine."""
+import json
 from uuid import uuid4
 from datetime import datetime, timezone, timedelta
 
@@ -449,6 +450,7 @@ async def test_nova_http_half_balance_request_returns_task_card(db, monkeypatch)
 
 def test_transfer_intent_does_not_capture_read_only_transfer_history():
     assert wants_transfer("转钱")
+    assert wants_transfer("发起转账")
     assert wants_transfer("给李四转100元")
     assert wants_transfer("把我银行卡里一半的钱转给赵六")
     assert not wants_transfer("请查看我的转账记录")
@@ -640,3 +642,40 @@ async def test_vague_transfer_creates_visible_draft_and_confirmation_requests_mi
     confirmation = await send(db, "确认", draft)
     assert "还是草稿" in confirmation["reply"]
     assert await db.scalar(select(func.count()).select_from(TransferTaskORM)) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["offline", "model"])
+@pytest.mark.parametrize("endpoint", ["chat", "chat/stream"])
+async def test_nova_launch_transfer_returns_empty_chat_card(db, monkeypatch, mode, endpoint):
+    monkeypatch.setenv("LLM_MODE", mode)
+    monkeypatch.setattr(nova_router, "get_bank_api", lambda: InProcessBankApi(db))
+    app = FastAPI()
+    app.include_router(nova_router.router)
+
+    async def current_user():
+        return {"user_id": "U1"}
+
+    async def current_db():
+        yield db
+
+    app.dependency_overrides[get_current_user] = current_user
+    app.dependency_overrides[get_db] = current_db
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(f"/api/v1/nova/{endpoint}", json={
+            "message": "发起转账", "request_id": uuid4().hex,
+        })
+        assert response.status_code == 200, response.text
+        result = (next(json.loads(line[6:]) for line in response.text.splitlines()
+                       if line.startswith("data: ") and json.loads(line[6:]).get("type") == "done")
+                  if endpoint.endswith("stream") else response.json())
+        assert result["mode"] == mode
+        assert result["tool_calls"][0]["name"] == "manage_transfer_request"
+        assert len(result["tasks"]) == 1
+        task = result["tasks"][0]
+        assert task["status"] == "COLLECTING"
+        assert task["form"]["recipient"] == ""
+        assert task["form"]["amount_yuan"] == ""
+        assert {"收款人姓名", "转账金额"} <= set(task["missing_fields"])
+        assert task["transfer_task_id"] is None
+        assert await db.scalar(select(func.count()).select_from(TransferTaskORM)) == 0

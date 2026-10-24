@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 
 from .config import LLMSettings, get_mode, get_settings
 from .errors import LLMError
+from .. import debug_trace
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +204,7 @@ class LLMService:
             body["stream"] = True
             if settings.provider == "deepseek":
                 body["stream_options"] = {"include_usage": True}
+        debug_trace.record('model_request', {'provider': settings.provider, 'body': body})
         client = await self._connection(settings)
         slots, idle = self._slots, self._idle
         assert slots is not None and idle is not None
@@ -258,15 +260,21 @@ class LLMService:
             usage = {key: value for key, value in usage.items()
                      if key in {"prompt_tokens", "completion_tokens", "total_tokens"}
                      and type(value) is int and value >= 0}
+            debug_trace.record('model_response', {'message': data, 'usage': usage,
+                                                  'finish_reason': choice.get('finish_reason')})
             return LLMResult(data if tools is not None else content, {"provider": settings.provider, "model": settings.model,
                                        "usage": usage, "live": True})
         except LLMError:
+            debug_trace.record('model_error', {'type': 'LLMError'})
             raise
         except (TimeoutError, httpx.TimeoutException):
+            debug_trace.record('model_error', {'code': 'MODEL_TIMEOUT'})
             raise LLMError("MODEL_TIMEOUT") from None
         except httpx.HTTPError:
+            debug_trace.record('model_error', {'code': 'MODEL_NETWORK_ERROR'})
             raise LLMError("MODEL_NETWORK_ERROR") from None
         except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            debug_trace.record('model_error', {'code': 'MODEL_RESPONSE_INVALID'})
             raise LLMError("MODEL_RESPONSE_INVALID") from None
         finally:
             self._active -= 1

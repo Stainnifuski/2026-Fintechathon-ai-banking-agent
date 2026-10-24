@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..middleware.auth import get_current_user
@@ -16,11 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.nova import PageContext
 from ..services.ai.nova_tools import ToolContext
 from ..services.ai import nova
+from ..services.ai import debug_trace
 from ..services.ai.llm import LLMError
 from ..services.ai.nlu import UnderstandingError
 from ..services.ai.transfer_manager import (
     ManagerError, get_session, change_task_form, cancel_chat_task,
 )
+from ..services.ai.collection_manager import CollectionError, refresh_collection, submit_collection
+from ..services.ai.card_subscription_tools import CardTaskError, dismiss_chat_card_task, link_chat_card_operation
+from ..integrations.card_authorization import CardAuthorizationError
 from ..models.nova_task import NovaSessionORM
 from ..integrations.bank_api import BankApiError, get_bank_api
 from ..services.orchestration import TaskError
@@ -43,7 +47,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     page_context: PageContext = Field(default_factory=PageContext)
     history: list[HistoryMessage] = Field(default_factory=list, max_length=12)
-    request_id: str | None = Field(default=None, min_length=8, max_length=64)
+    request_id: str | None = Field(default=None, min_length=8, max_length=64, pattern=r'^[A-Za-z0-9_-]+$')
     session_id: str | None = Field(default=None, min_length=8, max_length=64)
     session_version: int = Field(default=0, ge=0)
     focus_task_id: str | None = Field(default=None, max_length=64)
@@ -52,6 +56,7 @@ class ChatRequest(BaseModel):
     wealth_stage: str | None = Field(default=None,max_length=64,pattern=r'^[a-z_]+$')
     task_switch_token: str | None = Field(default=None,min_length=32,max_length=32)
     accept_task_switch: bool | None = None
+    debug: bool = False
 
     @field_validator("message")
     @classmethod
@@ -79,6 +84,24 @@ class TaskCardAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: str = Field(min_length=8, max_length=64)
     session_version: int = Field(ge=0)
+
+
+class CollectionSubmit(BaseModel):
+    session_version: int = Field(ge=0)
+    payer_user_ids: list[str] = Field(min_length=1, max_length=20)
+    receive_account_id: str = Field(min_length=1, max_length=32)
+    amount: float = Field(gt=0, le=1_000_000, allow_inf_nan=False)
+    split_equally: bool = False
+    note: str = Field(default="", max_length=256)
+
+
+class CollectionRefresh(BaseModel):
+    session_version: int = Field(ge=0)
+
+
+class CardTaskLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operation_id: str = Field(min_length=8, max_length=64)
 
 
 def _error_detail(error: LLMError) -> dict:
@@ -144,9 +167,66 @@ async def task_session(session_id: str, current_user: dict = Depends(get_current
     try:
         await bank_conversations.get(db, current_user["user_id"], session_id)
         if await db.get(NovaSessionORM, session_id) is None:
-            return {"session_id": session_id, "session_version": 0, "focus_task_id": None, "tasks": []}
+            return {"session_id": session_id, "session_version": 0, "focus_task_id": None,
+                    "tasks": [], "collection_cards": [], "card_operations": []}
         return await get_session(db, current_user["user_id"], session_id)
     except (ManagerError, bank_conversations.ConversationError) as error:
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/collections/{collection_id}/refresh")
+async def refresh_collection_card(session_id: str, collection_id: str, request: CollectionRefresh,
+                                  current_user: dict = Depends(get_current_user),
+                                  db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return await refresh_collection(db, user_id=current_user["user_id"],
+                                        session_id=session_id, collection_id=collection_id,
+                                        session_version=request.session_version)
+    except (CollectionError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/collections/{collection_id}/send")
+async def send_collection_card(session_id: str, collection_id: str, request: CollectionSubmit,
+                               current_user: dict = Depends(get_current_user),
+                               db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return await submit_collection(db, user_id=current_user["user_id"],
+                                       session_id=session_id, collection_id=collection_id,
+                                       **request.model_dump())
+    except (CollectionError, BankError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/card-tasks/{entry_id}/operation")
+async def link_card_task(session_id: str, entry_id: str, request: CardTaskLink,
+                         current_user: dict = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)) -> dict:
+    """把本人在聊天表单中生成的卡片预览挂到对应任务卡；确认仍走卡片授权接口。"""
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"card_operations": await link_chat_card_operation(
+            db, user_id=current_user["user_id"], session_id=session_id,
+            entry_id=entry_id, operation_id=request.operation_id)}
+    except (CardTaskError, CardAuthorizationError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/card-tasks/{entry_id}/dismiss")
+async def dismiss_card_task(session_id: str, entry_id: str,
+                            current_user: dict = Depends(get_current_user),
+                            db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"card_operations": await dismiss_chat_card_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id)}
+    except (CardTaskError, CardAuthorizationError, bank_conversations.ConversationError) as error:
+        await db.rollback()
         raise _transfer_error(error) from error
 
 
@@ -191,7 +271,9 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                db: AsyncSession = Depends(get_db)) -> dict:
     try:
         request, history, full_history = await _prepare(request, current_user["user_id"], db)
-        reply = await nova.chat(bank_conversations.redact(request.message), history,
+        with debug_trace.capture(current_user['user_id'], request.request_id, request.debug):
+            debug_trace.record('user_request', {'message': request.message, 'page_context': request.page_context.model_dump(), 'history': history})
+            reply = await nova.chat(bank_conversations.redact(request.message), history,
                                 context=ToolContext(
                                     current_user["user_id"], db, request.page_context,
                                     original_message=request.message,
@@ -206,7 +288,9 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                                     bank_api=get_bank_api(),
                                     conversation_history=full_history,
                                 ))
-        return await _finish(request, current_user["user_id"], db, reply)
+            reply = await _finish(request, current_user["user_id"], db, reply)
+            debug_trace.record('final_response', reply)
+            return reply
     except LLMError as error:
         raise HTTPException(status_code=503, detail=_error_detail(error)) from None
     except (ManagerError, UnderstandingError, TaskError, BankApiError, BankError,
@@ -250,8 +334,11 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
 
     async def run() -> None:
         try:
-            result = await nova.chat(bank_conversations.redact(request.message), history, context=context, on_event=queue.put)
-            result = await _finish(request, current_user["user_id"], db, result)
+            with debug_trace.capture(current_user['user_id'], request.request_id, request.debug):
+                debug_trace.record('user_request', {'message': request.message, 'page_context': request.page_context.model_dump(), 'history': history})
+                result = await nova.chat(bank_conversations.redact(request.message), history, context=context, on_event=queue.put)
+                result = await _finish(request, current_user["user_id"], db, result)
+                debug_trace.record('final_response', result)
             await queue.put({"type": "done", **jsonable_encoder(result)})
         except LLMError as error:
             await queue.put({"type": "error", **_error_detail(error)})
@@ -277,6 +364,17 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@router.get('/debug/{request_id}')
+async def download_debug(request_id: str, current_user: dict = Depends(get_current_user)) -> Response:
+    try:
+        content = debug_trace.read(current_user['user_id'], request_id)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(404, detail={'code': 'DEBUG_TRACE_NOT_FOUND', 'message': '调试记录不存在'}) from None
+    return Response(content, media_type='application/json', headers={
+        'Content-Disposition': f'attachment; filename="nova-debug-{request_id}.json"',
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
 class WealthCardState(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     version: int = Field(ge=1)
@@ -292,6 +390,8 @@ class WealthCardState(BaseModel):
 class ExecutionAction(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
     version:int=Field(ge=1)
+    debug:bool=False
+    debug_request_id:str|None=Field(default=None,min_length=8,max_length=64,pattern=r'^[A-Za-z0-9_-]+$')
 
 
 @router.get('/execution-queues/{session_id}')
@@ -310,12 +410,15 @@ async def execution_advance(session_id:str,request:ExecutionAction,current_user:
         context=ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id,bank_api=get_bank_api())
         row=await queue.load(context)
         if not row or row.version!=request.version:raise bank_conversations.ConversationError('队列已更新，请刷新进度。',409)
-        reply=await queue.advance(context)
-        reply.pop('_execution_grounded',None)
-        from ..services.ai.wealth_agent import cards
-        reply['wealth_cards']=await cards(db,current_user['user_id'],session_id)
-        if await db.get(NovaSessionORM,session_id):reply.update(await get_session(db,current_user['user_id'],session_id))
-        return reply
+        with debug_trace.capture(current_user['user_id'], request.debug_request_id or uuid4().hex, request.debug):
+            debug_trace.record('queue_advance', {'session_id': session_id, 'version': request.version, 'queue': queue.public(row)})
+            reply=await queue.advance(context)
+            reply.pop('_execution_grounded',None)
+            from ..services.ai.wealth_agent import cards
+            reply['wealth_cards']=await cards(db,current_user['user_id'],session_id)
+            if await db.get(NovaSessionORM,session_id):reply.update(await get_session(db,current_user['user_id'],session_id))
+            debug_trace.record('final_response',reply)
+            return reply
     except bank_conversations.ConversationError as error:raise _transfer_error(error) from error
 
 

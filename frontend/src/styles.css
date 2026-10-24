@@ -175,6 +175,13 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .nova-transfer-actions, .nova-transfer-candidates { display: flex; flex-wrap: wrap; gap: 7px; }
 .nova-transfer-verify { display: grid; gap: 8px; }
 .nova-transfer-verify input { width: 100%; }
+.nova-collection-form { display: grid; gap: 10px; }
+.nova-collection-form > label { display: grid; gap: 5px; font-size: 13px; }
+.nova-collection-form input:not([type="checkbox"]), .nova-collection-form select { width: 100%; }
+.nova-collection-form fieldset { display: grid; gap: 6px; min-width: 0; border: 1px solid #d9e2ff; border-radius: 8px; }
+.nova-collection-form .check-option, .nova-collection-check { display: flex; align-items: center; gap: 7px; }
+.nova-collection-contact { display: grid; gap: 6px; padding: 12px; border: 1px solid #d9e2ff; border-radius: 8px; background: #f8fbff; }
+.nova-collection-contact h4, .nova-collection-contact p { margin: 0; }
 @media (max-width: 560px) { .nova-transfer-form { grid-template-columns: 1fr; } }
 .agent-compose input { min-width: 0; }
 

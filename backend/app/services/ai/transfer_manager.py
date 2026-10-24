@@ -32,6 +32,15 @@ RECORD_QUERY = re.compile(r"(?:转账|汇款).{0,5}(?:记录|历史|流水|明�
 READ_QUERY = re.compile(r"转过|转了多少|转账.{0,5}(?:多少|总额|笔数)|(?:查|看|统计|查询).{0,12}(?:转账|汇款)")
 STATUS_QUERY = re.compile(r"转账.{0,4}(?:状态|结果|进度|成功了吗)|这笔.{0,4}(?:成功了吗|状态)|^状态$|^进度$")
 MODIFY = re.compile(r"改成|改为|修改|换成|不对|把.+?改")
+BARE_TRANSFER = re.compile(
+    r"(?:请|麻烦)?\s*(?:帮我|我要|我想|想|需要|现在|立即|马上)?\s*"
+    r"(?:发起|办理|开始|进行)?\s*(?:一笔)?\s*"
+    r"(?:转钱|转账|汇款|打款)[。！!?？\s]*"
+)
+
+
+def is_bare_transfer_request(message: str) -> bool:
+    return BARE_TRANSFER.fullmatch(message.strip()) is not None
 
 
 class ManagerError(Exception):
@@ -79,8 +88,12 @@ async def _view(db: AsyncSession, row: NovaSessionORM) -> dict:
             else:
                 task = {**task, "status": snapshot["phase"]}
         tasks.append(_public_task(task, snapshot))
+    from .collection_manager import collection_cards
+    from .card_subscription_tools import chat_card_operations
     return {"session_id": row.session_id, "session_version": row.version,
-            "focus_task_id": state.get("focus_task_id"), "tasks": tasks}
+            "focus_task_id": state.get("focus_task_id"), "tasks": tasks,
+            "collection_cards": await collection_cards(db, row.user_id, row.session_id),
+            "card_operations": await chat_card_operations(db, row.user_id, state)}
 
 
 async def get_session(db: AsyncSession, user_id: str, session_id: str) -> dict:
@@ -573,6 +586,11 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
     task_decisions = []
     if candidate_id:
         chunks, extracted = [message], []
+    elif is_bare_transfer_request(message):
+        # A request to open the form has no fields for a model to infer.
+        # Create a collecting draft deterministically in either LLM mode.
+        chunks = [message]
+        extracted = [{"intent": "transfer"}]
     elif nlu.mode == "model":
         safe_history = [
             {

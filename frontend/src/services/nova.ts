@@ -1,6 +1,6 @@
 import { apiClient } from './api';
 import type { BillQuery } from './bills';
-import type { TaskSnapshot } from './bank';
+import type { BankCard, CardAction, CardOperation, TaskSnapshot } from './bank';
 
 export type NovaPageContext = {
   version: 1;
@@ -26,7 +26,13 @@ export type NovaPageContext = {
 export type NovaMessage = { role: 'user' | 'assistant'; content: string; request_id?: string };
 export type NovaConversation = { session_id: string; title: string; created_at: string; updated_at: string };
 export type NovaConversationDetail = NovaConversation & { messages: NovaMessage[] };
-export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[] };
+/** 聊天中的卡片任务：未生成预览时是可编辑表单，生成后由本人确认/验证。 */
+export type NovaChatCardTask = {
+  entry_id: string; origin_request_id: string; action: CardAction; card_id?: string | null;
+  card?: BankCard | null; prefill: Record<string, string | boolean>; notice?: string | null;
+  operation?: CardOperation | null;
+};
+export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[]; collection_cards: NovaCollectionCard[]; card_operations?: NovaChatCardTask[] };
 
 export async function listNovaConversations(): Promise<NovaConversation[]> {
   return apiClient.get<NovaConversation[]>('/bank/nova/conversations').then(response => response.data);
@@ -54,12 +60,13 @@ export type NovaReply = {
   session_version?: number;
   focus_task_id?: string | null;
   tasks?: NovaTransferTask[];
+  collection_cards?: NovaCollectionCard[];
 };
 
 export type NovaExecutionQueue={queue_id:string;version:number;status:string;request_id:string;message:string;
   steps:{goal_id:string;objective:string;status:string;request_id:string;depends_on:string[];reply:string;review_operation_id?:string|null}[]};
 export const getNovaExecutionQueue=(session:string)=>apiClient.get<NovaExecutionQueue|null>(`/nova/execution-queues/${session}`).then(r=>r.data);
-export const advanceNovaExecutionQueue=(session:string,version:number)=>apiClient.post<NovaReply>(`/nova/execution-queues/${session}/advance`,{version},{timeout:95000}).then(r=>r.data);
+export const advanceNovaExecutionQueue=(session:string,version:number,debug=false,debugRequestId?:string)=>apiClient.post<NovaReply>(`/nova/execution-queues/${session}/advance`,{version,debug,debug_request_id:debugRequestId},{timeout:95000}).then(r=>r.data);
 export const stopNovaExecutionQueue=(session:string,version:number)=>apiClient.post<NovaExecutionQueue>(`/nova/execution-queues/${session}/stop`,{version}).then(r=>r.data);
 
 export type NovaTransferTask = {
@@ -72,11 +79,49 @@ export type NovaTransferTask = {
   task?: TaskSnapshot | null;
 };
 
+export type NovaCollectionCard = {
+  collection_id: string; origin_request_id: string; status: 'DRAFT' | 'SENT' | 'CANCELLED';
+  requested_names: string[]; selected_payer_user_ids: string[];
+  receive_account_id: string; amount_fen: number | null; split_equally: boolean; note: string;
+  contacts: { contact_id: string; user_id: string; name: string; nickname: string | null; label: string }[];
+  accounts: { account_id: string; card_masked: string; account_type: string }[];
+  unknown_names: string[]; ambiguous_names: string[]; payment_request_ids?: string[];
+};
+
+export const refreshNovaCollection = (sessionId: string, collectionId: string, sessionVersion: number) =>
+  apiClient.post<NovaTaskSession>(`/nova/task-sessions/${sessionId}/collections/${collectionId}/refresh`,
+    { session_version: sessionVersion }).then(r => r.data);
+
+export const linkNovaCardTask = (sessionId: string, entryId: string, operationId: string) =>
+  apiClient.post<{ card_operations: NovaChatCardTask[] }>(`/nova/task-sessions/${sessionId}/card-tasks/${entryId}/operation`,
+    { operation_id: operationId }).then(r => r.data.card_operations);
+export const dismissNovaCardTask = (sessionId: string, entryId: string) =>
+  apiClient.post<{ card_operations: NovaChatCardTask[] }>(`/nova/task-sessions/${sessionId}/card-tasks/${entryId}/dismiss`)
+    .then(r => r.data.card_operations);
+
+export const sendNovaCollection = (sessionId: string, collectionId: string, payload: {
+  session_version: number; payer_user_ids: string[]; receive_account_id: string;
+  amount: number; split_equally: boolean; note: string;
+}) => apiClient.post<NovaTaskSession>(`/nova/task-sessions/${sessionId}/collections/${collectionId}/send`, payload).then(r => r.data);
+
 export type NovaTaskRequest = {
+  debug?: boolean;
   task_switch_token?:string;accept_task_switch?:boolean;
   request_id: string; session_id?: string; session_version?: number;
   focus_task_id?: string; candidate_id?: string; wealth_task_id?:string; wealth_stage?:string;
 };
+
+export async function downloadNovaDebug(requestId: string): Promise<void> {
+  const response = await apiClient.get<Blob>(`/nova/debug/${encodeURIComponent(requestId)}`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `nova-debug-${requestId}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export type NovaTaskSwitch={token:string;current_label:string;target_label:string};
 export const getNovaTaskSwitch=(session:string)=>apiClient.get<NovaTaskSwitch|null>(`/nova/task-flow/${session}`).then(r=>r.data);

@@ -150,6 +150,7 @@ def bind_field(proposed: str | None, quote: str, *, previous: str | None=None,
 
 REFERENCE_TOOLS={
     'get_card':('card_id',('list_cards',),('card_id','card_number')),
+    'list_card_transactions':('card_id',('list_cards',),('card_id','card_number')),
     'preview_card_operation':('card_id',('list_cards',),('card_id','card_number')),
     'get_subscription':('subscription_id',('list_subscriptions',),('merchant_name',)),
     'get_transaction':('tx_id',('list_transactions',),('tx_id',)),

@@ -18,9 +18,16 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from ...domain.time import BUSINESS_TIMEZONE, utc_iso, utc_now
 from ..bank.nova_transfer_facts import owned_outgoing_transfer, historical_recipient
 from .llm import LLMError, get_mode, llm
+from .llm.config import get_settings
 from .nova_tools import ToolContext, business_tools, query_from, AnalysisArguments
 from .nlu import UnderstandingError, get_nlu
-from .transfer_manager import ManagerError, get_session, process_message
+from .transfer_manager import (
+    ManagerError, get_session, is_bare_transfer_request, process_message, wants_transfer,
+)
+from .collection_manager import (
+    CLARIFICATIONS as COLLECTION_CLARIFICATIONS, CollectionError, create_collection_draft,
+    inspect_collection_request, open_collection_drafts,
+)
 from ...integrations.bank_api import BankApiError, get_bank_api
 from ..orchestration import TaskError
 from ..bank.transfer_service import BankError
@@ -35,6 +42,7 @@ from .grounding import evidence_for, ground_reply
 from ...security.injection_detector import detect_injection
 from .parameter_grounding import validate_tool_parameters
 from .semantic_bindings import bind_tool_reference
+from .skill_registry import load_skill
 
 MAX_STEPS = 10
 MAX_TOOL_CALLS = 10
@@ -76,6 +84,11 @@ class TransferRequestArguments(BaseModel):
                 and self.amount_source_tx_id is not None):
             raise ValueError("历史引用复用金额时不能再提交另一笔金额来源")
         return self
+
+
+class CollectionRequestArguments(BaseModel):
+    """收款草稿只从服务端保存的用户原文提取，不接受模型编造字段。"""
+    model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class TransferHistoryReference(BaseModel):
@@ -142,7 +155,7 @@ class RequestRoute(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     mode: Literal["direct_react", "goal_plan"]
     domains: list[Literal[
-        "transfer", "accounts", "transactions", "bills", "contacts",
+        "transfer", "collection", "accounts", "transactions", "bills", "contacts",
         "cards", "subscriptions", "calendar", "shops", "time", "wealth", "other",
     ]] = Field(min_length=1, max_length=8)
     has_dependencies: bool
@@ -163,7 +176,9 @@ class RequestRoute(BaseModel):
 
 ROUTER_PROMPT = """你是银行助手的前置路由器，只判断执行结构，不回答用户。
 单一目标使用 direct_react；多个独立目标、同一业务的多个操作对象，或后一步依赖前一步结果时使用 goal_plan，并给出2至8个目标组成的无环计划。
-“给李四转100元”是单一 transfer 目标，必须 direct_react。
+"给李四转100元"是本人付款，属于单一 transfer 目标，必须 direct_react。
+"向李四收100元"是本人向李四请求付款，属于单一 collection 目标，必须 direct_react；不得路由到transfer。
+transfer_tasks.collection_drafts 列出本对话尚未发出的收款草稿。存在收款草稿时，补充或修改付款人、金额、收款账户、备注、AA方式，或撤销草稿，都属于 collection 的 continue——即使本轮只说了一个名字、一个数字或一句省略主语的补充；明确新建另一笔收款也是 collection，交由收款工具核验目标。上一轮助手就收款提出澄清问题时，本轮回答同样属于 collection。
 “查时间并转账”“查询倒数第六笔转账后复用收款人和金额”包含多个目标或查询依赖，必须 goal_plan。
 理财、基金、持仓、风险问卷、配置规划、申购、赎回属于wealth域。单个理财需求使用direct_react；其内部问卷和申赎阶段由理财子DAG管理。
 如果存在wealth_focus，“下一步/确认/改金额/这张卡”等指代属于wealth；明确其他目标时按新目标路由。
@@ -324,7 +339,8 @@ TOOL_REGISTRY = {
         "schema": {"type": "function", "function": {
             "name": "manage_transfer_request",
             "description": (
-                "处理当前用户提出的即时人民币转账：创建、补充或修改转账草稿，"
+                "处理当前用户主动从本人账户向别人付款的即时人民币转账：创建、补充或修改转账草稿。"
+                "向别人收款是请求别人付给本人，必须调用 manage_collection_request，不能调用本工具。"
                 "以及查询当前转账任务状态。工具会读取服务端保存的原始消息，模型不能改写其中明示的"
                 "收款人、金额或备注。若用户要求沿用某笔历史转出金额，先调用 list_transactions，"
                 "再把该笔 transfer_out 的 tx_id 和 amount_fen 原样传入；服务端会重新核验本人流水。"
@@ -344,13 +360,47 @@ TOOL_REGISTRY = {
         "execute": manage_transfer_request,
         "requires_identity": True,
     },
+    "manage_collection_request": {
+        "schema": {"type": "function", "function": {
+            "name": "manage_collection_request",
+            "description": (
+                "仅处理当前登录用户向别人发起收款：生成可编辑收款申请草稿卡。"
+                "收款方向是别人将钱付给本人，和本人向别人付款的转账方向相反。"
+                "用户说向某人收款、找某人要钱、让某人付给我时调用本工具；"
+                "用户说给某人转账、汇款时只能调用 manage_transfer_request。"
+                "调用前必须先调用 inspect_collection_request 查询并解析本轮对象；"
+                "本工具使用该次查询结果，重新核验本人联系人后新建、修改或撤销草稿。"
+                "多张草稿时必须依据用户明确的序号或原付款人定位；无法唯一定位时询问。"
+                "不会发出申请或扣款。纯查询收款记录、别人向我收款时不要调用。传空对象。"
+            ),
+            "parameters": CollectionRequestArguments.model_json_schema(),
+        }},
+        "arguments": CollectionRequestArguments,
+        "execute": lambda arguments, context: create_collection_draft(context),
+        "requires_identity": True,
+    },
+}
+TOOL_REGISTRY["inspect_collection_request"] = {
+    "schema": {"type": "function", "function": {
+        "name": "inspect_collection_request",
+        "description": (
+            "只读查询当前用户已保存的联系人，并结合本轮原话理解向谁收款。"
+            "返回联系人范围、明确点名者、金额及联系人快照；创建或修改收款草稿前必须先调用。"
+            "本工具不会创建卡片或发出收款申请。"
+        ),
+        "parameters": CollectionRequestArguments.model_json_schema(),
+    }},
+    "arguments": CollectionRequestArguments,
+    "execute": lambda arguments, context: inspect_collection_request(context),
+    "requires_identity": True,
 }
 TOOL_REGISTRY.update(business_tools())
 from .wealth_agent import wealth_tools
 TOOL_REGISTRY.update(wealth_tools())
 SYSTEM_PROMPT = """你是 NOVA 银行助手。服务端会先提供结构化路由：direct_react 表示单一目标，直接使用当前允许的业务工具；goal_plan 表示多目标或条件依赖，按其中DAG执行。不得自行改写路由或重复登记计划。批量转账的 Goal Plan 只是高层执行意图，具体新建或调整几笔任务仍以转账子模型结合未终结任务后的结构化判断为准。
 你必须根据用户本轮目标自主规划所需工具；一个要求可以依次调用多个工具，前一步结果可用于决定下一步，但不得编造工具结果或跳过必要核验。
-你可查询现实时间、本人账户概览、联系人及历史转账人、卡片及订阅、月度/年度账单、已完成流水、本人日历活动、模拟鲜花店和蛋糕店商品及本人订单，可用 manage_transfer_request 处理即时人民币转账草稿，并可为本人卡片操作生成待确认预览。
+你可查询现实时间、本人账户概览、联系人及历史转账人、卡片及订阅、月度/年度账单、已完成流水、本人日历活动、模拟鲜花店和蛋糕店商品及本人订单，可用 manage_transfer_request 处理本人付款的即时人民币转账草稿，可用 manage_collection_request 处理本人向别人请求付款的收款草稿，并可为本人卡片操作生成待确认预览。
+转账=本人从自己账户付给别人；收款=本人请求别人付给自己。不得因两者都含“款”而互换工具；“别人向我收款”不是本人发起收款。
 理财查询、产品推荐、规划、申购、赎回或理财任务修改恢复必须调用manage_wealth_request。理财交易仅由本人在可信卡片确认和MFA；聊天不能授权。
 当前时间日期必须调用 get_current_time，不可猜测。默认北京时间 Asia/Shanghai。
 账户和账单事实必须调用工具，不能使用历史回答或页面提示作为当前事实。所有金额 *_fen 单位为分，展示时换算人民币元。
@@ -384,20 +434,18 @@ COMPLETED是模拟银行交易完成，不代表配送；REFUNDED表示整单已
 区分计划、历史收入/消费估计和用户假设，历史高低余额线不是置信区间。减少消费比例、排除订阅ID必须来自用户明确假设，不能擅自修改。结果是只读模拟，不代表已取消、节省到账或执行。报告提示数据不足，不能将未估计项目当作未来必定为零。
 报告默认先给简明摘要：账期与截止时间、关键收支、主要分类及上期比较。年度趋势概括主要变化，
 待核对提示只举最多3条并说明总数；不要逐条抄写全部月份、异常或统计口径。用户明确要求详细报告时再展开。
-卡片、订阅事实必须调用 list_cards/get_card 和 list_subscriptions/get_subscription。所有页面均可查本人数据。
-“这张卡/这个订阅”沿用对应页面选中ID；没有选择先询问，不猜ID。按卡号末四位或商户名先查询列表，多个匹配先列候选询问。
-信用额度、银行核定上限、单笔/单日限额分别解释；可用信用额度以 available_credit_fen 为准，不能自行推算或当作现金。
+卡片事实和操作按“卡片业务 Skill”办理；订阅事实必须调用 list_subscriptions/get_subscription。所有页面均可查本人数据。
+“这个订阅”沿用订阅页选中ID；没有选择先询问，不猜ID。按商户名先查询列表，多个匹配先列候选询问。
 订阅单项金额按该行currency展示，不能将其他币种当人民币；人民币汇总金额才换算人民币元。
 订阅 summary 仅是筛选后全部分页的 ACTIVE/MONTHLY/CNY 预计月费，不是实际支出；实际扣款用账单工具。
 next_charge_at 是计划日期，不能声称已扣款或后台一定自动扣费；CANCELLED 的日期不能说是下一次扣费。
-卡片操作（申请虚拟卡、锁卡/解锁、挂失、补卡、注销虚拟卡、交易限额、信用额度、渠道开关）只能用 preview_card_operation 生成待核对预览。
-卡片和金额取自用户原话及卡片查询结果，不猜卡片或金额；缺少目标卡或金额先询问，多张匹配先列候选。挂失、注销是终态，生成前先向用户说明后果。
-预览不是执行：回复须说明尚未生效，需用户在卡片页核对并本人确认，permission_level=red 还需验证码；NOVA 不能确认、验证或代输验证码，不得声称已完成。
 不取消订阅、不模拟扣费或刷卡消费；这些操作引导对应管理页面。
 即时人民币转账必须调用 manage_transfer_request，不能仅凭对话文字自行生成任务或金额。该工具以服务端原始消息为主并创建草稿或待确认计划；文字“确认”“执行”仍不授权扣款。
 若一句话同时包含查询和转账等多个目标，应分别调用所需工具，不要只完成其中一个。涉及“上次金额”时先用 list_transactions 查询本人已完成转出流水，再将准确 tx_id 与 amount_fen 交给转账工具复核。涉及“倒数第几笔转账的人/相应的钱数”等历史转账指代时，先查询并按时间倒序从 transfer_out 中定位准确流水，再把其 tx_id 作为 history_reference 交给转账工具，由服务端复核并派生收款账户和金额；不得把列表展示名当作可信收款参数。涉及“第几张卡”等付款账户指代时先用 get_financial_overview 查询，并把准确 account_id 交给转账工具复核。不要自行推算、改写或补造这些值。
 修改或补充已有转账任务时使用可信任务上下文：用户未明确对象且有 focus_task_id 时直接选择焦点任务；用户明确收款人时选择该收款人唯一对应的 chat_task_id；有多个同名任务才追问。不要因为会话中有多笔任务而忽略焦点任务。
-除受控转账草稿和卡片操作预览外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
+除受控转账草稿、收款草稿和卡片操作预览外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
+SYSTEM_PROMPT += "\n收款业务 Skill：\n" + load_skill("collection")
+SYSTEM_PROMPT += "\n卡片业务 Skill：\n" + load_skill("card")
 
 
 @audited("assistant")
@@ -460,7 +508,7 @@ async def execute_tool(call: dict, context: ToolContext | None = None) -> dict:
                 "message": error.message}
     except UnderstandingError as error:
         return {"error": "TRANSFER_UNDERSTANDING_FAILED", "message": str(error)}
-    except (ManagerError, TaskError, BankApiError, BankError) as error:
+    except (ManagerError, CollectionError, TaskError, BankApiError, BankError) as error:
         return {"error": error.code, "message": error.message}
     except Exception:
         return {"error": "TOOL_EXECUTION_FAILED"}
@@ -530,7 +578,34 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                on_event: EventCallback | None = None) -> dict:
     """模型循环只推送工具进度，未经验证的正文不离开请求内存。"""
     trace = []
-    if get_mode() == "offline" and model is None:
+    mode = get_mode()
+    model_configured = False
+    if mode == "model" and model is None:
+        try:
+            get_settings()
+            model_configured = True
+        except LLMError:
+            pass
+    if context and model is None and (
+        is_bare_transfer_request(message)
+        or (mode == "offline" and (context.candidate_id or wants_transfer(
+            message, pending=bool(context.focus_task_id)
+        )))
+    ):
+        transfer = await execute_tool({
+            "function": {"name": "manage_transfer_request", "arguments": "{}"},
+        }, context)
+        if transfer.get("task_switch"):
+            return transfer
+        trace.append({"name": "manage_transfer_request", "result": transfer})
+        return {
+            "reply": transfer.get("reply", transfer.get("message", "转账请求暂时无法处理，请重试。")),
+            "mode": mode, "tool_calls": trace,
+            **{key: transfer[key] for key in (
+                "session_id", "session_version", "focus_task_id", "tasks"
+            ) if key in transfer},
+        }
+    if mode == "offline" and model is None:
         cards_subscriptions = await offline_cards_subscriptions(message, context, execute_tool)
         if cards_subscriptions is not None:
             return cards_subscriptions
@@ -599,6 +674,12 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                 "content": "当前转账任务状态（可信服务端上下文，仅用于规划，不是授权）："
                            + json.dumps(task_context, ensure_ascii=False),
             })
+    if context and context.session_id:
+        collection_drafts = await open_collection_drafts(context.db, context.user_id, context.session_id)
+        if collection_drafts:
+            task_context = {**(task_context or {}), "collection_drafts": collection_drafts}
+            messages.append({"role": "user", "content": "当前未发出的收款草稿（可信服务端上下文，仅用于理解续接，不是授权）："
+                             + json.dumps(collection_drafts, ensure_ascii=False)})
     if context and context.wealth_task_id:
         task_context={**(task_context or {}),"wealth_focus":{"task_id":context.wealth_task_id,"stage":context.wealth_stage}}
         messages.append({"role":"user","content":"当前用户选定的理财补充对象："+json.dumps(task_context["wealth_focus"],ensure_ascii=False)})
@@ -661,11 +742,17 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                     and route.mode == "direct_react"
                     and route.domains == ["transfer"]
                 )
+                direct_collection = (
+                    route is not None and route.mode == "direct_react"
+                    and route.domains == ["collection"]
+                )
                 direct_wealth = route is not None and route.mode == "direct_react" and route.domains == ["wealth"]
                 if direct_wealth:
                     allowed_names = {"manage_wealth_request"}
                 elif direct_transfer:
                     allowed_names = {"manage_transfer_request"}
+                elif direct_collection:
+                    allowed_names = {"inspect_collection_request", "manage_collection_request"}
                 elif route is not None:
                     allowed_names = set(TOOL_REGISTRY) - {"declare_goal_plan"}
                 else:
@@ -682,7 +769,7 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                         "allowed_tools": sorted(allowed_names), "mode": "model"})
                 request = {"messages": messages, "tools": available_tools,
                            "max_tokens": RESPONSE_MAX_TOKENS}
-                if direct_transfer or direct_wealth:
+                if direct_transfer or direct_collection or direct_wealth:
                     request["tool_choice"] = "required"
                 if on_event is not None:
                     async def on_delta(text: str) -> None:
@@ -707,6 +794,15 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                                 "session_id", "session_version", "focus_task_id", "tasks"
                             ) if key in transfer
                         })
+                    collection = next((
+                        item["result"] for item in reversed(trace)
+                        if item["name"] == "manage_collection_request"
+                        and not item["result"].get("error")
+                    ), None)
+                    if collection is not None:
+                        result.update({key: collection[key] for key in (
+                            "session_id", "session_version", "collection_cards"
+                        ) if key in collection})
                     return result
                 if tool_call_count + len(assistant["tool_calls"]) > MAX_TOOL_CALLS:
                     raise LLMError("AGENT_TOOL_LIMIT")
@@ -783,10 +879,20 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                     consecutive_tool_failures = consecutive_tool_failures + 1 if result.get("error") else 0
                     trace.append({"name": call["function"]["name"], "result": result,
                                   "arguments": normalized_arguments})
+                    from .debug_trace import record as record_debug
+                    record_debug('tool_call', trace[-1])
                     if context and context.execution_step and call['function']['name']=='preview_card_operation' and not result.get('error'):
                         return {'reply':'','mode':'model','tool_calls':trace}
                     if consecutive_tool_failures >= 3:
                         raise LLMError("AGENT_CONSECUTIVE_FAILURES")
+                    if name == "inspect_collection_request" and not result.get("error") \
+                            and result.get("decision", {}).get("action") == "clarify":
+                        reason = result["decision"].get("clarify_reason") or "intent"
+                        return {"reply": COLLECTION_CLARIFICATIONS[reason], "mode": "model", "tool_calls": trace,
+                                "_execution_grounded": True}
+                    if name == "inspect_collection_request" and result.get("error"):
+                        return {"reply": result.get("message", "暂时无法理解这条收款需求，请重试。"),
+                                "mode": "model", "tool_calls": trace, "_execution_grounded": True}
                     if direct_wealth and call["function"]["name"] == "manage_wealth_request":
                         return {"reply":result.get("reply",result.get("message","理财任务暂时无法处理，请重试。")),"mode":"model","tool_calls":trace, "wealth_cards":result.get("wealth_cards",[])}
                     messages.append({"role": "tool", "tool_call_id": call["id"],
@@ -798,6 +904,19 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                         goal_plan = result["plan"]
                     if call["function"]["name"] == "manage_transfer_request" and not result.get("error"):
                         transfer_result = result
+                    if call["function"]["name"] == "manage_collection_request":
+                        if result.get("error") == "COLLECTION_INSPECTION_REQUIRED":
+                            continue
+                        if result.get("error") and result.get("message"):
+                            return {"reply": result["message"], "mode": "model", "tool_calls": trace,
+                                    "_execution_grounded": True}
+                        return {
+                            "reply": result.get("reply", result.get("message", "收款草稿暂时无法生成，请重试。")),
+                            "mode": "model", "tool_calls": trace,
+                            **{key: result[key] for key in (
+                                "session_id", "session_version", "collection_cards"
+                            ) if key in result},
+                        }
                     elif direct_transfer and call["function"]["name"] == "manage_transfer_request":
                         return {
                             "reply": result.get("message", "转账请求暂时无法处理，请重新描述。"),

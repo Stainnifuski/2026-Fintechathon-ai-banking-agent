@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import * as bank from '../services/bank';
 
-interface Props { onAdded: () => Promise<void>; }
+interface Props { onAdded: () => Promise<void>; initialName?: string; }
 
-export default function AddContactForm({ onAdded }: Props) {
-  const [name, setName] = useState('');
+export default function AddContactForm({ onAdded, initialName = '' }: Props) {
+  const [name, setName] = useState(initialName);
   const [phone, setPhone] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [nickname, setNickname] = useState('');
