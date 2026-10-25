@@ -25,7 +25,7 @@ const errorText = (error: unknown) => {
   return detail?.message || '账单加载失败，请重试。';
 };
 
-export default function BillAnalysis({ accounts, revision, onViewCashflows, onContextChange, onManageSubscription }: { accounts: Account[]; revision: number; onViewCashflows?: () => void; onContextChange?: (context: NovaPageContext) => void; onManageSubscription?: (id: string) => void }) {
+export default function BillAnalysis({ accounts, revision, onViewCashflows, onContextChange, onManageSubscription, onAskNova }: { accounts: Account[]; revision: number; onViewCashflows?: () => void; onContextChange?: (context: NovaPageContext) => void; onManageSubscription?: (id: string) => void; onAskNova: (text: string, context: NovaPageContext) => void }) {
 
   const [metadataRevision, setMetadataRevision] = useState(0);
   const [catalog, setCatalog] = useState<bills.FoundationCatalog | null>(null);
@@ -35,8 +35,6 @@ export default function BillAnalysis({ accounts, revision, onViewCashflows, onCo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [question, setQuestion] = useState('');
-  const [reply, setReply] = useState('');
-  const [mode, setMode] = useState('');
   const [detailFilter, setDetailFilter] = useState<{ category?: string; tx_ids?: string; label: string }>({ label: '报告内已完成明细' });
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<bills.BillPage | null>(null);
@@ -64,7 +62,7 @@ export default function BillAnalysis({ accounts, revision, onViewCashflows, onCo
   };
   const load = async (query: bills.BillQuery) => {
     const id = ++sequence.current;
-    setBusy(true); setError(''); setReply('');
+    setBusy(true); setError('');
     try { const data = await bills.analysis(query); if (id === sequence.current) accept(data); }
     catch (e) { if (id === sequence.current) { setError(errorText(e)); setResult(null); } }
     finally { if (id === sequence.current) setBusy(false); }
@@ -90,19 +88,15 @@ export default function BillAnalysis({ accounts, revision, onViewCashflows, onCo
     return () => { cancelled = true; };
   }, [result, detailFilter, page, detailRetry]);
 
-  const ask = async (event: FormEvent) => {
+  const ask = (event: FormEvent) => {
     event.preventDefault();
-    if (!question.trim()) return;
-    const id = ++sequence.current;
-    setBusy(true); setError(''); setReply('');
-    try {
-      const data = await bills.ask(question, draft);
-      if (id !== sequence.current) return;
-      setReply(data.message);
-      setMode(data.mode === 'model' ? '模型理解 · 数据报告' : data.mode === 'fallback' ? '模型不可用，已使用离线规则' : '离线理解 · 数据报告');
-      if (data.analysis) accept(data.analysis);
-    } catch (e) { if (id === sequence.current) setError(errorText(e)); }
-    finally { if (id === sequence.current) setBusy(false); }
+    if (!question.trim() || busy || !result) return;
+    onAskNova(question.trim(), { version: 1, page: 'insights', filters: result.query,
+      observed_as_of: result.as_of,
+      details: { category: detailFilter.category, tx_ids: detailFilter.tx_ids?.split(',').slice(0, 10) || [], page },
+      ...(selectedTransaction ? {selected: {type:'transaction' as const, id:selectedTransaction}} : {}),
+    });
+    setQuestion('');
   };
   const drill = (category?: string, tx_ids?: string, label = '报告内已完成明细') => {
     setPage(1); setDetailFilter({ category, tx_ids, label });
@@ -120,10 +114,9 @@ export default function BillAnalysis({ accounts, revision, onViewCashflows, onCo
       <label>用户标签<select aria-label="用户标签" value={draft.tag_id || ''} onChange={e => setDraft({ ...draft, tag_id: e.target.value || null })}><option value="">全部标签</option>{catalog?.tags.map(t => <option key={t.tag_id} value={t.tag_id}>{t.name} · {t.transaction_count} 笔</option>)}</select></label>
       <button disabled={busy}>{busy ? '正在分析…' : '查看账单'}</button>
     </form>
-    <form className="bill-question" onSubmit={ask}><label htmlFor="bill-question">用一句话查询账单</label><div className="row"><input id="bill-question" maxLength={500} value={question} onChange={e => setQuestion(e.target.value)} placeholder="这个月为什么比上个月花得多？" /><button disabled={busy || !question.trim()}>分析问题</button></div><p className="hint">支持月度、年度和分类查询；未提及的时间与账户沿用筛选器。</p></form>
+    <form className="bill-question" onSubmit={ask}><label htmlFor="bill-question">向 NOVA 提问账单</label><div className="row"><input id="bill-question" maxLength={500} value={question} onChange={e => setQuestion(e.target.value)} placeholder="这个月为什么比上个月花得多？" /><button disabled={busy || !result || !question.trim()}>交给 NOVA 分析</button></div><p className="hint">在 NOVA 对话中分析账单、核对异常、查看预算和预测，也可整理分类、标签与商户。沿用当前已应用的筛选和选中流水；修改需在确认卡核对后保存。</p></form>
     <Foundations accounts={accounts} revision={revision + metadataRevision} onChanged={() => setMetadataRevision(n => n + 1)} onManage={onManageSubscription} />
     {error && <p className="error" role="alert">{error}</p>}
-    {reply && <div className="bill-reply" role="status"><small>{mode}</small><p>{reply}</p></div>}
     {busy && <p role="status">正在读取完整账期数据…</p>}
     {result && !busy && <>
       <div className="bill-period"><strong>{result.query.date} · {result.query.period === 'month' ? '月度' : '年度'}报告{result.query.category && ` · ${labels[result.query.category]}消费`}</strong><span>{result.query.account_id ? accountLabel(result.query.account_id, accounts) : '全部账户'} · {result.partial ? '本期尚未结束，与上期同期比较' : '完整账期'}</span><small>北京时间：{dateTime(result.start)} 至 {dateTime(result.end_exclusive)}（不含终点）</small></div>

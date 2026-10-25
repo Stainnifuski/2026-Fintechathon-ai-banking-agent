@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain.time import utc_iso, utc_now
 from ...schemas.bills import BillQuery, BillAnalysis, BillPage
-from ...schemas.bill_insights import CashflowScenario, CashflowProjection, SubscriptionInsights
+from ...schemas.bill_insights import BillTransaction, CashflowScenario, CashflowProjection, SubscriptionInsights
 from ..bank.bill_subscriptions import subscription_insights
 from ..bank.bill_cashflow import project_cashflow
 from ...schemas.nova import StrictModel, BillFilters, PageContext
@@ -54,6 +54,18 @@ class TransactionsArguments(AnalysisArguments):
     page: int = Field(default=1, ge=1, le=10000)
     page_size: int = Field(default=20, ge=1, le=50)
     tx_ids: list[str] | None = Field(default=None, max_length=10)
+
+
+class AnomaliesArguments(AnalysisArguments):
+    page: int = Field(default=1, ge=1, le=10000)
+    page_size: int = Field(default=20, ge=1, le=30)
+    review_status: str | None = Field(default=None, pattern=r'^(pending|normal|resolved)$')
+
+
+class RecurringArguments(StrictModel):
+    page: int = Field(default=1, ge=1, le=10000)
+    page_size: int = Field(default=30, ge=1, le=30)
+    account_id: str | None = Field(default=None, min_length=1, max_length=32)
 
 
 class TransactionArguments(StrictModel):
@@ -134,7 +146,18 @@ async def transaction(arguments: TransactionArguments, context: ToolContext) -> 
         key = context.page.selected.id
     if key is None:
         return {"error": "MISSING_SELECTION", "message": "请指定流水 ID，或在账单页选择一笔流水"}
-    return envelope("bills.transaction", await nova_reads.transaction_detail(context.db, context.user_id, key))
+    data = BillTransaction.model_validate(await nova_reads.transaction_detail(context.db, context.user_id, key))
+    return envelope("bills.transaction", data.model_dump(mode='json'))
+
+
+async def anomalies(arguments: AnomaliesArguments, context: ToolContext) -> dict:
+    report = BillAnalysis.model_validate(await bill_service.analyze(
+        context.db, context.user_id, query_from(arguments, context))).model_dump(mode='json')
+    rows = [a for a in report['anomalies'] if arguments.review_status is None or a['review_status'] == arguments.review_status]
+    start = (arguments.page-1)*arguments.page_size
+    return envelope('bills.anomalies', dict(query=report['query'], as_of=report['as_of'],
+        items=rows[start:start+arguments.page_size], total=len(rows), page=arguments.page,
+        has_more=start+arguments.page_size<len(rows)), report['as_of'])
 
 
 async def list_contacts(arguments: ContactListArguments, context: ToolContext) -> dict:
@@ -173,18 +196,29 @@ async def cashflow(arguments: CashflowScenario, context: ToolContext) -> dict:
     return envelope('bills.cashflow', data, data['as_of'])
 
 
-async def recurring_records(arguments: OverviewArguments, context: ToolContext) -> dict:
+async def recurring_records(arguments: RecurringArguments, context: ToolContext) -> dict:
     from ..bank.bill_recurring import list_recurring
     data = await list_recurring(context.db, context.user_id)
+    account_id = arguments.account_id
+    if 'account_id' not in arguments.model_fields_set and context.page.filters:
+        account_id = context.page.filters.account_id
+    if account_id:
+        from ..bank.bill_foundation import account_ids
+        from ..bank.transfer_service import BankError
+        if account_id not in await account_ids(context.db, context.user_id):
+            raise BankError('账户不存在', 'ACCOUNT_NOT_FOUND', 404)
+        data['items'] = [r for r in data['items'] if r['account_id'] == account_id]
     total = len(data['items'])
-    data['items'] = data['items'][:30]
+    start = (arguments.page-1)*arguments.page_size
+    data['items'] = data['items'][start:start+arguments.page_size]
     for item in data['items']:
         item['evidence_total'] = len(item['evidence_tx_ids'])
         item['evidence_tx_ids'] = item['evidence_tx_ids'][-5:]
         for field in ('last_observed_at', 'next_expected_at','anchor_at'):
             if item[field]:
                 item[field] = bill_service.aware(item[field]).isoformat()
-    data.update(total=total, has_more=total>30)
+    data.update(total=total, page=arguments.page, has_more=start+arguments.page_size<total,
+                query={'account_id':account_id})
     return envelope('bills.recurring', data)
 
 
@@ -213,10 +247,12 @@ async def forecast_reviews(arguments:OverviewArguments,context:ToolContext)->dic
 
 def business_tools() -> dict:
     entries = [
+        ('list_bill_anomalies', AnomaliesArguments, anomalies,
+         '分页查询本人账单异常及核对状态、备注、版本与证据指纹。继承页面已应用账期、账户、分类及标签。可筛选pending/normal/resolved。准备核对修改前必须查询；异常只作核对提示，不认定欺诈。'),
         ('get_budget_status', BudgetArguments, budget_status,'只读查询本人月度总预算及分类预算、已用净消费、剩余额度和预计超支。标签筛选不改变预算范围，样本不足时仅估计已知部分。'),
         ('list_forecast_reviews',OverviewArguments,forecast_reviews,'只读查询本人保存的基准预测及实际收支净变化偏差。未结束不计算最终误差，不能用当前余额冒充过去期末余额。'),
-        ('list_recurring_records', OverviewArguments, recurring_records,
-         '只读查询本人已保存的周／月／季度／年度周期收入、支出及订阅、历史证据、有效状态和是否纳入预测。估计不是银行承诺；启用设置不会停止扣费，取消订阅需本人确认。'),
+        ('list_recurring_records', RecurringArguments, recurring_records,
+         '分页只读查询本人已保存的周／月／季度／年度周期收入、支出及订阅、历史证据、有效状态、版本和是否纳入预测。省略账户继承页面账户，null为本人全部账户。估计不是银行承诺；启用设置不会停止扣费，取消订阅需本人确认。'),
         ('get_subscription_insights', AnalysisArguments, subscription_analysis,
          '只读分析本人订阅扣费增加、疑似重复、计划与实际差异和关联订阅。沿用页面账期和账户，忽略消费分类；仅供核对，取消需本人到订阅页确认。'),
         ('project_cashflow', CashflowScenario, cashflow,
@@ -241,4 +277,6 @@ def business_tools() -> dict:
     tools.update(calendar_tools())
     tools.update(shop_tools())
     tools.update(card_subscription_tools())
+    from .bill_tools import bill_tools
+    tools.update(bill_tools())
     return tools

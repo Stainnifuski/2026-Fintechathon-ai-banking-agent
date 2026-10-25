@@ -161,6 +161,9 @@ def bind(step, result):
         if tool['name']=='preview_card_operation' and not value.get('error'):
             key=value.get('data',{}).get('operation_id')
             if key:refs.append({'type':'card','id':key})
+        if tool['name']=='prepare_bill_change' and not value.get('error'):
+            key=value.get('data',{}).get('card',{}).get('action_id')
+            if key:refs.append({'type':'bill','id':key})
     step['refs']=list({(r['type'],r['id']):r for r in refs}.values())
     failed=any(t.get('result',{}).get('error') for t in result.get('tool_calls',[]))
     if failed or result.get('execution_blocked') or result.get('grounding',{}).get('status')=='blocked':
@@ -237,6 +240,12 @@ async def observe(context, step):
             row=await context.db.get(CardOperationORM,ref['id'],populate_existing=True)
             states.append('blocked' if not row or row.user_id!=context.user_id or row.status in FAILED else
                           'completed' if row.status=='COMPLETED' else 'waiting')
+        elif ref['type']=='bill':
+            from ...models.nova_bill_action import NovaBillActionORM
+            from ..bank.nova_bills import public as bill_card
+            row=await context.db.get(NovaBillActionORM,ref['id'],populate_existing=True)
+            status=bill_card(row)['status'] if row and row.user_id==context.user_id and row.session_id==context.session_id else None
+            states.append('completed' if status=='completed' else 'waiting' if status=='pending' else 'blocked')
         else:states.append('blocked')
     return 'blocked' if 'blocked' in states or not states else 'completed' if all(s=='completed' for s in states) else 'waiting'
 
@@ -365,7 +374,7 @@ async def guard_tool(context, name):
     if not row:return None
     data=unpack(row)
     if data['status'] in TERMINAL:return None
-    if name not in {'manage_wealth_request','manage_transfer_request','manage_collection_request','preview_card_operation'}:return None
+    if name not in {'manage_wealth_request','manage_transfer_request','manage_collection_request','preview_card_operation','prepare_bill_change'}:return None
     step=next((s for s in data['steps'] if s['status']!='completed'),None)
     allowed=step and step['status']=='waiting' and any(
         r['type']=='wealth' and name=='manage_wealth_request' and r['id']==context.wealth_task_id or

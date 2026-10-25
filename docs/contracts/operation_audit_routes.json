@@ -697,9 +697,111 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/nova/conversations/{session_id}/bill-actions",
+    "domain": "assistant",
+    "action": "cards"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/conversations/{session_id}/bill-actions/{action_id}/decision",
+    "domain": "assistant",
+    "action": "decide"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/debug/{request_id}",
+    "domain": "assistant",
+    "action": "download_debug"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/execution-queues/{session_id}",
+    "domain": "assistant",
+    "action": "execution_status"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/execution-queues/{session_id}/advance",
+    "domain": "assistant",
+    "action": "execution_advance"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/execution-queues/{session_id}/stop",
+    "domain": "assistant",
+    "action": "execution_stop"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/task-flow/{session_id}",
+    "domain": "assistant",
+    "action": "task_flow_state"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/nova/task-sessions/{session_id}",
     "domain": "assistant",
     "action": "task_session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{entry_id}/dismiss",
+    "domain": "assistant",
+    "action": "dismiss_calendar_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{entry_id}/event",
+    "domain": "assistant",
+    "action": "link_calendar_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/card-tasks/{entry_id}/dismiss",
+    "domain": "assistant",
+    "action": "dismiss_card_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/card-tasks/{entry_id}/operation",
+    "domain": "assistant",
+    "action": "link_card_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/collections/{collection_id}/refresh",
+    "domain": "assistant",
+    "action": "refresh_collection_card"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/collections/{collection_id}/send",
+    "domain": "assistant",
+    "action": "send_collection_card"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/shop-tasks/{entry_id}/dismiss",
+    "domain": "assistant",
+    "action": "dismiss_shop_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/shop-tasks/{entry_id}/order",
+    "domain": "assistant",
+    "action": "link_shop_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/subscription-tasks/{entry_id}/dismiss",
+    "domain": "assistant",
+    "action": "dismiss_subscription_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/subscription-tasks/{entry_id}/select",
+    "domain": "assistant",
+    "action": "select_subscription_task"
   },
   {
     "method": "POST",
@@ -712,6 +814,18 @@
     "path": "/api/v1/nova/task-sessions/{session_id}/tasks/{task_id}/form",
     "domain": "assistant",
     "action": "save_task_form"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/voice/status",
+    "domain": "assistant",
+    "action": "status"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/voice/transcriptions",
+    "domain": "assistant",
+    "action": "transcribe"
   },
   {
     "method": "GET",
