@@ -14,6 +14,7 @@ export default function PlanExecution({plan:initial,initialPreview=null,onActivi
   const [plan,setPlan]=useState(initial);const [preview,setPreview]=useState<w.PlanPreview|null>(initialPreview);
   const [consent,setConsent]=useState(false);const [stage,setStage]=useState<'PREVIEW'|'CONFIRMED'|'VERIFIED'>('PREVIEW');
   const [factor,setFactor]=useState<Factor|null>({method:'totp'});const [code,setCode]=useState('');
+ useEffect(()=>{const clear=()=>{setCode('');setConsent(false);};window.addEventListener('nova-clear-verification',clear);return()=>window.removeEventListener('nova-clear-verification',clear);},[]);
   const [busy,setBusy]=useState(false);const [notice,setNotice]=useState('');
   const [reviewFailed,setReviewFailed]=useState(false);
   const firstReview=useRef<Promise<w.PlanPreview>|null>(null);

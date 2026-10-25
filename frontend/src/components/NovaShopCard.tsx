@@ -1,3 +1,4 @@
+import {useTaskField,useTaskPrefill} from './NovaTaskPresentation';
 import { useEffect, useState, type FormEvent } from 'react';
 import * as bank from '../services/bank';
 import * as cakeShop from '../services/cakeShop';
@@ -28,19 +29,21 @@ export default function NovaShopCard({ task, sessionId, accounts, disabled, onUp
   task: NovaChatShopTask; sessionId: string; accounts: bank.Account[]; disabled: boolean;
   onUpdated: (tasks: NovaChatShopTask[]) => void; onActivity?: () => void;
 }) {
-  const [shop, setShop] = useState<ShopKey | ''>(task.shop ?? '');
+  const [shop, setShop] = useTaskField<ShopKey | ''>('shop',task.shop ?? '');
   const [products, setProducts] = useState<Product[]>([]);
-  const [productId, setProductId] = useState(task.prefill.product_id ?? '');
-  const [quantity, setQuantity] = useState(task.prefill.quantity ? String(task.prefill.quantity) : '');
+  const [productId, setProductId] = useTaskField('productId',task.prefill.product_id ?? '');
+  const [quantity, setQuantity] = useTaskField('quantity',task.prefill.quantity ? String(task.prefill.quantity) : '');
   const [order, setOrder] = useState(task.order ?? null);
   const payable = accounts.filter(a => ['savings', 'checking'].includes(a.account_type));
-  const [accountId, setAccountId] = useState('');
+  const [accountId, setAccountId] = useTaskField('accountId','');
   const [request, setRequest] = useState<bank.PaymentRequest | null>(null);
   const [payment, setPayment] = useState<bank.TaskSnapshot | null>(null);
   const [factor, setFactor] = useState<bank.SecondFactor | null>({ method: 'totp' });
   const [code, setCode] = useState('');
+  useEffect(()=>{const clear=()=>setCode('');window.addEventListener('nova-clear-verification',clear);return()=>window.removeEventListener('nova-clear-verification',clear);},[]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(task.notice ?? '');
+  useTaskPrefill({...task.prefill,shop:task.shop},{product_id:v=>setProductId(String(v??'')),quantity:v=>setQuantity(String(v??'')),shop:v=>{if(v==='flower'||v==='cake')setShop(v);}});
 
   useEffect(() => { setOrder(task.order ?? null); }, [task.order?.order_id, task.order?.status]);
   useEffect(() => { if (!accountId && payable[0]) setAccountId(payable[0].account_id); }, [accounts]);

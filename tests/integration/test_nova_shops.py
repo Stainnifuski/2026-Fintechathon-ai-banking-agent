@@ -202,7 +202,7 @@ async def test_purchase_orders_when_complete_otherwise_prefilled_form_and_never_
 
         def at(message, request_id, shop='cake', selected=None):
             return replace(context(db, shop, selected), original_message=message,
-                           session_id=session_id, request_id=request_id)
+                           session_id=session_id, request_id=request_id, task_switch_approved=True)
 
         complete = await nova.execute_tool(call('prepare_shop_purchase', {
             'shop': 'cake', 'product_id': 'STRAWBERRY_CREAM', 'quantity': 2, 'quantity_quote': '两个'}),

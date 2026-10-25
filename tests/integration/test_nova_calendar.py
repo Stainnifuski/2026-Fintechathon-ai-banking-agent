@@ -215,7 +215,7 @@ async def test_create_event_directly_when_complete_otherwise_prefilled_chat_form
         session_id = (await nova_conversations.create(db, 'U1'))['session_id']
 
         def at(message, request_id):
-            return replace(ctx(db), original_message=message, session_id=session_id, request_id=request_id)
+            return replace(ctx(db), original_message=message, session_id=session_id, request_id=request_id, task_switch_approved=True)
 
         complete = await nova.execute_tool(call('create_calendar_event', {
             'title': '和李四吃饭', 'start_date': '2026-10-15', 'start_time': '18:30', 'end_time': '20:00',

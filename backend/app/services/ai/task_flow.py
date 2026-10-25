@@ -48,12 +48,27 @@ async def save(ctx,row,data):
 async def active(ctx):
     """Resolve references against owned server records, never a model task id."""
     row,data=await load(ctx)
+    from .task_presentation import inventory
+    items = [item for item in await inventory(ctx) if not item['finished'] and not item['released']]
+    generic = [item for item in items if item['type'] not in {'wealth', 'transfer'}]
+    if generic:
+        if len(items) > 1:
+            return {'type': 'ambiguous', 'id': '', 'label': '多个未结束任务'}
+        item = generic[0]
+        session = await ctx.db.get(NovaSessionORM, ctx.session_id, populate_existing=True)
+        draft=data.get('input_drafts',{}).get(item['key'],{})
+        draft={key:value for key,value in draft.items() if key not in {'phone','card'}}
+        return {'type': item['type'], 'id': item['id'], 'label': item['label'],
+                'entry': True, 'version': session.version if session else 0,
+                'status':item.get('status'),'card_id':item.get('card_id'),'request_id':item.get('request_id'),
+                'unsubmitted_form':draft}
     saved=data.get('active') or {}
     wealth=ctx.wealth_task_id or (saved.get('id') if not ctx.focus_task_id and saved.get('type')=='wealth' else None)
     transfer=ctx.focus_task_id or (saved.get('id') if not ctx.wealth_task_id and saved.get('type')=='transfer' else None)
     cards=(await ctx.db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id==ctx.user_id,
         WealthConversationORM.session_id.like('NW%')))).all()
     cards=[c for c in cards if c.data.get('nova_session_id')==ctx.session_id and not c.data.get('closed')
+           and 'wealth:'+c.session_id not in data.get('released', {})
            and c.data.get('command',{}).get('kind') in TITLES]
     transfers=await ctx.db.get(NovaSessionORM,ctx.session_id,populate_existing=True)
     tasks=transfers.state.get('tasks',[]) if transfers and transfers.user_id==ctx.user_id else []
@@ -62,7 +77,8 @@ async def active(ctx):
         fresh=await get_session(ctx.db,ctx.user_id,ctx.session_id)
         statuses={t['chat_task_id']:t['status'] for t in fresh['tasks']}
         tasks=[{**t,'status':statuses.get(t['chat_task_id'],t['status'])} for t in tasks]
-    tasks=[t for t in tasks if t.get('status') not in {'SUCCEEDED','CANCELLED','FAILED'}]
+    tasks=[t for t in tasks if t.get('status') not in {'SUCCEEDED','CANCELLED','FAILED'}
+           and 'transfer:'+t['chat_task_id'] not in data.get('released', {})]
     if not wealth and not transfer and not saved:
         if len(cards)+len(tasks)==1:
             wealth=cards[0].session_id if cards else None
@@ -92,8 +108,20 @@ async def active(ctx):
 async def focus(ctx):
     if not ctx or not ctx.session_id or ctx.execution_step or ctx.task_switch_approved:return ctx
     current=await active(ctx)
-    if not current:return ctx
+    if not current:
+        _, data = await load(ctx)
+        released = data.get('released', {})
+        return replace(ctx, wealth_task_id=None if 'wealth:'+str(ctx.wealth_task_id) in released else ctx.wealth_task_id,
+                       focus_task_id=None if 'transfer:'+str(ctx.focus_task_id) in released else ctx.focus_task_id)
     if current['type']=='ambiguous':return ctx
+    if current.get('entry'):
+        if current['type']=='card' and current.get('card_id'):
+            from ...schemas.nova import CardContext
+            return replace(ctx,wealth_task_id=None,wealth_stage=None,focus_task_id=None,
+                active_entry_type=current['type'],active_entry_id=current['id'],
+                page=ctx.page.model_copy(update={'cards':CardContext(selected_card_id=current['card_id'])}))
+        return replace(ctx,wealth_task_id=None,wealth_stage=None,focus_task_id=None,
+                       active_entry_type=current['type'],active_entry_id=current['id'])
     if current['type']=='wealth':
         c=await ctx.db.get(WealthConversationORM,current['id'])
         from .wealth_steps import sequence
@@ -125,7 +153,7 @@ async def propose(ctx,target_label):
         return reply('当前对话有多个未结束任务，请先说明要继续或结束哪个任务，再说明目标操作。')
     row,data=await load(ctx)
     data['pending']={'token':uuid4().hex,'current':current,'current_label':current['label'],
-        'target_label':chats.redact(target_label)[:100],'message':chats.redact_proof(ctx.original_message),
+        'target_label':chats.redact(target_label or '新的操作')[:100],'message':chats.redact_proof(ctx.original_message or ''),
         'created_at':time.time()}
     await save(ctx,row,data)
     return reply('是否结束当前“'+current['label']+'”，改为“'+data['pending']['target_label']+'”？确认前保留原任务；切换不撤回任何已成交结果。',await public(ctx))
@@ -163,7 +191,10 @@ async def decide(ctx):
         q_version=q.version if q and queue.unpack(q)['status'] not in queue.TERMINAL else None
         if q_version and queue.unpack(q).get('lease_until',0)>time.time():
             raise ValueError('队列正在核对，请稍候')
-        if current['type']=='wealth':
+        if current.get('entry'):
+            from .task_presentation import release
+            await release(ctx, current['type']+':'+current['id'], 'cancel', pending['token'])
+        elif current['type']=='wealth':
             from .wealth_agent import assert_reversible,discard_prepared,lock_profile
             await lock_profile(ctx.db,ctx.user_id)
             card=await ctx.db.get(WealthConversationORM,current['id'],populate_existing=True)
@@ -202,16 +233,21 @@ async def decide(ctx):
 
 
 async def guard_tool(ctx,name):
-    if not ctx or not ctx.session_id or ctx.execution_step or ctx.task_switch_approved:return None
+    if not ctx or not ctx.session_id or not ctx.original_message or ctx.execution_step or ctx.task_switch_approved:return None
     domain={'manage_wealth_request':'wealth','manage_transfer_request':'transfer',
-            'manage_collection_request':'collection','preview_card_operation':'card'}.get(name)
+            'manage_collection_request':'collection','preview_card_operation':'card',
+            'prepare_bill_change':'bill','create_calendar_event':'calendar',
+            'prepare_shop_purchase':'shop','request_subscription_cancellation':'subscription'}.get(name)
     if not domain:return None
     current=await active(ctx)
     if current and current['type']=='ambiguous':
         return {'error':'TASK_CONTEXT_AMBIGUOUS','message':'当前有多个未结束任务，请说明要补充哪个任务，不能猜测或创建新操作。'}
-    if current and current['type']=='card' and domain=='card' and current['status']!='AWAITING_CONFIRMATION':
+    if current and current['type']=='card' and domain=='card' and current.get('status') not in {None,'AWAITING_CONFIRMATION'}:
         return {'error':'TASK_WRITE_BLOCKED','message':'当前卡片操作已经本人确认，请先在原卡片核对结果；不会通过对话重建或替换待验证操作。'}
     if current and current['type']!=domain:
+        return await propose(ctx,ctx.original_message)
+    replay = current and name=='prepare_bill_change' and current.get('request_id')==ctx.request_id
+    if current and current.get('entry') and current['type']==domain and ctx.active_entry_id!=current['id'] and not replay:
         return await propose(ctx,ctx.original_message)
     return None
 

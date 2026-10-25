@@ -40,6 +40,8 @@ class ToolContext:
     task_switch_token: str | None = None
     accept_task_switch: bool | None = None
     task_switch_approved: bool = False
+    active_entry_type: str | None = None
+    active_entry_id: str | None = None
 
 
 class OverviewArguments(StrictModel):

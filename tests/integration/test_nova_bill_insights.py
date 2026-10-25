@@ -76,7 +76,9 @@ async def test_classification_preview_does_not_write_confirm_is_idempotent_and_r
 
 @pytest.mark.asyncio
 async def test_stale_cards_expiry_cancel_and_ownership(db):
-    ctx = await setup(db, '把总预算设为1000元')
+    # Independently exercise bank preview version binding (e.g. separate
+    # browser clients); the Agent's single-task switch is tested separately.
+    ctx = replace(await setup(db, '把总预算设为1000元'),task_switch_approved=True)
     change = {'action':'budget','month':'2026-09','amount_fen':100000,'expected_version':0}
     first = (await prepare(ctx, change))['data']['card']
     second = (await prepare(replace(ctx, request_id='bill-request-0002'), {**change,'amount_fen':200000}))['data']['card']

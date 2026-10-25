@@ -9,6 +9,7 @@ import './styles.css';
 type ServiceTab = 'calendar' | 'flower' | 'cake';
 
 interface Props {
+  requestedTab?: ServiceTab;
   revision: number;
   onContextChange?: (context: NovaPageContext) => void;
   onBack: () => void;
@@ -34,8 +35,9 @@ const statusText: Record<flowerShop.FlowerOrder['status'], string> = {
   PARTIALLY_REFUNDED: '部分退款',
 };
 
-export default function ThirdPartyServices({ revision, onBack, onGoBank, onContextChange }: Props) {
-  const [tab, setTab] = useState<ServiceTab>('flower');
+export default function ThirdPartyServices({ revision, onBack, onGoBank, onContextChange, requestedTab }: Props) {
+  const [tab, setTab] = useState<ServiceTab>(requestedTab??'flower');
+  useEffect(()=>{if(requestedTab)setTab(requestedTab);},[requestedTab]);
   useEffect(() => {
     if (tab !== 'calendar') onContextChange?.({ version: 1, page: 'thirdParty', shop: { shop: tab } });
   }, [tab, onContextChange]);

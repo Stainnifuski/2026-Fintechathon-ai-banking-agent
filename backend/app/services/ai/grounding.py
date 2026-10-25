@@ -42,6 +42,7 @@ class AnswerSelection(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     evidence_ids: list[str] = Field(default_factory=list, max_length=30)
     clarification: Literal['none', 'selection', 'period', 'request'] = 'none'
+    layout: Literal['sections', 'list'] = 'sections'
 
 
 def literal(value: object, limit: int = 300) -> str:
@@ -571,7 +572,8 @@ def ground_reply(reply: dict, message: str, request_id: str | None = None) -> di
         order = selection.evidence_ids if selection else []
         rank = {key: i for i, key in enumerate(dict.fromkeys(order))}
         evidence.sort(key=lambda e: rank.get(e.evidence_id, len(rank)))
-        text = '\n\n'.join(e.text for e in evidence)
+        from .answer_layout import format_evidence
+        text = '\n\n'.join(format_evidence(e.text, selection.layout if selection else 'sections') for e in evidence)
         status = 'grounded' if all(e.outcome == 'success' for e in evidence) else 'partial'
         reasons.extend('TOOL_FAILED' if e.outcome == 'failed' else 'EVIDENCE_UNAVAILABLE'
                        for e in evidence if e.outcome != 'success')

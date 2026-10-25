@@ -307,7 +307,7 @@ async def test_incomplete_or_rejected_values_open_form_in_chat_and_user_complete
 
     rejected = await nova.execute_tool(call('preview_card_operation', {
         'action': 'card_set_transaction_limits', 'card_id': 'C1', 'single_txn_limit': '80000'}),
-        replace(ctx, original_message='单笔限额改成80000元', request_id='REQ-form-2'))
+        replace(ctx, original_message='单笔限额改成80000元', request_id='REQ-form-2',task_switch_approved=True))
     assert rejected['data']['form_opened'] and rejected['data']['bank_message']
     tasks = (await get_session(db, 'U1', session_id))['card_operations']
     assert tasks[-1]['notice'] == rejected['data']['bank_message']

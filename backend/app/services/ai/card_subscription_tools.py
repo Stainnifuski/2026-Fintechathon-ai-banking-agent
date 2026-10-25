@@ -195,9 +195,10 @@ async def register_chat_card_task(context, *, action: str, card_id: str | None, 
     row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
     state = json.loads(json.dumps(row.state or {}))
     entries = [item for item in _entries(state) if item.get('operation_id') != operation_id or operation_id is None]
-    entries.append({'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'action': action,
+    from .task_presentation import replace_or_append
+    entries = replace_or_append(entries, {'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'action': action,
                     'card_id': card_id, 'prefill': prefill, 'notice': notice,
-                    'operation_id': operation_id, 'closed': False})
+                    'operation_id': operation_id, 'closed': False}, context, 'card')
     state['card_operations'] = entries[-MAX_CHAT_CARD_OPERATIONS:]
     row.state = state
     await context.db.commit()
@@ -414,8 +415,10 @@ async def request_subscription_cancellation(arguments, context):
         state = json.loads(json.dumps(row.state or {}))
         entries = [item for item in _subscription_entries(state)
                    if item['closed'] or key is None or item.get('subscription_id') != key]
-        entries.append({'entry_id': uuid4().hex, 'origin_request_id': context.request_id,
-                        'subscription_id': key, 'closed': False})
+        from .task_presentation import replace_or_append
+        if context.active_entry_type=='subscription': entries=list(state.get('subscription_tasks',[]))
+        entries = replace_or_append(entries, {'entry_id': uuid4().hex, 'origin_request_id': context.request_id,
+                        'subscription_id': key, 'closed': False}, context, 'subscription')
         state['subscription_tasks'] = entries[-MAX_CHAT_CARD_OPERATIONS:]
         row.state = state
         await context.db.commit()

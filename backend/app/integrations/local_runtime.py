@@ -10,10 +10,12 @@ def configure_local_test_limits(database_url: str) -> bool:
     if enabled == 'false':
         return False
     url = make_url(database_url)
-    isolated_postgres = (url.drivername == 'postgresql+asyncpg'
-                         and (url.database or '').startswith('bank_local_'))
-    if url.drivername != 'sqlite+aiosqlite' and not isolated_postgres:
-        raise ValueError('Local test switches require SQLite or a dedicated bank_local_ PostgreSQL database')
+    local_postgres = (url.drivername == 'postgresql+asyncpg'
+                     and (url.database == 'banking_agent'
+                          or (url.database or '').startswith('bank_local_')))
+    if url.drivername != 'sqlite+aiosqlite' and not local_postgres:
+        raise ValueError('Local test switches require SQLite, banking_agent, '
+                         'or a dedicated bank_local_ PostgreSQL database')
     from . import wealth_authorization as policy
     if os.getenv('WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT') == 'true':
         policy.ASSESSMENT_DAILY_LIMIT = 0

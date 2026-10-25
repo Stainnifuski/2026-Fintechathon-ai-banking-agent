@@ -158,8 +158,9 @@ async def _register_shop_task(context, *, shop, prefill, notice, order_id):
     row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
     state = json.loads(json.dumps(row.state or {}))
     entries = list(state.get('shop_tasks', []))
-    entries.append({'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'shop': shop,
-                    'prefill': prefill, 'notice': notice, 'order_id': order_id, 'closed': False})
+    from .task_presentation import replace_or_append
+    entries = replace_or_append(entries, {'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'shop': shop,
+                    'prefill': prefill, 'notice': notice, 'order_id': order_id, 'closed': False}, context, 'shop')
     state['shop_tasks'] = entries[-MAX_CHAT_SHOP_TASKS:]
     row.state = state
     await context.db.commit()
@@ -167,6 +168,10 @@ async def _register_shop_task(context, *, shop, prefill, notice, order_id):
 
 async def prepare_shop_purchase(arguments, context):
     """信息完整时直接下单（只生成银行付款申请，不扣款）；不完整时在聊天中打开预填表单。付款由本人在聊天中确认。"""
+    from .task_presentation import continuation_entry
+    previous = await continuation_entry(context, 'shop')
+    if previous and previous.get('order_id'):
+        return {'error':'TASK_ALREADY_ACCEPTED','message':'原订单已创建，请在原订单核对付款，不会重复下单。'}
     shop = arguments.shop or (context.page.shop.shop if context.page.shop else None)
     message = context.original_message or ''
     prefill, notices = {}, []
@@ -185,6 +190,9 @@ async def prepare_shop_purchase(arguments, context):
             prefill['quantity'] = arguments.quantity
         else:
             notices.append('未能从你的原话中确认数量，请在表单中填写。')
+    if previous:
+        prefill = {**previous.get('prefill', {}), **prefill}
+        shop = shop or previous.get('shop')
     missing = [key for key, value in (('shop', shop), ('product_id', prefill.get('product_id')),
                                       ('quantity', prefill.get('quantity'))) if value is None]
     notice = ''.join(notices) or None

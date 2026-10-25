@@ -1,9 +1,11 @@
+import {useTaskField} from './NovaTaskPresentation';
 import { FormEvent, useEffect, useState } from 'react';
 import * as bank from '../services/bank';
 import { cancelNovaTaskCard, getNovaTaskSession, NovaTaskSession, NovaTransferTask, saveNovaTaskForm } from '../services/nova';
 import { SecondFactor } from './SecondFactor';
 
 type Props = {
+  manual?:boolean;
   task: NovaTransferTask; session: NovaTaskSession; accounts: bank.Account[]; focused: boolean;
   disabled: boolean; onUpdated: (session: NovaTaskSession) => void; onFocus: () => void;
   onSelectCandidate: (candidateId: string) => void; onTransferActivity?: () => void;
@@ -15,19 +17,20 @@ const errorText = (error: unknown) => {
     (error instanceof Error ? error.message : '操作失败，请刷新任务后重试。');
 };
 
-export default function NovaTransferCard({ task, session, accounts, focused, disabled,
+export default function NovaTransferCard({ task, session, accounts, focused, disabled,manual,
   onUpdated, onFocus, onSelectCandidate, onTransferActivity }: Props) {
-  const [recipient, setRecipient] = useState(task.form.recipient);
-  const [amount, setAmount] = useState(task.form.amount_yuan);
-  const [phone, setPhone] = useState(task.form.phone_masked || '');
-  const [card, setCard] = useState(task.form.card_masked || '');
-  const [clearPhone, setClearPhone] = useState(false);
-  const [clearCard, setClearCard] = useState(false);
-  const [payer, setPayer] = useState(task.form.payer_account_id);
-  const [note, setNote] = useState(task.form.note);
+  const [recipient, setRecipient] = useTaskField('recipient',task.form.recipient);
+  const [amount, setAmount] = useTaskField('amount',task.form.amount_yuan);
+  const [phone, setPhone] = useTaskField('phone',task.form.phone_masked || '');
+  const [card, setCard] = useTaskField('card',task.form.card_masked || '');
+  const [clearPhone, setClearPhone] = useTaskField('clearPhone',false);
+  const [clearCard, setClearCard] = useTaskField('clearCard',false);
+  const [payer, setPayer] = useTaskField('payer',task.form.payer_account_id);
+  const [note, setNote] = useTaskField('note',task.form.note);
   const [snapshot, setSnapshot] = useState<bank.TaskSnapshot | null>(null);
   const [factor, setFactor] = useState<bank.SecondFactor | null>({ method: 'totp' });
   const [code, setCode] = useState('');
+  useEffect(()=>{const clear=()=>setCode('');window.addEventListener('nova-clear-verification',clear);return()=>window.removeEventListener('nova-clear-verification',clear);},[]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -62,7 +65,9 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
     if (disabled || busy || !dirty || !canSave) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const updated = await saveNovaTaskForm(session.session_id, task.chat_task_id, session.session_version, {
+      const latest=manual?await getNovaTaskSession(session.session_id):session;
+      if(manual&&JSON.stringify(latest.tasks.find(item=>item.chat_task_id===task.chat_task_id)?.form)!==JSON.stringify(task.form))throw new Error('原表单已变化，请重新读取后核对；本次未覆盖。');
+      const updated = await saveNovaTaskForm(session.session_id, task.chat_task_id, latest.session_version, {
         recipient, amount_yuan: amount, phone: newPhone ? phone.trim() : null, card: newCard ? card.trim() : null,
         clear_phone: clearPhone || (!!task.form.phone_masked && !phone),
         clear_card: clearCard || (!!task.form.card_masked && !card), payer_account_id: payer, note,
@@ -77,7 +82,8 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
     if (disabled || busy || !canCancel) return;
     setBusy(true); setError('');
     try {
-      onUpdated(await cancelNovaTaskCard(session.session_id, task.chat_task_id, session.session_version));
+      const latest=manual?await getNovaTaskSession(session.session_id):session;
+      onUpdated(await cancelNovaTaskCard(session.session_id, task.chat_task_id, latest.session_version));
     } catch (failure) { setError(errorText(failure)); await refresh().catch(() => {}); }
     finally { setBusy(false); }
   }

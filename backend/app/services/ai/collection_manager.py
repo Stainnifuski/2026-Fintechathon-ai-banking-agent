@@ -340,9 +340,14 @@ async def create_collection_draft(context) -> dict:
                     "session_id": row.session_id, "session_version": row.version,
                     "collection_cards": await collection_cards(context.db, context.user_id, row.session_id)}
     open_cards = [card for card in (row.state.get("collection_cards", []) if row else [])
-                  if card.get("status") == "DRAFT"]
+                  if card.get("status") == "DRAFT" and not card.get('agent_released')]
     contacts = await _contacts(context.db, context.user_id)
     decision, rejected = _inspected(context, contacts)
+    if decision.action == 'create' and open_cards and not context.execution_step and not context.task_switch_approved:
+        from .task_flow import propose
+        pending = await propose(context, '新的收款')
+        if pending:
+            return pending
     if decision.action == "not_collection":
         raise CollectionError("这不是向别人发起收款的请求", "COLLECTION_INTENT_REQUIRED", 422)
     if decision.action == "clarify":
@@ -436,7 +441,7 @@ async def open_collection_drafts(db, user_id: str, session_id: str | None) -> li
              "payer_count": len(card.get("selected_payer_user_ids", [])),
              "amount_fen": card.get("amount_fen")}
             for index, card in enumerate((card for card in row.state.get("collection_cards", [])
-                                          if card.get("status") == "DRAFT"), 1)]
+                                          if card.get("status") == "DRAFT" and not card.get('agent_released')), 1)]
 
 def _contact_snapshot(contacts: list[dict]) -> str:
     """Bind a read result to the owner-scoped directory used when writing the draft."""

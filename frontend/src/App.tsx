@@ -1,3 +1,4 @@
+import {ManualTaskWorkspace} from './components/NovaTaskPresentation';
 import { FormEvent, useCallback, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 import {manualDrafts} from './services/wealthManualDraft';
@@ -42,6 +43,9 @@ function App() {
   const [user, setUser] = useState<bank.User | null>(() =>
     localStorage.getItem('token') ? JSON.parse(localStorage.getItem('bank-user') || 'null') : null
   );
+  useEffect(()=>{window.dispatchEvent(new Event('nova-owner-change'));},[user?.user_id]);
+  useEffect(()=>{const navigate=(event:Event)=>{const detail=(event as CustomEvent<{destination:string;service?:'flower'|'cake'}>).detail;const destination=detail.destination;setManualTab(destination==='calendar'?'calendar':detail.service);if(destination==='calendar'||destination==='thirdParty'){setAppView('thirdParty');}else openSection(destination as BankingSection);setAgentExpanded(false);};window.addEventListener('nova-manual-navigate',navigate);return()=>window.removeEventListener('nova-manual-navigate',navigate);},[]);
+  const [manualTab,setManualTab]=useState<'calendar'|'flower'|'cake'|undefined>();
   const [loginMode, setLoginMode] = useState<'login' | 'register'>('login');
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
@@ -73,6 +77,9 @@ function App() {
   },[user?.user_id,workspaceRetry]);
   const [paymentRequests, setPaymentRequests] = useState<bank.PaymentRequest[]>([]);
   const [subscriptions, setSubscriptions] = useState<bank.Subscription[]>([]);
+  const [showCancelledSubscriptions, setShowCancelledSubscriptions] = useState(false);
+  const activeSubscriptions = subscriptions.filter(item => item.status === 'ACTIVE');
+  const cancelledSubscriptions = subscriptions.filter(item => item.status === 'CANCELLED');
   const [pendingSubscription, setPendingSubscription] = useState<bank.Subscription | null>(null);
   const [pendingChargeSubscription, setPendingChargeSubscription] = useState<bank.Subscription | null>(null);
   const [subscriptionCancellationToken, setSubscriptionCancellationToken] = useState('');
@@ -115,6 +122,10 @@ function App() {
   const [selectedCardId, setSelectedCardId] = useState<string>();
   const [pendingCardOperationId, setPendingCardOperationId] = useState<string>();
   const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string>();
+  useEffect(() => {
+    setSelectedSubscriptionId(current => subscriptions.some(item => item.subscription_id === current && item.status === 'ACTIVE') ? current : undefined);
+  }, [subscriptions]);
+  useEffect(() => { setShowCancelledSubscriptions(false); }, [user?.user_id]);
   const [billPageContext, setBillPageContext] = useState<NovaPageContext>({ version: 1, page: 'insights' });
   const [thirdPartyPageContext, setThirdPartyPageContext] = useState<NovaPageContext>({ version: 1, page: 'thirdParty' });
   const updateThirdPartyPageContext = useCallback((context: NovaPageContext) => setThirdPartyPageContext(context), []);
@@ -366,6 +377,18 @@ function App() {
     finally { setIsActing(false); }
   };
 
+  const restoreSubscriptionForTesting = async (subscription: bank.Subscription) => {
+    if (isActing) return;
+    setIsActing(true); setStatus('');
+    try {
+      const updated = await bank.restoreSubscriptionForTesting(subscription);
+      setSubscriptions(items => items.map(item => item.subscription_id === updated.subscription_id ? updated : item));
+      setStatus(`测试专用：已恢复 ${updated.merchant_name} 订阅，未扣款，计划扣费日期保持不变`);
+      await load();
+    } catch (error) { setStatus(message(error)); }
+    finally { setIsActing(false); }
+  };
+
   const confirmSubscriptionCharge = async () => {
     if (!pendingChargeSubscription || !subscriptionChargeId || isActing) return;
     setIsActing(true); setStatus('');
@@ -581,10 +604,10 @@ function App() {
         <header className="bank-topbar"><div><BeijingClock /><span className="workspace-label">{desktopLayout && agentOpen && agentExpanded ? 'NOVA 银行智能体' : appView === 'thirdParty' ? '生活服务' : ({home:'财务概览',transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',wealth:'理财规划'} as Record<BankingSection,string>)[bankingSection]}</span>{desktopLayout&&agentOpen&&agentExpanded&&(bankingSection!=='home'||appView==='thirdParty')&&<small className="nova-reference-context">参考工作台：{appView==='thirdParty'?'生活服务':({transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',wealth:'理财规划'} as Partial<Record<BankingSection,string>>)[bankingSection]}</small>}</div><div className="top-actions"><div className="nova-header-slot" ref={setNovaControls} /><button id="nova-toggle" className="agent-button" aria-expanded={desktopLayout ? agentExpanded && agentOpen : agentOpen} aria-controls="nova-panel" title={desktopLayout ? (agentExpanded && agentOpen ? '切换为侧边对话，查看财务概览' : '展开 NOVA 对话') : (agentOpen ? '收起 NOVA 对话' : '打开 NOVA 对话')} onClick={switchAgentMode}>{(desktopLayout ? agentExpanded && agentOpen : agentOpen) ? '收起 NOVA' : '展开 NOVA'}</button><button className="icon-button auth-enroll-button" disabled={isActing} onClick={openEnroll} aria-label={totpEnabled ? '已绑定验证器' : '绑定验证器'} title={totpEnabled ? '已绑定验证器' : '绑定验证器'}>⌾</button><button className="profile-button" onClick={logout} title="退出登录">{user.name.slice(0,1)}</button></div></header>
         <SecurityNotice userId={user.user_id} />
         {status && <p className="notice global-notice">{status}</p>}
-        <div className="workspace-content">
+        <div className="workspace-content"><ManualTaskWorkspace destination={appView==='thirdParty'?(thirdPartyPageContext.calendar?'calendar':'thirdParty'):bankingSection}/>
         {appView==='banking'&&bankingSection==='wealth'&&import.meta.env.DEV&&import.meta.env.VITE_B6_BROWSER_TEST==='true'&&<p className="notice" role="status">B6 隔离验收：固定契约方案＋独立模拟账户。不是模型建议，与日常演示账户无关；测试业务时钟与现实时间分开。</p>}
         {appView === 'thirdParty' ? <Suspense fallback={<section className="card"><p>正在加载第三方服务…</p></section>}>
-          <ThirdPartyServices onContextChange={updateThirdPartyPageContext} revision={bankRevision} onBack={() => openSection('home')} onGoBank={goToBankPayment} />
+          <ThirdPartyServices requestedTab={manualTab} onContextChange={updateThirdPartyPageContext} revision={bankRevision} onBack={() => openSection('home')} onGoBank={goToBankPayment} />
         </Suspense> : <>
         {bankingSection === 'home' && <FinancialOverview userId={user.user_id} revision={bankRevision} accounts={accounts} subscriptions={subscriptions} loading={overviewLoading} error={overviewError} onRetry={() => void load()} assetSummary={assetSummary} onNavigate={openSection} />}
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
@@ -656,8 +679,8 @@ function App() {
       })}</ul>}</div></section></div>}
     {bankingSection === 'cards' && <><div className="page-intro cards-page-intro"><p className="eyebrow">CARDS</p><h1>管理卡片</h1><p>查看卡片状态与限额；变更需确认，部分操作还需验证码。</p></div><Suspense fallback={<section className="card"><p>正在加载卡片管理…</p></section>}><CardManagement key={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} selectedCardId={selectedCardId} onSelectCard={setSelectedCardId} pendingOperationId={pendingCardOperationId} onPendingHandled={() => setPendingCardOperationId(undefined)} /></Suspense></>}
     {bankingSection === 'subscriptions' && <><div className="page-intro subscription-page-intro"><p className="eyebrow">SUBSCRIPTIONS</p><h1>管理订阅</h1><p>取消前展示影响，历史流水不会被删除。</p></div><section className="card subscription-card">
-      <h2>订阅管理</h2><p className="hint">选择一项订阅后，可向 NOVA 询问“这个订阅什么时候扣费？”</p>
-      {subscriptions.length === 0 ? <p className="hint">暂无订阅记录</p> : <ul className="history">{subscriptions.map(subscription => {
+      <h2>订阅管理</h2><p className="hint">选择一项生效中的订阅后，可向 NOVA 询问“这个订阅什么时候扣费？”</p>
+      {activeSubscriptions.length === 0 ? <p className="hint">暂无生效中的订阅</p> : <ul className="history">{activeSubscriptions.map(subscription => {
         const active = subscription.status === 'ACTIVE';
         return <li key={subscription.subscription_id} className={selectedSubscriptionId === subscription.subscription_id ? 'nova-selected-row' : undefined}><span><strong>{subscription.merchant_name}</strong><small>{subscription.debit_account_label} · 每月 ¥{subscription.amount.toFixed(2)}</small><small>{active ? `计划扣费：${beijingTime(subscription.next_charge_at)}` : `已于 ${subscription.cancelled_at ? beijingTime(subscription.cancelled_at) : '-'} 取消`}</small>{subscription.source_transaction_id && <small>识别依据：已有历史扣费</small>}</span><div className="subscription-action"><button className="secondary" aria-pressed={selectedSubscriptionId === subscription.subscription_id} onClick={() => setSelectedSubscriptionId(selectedSubscriptionId === subscription.subscription_id ? undefined : subscription.subscription_id)}>{selectedSubscriptionId === subscription.subscription_id ? '已选中 · 再点取消选择' : '选择这项订阅问 NOVA'}</button><strong className={active ? 'in' : 'hint'}>{active ? '生效中' : '已取消'}</strong>{active ? <><button disabled={isActing} onClick={() => { setPendingSubscription(null); setPendingChargeSubscription(subscription); setSubscriptionChargeId(newId()); }}>模拟扣费</button><button className="secondary" disabled={isActing} onClick={async () => {
           setIsActing(true); setPendingSubscription(null); setSubscriptionCancellationToken('');
@@ -670,6 +693,16 @@ function App() {
           finally { setIsActing(false); }
         }}>取消订阅</button></> : <small>不会继续扣费</small>}</div></li>;
       })}</ul>}
+      {cancelledSubscriptions.length > 0 && <div className="cancelled-subscriptions">
+        <label className="hint"><input type="checkbox" checked={showCancelledSubscriptions} onChange={event => setShowCancelledSubscriptions(event.target.checked)} aria-controls="cancelled-subscription-list" aria-expanded={showCancelledSubscriptions} /> 显示已取消订阅（{cancelledSubscriptions.length}）</label>
+        {showCancelledSubscriptions && <div id="cancelled-subscription-list">
+          <p className="hint">测试专用：恢复订阅用于重复调试取消操作，不接入 NOVA。恢复不会扣款或修改原计划扣费日期，历史流水保留。</p>
+          <ul className="history">{cancelledSubscriptions.map(subscription => <li key={subscription.subscription_id}>
+            <span><strong>{subscription.merchant_name}</strong><small>{subscription.debit_account_label} · 每月 ¥{subscription.amount.toFixed(2)}</small><small>已于 {subscription.cancelled_at ? beijingTime(subscription.cancelled_at) : '-'} 取消</small>{subscription.source_transaction_id && <small>识别依据：已有历史扣费</small>}</span>
+            <div className="subscription-action"><strong className="hint">已取消</strong><small>不会继续扣费</small><button className="secondary" disabled={isActing} onClick={() => restoreSubscriptionForTesting(subscription)}>恢复订阅（测试专用）</button></div>
+          </li>)}</ul>
+        </div>}
+      </div>}
       {pendingSubscription && <div className="subscription-confirm"><p><strong>确认取消 {pendingSubscription.merchant_name}？</strong></p><p>扣费账户：{pendingSubscription.debit_account_label} · 每月 ¥{pendingSubscription.amount.toFixed(2)}<br />计划扣费：{beijingTime(pendingSubscription.next_charge_at)}</p><p className="hint">确认后将停止后续模拟自动扣费，历史扣费流水不会删除。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingSubscription(null); setSubscriptionCancellationToken(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCancellation}>{isActing ? '正在取消…' : '确认取消'}</button></div></div>}
       {pendingChargeSubscription && <div className="subscription-confirm"><p><strong>模拟扣除 {pendingChargeSubscription.merchant_name} ¥{pendingChargeSubscription.amount.toFixed(2)}？</strong></p><p className="hint">确认后将真实减少演示账户余额、生成订阅流水，并把下次扣费日推进一个月。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingChargeSubscription(null); setSubscriptionChargeId(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCharge}>{isActing ? '正在扣费…' : '确认模拟扣费'}</button></div></div>}
     </section></>}
@@ -677,7 +710,7 @@ function App() {
         </div>
       </div>
     </div>
-    <NovaChat promptRequest={novaPrompts[0]} onPromptHandled={id => setNovaPrompts(items => items.filter(item => item.id !== id))} headerControls={desktopLayout?novaControls:null} pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: subscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection === 'audit' ? 'home' : bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => { if (window.matchMedia('(min-width: 1101px)').matches) setAgentExpanded(false); else setAgentOpen(false); }} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
+    <NovaChat promptRequest={novaPrompts[0]} onPromptHandled={id => setNovaPrompts(items => items.filter(item => item.id !== id))} headerControls={desktopLayout?novaControls:null} pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: activeSubscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection === 'audit' ? 'home' : bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => { if (window.matchMedia('(min-width: 1101px)').matches) setAgentExpanded(false); else setAgentOpen(false); }} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
     {mfaOpen && <div className="transfers-mfa" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>

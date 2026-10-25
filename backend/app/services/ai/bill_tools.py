@@ -75,6 +75,12 @@ async def prepare(arguments, context):
     try:
         card = await nova_bills.prepare(context.db, context.user_id, context.session_id,
             context.request_id, arguments, selected)
+        if context.active_entry_type=='bill' and context.active_entry_id!=card['action_id']:
+            from ...models.nova_bill_action import NovaBillActionORM
+            previous=await context.db.get(NovaBillActionORM,context.active_entry_id,populate_existing=True)
+            if previous and previous.user_id==context.user_id and previous.session_id==context.session_id and previous.status=='pending':
+                previous.status='cancelled'
+                await context.db.commit()
     except Exception:
         await context.db.rollback()
         raise

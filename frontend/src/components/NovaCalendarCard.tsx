@@ -1,3 +1,4 @@
+import {useTaskField,useTaskPrefill} from './NovaTaskPresentation';
 import { useEffect, useState, type FormEvent } from 'react';
 import * as calendar from '../services/calendar';
 import { dismissNovaCalendarTask, linkNovaCalendarTask, type NovaChatCalendarTask } from '../services/nova';
@@ -17,17 +18,18 @@ export default function NovaCalendarCard({ task, sessionId, disabled, onUpdated,
   onUpdated: (tasks: NovaChatCalendarTask[]) => void; onActivity?: () => void;
 }) {
   const prefill = task.prefill;
-  const [title, setTitle] = useState(prefill.title ?? '');
-  const [day, setDay] = useState(prefill.start_date ?? '');
-  const [start, setStart] = useState(prefill.start_time ?? '');
-  const [endDay, setEndDay] = useState(prefill.end_date ?? '');
-  const [end, setEnd] = useState(prefill.end_time ?? '');
-  const [location, setLocation] = useState(prefill.location ?? '');
-  const [description, setDescription] = useState(prefill.description ?? '');
+  const [title, setTitle] = useTaskField('title',prefill.title ?? '');
+  const [day, setDay] = useTaskField('day',prefill.start_date ?? '');
+  const [start, setStart] = useTaskField('start',prefill.start_time ?? '');
+  const [endDay, setEndDay] = useTaskField('endDay',prefill.end_date ?? '');
+  const [end, setEnd] = useTaskField('end',prefill.end_time ?? '');
+  const [location, setLocation] = useTaskField('location',prefill.location ?? '');
+  const [description, setDescription] = useTaskField('description',prefill.description ?? '');
   const [event, setEvent] = useState<calendar.CalendarEvent | null>(task.event ?? null);
   const [deleted, setDeleted] = useState(task.deleted);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(task.notice ?? '');
+  useTaskPrefill(prefill,{title:v=>setTitle(String(v??'')),start_date:v=>setDay(String(v??'')),start_time:v=>setStart(String(v??'')),end_date:v=>setEndDay(String(v??'')),end_time:v=>setEnd(String(v??'')),location:v=>setLocation(String(v??'')),description:v=>setDescription(String(v??''))});
 
   useEffect(() => { setEvent(task.event ?? null); setDeleted(task.deleted); }, [task.event_id, task.deleted]);
 

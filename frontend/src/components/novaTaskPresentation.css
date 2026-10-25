@@ -1,0 +1,32 @@
+.agent-panel{isolation:isolate}
+.nova-confirm-overlay{position:absolute;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:20px;background:transparent;pointer-events:auto}
+.home-workspace .agent-panel>.nova-confirm-overlay{position:absolute!important;inset:0!important;width:100%;height:100%;max-height:none;min-height:0;flex:none;z-index:100}
+.home-workspace .agent-panel>.nova-confirm-overlay>section{position:relative;flex:0 1 480px;height:auto;max-height:calc(100% - 40px);min-height:0}
+.nova-confirm-overlay>section{width:min(480px,100%);max-height:calc(100% - 40px);overflow:auto;background:#fff;border:1px solid #d7c9e9;border-radius:20px;padding:26px;color:#202238;box-shadow:0 8px 32px #48208026;outline:none}
+.nova-confirm-overlay h3{margin:0 0 12px;font-size:21px}.nova-confirm-overlay p{white-space:pre-wrap;line-height:1.7}
+.nova-confirm-overlay footer{display:flex;justify-content:space-between;gap:20px;margin-top:24px}
+.nova-confirm-overlay button,.nova-task-surface button,.nova-manual-workspace button,.agent-panel .wealth-step-card>button{background:#6d3aa6;color:white;border:1px solid transparent;border-radius:12px;padding:10px 16px}
+.nova-confirm-overlay button.secondary,.nova-task-surface button.secondary,.nova-task-controls button,.agent-panel .wealth-step-card>button:first-of-type{background:#f3eef9;color:#653396;border-color:#e6dcf0}
+.nova-confirm-overlay button:disabled,.nova-task-surface button:disabled{opacity:.5}
+.nova-task-surface{background:#fff;border:1px solid #e5dced;border-radius:20px;padding:20px;margin:14px 0;color:#202238}
+.nova-task-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.nova-task-header h3{margin:0;font-size:18px}.nova-task-header small{display:block;margin-top:5px;color:#77728b;line-height:1.5}
+.nova-task-controls{display:flex;align-items:center;gap:8px}.nova-task-controls button{padding:6px 10px;min-width:32px}
+.nova-task-surface .nova-transfer-card-head,.nova-task-surface .nova-wealth-task-head{display:none}
+.nova-task-surface.is-manual .nova-transfer-card-head:has(.nova-transfer-card-controls){display:flex;justify-content:flex-end}
+.nova-task-surface.is-manual .nova-transfer-card-head:has(.nova-transfer-card-controls)>div:first-child,.nova-task-surface.is-manual .nova-transfer-toggle{display:none}
+.nova-task-surface .nova-transfer-card,.nova-task-surface>.card{padding:0;margin:0;border:0;box-shadow:none;background:transparent}
+.nova-task-surface .nova-transfer-review,.nova-task-surface .subscription-confirm{background:#f7f3fb;border:1px solid #e6dcf0;border-radius:14px;padding:16px}
+.nova-task-surface .nova-transfer-actions,.nova-task-surface .confirm{display:flex;justify-content:space-between;gap:16px;margin-top:16px}
+.nova-task-surface .error,.nova-task-surface [role=alert]{color:#a63232;line-height:1.6}
+.nova-task-summary{padding:12px 16px;border:1px solid #e5dced;background:#faf8fc;border-radius:14px;color:#716b83;margin:12px 0}
+.nova-task-summary p{margin:6px 0 0;line-height:1.6}
+.nova-handoff-button{background:#f3eef9!important;color:#63338f!important;border:1px solid #d7c9e9!important;border-radius:12px;padding:8px 12px;white-space:nowrap}
+.nova-manual-workspace{padding:20px;border:1px solid #e1d4ed;background:#fcfaff;border-radius:20px;margin-bottom:24px}
+.nova-manual-workspace[hidden],.nova-task-surface [hidden]{display:none!important}
+.nova-manual-workspace>p{color:#716b83;line-height:1.6}.nova-task-surface.is-manual .nova-wealth-more{display:none}
+.agent-panel .wealth-step-card[role=dialog]{background:#fff;border:1px solid #e1d4ed;border-radius:18px;color:#202238}
+.agent-panel .wealth-step-card[role=dialog]>button:last-of-type{float:right;background:#6d3aa6;color:white}
+.agent-panel .wealth-step-card[role=dialog]::after{content:'';display:block;clear:both}
+.nova-message .nova-markdown p,.nova-message .nova-markdown li{line-height:1.75}
+@media(max-width:540px){.nova-task-surface{padding:15px}.nova-task-header h3{font-size:16px}.nova-confirm-overlay{padding:12px}.nova-confirm-overlay>section{padding:20px}.nova-title-row{flex-wrap:wrap}}

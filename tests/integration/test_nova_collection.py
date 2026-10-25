@@ -449,38 +449,27 @@ async def test_chat_can_set_aa_edit_fields_and_cancel_collection(db, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_chat_targets_one_of_multiple_collection_drafts_and_can_create_another(db, monkeypatch):
-    def card_id(index):
-        return lambda payload: payload["open_collection_cards"][index]["collection_id"]
-
+async def test_new_collection_requires_switch_and_preserves_original_until_confirmed(db, monkeypatch):
     ScriptedModel(monkeypatch, {
-        "向小李收100元": {"action": "create", "payers": named("set", "小李", "小李"), "amount_quote": "100元"},
-        "向王五收200元": {"action": "create", "payers": named("set", "王五", "王五"), "amount_quote": "200元"},
-        # A guess without any identifying words in the utterance is not accepted.
-        "改成AA": lambda payload: {"action": "update", "amount_mode": "split_total",
-                                 "target_card_id": card_id(0)(payload)},
-        "把小李那笔收款改成AA": lambda payload: {"action": "update", "amount_mode": "split_total",
-                                       "target_card_id": card_id(0)(payload), "target_quote": "小李那笔"},
-        "撤销第二张收款": lambda payload: {"action": "cancel", "target_card_id": card_id(1)(payload),
-                                    "target_quote": "第二张"},
-        "向李四收300元": {"action": "create", "payers": named("set", "李四", "李四"), "amount_quote": "300元"},
+        "向小李收100元": {"action":"create","payers":named("set","小李","小李"),"amount_quote":"100元"},
+        "向王五收200元": {"action":"create","payers":named("set","王五","王五"),"amount_quote":"200元"},
     })
-    await add_contact(db, "C2", "李四", "13900000002", "小李")
+    await add_contact(db,"C2","李四","13900000002","小李")
     async with client_for(db) as client:
-        first = await say(client, "向小李收100元")
-        second = await say(client, "向王五收200元", first)
-        assert len(second["collection_cards"]) == 2
-        ambiguous = await say(client, "改成AA", second)
-        assert "第几张或原付款人" in ambiguous["reply"]
-        assert all(not card["split_equally"] for card in ambiguous["collection_cards"])
-        targeted = await say(client, "把小李那笔收款改成AA", second)
-        assert targeted["collection_cards"][0]["split_equally"] is True
-        assert targeted["collection_cards"][1]["split_equally"] is False
-        cancelled = await say(client, "撤销第二张收款", targeted)
-        assert [card["status"] for card in cancelled["collection_cards"]] == ["DRAFT", "CANCELLED"]
-        another = await say(client, "向李四收300元", cancelled)
-    assert len(another["collection_cards"]) == 3
-    assert another["collection_cards"][2]["status"] == "DRAFT"
+        first=await say(client,"向小李收100元")
+        second=await say(client,"向王五收200元",first)
+        assert second["task_switch"]["token"]
+        session=await db.get(NovaSessionORM,first['session_id'],populate_existing=True)
+        assert len(session.state['collection_cards'])==1
+        assert session.state['collection_cards'][0]['status']=='DRAFT'
+        response=await client.post('/api/v1/nova/chat',json={
+            'message':'确认切换操作','request_id':uuid4().hex,'session_id':first['session_id'],
+            'session_version':first['session_version'],
+            'task_switch_token':second['task_switch']['token'],'accept_task_switch':True})
+        assert response.status_code==200,response.text
+        cards=response.json()['collection_cards']
+        assert len(cards)==2
+        assert [card['status'] for card in cards]==['CANCELLED','DRAFT']
 
 
 @pytest.mark.asyncio
