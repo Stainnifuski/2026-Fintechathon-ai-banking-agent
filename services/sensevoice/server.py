@@ -16,7 +16,8 @@ from fastapi.responses import JSONResponse
 MAX_BYTES = 4 * 1024 * 1024
 MAX_SECONDS = 45
 SAMPLE_RATE = 16000
-MODEL_REVISION = os.getenv('SENSEVOICE_MODEL_REVISION', '3847d57b6bdf2dd8875cb1508d2af43d80a16bf7')
+APPROVED_MODEL_REVISION = '3847d57b6bdf2dd8875cb1508d2af43d80a16bf7'
+MODEL_REVISION = os.getenv('SENSEVOICE_MODEL_REVISION', APPROVED_MODEL_REVISION)
 state = {'ready': False, 'loading': True, 'failed': False}
 model = None
 inference_lock = asyncio.Lock()
@@ -25,6 +26,8 @@ logger = logging.getLogger('bank.voice')
 
 def load_model():
     global model
+    if MODEL_REVISION != APPROVED_MODEL_REVISION:
+        raise ValueError('ASR_MODEL_REVISION_NOT_APPROVED')
     import torch
     from huggingface_hub import snapshot_download
     from funasr import AutoModel

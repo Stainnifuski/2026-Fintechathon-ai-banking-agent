@@ -52,6 +52,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期管理：启动时初始化数据库，关闭时释放连接。"""
     workers: list[asyncio.Task] = []
     try:
+        from .security.release_integrity import verify_skills
+        verify_skills()
         from .database.connection import DATABASE_URL
         from .integrations.local_runtime import configure_local_test_limits
         app.state.local_test_mode = configure_local_test_limits(DATABASE_URL)

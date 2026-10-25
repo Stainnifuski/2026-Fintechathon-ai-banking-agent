@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from ...domain.wealth_synthetic import fingerprint
 from ...models.wealth_research import WealthKnowledgeORM
+from ...security.knowledge_integrity import attest, verified, SIGNATURE
+from ...security.agent_guard import security_event
 
 VERSION='knowledge-v12-1'
 ACTIVE_PROJECT_VERSION = 'project-20261022-grounding-v1'
@@ -60,10 +62,26 @@ def documents(products: list[dict]) -> list[dict]:
     return rows
 
 
+async def _store_approved(db, document_id, content, metadata):
+    row = await db.get(WealthKnowledgeORM, document_id)
+    if row is None:
+        db.add(WealthKnowledgeORM(document_id=document_id, content=content,
+                                 metadata_json=attest(document_id, content, metadata)))
+        return
+    # Legacy migration only from independently reconstructed ingestion output.
+    # A new hash on a modified DB row is never sufficient for approval.
+    stable = lambda m: {k: v for k, v in m.items() if k not in {SIGNATURE, 'ingested_at'}}
+    if (row.content != content or not isinstance(row.metadata_json, dict)
+            or stable(row.metadata_json) != stable(metadata)):
+        security_event('KNOWLEDGE_MIGRATION_REJECTED')
+        return
+    if not verified(document_id, row.content, row.metadata_json):
+        row.metadata_json = attest(document_id, content, metadata)
+
+
 async def seed(db,products):
     for r in documents(products):
-        if await db.get(WealthKnowledgeORM,r['document_id']) is None:
-            db.add(WealthKnowledgeORM(document_id=r['document_id'],metadata_json={k:v for k,v in r.items() if k!='content'},content=r['content']))
+        await _store_approved(db, r['document_id'], r['content'], {k:v for k,v in r.items() if k!='content'})
     await db.flush()
 
 
@@ -88,14 +106,13 @@ async def seed_mixed(db, payload):
             body += '；原说明书不证明当前真实在售，交易仅按项目模拟规则。'
             source = p['official_reference']['url']
         did = 'KM-' + fingerprint([key, family])[:40]
-        if await db.get(WealthKnowledgeORM, did) is None:
-            db.add(WealthKnowledgeORM(document_id=did, content=body, metadata_json={
+        await _store_approved(db, did, body, {
                 'document_id':did, 'title':names, 'source_type':'real_fund_summary' if p['source']=='akshare' else 'official_rules_simulation',
                 'source_url':source, 'dataset_key':key, 'product_ids':[s['product_id'] for s in shares],
                 'location':p.get('official_reference', {}).get('pages') or '公开基金档案／来源缓存字段',
                 'published_at':None, 'valid_from':payload['as_of'], 'valid_until':None,
                 'version':payload['dataset_version'], 'content_hash':fingerprint(body),
-                'license':'project-original-summary; linked source rights reserved'}))
+                'license':'project-original-summary; linked source rights reserved'})
     await db.flush()
     return len(families)
 
@@ -111,14 +128,20 @@ def tokens(text: str) -> set[str]:
 async def retrieve(db,query: str,dataset_key: str|None=None,limit: int=4,as_of: str|None=None) -> list[dict]:
     at=as_of or datetime.now(timezone.utc).date().isoformat(); wanted=tokens(query); ranked=[]
     candidates = current_project_documents() if at >= '2026-10-22' else []
+    rejected = False
     for row in (await db.scalars(select(WealthKnowledgeORM))).all():
         m=row.metadata_json
+        if not verified(row.document_id, row.content, m):
+            rejected = True
+            continue
         # 历史项目流程仅供历史引用，不再解释当前授权及成交行为。
         if m.get('source_type') == 'project': continue
         if m.get('dataset_key') and m['dataset_key']!=dataset_key: continue
         if m.get('valid_from') and m['valid_from']>at or m.get('valid_until') and m['valid_until']<at: continue
         if m.get('content_hash') != fingerprint(row.content): continue
-        candidates.append({**m, 'excerpt': row.content[:1600]})
+        candidates.append({**{k:v for k,v in m.items() if k != SIGNATURE}, 'excerpt': row.content[:1600]})
+    if rejected:
+        security_event('KNOWLEDGE_INTEGRITY_REJECTED')
     for m in candidates:
         title=tokens(m['title']); body=tokens(m['excerpt'])
         score=len(wanted&body)+3*len(wanted&title)

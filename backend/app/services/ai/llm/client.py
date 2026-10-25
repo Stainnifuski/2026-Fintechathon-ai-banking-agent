@@ -8,11 +8,14 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from .config import LLMSettings, get_mode, get_settings
 from .errors import LLMError
 from .. import debug_trace
+from ....security.agent_guard import (
+    protect_messages, strict_json, MAX_ARGUMENT_BYTES, MAX_RESPONSE_BYTES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +42,27 @@ def _validate_tool_calls(calls: Any, code: str) -> None:
         if (call.get("type") != "function" or not isinstance(call.get("id"), str)
                 or not call["id"] or call["id"] in ids or not isinstance(function, dict)
                 or not isinstance(function.get("name"), str)
-                or not isinstance(function.get("arguments"), str)):
+                or not isinstance(function.get("arguments"), str)
+                or len(function['arguments'].encode()) > MAX_ARGUMENT_BYTES):
             raise LLMError(code)
         ids.add(call["id"])
+
+
+async def _bounded_lines(response: httpx.Response):
+    """Bound bytes before line splitting, including an attacker-controlled huge line."""
+    received = 0
+    pending = bytearray()
+    async for chunk in response.aiter_bytes():
+        received += len(chunk)
+        if received > MAX_RESPONSE_BYTES:
+            raise LLMError('MODEL_RESPONSE_LIMIT')
+        pending.extend(chunk)
+        while b'\n' in pending:
+            line, _, rest = pending.partition(b'\n')
+            pending = bytearray(rest)
+            yield line.decode('utf-8')
+    if pending:
+        yield pending.decode('utf-8')
 
 
 async def _read_stream(response: httpx.Response, on_delta: DeltaCallback) -> dict[str, Any]:
@@ -50,14 +71,14 @@ async def _read_stream(response: httpx.Response, on_delta: DeltaCallback) -> dic
     calls: dict[int, dict[str, Any]] = {}
     finish_reason = None
     usage: dict[str, Any] = {}
-    async for line in response.aiter_lines():
+    async for line in _bounded_lines(response):
         line = line.strip()
         if not line.startswith("data:"):
             continue
         data = line[5:].strip()
         if data == "[DONE]":
             break
-        chunk = json.loads(data)
+        chunk = strict_json(data)
         if isinstance(chunk.get("usage"), dict):
             usage = chunk["usage"]
         choices = chunk.get("choices") or []
@@ -146,6 +167,7 @@ class LLMService:
                     limits=httpx.Limits(max_connections=settings.max_connections,
                                        max_keepalive_connections=settings.max_connections),
                     transport=self._transport,
+                    trust_env=False, follow_redirects=False,
                 )
             except (ValueError, httpx.InvalidURL):
                 raise LLMError("MODEL_CONFIGURATION_INVALID") from None
@@ -188,6 +210,7 @@ class LLMService:
                                                 or not 0 <= temperature <= 2)
                 or tool_choice not in {"auto", "required", "none"}):
             raise LLMError("MODEL_REQUEST_INVALID")
+        messages = protect_messages(messages)
         body: dict[str, Any] = {
             "model": settings.model, "messages": messages,
             "temperature": settings.temperature if temperature is None else temperature,
@@ -215,13 +238,18 @@ class LLMService:
             async with asyncio.timeout(settings.timeout):
                 async with slots:
                     if on_delta is None:
-                        response = await client.post(
-                            settings.base_url + "/chat/completions", json=body,
-                            headers={"Authorization": "Bearer " + settings.api_key},
-                        )
-                        if response.status_code != 200:
-                            raise LLMError("MODEL_HTTP_" + str(response.status_code))
-                        payload = response.json()
+                        async with client.stream(
+                            'POST', settings.base_url + '/chat/completions', json=body,
+                            headers={'Authorization': 'Bearer ' + settings.api_key},
+                        ) as response:
+                            if response.status_code != 200:
+                                raise LLMError('MODEL_HTTP_' + str(response.status_code))
+                            raw = bytearray()
+                            async for chunk in response.aiter_bytes():
+                                raw.extend(chunk)
+                                if len(raw) > MAX_RESPONSE_BYTES:
+                                    raise LLMError('MODEL_RESPONSE_LIMIT')
+                            payload = strict_json(raw.decode('utf-8'))
                     else:
                         async with client.stream(
                             "POST", settings.base_url + "/chat/completions", json=body,
@@ -273,7 +301,7 @@ class LLMService:
         except httpx.HTTPError:
             debug_trace.record('model_error', {'code': 'MODEL_NETWORK_ERROR'})
             raise LLMError("MODEL_NETWORK_ERROR") from None
-        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError, RecursionError):
             debug_trace.record('model_error', {'code': 'MODEL_RESPONSE_INVALID'})
             raise LLMError("MODEL_RESPONSE_INVALID") from None
         finally:
@@ -314,8 +342,9 @@ class LLMService:
         result = await self._generate([schema_message, *messages], structured=True,
                                       max_tokens=max_tokens, temperature=temperature)
         try:
+            strict_json(result.data)
             data = schema.model_validate_json(result.data)
-        except ValidationError:
+        except (ValueError, RecursionError):
             raise LLMError("MODEL_SCHEMA_INVALID") from None
         return LLMResult(data, result.evidence)
 

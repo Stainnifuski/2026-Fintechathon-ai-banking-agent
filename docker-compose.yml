@@ -73,6 +73,7 @@ services:
     volumes:
       - audit_recovery:/app/var/audit-recovery
       - nova_debug:/app/var/nova-debug
+      - agent_security:/app/var/agent-security
       - type: bind
         source: ./.deps/wealth_portfolio_data/snapshots
         target: /app/.deps/wealth_portfolio_data/snapshots
@@ -121,6 +122,8 @@ volumes:
   audit_recovery:
     driver: local
   nova_debug:
+    driver: local
+  agent_security:
     driver: local
   postgres_data:
     driver: local

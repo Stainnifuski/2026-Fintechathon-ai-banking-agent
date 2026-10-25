@@ -106,7 +106,8 @@ def generate_code() -> str:
 
 
 def _hash_key() -> bytes:
-    return (os.getenv("SMS_CODE_HASH_KEY") or os.getenv("JWT_SECRET") or "sms-demo-key").encode()
+    from .auth_configuration import jwt_signing_secret
+    return (os.getenv("SMS_CODE_HASH_KEY") or jwt_signing_secret()).encode()
 
 
 def hash_code(challenge_id: str, code: str) -> str:

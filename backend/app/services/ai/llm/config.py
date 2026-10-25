@@ -98,6 +98,13 @@ def get_settings() -> LLMSettings:
                 or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in base)
                 or url.path.endswith("/chat/completions")):
             raise ValueError()
+        # Plain HTTP is confined to explicit local inference deployments.
+        if url.scheme == 'http' and url.hostname not in {'localhost', '127.0.0.1', '::1'}:
+            raise ValueError()
+        allowed = os.getenv('LLM_ALLOWED_ORIGINS', '').strip()
+        origin = f'{url.scheme}://{url.netloc}'.lower()
+        if allowed and origin not in {item.strip().lower().rstrip('/') for item in allowed.split(',')}:
+            raise ValueError()
     except ValueError:
         raise LLMError("MODEL_CONFIGURATION_INVALID") from None
     provider = os.getenv("LLM_PROVIDER", "").strip().lower() or (

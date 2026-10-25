@@ -1,5 +1,7 @@
 # AI Banking Agent
 
+安全防护、资料签名与密钥维护见 [Agent 安全说明](docs/agent_security.md)。
+
 面向银行业务的 AI Agent 比赛演示项目：通过自然语言理解意图、规划任务，在风险分级和用户授权后调用模拟银行，展示可核对的执行结果。后端 FastAPI，前端 React/TypeScript，数据库支持 SQLite 与 PostgreSQL。
 
 > 账户、资金、费用与交易均为比赛模拟；真实公开资料分别标源。理财使用统一高风险TOTP／短信验证，默认短信为本地模拟发送，不连接运营商或真实银行。

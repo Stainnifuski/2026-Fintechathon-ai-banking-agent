@@ -139,7 +139,9 @@ async def test_wrong_dataset_expired_future_and_tampered_documents_do_not_become
             'valid_from': '2026-10-01', 'valid_until': None, 'content_hash': wealth_knowledge.fingerprint('唯一专有检索词债券')}
     for key, changes in [('old-pool', {'dataset_key': 'old'}), ('expired', {'valid_until': '2026-10-21'}),
                          ('future', {'valid_from': '2026-10-23'}), ('tampered', {'content_hash': 'wrong'}), ('valid', {})]:
-        db.add(WealthKnowledgeORM(document_id=key, content='唯一专有检索词债券', metadata_json={**base, **changes, 'document_id': key}))
+        from backend.app.security.knowledge_integrity import attest
+        metadata = attest(key, '唯一专有检索词债券', {**base, **changes, 'document_id': key})
+        db.add(WealthKnowledgeORM(document_id=key, content='唯一专有检索词债券', metadata_json=metadata))
     await db.commit()
     rows = await wealth_knowledge.retrieve(db, '唯一专有检索词', dataset_key='current', as_of='2026-10-22')
     assert [row['document_id'] for row in rows] == ['valid']

@@ -12,6 +12,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models.nova_conversation import NovaConversationORM, NovaConversationMessageORM
+from ...security.auth_configuration import jwt_signing_secret
 
 
 class ConversationError(Exception):
@@ -21,7 +22,7 @@ class ConversationError(Exception):
 
 
 def _key() -> bytes:
-    secret = os.getenv("NOVA_CONVERSATION_KEY") or os.getenv("JWT_SECRET", "dev-secret-key-change-in-production")
+    secret = os.getenv("NOVA_CONVERSATION_KEY") or jwt_signing_secret()
     return hashlib.sha256(("nova-conversations-v1:" + secret).encode()).digest()
 
 

@@ -251,8 +251,9 @@ async def initialize(db: AsyncSession,user_id: str,scenario: str="normal",balanc
         if not result["ok"]: raise ValueError(result)
     from .wealth_knowledge import seed
     from ...models.wealth_research import WealthMacroORM
-    products=(await db.scalars(select(WealthResearchProductORM).where(WealthResearchProductORM.dataset_key==key))).all()
-    await seed(db,[p.data for p in products])
+    # Reconstruct knowledge from the hash-checked release material, not from
+    # mutable DB product rows that could bless a poisoned source on reseeding.
+    await seed(db,synthetic_payload()['products'])
     for n,indicator in enumerate(('lpr_1y','lpr_5y','cpi_yoy','ppi_yoy','pmi_manufacturing','pmi_nonmanufacturing','m1_yoy','m2_yoy')):
         rid=key+':'+indicator
         if await db.get(WealthMacroORM,rid) is None:

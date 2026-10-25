@@ -46,7 +46,8 @@ def user_key(user_id: str) -> str:
 
 
 def login_key(phone: str) -> str:
-    secret = os.getenv("JWT_SECRET", "dev-secret-key-change-in-production").encode()
+    from .auth_configuration import jwt_signing_secret
+    secret = jwt_signing_secret().encode()
     return "login:" + hmac.new(secret, phone.encode(), hashlib.sha256).hexdigest()
 
 

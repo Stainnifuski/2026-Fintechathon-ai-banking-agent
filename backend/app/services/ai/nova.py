@@ -40,6 +40,7 @@ from ..shop_reads import ShopReadError
 from ...integrations.wealth_authorization import WealthPolicyError
 from .grounding import evidence_for, ground_reply
 from ...security.injection_detector import detect_injection
+from ...security.agent_guard import safe_history, strict_json, MAX_ARGUMENT_BYTES
 from .parameter_grounding import validate_tool_parameters
 from .semantic_bindings import bind_tool_reference
 from .skill_registry import load_skill
@@ -457,8 +458,11 @@ async def execute_tool(call: dict, context: ToolContext | None = None) -> dict:
     if tool is None:
         return {"error": "UNKNOWN_TOOL"}
     try:
+        raw = call['function']['arguments']
+        if not isinstance(raw, str) or len(raw.encode()) > MAX_ARGUMENT_BYTES or not isinstance(strict_json(raw), dict):
+            raise ValueError('INVALID_ARGUMENTS')
         arguments = tool["arguments"].model_validate_json(call["function"]["arguments"])
-    except ValidationError:
+    except (ValueError, TypeError, KeyError, RecursionError):
         return {"error": "INVALID_ARGUMENTS", "message": "参数不符合工具 Schema；请检查字段、类型和取值"}
     if tool.get("requires_identity") and (context is None or not context.user_id):
         return {"error": "AUTH_CONTEXT_REQUIRED"}
@@ -520,6 +524,9 @@ async def execute_tool(call: dict, context: ToolContext | None = None) -> dict:
 async def chat(message: str, history: list[dict], *, model=None, context: ToolContext | None = None,
                on_event: EventCallback | None = None) -> dict:
     """所有出口统一生成有依据的正文；模型增量仅缓存在本次请求内。"""
+    history = safe_history(history)
+    if context and context.conversation_history:
+        context = replace(context, conversation_history=safe_history(context.conversation_history))
     from ...security import circuit_breaker as safety
     session_key = safety.agent_key(context.user_id, context.session_id) if context and context.session_id else None
     blocked_code, blocked_message = None, None
@@ -542,6 +549,16 @@ async def chat(message: str, history: list[dict], *, model=None, context: ToolCo
             if state.locked_until:
                 blocked_code = 'AGENT_SESSION_LOCKED'
                 blocked_message = '本会话智能操作已暂停5分钟；仍可在业务页面查询本人账户及任务状态。'
+    if blocked_code is None and context:
+        # Scan data before task focus or any business tool can mutate state.
+        untrusted = json.dumps({'page': context.page.model_dump(mode='json'),
+                                'references': context.reference_results,
+                                'prior_tool_results': context.current_tool_results}, ensure_ascii=False)
+        if detect_injection(untrusted):
+            from ...security.agent_guard import security_event
+            security_event('UNTRUSTED_CONTEXT_INJECTION_BLOCKED')
+            blocked_code = 'UNTRUSTED_CONTEXT_INJECTION_BLOCKED'
+            blocked_message = '页面或引用资料包含覆盖安全规则的指令，已停止本轮处理。请刷新相关资料后重试。'
     if blocked_code:
         emit(action="agent.security", phase="decision", outcome="blocked", domain="assistant",
              source_module="ai.nova", error_code=blocked_code,
