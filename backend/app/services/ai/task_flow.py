@@ -203,11 +203,14 @@ async def decide(ctx):
 
 async def guard_tool(ctx,name):
     if not ctx or not ctx.session_id or ctx.execution_step or ctx.task_switch_approved:return None
-    domain={'manage_wealth_request':'wealth','manage_transfer_request':'transfer',
+    domain={'manage_wealth_request':'wealth','manage_transfer_task':'transfer',
             'manage_collection_request':'collection','preview_card_operation':'card'}.get(name)
     if not domain:return None
     current=await active(ctx)
     if current and current['type']=='ambiguous':
+        # 转账卡由调用参数指定新建、修改或取消，多个未结束任务不阻止这张卡的操作。
+        if name == 'manage_transfer_task':
+            return None
         return {'error':'TASK_CONTEXT_AMBIGUOUS','message':'当前有多个未结束任务，请说明要补充哪个任务，不能猜测或创建新操作。'}
     if current and current['type']=='card' and domain=='card' and current['status']!='AWAITING_CONFIRMATION':
         return {'error':'TASK_WRITE_BLOCKED','message':'当前卡片操作已经本人确认，请先在原卡片核对结果；不会通过对话重建或替换待验证操作。'}
@@ -224,7 +227,7 @@ async def observe(ctx,result):
             found.append({'type':'wealth','id':c['task_id']})
     for t in result.get('tasks',[]):
         continuing=t.get('chat_task_id')==ctx.focus_task_id and any(
-            t['name']=='manage_transfer_request' and not t.get('result',{}).get('error') for t in result.get('tool_calls',[]))
+            t['name']=='manage_transfer_task' and not t.get('result',{}).get('error') for t in result.get('tool_calls',[]))
         if (t.get('origin_request_id')==ctx.request_id or continuing) and t.get('status') not in {'CANCELLED','SUCCEEDED','FAILED'}:
             found.append({'type':'transfer','id':t['chat_task_id']})
     for tool in result.get('tool_calls',[]):

@@ -155,7 +155,8 @@ async def test_stream_endpoint_auth_validation_and_events(monkeypatch):
         assert response.status_code == 200 and response.headers['content-type'].startswith('text/event-stream')
         events = parse_events(response.text)
         assert [event['type'] for event in events] == ['done']
-        assert events[0]['mode'] == 'offline' and events[0]['tool_calls'][0]['name'] == 'get_current_time'
+        assert events[0]['mode'] == 'offline' and events[0]['tool_calls'] == []
+        assert '离线模式' in events[0]['reply']
 
         async def streaming(message, history, *, context, on_event):
             assert context.user_id == 'U001'

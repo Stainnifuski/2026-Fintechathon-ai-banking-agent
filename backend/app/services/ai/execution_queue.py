@@ -170,7 +170,7 @@ def bind(step, result):
     # Absence of a card is never proof that a mutation completed.
     if step['completion']!='result' or not result.get('tool_calls'):
         return 'blocked'
-    if any(t['name'] in {'manage_transfer_request','preview_card_operation'} for t in result['tool_calls']):
+    if any(t['name'] in {'manage_transfer_task','preview_card_operation'} for t in result['tool_calls']):
         return 'blocked'
     return 'completed'
 
@@ -365,11 +365,11 @@ async def guard_tool(context, name):
     if not row:return None
     data=unpack(row)
     if data['status'] in TERMINAL:return None
-    if name not in {'manage_wealth_request','manage_transfer_request','manage_collection_request','preview_card_operation'}:return None
+    if name not in {'manage_wealth_request','manage_transfer_task','manage_collection_request','preview_card_operation'}:return None
     step=next((s for s in data['steps'] if s['status']!='completed'),None)
     allowed=step and step['status']=='waiting' and any(
         r['type']=='wealth' and name=='manage_wealth_request' and r['id']==context.wealth_task_id or
-        r['type']=='transfer' and name=='manage_transfer_request' and r['id']==context.focus_task_id
+        r['type']=='transfer' and name=='manage_transfer_task' and r['id']==context.focus_task_id
         for r in step['refs'])
     if not allowed:return {'error':'SERIAL_STEP_PENDING','message':'当前队列尚未完成此步骤，请先办理当前卡片或停止后续办理；不会并行创建新操作。'}
     return None

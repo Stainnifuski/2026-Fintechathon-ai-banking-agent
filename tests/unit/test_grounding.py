@@ -195,7 +195,7 @@ async def test_multi_goal_continues_after_transfer_and_never_claims_all_done(mon
     plan = {'execution_mode': 'sequential', 'goals': [
         {'goal_id': 'draft', 'objective': '建立转账草稿', 'depends_on': [], 'completion_condition': '待确认'},
         {'goal_id': 'time', 'objective': '查询时间', 'depends_on': ['draft'], 'completion_condition': '取得时间'}]}
-    steps = [('declare_goal_plan', json.dumps(plan)), ('manage_transfer_request', '{}'), ('get_current_time', '{}')]
+    steps = [('declare_goal_plan', json.dumps(plan)), ('manage_transfer_task', '{}'), ('get_current_time', '{}')]
     class Multi:
         async def generate_with_tools(self, **kwargs):
             if steps:
@@ -206,7 +206,7 @@ async def test_multi_goal_continues_after_transfer_and_never_claims_all_done(mon
         name = item['function']['name']
         if name == 'declare_goal_plan':
             return {'accepted': True, 'plan': plan}
-        if name == 'manage_transfer_request':
+        if name == 'manage_transfer_task':
             return {'reply': '已生成待确认计划', 'tasks': [], 'session_id': 'test'}
         return {'local_time': '2026-10-22T10:00:00+08:00', 'timezone': 'Asia/Shanghai'}
     monkeypatch.setattr(nova, 'execute_tool', execute)

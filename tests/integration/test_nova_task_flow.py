@@ -187,6 +187,7 @@ async def test_multiple_legacy_tasks_require_disambiguation_instead_of_guessing(
         await db.commit();ctx=context(db)
         assert (await flow.active(ctx))['type']=='ambiguous'
         assert (await flow.guard_tool(ctx,'manage_wealth_request'))['error']=='TASK_CONTEXT_AMBIGUOUS'
+        assert await flow.guard_tool(ctx,'manage_transfer_task') is None
         assert (await flow.active(replace(ctx,wealth_task_id='NW-holdings')))['id']=='NW-holdings'
 
 

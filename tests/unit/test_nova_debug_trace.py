@@ -17,7 +17,7 @@ async def test_debug_trace_is_opt_in_encrypted_redacted_and_owner_scoped(tmp_pat
         debug_trace.record('user_request', {'message': 'off'})
     assert not list(tmp_path.rglob('*'))
 
-    with debug_trace.capture('alice', request_id, True):
+    with debug_trace.capture('alice', request_id, True, 'session-1'):
         debug_trace.record('model_request', {'messages': ['给13812345678转账', 'Bearer abc.def'],
                                              'api_key': 'private-key', 'arguments': '{"otp":"123456"}'})
         debug_trace.record('model_response', {'content': '已处理'})
@@ -26,6 +26,9 @@ async def test_debug_trace_is_opt_in_encrypted_redacted_and_owner_scoped(tmp_pat
     assert 'private-key' not in raw
     data = json.loads(debug_trace.read('alice', request_id))
     assert [event['stage'] for event in data['events']] == ['model_request', 'model_response']
+    assert data['session_id'] == 'session-1'
+    assert debug_trace.list_recent('alice', 'session-1')[0]['request_id'] == request_id
+    assert debug_trace.list_recent('alice', 'other-session') == []
     assert '13812345678' not in json.dumps(data, ensure_ascii=False)
     assert 'abc.def' not in json.dumps(data, ensure_ascii=False)
     assert '123456' not in json.dumps(data, ensure_ascii=False)
@@ -43,3 +46,7 @@ async def test_debug_trace_is_opt_in_encrypted_redacted_and_owner_scoped(tmp_pat
         assert response.status_code == 200
         assert response.headers['cache-control'] == 'no-store'
         assert response.json()['events'][1]['content']['content'] == '已处理'
+        viewed = await client.get(f'/api/v1/nova/debug/{request_id}/view')
+        assert viewed.status_code == 200
+        assert 'content-disposition' not in viewed.headers
+        assert viewed.json() == response.json()

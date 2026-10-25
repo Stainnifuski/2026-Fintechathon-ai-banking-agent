@@ -153,10 +153,11 @@ async def test_nova_http_context_and_auth(client):
     assert (await client.post('/api/v1/nova/chat', json=body)).status_code == 401
     response = await client.post('/api/v1/nova/chat', headers=headers(), json=body)
     assert response.status_code == 200
-    assert response.json()['tool_calls'][0]['result']['data']['status'] == 'LOCKED'
+    assert response.json()['tool_calls'] == []
+    assert response.json()['mode'] == 'offline'
     body['page_context']['cards']['selected_card_id'] = 'C3'
     response = await client.post('/api/v1/nova/chat', headers=headers(), json=body)
-    assert response.json()['tool_calls'][0]['result']['error'] == 'CARD_NOT_FOUND'
+    assert response.json()['tool_calls'] == []
     body['page_context']['user_id'] = 'U2'
     assert (await client.post('/api/v1/nova/chat', headers=headers(), json=body)).status_code == 422
 

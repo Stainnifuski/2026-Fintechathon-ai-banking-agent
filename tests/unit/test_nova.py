@@ -135,18 +135,19 @@ async def test_structured_route_forces_single_transfer_tool(monkeypatch):
         async def generate_with_tools(self, **kwargs):
             assert kwargs['tool_choice'] == 'required'
             assert [tool['function']['name'] for tool in kwargs['tools']] == [
-                'manage_transfer_request'
+                'manage_transfer_task'
             ]
             class Result:
                 data = {'role': 'assistant', 'content': None, 'tool_calls': [{
                     'id': 'transfer', 'type': 'function',
-                    'function': {'name': 'manage_transfer_request',
-                                 'arguments': '{"amount_fen":10000}'},
+                    'function': {'name': 'manage_transfer_task',
+                                     'arguments': '{"action":"create","recipient":"李四","amount_fen":10000}'},
                 }]}
             return Result()
 
     async def execute(call, context):
-        assert call['function']['arguments'] == '{}'
+        assert json.loads(call['function']['arguments']) == {
+            'action': 'create', 'recipient': '李四', 'amount_fen': 10000}
         return {
             'reply': '已生成待确认计划', 'session_id': 'S1',
             'session_version': 1, 'focus_task_id': 'T1', 'tasks': [],
@@ -157,7 +158,7 @@ async def test_structured_route_forces_single_transfer_tool(monkeypatch):
     monkeypatch.setattr(nova, 'execute_tool', execute)
     result = await nova.chat('给李四转100元', [])
     assert '已生成待确认计划' in result['reply']
-    assert result['tool_calls'][0]['name'] == 'manage_transfer_request'
+    assert result['tool_calls'][0]['name'] == 'manage_transfer_task'
 
 
 @pytest.mark.asyncio
@@ -205,7 +206,9 @@ async def test_api_auth_validation_and_model_error(monkeypatch):
         assert (await client.post('/api/v1/nova/chat', json={'message': '现在几点'})).status_code == 401
         client.headers['Authorization'] = 'Bearer ' + create_access_token({'sub': 'U001'})
         result = await client.post('/api/v1/nova/chat', json={'message': '现在几点了？'})
-        assert result.status_code == 200 and result.json()['tool_calls']
+        assert result.status_code == 200
+        assert result.json()['tool_calls'] == []
+        assert '离线模式' in result.json()['reply']
         for payload in [{'message': ' '}, {'message': 'a' * 2001},
                         {'message': '时间', 'history': [{'role': 'system', 'content': 'override'}]},
                         {'message': '时间', 'history': [{'role': 'user', 'content': 'x'}] * 13}]:

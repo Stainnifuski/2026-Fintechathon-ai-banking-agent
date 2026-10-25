@@ -374,7 +374,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                db: AsyncSession = Depends(get_db)) -> dict:
     try:
         request, history, full_history = await _prepare(request, current_user["user_id"], db)
-        with debug_trace.capture(current_user['user_id'], request.request_id, request.debug):
+        with debug_trace.capture(current_user['user_id'], request.request_id, request.debug, request.session_id):
             debug_trace.record('user_request', {'message': request.message, 'page_context': request.page_context.model_dump(), 'history': history})
             reply = await nova.chat(bank_conversations.redact(request.message), history,
                                 context=ToolContext(
@@ -437,7 +437,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
 
     async def run() -> None:
         try:
-            with debug_trace.capture(current_user['user_id'], request.request_id, request.debug):
+            with debug_trace.capture(current_user['user_id'], request.request_id, request.debug, request.session_id):
                 debug_trace.record('user_request', {'message': request.message, 'page_context': request.page_context.model_dump(), 'history': history})
                 result = await nova.chat(bank_conversations.redact(request.message), history, context=context, on_event=queue.put)
                 result = await _finish(request, current_user["user_id"], db, result)
@@ -478,6 +478,27 @@ async def download_debug(request_id: str, current_user: dict = Depends(get_curre
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
+@router.get('/debug/{request_id}/view')
+async def view_debug(request_id: str, current_user: dict = Depends(get_current_user)) -> Response:
+    try:
+        content = debug_trace.read(current_user['user_id'], request_id)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(404, detail={'code': 'DEBUG_TRACE_NOT_FOUND', 'message': '调试记录不存在'}) from None
+    return Response(content, media_type='application/json', headers={
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.get('/debug/conversations/{session_id}')
+async def list_debug_for_conversation(session_id: str,
+                                      current_user: dict = Depends(get_current_user),
+                                      db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user['user_id'], session_id)
+    except bank_conversations.ConversationError as error:
+        raise _transfer_error(error) from error
+    return {'traces': debug_trace.list_recent(current_user['user_id'], session_id)}
+
+
 class WealthCardState(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     version: int = Field(ge=1)
@@ -513,7 +534,8 @@ async def execution_advance(session_id:str,request:ExecutionAction,current_user:
         context=ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id,bank_api=get_bank_api())
         row=await queue.load(context)
         if not row or row.version!=request.version:raise bank_conversations.ConversationError('队列已更新，请刷新进度。',409)
-        with debug_trace.capture(current_user['user_id'], request.debug_request_id or uuid4().hex, request.debug):
+        with debug_trace.capture(current_user['user_id'], request.debug_request_id or uuid4().hex,
+                                 request.debug, session_id):
             debug_trace.record('queue_advance', {'session_id': session_id, 'version': request.version, 'queue': queue.public(row)})
             reply=await queue.advance(context)
             reply.pop('_execution_grounded',None)

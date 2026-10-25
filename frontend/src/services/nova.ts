@@ -89,7 +89,7 @@ export const stopNovaExecutionQueue=(session:string,version:number)=>apiClient.p
 
 export type NovaTransferTask = {
   chat_task_id: string; origin_request_id?: string | null; status: string; recipient?: string | null; amount_fen?: number | null;
-  form: { recipient: string; amount_yuan: string; amount_rule?: string | null; amount_basis_available_fen?: number | null;
+  form: { recipient: string; amount_yuan: string;
     phone_masked?: string | null; card_masked?: string | null;
     payer_account_id: string; note: string };
   missing_fields: string[]; candidates: { candidate_id: string; label: string; kind: string }[];
@@ -149,6 +149,21 @@ export type NovaTaskRequest = {
   request_id: string; session_id?: string; session_version?: number;
   focus_task_id?: string; candidate_id?: string; wealth_task_id?:string; wealth_stage?:string;
 };
+
+export type NovaDebugTrace = {
+  version: number; request_id: string; session_id?: string | null;
+  started_at: string; truncated: boolean;
+  events: { at: string; stage: string; content: unknown }[];
+};
+export type NovaDebugTraceSummary = {
+  request_id: string; started_at: string; event_count: number; has_error: boolean;
+};
+export const getNovaDebugTrace = (requestId: string) =>
+  apiClient.get<NovaDebugTrace>(`/nova/debug/${encodeURIComponent(requestId)}/view`,
+    { headers: { 'Cache-Control': 'no-store' } }).then(r => r.data);
+export const listNovaDebugTraces = (sessionId: string) =>
+  apiClient.get<{ traces: NovaDebugTraceSummary[] }>(`/nova/debug/conversations/${encodeURIComponent(sessionId)}`,
+    { headers: { 'Cache-Control': 'no-store' } }).then(r => r.data.traces);
 
 export async function downloadNovaDebug(requestId: string): Promise<void> {
   const response = await apiClient.get<Blob>(`/nova/debug/${encodeURIComponent(requestId)}`, { responseType: 'blob' });

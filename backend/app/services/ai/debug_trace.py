@@ -15,7 +15,6 @@ _root = Path(os.getenv('NOVA_DEBUG_DIR', '/app/var/nova-debug'))
 _secret_keys = re.compile(r'(^|_)(authorization|api_key|access_token|refresh_token|password|secret|otp|totp|verification_code|sms_code|token)($|_)', re.I)
 _bearer = re.compile(r'Bearer\s+[A-Za-z0-9._~+/=-]+', re.I)
 _embedded_secret = re.compile(r'(["\'](?:authorization|api_key|access_token|refresh_token|password|secret|otp|totp|verification_code|sms_code)["\']\s*:\s*["\'])[^"\']+', re.I)
-_limit = 2 * 1024 * 1024
 
 
 def _clean(value):
@@ -33,14 +32,7 @@ def record(stage: str, content) -> None:
     if trace is None:
         return
     entry = {'at': datetime.now(timezone.utc).isoformat(), 'stage': stage, 'content': _clean(content)}
-    size = len(json.dumps(entry, ensure_ascii=False, default=str).encode())
-    if trace['bytes'] + size > _limit:
-        if not trace['truncated']:
-            trace['events'].append({'stage': 'truncated', 'content': '追踪达到 2MB 上限'})
-            trace['truncated'] = True
-        return
     trace['events'].append(entry)
-    trace['bytes'] += size
 
 
 def _path(user_id: str, request_id: str) -> Path:
@@ -51,12 +43,12 @@ def _path(user_id: str, request_id: str) -> Path:
 
 
 @contextmanager
-def capture(user_id: str, request_id: str, enabled: bool):
+def capture(user_id: str, request_id: str, enabled: bool, session_id: str | None = None):
     if not enabled:
         yield
         return
-    trace = {'version': 1, 'request_id': request_id, 'started_at': datetime.now(timezone.utc).isoformat(),
-             'events': [], 'bytes': 0, 'truncated': False}
+    trace = {'version': 2, 'request_id': request_id, 'session_id': session_id,
+             'started_at': datetime.now(timezone.utc).isoformat(), 'events': [], 'truncated': False}
     token = _active.set(trace)
     try:
         yield
@@ -68,7 +60,7 @@ def capture(user_id: str, request_id: str, enabled: bool):
         path = _path(user_id, request_id)
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.parent.chmod(0o700)
-        content = json.dumps({k: v for k, v in trace.items() if k != 'bytes'}, ensure_ascii=False, default=str)
+        content = json.dumps(trace, ensure_ascii=False, default=str)
         tmp = path.with_suffix('.tmp')
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, 'w') as stream:
@@ -79,3 +71,24 @@ def capture(user_id: str, request_id: str, enabled: bool):
 def read(user_id: str, request_id: str) -> bytes:
     path = _path(user_id, request_id)
     return nova_conversations._decrypt(path.read_text()).encode()
+
+
+def list_recent(user_id: str, session_id: str, limit: int = 20) -> list[dict]:
+    """Find persisted traces for one owned conversation without downloading them."""
+    directory = _root / hashlib.sha256(user_id.encode()).hexdigest()
+    if not directory.is_dir():
+        return []
+    matches = []
+    for path in sorted(directory.glob('*.json.enc'), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            trace = json.loads(nova_conversations._decrypt(path.read_text()))
+        except (ValueError, OSError):
+            continue
+        if trace.get('session_id') == session_id:
+            matches.append({'request_id': trace['request_id'],
+                            'started_at': trace.get('started_at'),
+                            'event_count': len(trace.get('events', [])),
+                            'has_error': any(item.get('stage') == 'error' for item in trace.get('events', []))})
+            if len(matches) >= limit:
+                break
+    return matches

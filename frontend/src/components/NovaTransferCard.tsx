@@ -155,8 +155,6 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
     </div>
     {!collapsed && <>
     <p className="hint">{visible?.message || (task.missing_fields.length ? `还需：${task.missing_fields.join('、')}` : '请核对转账信息')}</p>
-    {task.form.amount_rule && <p className="hint">金额来源：{task.form.amount_rule}{typeof task.form.amount_basis_available_fen === 'number'
-      ? `（计算时可用余额 ¥${(task.form.amount_basis_available_fen / 100).toFixed(2)}）` : '；请选择付款账户后计算'}。生成计划后金额固定，确认前请核对。</p>}
     <form onSubmit={event => void save(event)} className="nova-transfer-form">
       <label>收款人姓名<input value={recipient} maxLength={100} disabled={disabled || busy || !canSave}
         onChange={event => setRecipient(event.target.value)} placeholder="请输入收款人姓名" /></label>
@@ -174,8 +172,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       {task.form.card_masked && !clearCard && canSave && <button type="button" className="secondary" disabled={disabled || busy} onClick={() => { setClearCard(true); setCard(''); }}>清除已保存银行卡号</button>}
       <label>付款账户<select value={payer} disabled={disabled || busy || !canSave} onChange={event => setPayer(event.target.value)}>
         <option value="">自动选择可用账户</option>
-        {accounts.filter(account => !task.form.amount_rule || ['savings', 'checking'].includes(account.account_type))
-          .map(account => <option key={account.account_id} value={account.account_id}>
+        {accounts.map(account => <option key={account.account_id} value={account.account_id}>
           {account.account_type} · 尾号 {account.card_number.slice(-4)}
         </option>)}
       </select></label>

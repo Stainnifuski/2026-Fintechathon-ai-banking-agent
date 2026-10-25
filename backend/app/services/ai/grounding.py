@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 MAX_ROWS = 10
 
 TOOL_LABELS = {
+    'describe_bank_capabilities': 'BankAgent 业务能力',
     'get_current_time': '当前时间', 'get_financial_overview': '账户概览',
     'get_bill_analysis': '账单分析', 'list_transactions': '流水查询', 'get_transaction': '流水详情',
     'list_contacts': '联系人查询', 'search_contacts': '联系人查询',
@@ -29,7 +30,7 @@ TOOL_LABELS = {
     'list_shop_orders': '订单查询', 'get_shop_order': '订单详情',
     'get_subscription_insights': '订阅扣费核对', 'project_cashflow': '现金流情景',
     'list_recurring_records': '周期收支查询', 'get_budget_status': '预算查询',
-    'list_forecast_reviews': '预测复盘', 'manage_transfer_request': '转账任务',
+    'list_forecast_reviews': '预测复盘', 'manage_transfer_task': '转账任务',
     'manage_collection_request': '收款草稿',
     'manage_wealth_request': '理财任务',
 }
@@ -223,7 +224,17 @@ def report_rows(data: dict) -> list[str]:
 def body(name: str, result: dict) -> list[str]:
     """按工具语义生成不可由模型改写的证据块。"""
     d = result.get('data', {})
-    if name not in {'get_current_time', 'manage_transfer_request', 'manage_collection_request', 'manage_wealth_request'} and not isinstance(d, dict):
+    if name == 'describe_bank_capabilities':
+        businesses = result.get('businesses')
+        if result.get('data_kind') != 'service_catalog' or not isinstance(businesses, list):
+            raise ValueError('INVALID_CAPABILITY_CATALOG')
+        lines = [f'当前已接入 {len(businesses)} 类业务。']
+        for item in businesses:
+            queries = '、'.join(literal(entry['description']) for entry in item['queries']) or '暂无对话查询'
+            operations = '、'.join(literal(entry['description']) for entry in item['operations']) or '暂无可由 Agent 发起的操作'
+            lines.append(f'{literal(item["name"])}：可查询 {queries}；可办理 {operations}。')
+        return lines
+    if name not in {'get_current_time', 'manage_transfer_task', 'manage_collection_request', 'manage_wealth_request'} and not isinstance(d, dict):
         raise ValueError('INVALID_EVIDENCE_SHAPE')
     if name == 'get_current_time':
         return [f'当前时间 {literal(result["local_time"])}，时区 {literal(result["timezone"])}。']
@@ -390,7 +401,7 @@ def body(name: str, result: dict) -> list[str]:
             '这是只读估计，历史高低线不是置信区间；缺失项目不表示未来为零，情景差额不表示已节省或到账。']
     if name in {'get_budget_status', 'list_forecast_reviews', 'list_recurring_records', 'get_subscription_insights'}:
         return report_rows(d) + ['计划、历史估计和实际扣款分别核对；此查询不执行取消、扣费或资金操作。']
-    if name in {'manage_transfer_request', 'manage_collection_request', 'manage_wealth_request'}:
+    if name in {'manage_transfer_task', 'manage_collection_request', 'manage_wealth_request'}:
         # 专用服务端流程生成文案，模型自由问题已在子流程入口替换。
         return [result.get('reply') or '请核对可信任务卡；聊天不代为确认、验证或执行交易。']
     raise ValueError('UNSUPPORTED_EVIDENCE_SOURCE')
@@ -411,9 +422,12 @@ class Evidence:
 
 
 def evidence_for(index: int, item: dict) -> Evidence | None:
+    if item.get('internal'):
+        return None
     name, result = item['name'], item['result']
     # 计划登记和收款语义解析是内部步骤；用户可见结论来自随后的业务工具结果。
-    if name in {'declare_goal_plan', 'inspect_collection_request'}:
+    if name in {'declare_goal_plan', 'inspect_collection_request',
+                'inspect_active_tasks', 'inject_agent_tools', 'llm_finish_tool'}:
         return None
     title = TOOL_LABELS.get(name, '工具查询')
     digest = hashlib.sha256(json.dumps(result, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
@@ -424,7 +438,7 @@ def evidence_for(index: int, item: dict) -> Evidence | None:
             'MISSING_SELECTION': '请先选择具体对象或补充名称。',
             'MISSING_SHOP': '请指定鲜花店或蛋糕店。',
             'INVALID_ARGUMENTS': '查询条件未通过校验，请补充明确的对象和范围。',
-            'TOOL_NOT_ALLOWED': '本轮不允许调用该工具，请重新说明需求。',
+            'TOOL_NOT_ALLOWED': '第一阶段尚未开放该操作，请到对应工作台办理。',
             'PARAMETER_NOT_GROUNDED': '参数缺少本轮原文依据，请明确产品、数值、单位或情景假设。',
         }.get(result['error'], '暂时无法查询，请稍后重试；未取得可核验结果。')
         if name == 'preview_card_operation' and result.get('message') and result['error'] not in {
@@ -454,7 +468,7 @@ def evidence_for(index: int, item: dict) -> Evidence | None:
             if value:
                 prefix.append(f'{label}：{value if isinstance(scope[key], dict) else literal(value)}。')
     kind = result.get('data_kind')
-    if kind == 'simulated_bank' or name in {'manage_transfer_request', 'manage_collection_request', 'manage_wealth_request'}:
+    if kind == 'simulated_bank' or name in {'manage_transfer_task', 'manage_collection_request', 'manage_wealth_request'}:
         prefix.append('数据类型：模拟银行数据。')
     elif kind == 'simulated_merchant':
         prefix.append(f'数据类型：模拟店铺，店铺 {literal(result.get("shop_name", "未提供"))}。')

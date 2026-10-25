@@ -16,6 +16,7 @@ from backend.app.models.cake_order import CakeOrderORM
 from backend.app.services.flower_shop import order_service as flowers, catalog as flower_catalog
 from backend.app.services.cake_shop import order_service as cakes, catalog as cake_catalog
 from backend.app.services.ai import nova
+from backend.app.services.ai import nova_runtime
 from backend.app.services.ai.llm import LLMService
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.schemas.nova import PageContext, ShopContext, ShopSelection
@@ -152,25 +153,22 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
         assert calendar['tool_calls'][0]['name'] == 'list_calendar_events'
         assert not (await nova.chat('帮我购买这款蛋糕', [], context=ctx))['tool_calls']
     seen = []
-    def handler(request):
-        body = json.loads(request.content)
-        if body.get('response_format'):
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
-                'content': json.dumps({'mode': 'direct_react', 'domains': ['shops'],
-                                      'has_dependencies': False})}}]})
-        seen.append(body)
-        if len(seen) == 1:
-            assert any(created['order_id'] in (item.get('content') or '') for item in body['messages'])
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {'content': None,
-                'tool_calls': [{'id': 'shop', 'type': 'function', 'function': {'name': 'get_shop_order', 'arguments': '{}'}}]}}]})
-        tool = body['messages'][-1]
-        assert tool['tool_call_id'] == 'shop' and json.loads(tool['content'])['data']['status'] == 'PENDING_PAYMENT'
-        assert 'customer_user_id' not in tool['content']
-        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '模拟蛋糕店订单等待付款。'}}]})
+    class ReadModel:
+        async def generate_structured(self, **kwargs):
+            from types import SimpleNamespace
+            schema = kwargs['schema']
+            seen.append(schema)
+            if schema is nova_runtime.DependencyDecision:
+                assert created['order_id'] in kwargs['messages'][1]['content']
+                return SimpleNamespace(data=schema(depends_on_prior_task=False, reason='selected order'))
+            if schema is nova_runtime.ToolSelection:
+                return SimpleNamespace(data=schema(tool_names=['get_shop_order']))
+            return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
+                name='get_shop_order', arguments={})]))
     monkeypatch.setenv('LLM_MODE', 'model')
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
-    model = LLMService(httpx.MockTransport(handler))
-    monkeypatch.setattr(nova, 'llm', model)
+    model = ReadModel()
+    monkeypatch.setattr(nova_runtime, 'llm', model)
     app = FastAPI()
     app.include_router(router)
     async def get_session():
@@ -183,12 +181,14 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
             shop = {'shop': 'cake', 'selected': {'type': 'order', 'id': created['order_id']}}
             result = await client.post('/api/v1/nova/chat', json={'message': '这个订单付款了吗？', 'page_context': {'page': 'thirdParty', 'shop': shop}})
             assert result.status_code == 200 and '等待付款' in result.json()['reply']
+            assert seen == [nova_runtime.DependencyDecision, nova_runtime.ToolSelection,
+                            nova_runtime.ToolPlan]
             assert result.json()['grounding']['status'] == 'grounded'
             for bad in ({'shop': 'other'}, {'shop': 'cake', 'user_id': 'U2'}, {'shop': 'cake', 'selected': {'type': 'order', 'id': 'x', 'quantity': 2}}):
                 assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'thirdParty', 'shop': bad}})).status_code == 422
             assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'home', 'shop': shop}})).status_code == 422
     finally:
-        await model.aclose()
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
