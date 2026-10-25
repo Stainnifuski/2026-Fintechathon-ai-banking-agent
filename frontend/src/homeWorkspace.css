@@ -195,6 +195,23 @@
 .home-workspace .agent-panel {
   background:radial-gradient(ellipse at 18% 12%,#b29aef88,transparent 65%),radial-gradient(ellipse at 95% 85%,#79cee77a,transparent 65%),linear-gradient(135deg,#eee7fc,#e7eefb 55%,#dff3fa)
 }
+.home-workspace .agent-panel { position:relative; }
+.home-workspace .nova-mascot {
+  position:absolute;
+  z-index:0;
+  pointer-events:none;
+  overflow:visible;
+  opacity:.96;
+  transition:inset .72s cubic-bezier(.2,.72,.18,1),width .72s cubic-bezier(.2,.72,.18,1),height .72s cubic-bezier(.2,.72,.18,1),filter .5s ease;
+}
+.home-workspace .nova-mascot canvas { display:block; width:100%; height:100%; pointer-events:none; }
+.home-workspace .agent-panel > :not(.nova-mascot) { position:relative; z-index:1; }
+.home-workspace .nova-mascot-waiting:not(.nova-mascot-started) { left:25%; right:25%; top:28%; bottom:28%; }
+.home-workspace .nova-mascot-started,
+.home-workspace .nova-mascot-typing,
+.home-workspace .nova-mascot-thinking { left:auto; right:1%; top:30%; width:22%; height:38%; }
+.home-workspace .nova-mascot-thinking { filter:saturate(1.16) brightness(1.08); }
+.home-workspace .nova-mascot-typing { filter:saturate(1.08) brightness(1.03); }
 .home-workspace .agent-body {
   background:transparent
 }
@@ -464,6 +481,11 @@
     overflow:hidden;
     view-transition-name:home-agent
   }
+  .home-workspace .nova-mascot-waiting:not(.nova-mascot-started) { left:22%; right:22%; top:28%; bottom:27%; }
+  .home-workspace .nova-mascot-started,
+  .home-workspace .nova-mascot-typing,
+  .home-workspace .nova-mascot-thinking { left:10px; right:auto; top:73px; width:62px; height:62px; }
+  .home-workspace .nova-mascot-started ~ .agent-head { padding-left:82px; }
   .home-workspace .agent-head {
     flex:none;
     padding:80px 24px 16px;
@@ -563,6 +585,10 @@
     border:0;
     padding:0
   }
+  .home-workspace.nova-expanded .nova-mascot-started,
+  .home-workspace.nova-expanded .nova-mascot-typing,
+  .home-workspace.nova-expanded .nova-mascot-thinking { left:auto; right:1%; top:31%; width:22%; height:37%; }
+  .home-workspace.nova-expanded .nova-mascot-started ~ .agent-head { padding-left:0; }
   .home-workspace.nova-expanded .agent-head>.agent-orb,.home-workspace.nova-expanded .agent-head .nova-title-row>strong,.home-workspace.nova-expanded .agent-head small {
     display:none
   }
@@ -707,6 +733,11 @@
     max-height:120px;
     flex-shrink:0
   }
+  .home-workspace .nova-mascot-waiting:not(.nova-mascot-started) { left:18%; right:18%; top:29%; bottom:26%; }
+  .home-workspace .nova-mascot-started,
+  .home-workspace .nova-mascot-typing,
+  .home-workspace .nova-mascot-thinking { left:8px; top:8px; width:58px; height:58px; }
+  .home-workspace .nova-mascot-started ~ .agent-head { padding-left:78px; }
 }
 @media(max-width:640px) {
   .home-workspace .narrow-agent-label {
