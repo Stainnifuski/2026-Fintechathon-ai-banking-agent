@@ -1,5 +1,6 @@
 import './Wealth/novaWealth.css';
 import NovaVoiceInput from './NovaVoiceInput';
+import NovaMascot, { type NovaMascotState } from './NovaMascot';
 import {appendVoiceText} from '../utils/voiceInput';
 import {flushNovaWealthView,downloadNovaDebug} from '../services/nova';
 import {getNovaTaskSwitch,type NovaTaskSwitch} from '../services/nova';
@@ -152,6 +153,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   const [wealthCards,setWealthCards]=useState<WealthCard[]>([]);
   const [messages, setMessages] = useState<Entry[]>([]);
   const [input, setInput] = useState('');
+  const [composerFocused, setComposerFocused] = useState(false);
   const [voiceBusy,setVoiceBusy]=useState(false);
   const [debugEnabled,setDebugEnabled]=useState(false);
   const [lastDebugRequest,setLastDebugRequest]=useState<string|null>(null);
@@ -420,6 +422,9 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     }catch{setError('移除对话失败，请稍后重试。');}finally{setLoadingConversation(false);}
   }
   function submit(event: FormEvent) { event.preventDefault(); void send(input); }
+  const hasConversationHistory = messages.length > 0 || activeConversationId !== null;
+  const isNewConversation = !hasConversationHistory;
+  const mascotState: NovaMascotState = busy ? 'thinking' : (composerFocused || input.trim() ? 'typing' : 'waiting');
   if (!open) return null;
   const historyButton=<button type="button" className="nova-history-toggle" title="展开新建对话和历史记录" aria-expanded={showHistory} aria-controls="nova-history" onClick={() => { setShowHistory(value => !value); setShowHelp(false); }}>＋ 新建/历史对话 <svg className="nova-history-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>;
   const historyMenu=showHistory && <nav id="nova-history" className="nova-conversation-nav" aria-label="NOVA 对话历史">
@@ -432,7 +437,8 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         </div>
       </nav>;
   return <aside id="nova-panel" className="agent-panel" aria-label="NOVA 对话">
-      <div className="agent-head"><span className="agent-orb">✦</span><div><div className="nova-title-row"><strong>NOVA</strong>{!headerControls&&historyButton}</div><small>你的银行智能体</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
+      <NovaMascot state={mascotState} started={!isNewConversation} />
+      <div className="agent-head"><div><div className="nova-title-row"><strong>NOVA</strong>{!headerControls&&historyButton}</div><small>你的银行智能体</small></div><button className="icon-button" aria-label="收起 NOVA" onClick={onClose}>×</button></div>
       {!headerControls&&historyMenu}
       {headerControls&&createPortal(<>{historyButton}{historyMenu}</>,headerControls)}
       <div className="agent-body" ref={body} onScroll={updatePinnedTasks}>
@@ -538,7 +544,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       </div>
       {deleteTarget&&<div className="nova-delete-backdrop"><section role="dialog" aria-modal="true" aria-labelledby="nova-delete-title"><h3 id="nova-delete-title">永久移除这段对话？</h3><p>将删除“{deleteTarget.title}”的聊天记录和相关草稿缓存，无法恢复。已成交的银行记录、资金和审计保持。</p><button className="secondary" disabled={loadingConversation} onClick={()=>setDeleteTarget(null)}>取消</button><button disabled={loadingConversation} onClick={()=>void removeConversation()}>确认永久移除</button></section></div>}
       {wealthFocus&&<div className="nova-focus-hint">正在补充：{wealthFocus.label}<button type="button" onClick={()=>setWealthFocus(null)} aria-label="取消理财补充对象">×</button></div>}
-      <form className="agent-compose" onSubmit={event=>{if(voiceBusy)event.preventDefault();else submit(event);}}><input ref={composerInput} aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="输入你的问题和需求"/><NovaVoiceInput key={`${userId}:${activeConversationId??'new'}`} disabled={busy||loadingConversation} onBusy={setVoiceBusy} onText={text=>{const next=appendVoiceText(input,text);if(next===null)return false;setInput(next);composerInput.current?.focus();return true;}}/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || voiceBusy || !input.trim()}>↑</button></form>
+      <form className="agent-compose" onSubmit={event=>{if(voiceBusy)event.preventDefault();else submit(event);}}><input ref={composerInput} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="输入你的问题和需求"/><NovaVoiceInput key={`${userId}:${activeConversationId??'new'}`} disabled={busy||loadingConversation} onBusy={setVoiceBusy} onText={text=>{const next=appendVoiceText(input,text);if(next===null)return false;setInput(next);composerInput.current?.focus();return true;}}/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || voiceBusy || !input.trim()}>↑</button></form>
       {!showHelp&&messages.length===0&&pageContext.page==='home'&&<div className="nova-home-suggestions" aria-label="开始对话">
         {HOME_PROMPTS.map(prompt=><button type="button" key={prompt.text} disabled={busy||loadingConversation} title="填入输入框，编辑后发送" onClick={()=>{setInput(prompt.text);composerInput.current?.focus();}}>{prompt.label}<span aria-hidden="true">↗</span></button>)}
       </div>}
