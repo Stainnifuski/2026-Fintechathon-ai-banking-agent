@@ -19,6 +19,13 @@ export type NovaPageContext = {
     selected_event?: { event_id: string; starts_at: string };
   };
   filters?: BillQuery;
+  bill_workspace?: {
+    section: 'overview'|'transactions'|'budgets'|'checks'|'forecast'|'organize';
+    subsection?: 'anomalies'|'subscriptions'|'recurring'|'cashflow'|'history'|'merchants'|'rules';
+    budget_month?: string;
+    account_id?: string|null;
+    selected?: {type:'transaction'|'budget'|'anomaly'|'recurring'|'merchant'|'category_rule'|'tag';id:string};
+  };
   details?: { category?: string; tx_ids: string[]; page: number };
   selected?: { type: 'transaction'; id: string };
   observed_as_of?: string;
@@ -30,6 +37,7 @@ export type NovaBillAction = {
   action_id: string; request_id: string; session_id: string;
   status: 'pending' | 'completed' | 'cancelled' | 'expired';
   title: string; lines: string[]; expires_at: string; notice: string;
+  fields?: {label:string;value?:string;before?:string;after?:string}[];
 };
 export const getNovaBillActions = (sessionId: string) =>
   apiClient.get<NovaBillAction[]>(`/nova/conversations/${sessionId}/bill-actions`).then(r => r.data);

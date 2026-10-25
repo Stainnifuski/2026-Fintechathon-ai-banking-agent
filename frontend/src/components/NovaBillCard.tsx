@@ -34,11 +34,11 @@ export default function NovaBillCard({ card, disabled, onUpdated, onActivity }: 
   };
   return <article className="card nova-transfer-card nova-bill-card" aria-label="账单修改确认卡">
     <div className="nova-transfer-card-head"><div><strong>{card.title}</strong><small>{({pending:'待本人确认 · 尚未保存',completed:'已确认保存',cancelled:'已取消 · 未保存',expired:'已过期 · 请重新生成'})[status]}</small></div></div>
-    <ul>{card.lines.map((line, index) => <li key={index}>{line}</li>)}</ul>
+    {card.fields?.length?<><dl className="nova-bill-fields">{card.fields.map((field,index)=><div key={index}><dt>{field.label}</dt><dd>{field.value!==undefined?field.value:<span className="nova-bill-diff"><span><small>修改前</small>{field.before}</span><span aria-hidden="true">→</span><span><small>修改后</small><strong>{field.after}</strong></span></span>}</dd></div>)}</dl><details className="nova-transfer-review"><summary>查看完整影响说明</summary>{card.lines.map((line,index)=><p key={index}>{line}</p>)}</details></>:<dl className="nova-bill-fields">{card.lines.map((line,index)=><div key={index}><dt>变更说明</dt><dd>{line}</dd></div>)}</dl>}
     <p className="hint">{card.notice}</p>
     {status === 'pending' && <><small>有效至 {new Date(card.expires_at).toLocaleTimeString('zh-CN', {timeZone:'Asia/Shanghai', hour12:false})}（北京时间）</small><div className="nova-transfer-actions">
-      <button type="button" disabled={disabled || busy} onClick={() => void act('confirm')}>{busy ? '正在核对…' : '确认保存'}</button>
       <button type="button" className="secondary" disabled={disabled || busy} onClick={() => void act('cancel')}>取消这项修改</button>
+      <button type="button" disabled={disabled || busy} onClick={() => void act('confirm')}>{busy ? '正在核对…' : '确认保存'}</button>
     </div></>}
     {error && <p className="error" role="alert">{error}</p>}
   </article>;

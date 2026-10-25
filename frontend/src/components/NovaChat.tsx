@@ -121,15 +121,33 @@ function promptsFor(context: NovaPageContext): Prompt[] {
     prompts.push({ label: '预计订阅月费', text: '我的订阅每月预计要花多少钱？' });
   }
   if (context.page === 'insights') {
-
-    if (context.selected) {
-
-      prompts.push({ label: '解释这笔流水', text: '这笔流水是什么？' });
-    }
-    prompts.push({ label: '解释当前账单', text: '解释当前筛选的账单' });
-    prompts.push({ label: '支出为什么变化', text: '当前账期的支出为什么变化？请给出商户与流水依据。' },
-      { label: '预算是否超支', text: '查看当前账期的预算与超支预警' },
-      { label: '未来现金流', text: '估计未来30天的储蓄现金流，说明计划与历史估计的区别' });
+    const workspace=context.bill_workspace;
+    const selected=workspace?.selected;
+    const selectedQuestions:Record<string,Prompt>={
+      transaction:{label:'解释所选流水',text:'解释这笔选中流水的分类、标签和关联记录'},
+      budget:{label:'所选预算预警',text:'这个预算用了多少，是否触发预警？'},
+      anomaly:{label:'所选异常依据',text:'这项异常的依据和核对状态是什么？'},
+      recurring:{label:'所选周期计划',text:'这项周期收支是否纳入预测，依据是什么？'},
+      merchant:{label:'所选商户',text:'查看这个商户的别名和分类规则'},
+      tag:{label:'所选标签',text:'查看这个标签及关联流水范围'},
+      category_rule:{label:'所选分类规则',text:'查看这个商户分类规则的内容'},
+    };
+    if(selected)prompts.push(selectedQuestions[selected.type]);
+    else if(context.selected)prompts.push(selectedQuestions.transaction);
+    const groups:Record<string,Prompt[]>={
+      budgets:[{label:'预算与预警',text:'查看当前预算月份的预算使用情况及超支预警'},{label:'设置月度预算',text:'我想设置当前预算月份的总预算，请先查询现有设置'}],
+      anomalies:[{label:'待核对异常',text:'查看当前账期尚待核对的异常及依据'}],
+      subscriptions:[{label:'订阅扣费差异',text:'核对当前账期的订阅扣费及差异'}],
+      recurring:[{label:'周期收支',text:'查看我的周期收支及预测设置'}],
+      cashflow:[{label:'未来现金流',text:'估计所选预测账户未来30天的现金流，说明计划与历史估计'}],
+      history:[{label:'预测复盘',text:'查看保存的基准预测与实际收支偏差'}],
+      merchants:[{label:'商户目录',text:'查看我的全部商户及别名'}],
+      rules:[{label:'分类规则与标签',text:'查看我的全部分类规则与流水标签'}],
+    };
+    prompts.push(...(groups[workspace?.subsection||workspace?.section||'']||[
+      {label:'解释当前账单',text:'解释当前筛选的账单'},
+      {label:'支出变化依据',text:'当前账期的支出为什么变化？请给出商户与流水依据。'},
+    ]));
   }
   if (context.shop) {
 

@@ -111,6 +111,7 @@ export interface MerchantHistory {event_id:string;action:string;created_at:strin
 export const merchantHistory = () => apiClient.get<MerchantHistory[]>('/bills/merchant-history').then(r=>r.data);
 export const undoMerchantMerge = (eventId:string) => apiClient.post(`/bills/merchant-history/${encodeURIComponent(eventId)}/undo`);
 export const previewSplit = (id:string,name:string,tx_ids:string[],aliases:string[]) => apiClient.post<{preview_digest:string;transaction_count:number;moving_count:number;moving_tx_ids:string[];allowed:boolean;notices:string[]}>(`/bills/merchants/${encodeURIComponent(id)}/split-preview`,{name,tx_ids,aliases}).then(r=>r.data);
+export const splitCandidates = (id:string,page=1) => apiClient.get<{items:(BillTransaction&{eligible:boolean})[];total:number;page:number;has_more:boolean}>(`/bills/merchants/${encodeURIComponent(id)}/split-preview`,{params:{page}}).then(r=>r.data);
 export const splitMerchant = (id:string,name:string,tx_ids:string[],aliases:string[],preview_digest:string) => apiClient.post(`/bills/merchants/${encodeURIComponent(id)}/split`,{name,tx_ids,aliases,preview_digest});
 export interface ForecastComparison {snapshot_id:string;scope_changed:boolean;complete?:boolean;start_at?:string;end_at?:string;predicted_net_flow_fen?:number;actual_net_flow_fen?:number;error_fen?:number|null;}
 export const forecasts = () => apiClient.get<{items:ForecastComparison[];notices:string[]}>('/bills/forecasts').then(r=>r.data);

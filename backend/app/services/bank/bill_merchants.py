@@ -1,7 +1,7 @@
 """Previewed merchant changes, reversible snapshots and explicit owned splits."""
 import hashlib,json
 from uuid import uuid4
-from sqlalchemy import select,update
+from sqlalchemy import select,update,func
 from ...models.bill_foundation import BillMerchantORM as Merchant,BillMerchantAliasORM as Alias,BillTransactionMetaORM as Meta,BillMetadataEventORM as Event,BillRecurringStreamORM as Stream
 from ...models.bill_features import BillCategoryRuleORM as Rule
 from .bill_foundation import lock_users,account_ids,normalize,key
@@ -106,6 +106,20 @@ async def split_preview(db,user_id,merchant_id,body=None):
     binding=[snapshot,body.name.strip(),sorted(selected),sorted(norms)] if body else snapshot
     return {'preview_digest':digest(binding),'transaction_count':len(snapshot['tx_ids']),'moving_count':len(selected),'moving_tx_ids':sorted(selected),'allowed':not bool(protected),'protected_tx_ids':sorted(protected),
         'notices':['已将原单和关联退款一起纳入本次拆分；标签与单笔分类保持不变。','拆分后可通过归并重新整理；有银行付款身份依据的流水不能拆成不同身份。']}
+
+
+async def split_candidates(db,user_id,merchant_id,page=1):
+    """Human-readable owned selection; internal transaction IDs stay form values."""
+    from ...models.transaction import TransactionORM as Tx
+    from .nova_reads import transaction_detail
+    result=await split_preview(db,user_id,merchant_id)
+    predicates=[Meta.merchant_id==merchant_id,Tx.account_id.in_(await account_ids(db,user_id)),Tx.status=='completed']
+    total=await db.scalar(select(func.count()).select_from(Tx).join(Meta,Meta.tx_id==Tx.tx_id).where(*predicates)) or 0
+    ids=list((await db.scalars(select(Tx.tx_id).join(Meta,Meta.tx_id==Tx.tx_id).where(*predicates)
+        .order_by(Tx.timestamp.desc(),Tx.tx_id.desc()).offset((page-1)*20).limit(20))).all())
+    protected=await protected_transactions(db,ids) if ids else set()
+    items=[{**(await transaction_detail(db,user_id,key)),'eligible':key not in protected} for key in ids]
+    return {**result,'items':items,'total':total,'page':page,'has_more':page*20<total}
 
 
 async def split(db,user_id,merchant_id,body):

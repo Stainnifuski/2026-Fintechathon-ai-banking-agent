@@ -12,6 +12,8 @@ class CatalogArguments(StrictModel):
     section: Literal['merchants','tags','category_rules','merchant_history']
     name: str | None = Field(default=None, min_length=1, max_length=64,
         description='可选精确名称筛选，商户也匹配其别名；不传则分页列出。')
+    object_id: str | None = Field(default=None, min_length=1, max_length=40,
+        description='指定本人目录对象ID。省略时继承页面所选的同类对象；显式null查看全部。')
     page: int = Field(default=1, ge=1, le=10000)
     page_size: int = Field(default=20, ge=1, le=30)
 
@@ -37,6 +39,16 @@ async def catalog(arguments, context):
         rows = await bill_merchants.history(context.db, context.user_id)
     if arguments.name:
         rows = [r for r in rows if arguments.name in [r.get('name'), r.get('target_name'), r.get('source_name'), *r.get('aliases', [])]]
+    key = arguments.object_id
+    workspace = context.page.bill_workspace
+    mapping = {'merchants':'merchant','tags':'tag','category_rules':'category_rule'}
+    if 'object_id' not in arguments.model_fields_set and arguments.name is None and workspace and workspace.selected and workspace.selected.type == mapping.get(arguments.section):
+        key = workspace.selected.id
+    if key:
+        field = {'merchants':'merchant_id','tags':'tag_id','category_rules':'merchant_id','merchant_history':'event_id'}[arguments.section]
+        rows = [r for r in rows if r[field] == key]
+        if not rows:
+            raise BankError('所选目录对象不存在或无权访问', 'BILL_OBJECT_NOT_FOUND', 404)
     total = len(rows)
     start = (arguments.page - 1) * arguments.page_size
     return envelope('bills.catalog', dict(section=arguments.section, items=rows[start:start+arguments.page_size],
@@ -72,6 +84,9 @@ async def prepare(arguments, context):
     if arguments.request_quote not in context.original_message:
         raise BankError('修改依据必须逐字引用本轮用户原文', 'PARAMETER_NOT_GROUNDED', 422)
     selected = context.page.selected.id if context.page.selected else None
+    workspace = context.page.bill_workspace
+    if selected is None and workspace and workspace.selected and workspace.selected.type == 'transaction':
+        selected = workspace.selected.id
     try:
         card = await nova_bills.prepare(context.db, context.user_id, context.session_id,
             context.request_id, arguments, selected)

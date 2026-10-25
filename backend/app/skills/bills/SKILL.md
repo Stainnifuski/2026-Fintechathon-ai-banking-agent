@@ -2,6 +2,14 @@
 
 用户意图、分类、标签、账期、金额和指代由模型按工具 Schema 理解；不使用关键词规则抽取或覆盖模型结果。页面上下文和历史只用于理解指代，查询必须读取本人最新后端数据。
 
+## 工作台与对象引用
+
+bill_workspace给出当前一级功能、正在办理的同页折叠区块和所选对象。section为overview/transactions/budgets/checks/forecast/organize；subsection为异常、订阅、周期、预测、复盘、商户或分类标签区块。多个区块可以同时展开，subsection指最近获得焦点的区块。
+
+预算管理的budget_month独立于历史报告账期；现金流预测的account_id独立于报告账户，null表示全部有效储蓄账户，按现实现在起算。不要把历史报告月份当作预测起点。未提交筛选或编辑草稿不在页面上下文中，不当作已保存事实。
+
+“这个预算”用get_budget_status；“这项异常”用list_bill_anomalies；“这项周期”用list_recurring_records；“这个商户/标签/分类规则”用get_bill_catalog对应section。省略对象ID时工具继承页面同类选择，再由银行服务核验归属及范围。明确查询全部时分别传budget_id:null、anomaly_id:null、stream_id:null或object_id:null。切换对象时必须按真实查询结果核对，不能把页面选择或版本当作权限凭证。对象不在当前查询范围时提示重新选择。
+
 ## 查询
 
 - 月/年统计、分类趋势、同比期变化、商户变化依据：`get_bill_analysis`；流水下钻：`list_transactions`；原单、退款、互转关联、标签、分类依据与版本：`get_transaction`。
