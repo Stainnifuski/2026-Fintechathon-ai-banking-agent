@@ -164,7 +164,7 @@ export default function CardManagement({ accounts, revision, onActivity, selecte
   return <section className="card card-management">
     <div className="card-management-head"><h2>卡片管理</h2>
       <button className="secondary" disabled={busy || eligibleAccounts.length === 0} onClick={() => open('card_apply_virtual')}>申请虚拟卡</button></div>
-    <p className="hint">选择一张卡片后，可向 NOVA 询问“这张卡的限额是多少？”，或让 NOVA 生成锁卡、调整限额等变更，再回到这里确认。</p>
+    <p className="hint">选择一张卡片后，可向 NOVA 询问“这张卡的限额是多少？”，或让 NOVA 生成锁卡、调整限额等变更，并在对话中的卡片任务卡里由你本人确认。</p>
     {closedCount > 0 && <label className="hint"><input type="checkbox" checked={showClosed} onChange={e => setShowClosed(e.target.checked)} /> 显示已挂失/已注销卡片（{closedCount}）</label>}
     {status && <p className="notice">{status}</p>}
     {visibleCards.length === 0 ? <p className="hint">暂无卡片</p> : <ul className="history card-list">{visibleCards.map(card => {

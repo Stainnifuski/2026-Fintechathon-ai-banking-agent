@@ -1,12 +1,17 @@
 """本人日历查询工具；事件系列搜索与实际发生时间分开返回。"""
 from datetime import date, datetime, time, timedelta, timezone as utc_zone
+import json
 import re
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator
+from sqlalchemy import select
 
 from ...domain.time import utc_iso, utc_now
 from ...schemas.nova import StrictModel
+from ...models import CalendarEventORM
+from ...schemas.calendar import CalendarEventCreate
 from ..calendar import events, reads
 
 
@@ -64,6 +69,35 @@ class DetailArguments(WindowArguments):
     def aware(cls, value):
         if value is not None and value.tzinfo is None:
             raise ValueError('发生时间须带时区')
+        return value
+
+
+class CreateEventArguments(StrictModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200, description='简短事件名称，概括用户要安排的事')
+    start_date: str | None = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}$', description='开始日期，按当前时间换算为YYYY-MM-DD')
+    start_time: str | None = Field(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$', description='开始时间HH:MM（24小时制）')
+    end_date: str | None = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    end_time: str | None = Field(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
+    location: str | None = Field(default=None, min_length=1, max_length=500, description='地点，逐字摘自用户原话')
+    description: str | None = Field(default=None, min_length=1, max_length=2000, description='备注，逐字摘自用户原话')
+    timezone: str | None = Field(default=None, max_length=80)
+    time_quote: str | None = Field(default=None, max_length=80, description='用户原话中表示日期/时间的片段，逐字摘录，如“明天下午三点”')
+
+    @field_validator('start_date', 'end_date')
+    @classmethod
+    def valid_date(cls, value):
+        if value is not None:
+            date.fromisoformat(value)
+        return value
+
+    @field_validator('timezone')
+    @classmethod
+    def valid_zone(cls, value):
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ValueError, ZoneInfoNotFoundError):
+                raise ValueError('请使用合法 IANA 时区') from None
         return value
 
 
@@ -168,6 +202,120 @@ async def detail_calendar(arguments, context):
     return envelope('calendar.event', data, zone)
 
 
+CALENDAR_FIELD_LABELS = {'title': '事件名称', 'start_date': '日期', 'start_time': '开始时间', 'location': '地点', 'description': '备注'}
+MAX_CHAT_CALENDAR_TASKS = 30
+
+
+def _event_view(event: dict, zone: str) -> dict:
+    tz = ZoneInfo(zone)
+    starts = events.utc(event['starts_at']).astimezone(tz)
+    ends = events.utc(event['ends_at']).astimezone(tz) if event.get('ends_at') else None
+    return dict(event_id=event['event_id'], title=event['title'], location=event['location'],
+                description=event['description'], starts_at_local=starts.isoformat(),
+                ends_at_local=ends.isoformat() if ends else None)
+
+
+async def _register_calendar_task(context, *, prefill: dict, zone: str, notice: str | None, event_id: str | None) -> None:
+    if not (context.session_id and context.request_id):
+        return
+    from .card_subscription_tools import _owned_session
+    row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
+    state = json.loads(json.dumps(row.state or {}))
+    entries = list(state.get('calendar_tasks', []))
+    entries.append({'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'prefill': prefill,
+                    'timezone': zone, 'notice': notice, 'event_id': event_id, 'closed': False})
+    state['calendar_tasks'] = entries[-MAX_CHAT_CALENDAR_TASKS:]
+    row.state = state
+    await context.db.commit()
+
+
+async def create_calendar_event(arguments, context):
+    """信息完整时直接创建本人日程；缺项或时间无法核验时在聊天中打开预填表单，由本人补全。"""
+    zone = arguments.timezone or (context.page.calendar.timezone if context.page.calendar else 'Asia/Shanghai')
+    message = context.original_message or ''
+    values = arguments.model_dump(exclude_none=True, exclude={'timezone', 'time_quote'})
+    unverified = []
+    # 服务端只核验摘录确实出自用户原话；日期换算与字段含义由模型理解。
+    if any(key in values for key in ('start_date', 'start_time', 'end_date', 'end_time')) and not (
+            arguments.time_quote and arguments.time_quote.strip() and arguments.time_quote.strip() in message):
+        for key in ('start_date', 'start_time', 'end_date', 'end_time'):
+            values.pop(key, None)
+        unverified.append('时间')
+    for key in ('location', 'description'):
+        if key in values and values[key].strip() not in message:
+            values.pop(key)
+            unverified.append(CALENDAR_FIELD_LABELS[key])
+    notice = ('以下内容未能从你的原话中确认，请在表单中填写：' + '、'.join(unverified) + '。') if unverified else None
+    starts = ends = None
+    if 'start_date' in values and 'start_time' in values:
+        tz = ZoneInfo(zone)
+        starts = datetime.combine(date.fromisoformat(values['start_date']), time.fromisoformat(values['start_time']), tz)
+        if 'end_time' in values:
+            ends = datetime.combine(date.fromisoformat(values.get('end_date', values['start_date'])),
+                                    time.fromisoformat(values['end_time']), tz)
+            if ends <= starts:
+                values.pop('end_time'); values.pop('end_date', None); ends = None
+                notice = (notice or '') + '结束时间须晚于开始时间，请在表单中调整。'
+        if starts.astimezone(utc_zone.utc) < utc_now():
+            notice = (notice or '') + '开始时间已经过去，请确认日期和时间。'
+    missing = [key for key in ('title', 'start_date', 'start_time') if key not in values]
+    created = None
+    if not missing and notice is None:
+        created = await events.create_event(context.user_id, CalendarEventCreate(
+            title=values['title'], location=values.get('location', ''), description=values.get('description', ''),
+            starts_at=starts, ends_at=ends))
+    await _register_calendar_task(context, prefill=values, zone=zone, notice=notice,
+                                  event_id=created['event_id'] if created else None)
+    if created:
+        return envelope('calendar.created', dict(created=True, event=_event_view(created, zone),
+            next_step='日程已创建；如有误可在聊天中的日程卡片删除。'), zone)
+    return envelope('calendar.form', dict(created=False, form_opened=True, prefill=values,
+        missing_fields=[CALENDAR_FIELD_LABELS[key] for key in missing], notice=notice,
+        next_step='尚未创建。请在聊天中的日程表单补全' + '、'.join(CALENDAR_FIELD_LABELS[key] for key in missing)
+                  + ('并核对' if missing else '核对') + '后点击创建。'), zone)
+
+
+async def chat_calendar_tasks(db, user_id: str, state: dict) -> list[dict]:
+    views = []
+    for entry in state.get('calendar_tasks', []):
+        if entry.get('closed'):
+            continue
+        event = None
+        if entry.get('event_id'):
+            row = await db.scalar(select(CalendarEventORM).where(
+                CalendarEventORM.user_id == user_id, CalendarEventORM.event_id == entry['event_id']))
+            event = events.manual_view(row) if row else None
+        views.append({'entry_id': entry['entry_id'], 'origin_request_id': entry['origin_request_id'],
+                      'prefill': entry['prefill'], 'timezone': entry['timezone'], 'notice': entry.get('notice'),
+                      'event_id': entry.get('event_id'), 'event': event,
+                      'deleted': bool(entry.get('event_id')) and event is None})
+    return views
+
+
+async def update_chat_calendar_task(db, *, user_id: str, session_id: str, entry_id: str,
+                                    event_id: str | None = None, close: bool = False) -> list[dict]:
+    """把本人在聊天表单中创建的日程挂到任务卡，或关闭未创建的表单。"""
+    from .card_subscription_tools import CardTaskError, _owned_session
+    row = await _owned_session(db, user_id, session_id)
+    state = json.loads(json.dumps(row.state or {})) if row else {}
+    entries = list(state.get('calendar_tasks', []))
+    entry = next((item for item in entries if item['entry_id'] == entry_id and not item.get('closed')), None)
+    if entry is None:
+        raise CardTaskError('日程任务不存在', 'CALENDAR_TASK_NOT_FOUND', 404)
+    if close:
+        entry['closed'] = True
+    else:
+        owned = await db.scalar(select(CalendarEventORM).where(
+            CalendarEventORM.user_id == user_id, CalendarEventORM.event_id == event_id))
+        if owned is None:
+            raise CardTaskError('日程不存在', 'CALENDAR_EVENT_NOT_FOUND', 404)
+        entry.update(event_id=event_id, notice=None)
+    state['calendar_tasks'] = entries
+    row.state = state
+    await db.commit()
+    return await chat_calendar_tasks(db, user_id, state)
+
+
 def calendar_tools():
     entries = [
         ('list_calendar_events', ListArguments, list_calendar,
@@ -176,6 +324,8 @@ def calendar_tools():
          '按名称或地点关键词搜索本人所有已保存活动，不限日期。返回事件/系列候选；重复系列显示原始开始时间，不代表下次时间。匹配唯一活动后调用get_calendar_event取得实际发生时间；同名多项先让用户选择。'),
         ('get_calendar_event', DetailArguments, detail_calendar,
          '查询本人活动详情及实际发生次数。event_id省略继承页面选中活动及该次时间；显式ID默认单次原日期/重复系列未来30天（已开始定时事件不作为下次）。occurrence_start可指定带时区的实际开始时间。查询其他日期可给start_date/end_date（不含，最多62天）。长备注可通过description_offset/description_limit分页读取。'),
+        ('create_calendar_event', CreateEventArguments, create_calendar_event,
+         '为本人创建日程。根据用户本轮原话理解事件名称、日期、开始时间，以及可选的结束时间、地点、备注；日期按当前时间和时区换算为YYYY-MM-DD，时间为24小时制HH:MM，并把原话中的时间说法逐字放入time_quote；地点、备注逐字摘录。未说出的字段不填、不猜。名称、日期和开始时间齐全时直接创建；缺少任一项或时间无法核验时，聊天中会打开预填好的日程表单，由用户补全后创建。'),
     ]
     return {name: dict(schema={'type': 'function', 'function': dict(name=name, description=description,
         parameters=model.model_json_schema())}, arguments=model, execute=function, requires_identity=True)

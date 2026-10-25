@@ -189,3 +189,68 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
             assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'home', 'shop': shop}})).status_code == 422
     finally:
         await model.aclose()
+
+
+@pytest.mark.asyncio
+async def test_purchase_orders_when_complete_otherwise_prefilled_form_and_never_pays(store):
+    from backend.app.middleware.auth import get_current_user
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    async with store() as db:
+        session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+        balance = (await db.get(AccountORM, 'A1')).balance_fen
+
+        def at(message, request_id, shop='cake', selected=None):
+            return replace(context(db, shop, selected), original_message=message,
+                           session_id=session_id, request_id=request_id)
+
+        complete = await nova.execute_tool(call('prepare_shop_purchase', {
+            'shop': 'cake', 'product_id': 'STRAWBERRY_CREAM', 'quantity': 2, 'quantity_quote': '两个'}),
+            at('买两个草莓奶油蛋糕', 'R1'))
+        order = complete['data']['order']
+        assert complete['data']['created'] and order['quantity'] == 2 and order['total_fen'] == 19800
+        assert order['status'] == 'PENDING_PAYMENT'
+        assert await db.scalar(select(func.count()).select_from(PaymentRequestORM)) == 1
+        assert (await db.get(AccountORM, 'A1', populate_existing=True)).balance_fen == balance
+
+        no_quantity = await nova.execute_tool(call('prepare_shop_purchase', {
+            'shop': 'cake', 'product_id': 'STRAWBERRY_CREAM'}), at('买个草莓蛋糕吧', 'R2'))
+        assert not no_quantity['data']['created'] and no_quantity['data']['missing_fields'] == ['数量']
+        invented = await nova.execute_tool(call('prepare_shop_purchase', {
+            'shop': 'flower', 'product_id': 'ROSE_CLASSIC', 'quantity': 5, 'quantity_quote': '五束'}),
+            at('想买点玫瑰', 'R3', 'flower'))
+        assert not invented['data']['created'] and invented['data']['prefill'] == {'product_id': 'ROSE_CLASSIC'}
+        unknown = await nova.execute_tool(call('prepare_shop_purchase', {
+            'shop': 'cake', 'product_id': 'NOT_A_CAKE', 'quantity': 1, 'quantity_quote': '一个'}), at('买一个蛋糕', 'R4'))
+        assert unknown['data']['missing_fields'] == ['商品']
+        selected = await nova.execute_tool(call('prepare_shop_purchase', {'shop': 'flower'}),
+            at('就买这个', 'R5', 'flower', ShopSelection(type='product', id='ROSE_CLASSIC', quantity=1)))
+        assert selected['data']['prefill'] == {'product_id': 'ROSE_CLASSIC'}
+        assert await db.scalar(select(func.count()).select_from(PaymentRequestORM)) == 1
+
+        tasks = (await get_session(db, 'U1', session_id))['shop_tasks']
+        assert [bool(task['order']) for task in tasks] == [True, False, False, False, False]
+        assert tasks[0]['order']['order_id'] == order['order_id'] and tasks[0]['shop_name']
+
+        app = FastAPI()
+        app.include_router(router)
+        user = {'user_id': 'U1'}
+        app.dependency_overrides[get_current_user] = lambda: user
+        async def use_db():
+            yield db
+        app.dependency_overrides[get_db] = use_db
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            base = f"/api/v1/nova/task-sessions/{session_id}/shop-tasks"
+            # The user completes the form; the order is placed through the shop API, then linked.
+            placed = await cakes.create_order(customer_user_id='U1', product_id='STRAWBERRY_CREAM', quantity=1,
+                                              idempotency_key='chat-form-order-1')
+            foreign = await cakes.create_order(customer_user_id='U2', product_id='STRAWBERRY_CREAM', quantity=1,
+                                               idempotency_key='chat-form-order-2')
+            url = f"{base}/{tasks[1]['entry_id']}/order"
+            assert (await client.post(url, json={'shop': 'cake', 'order_id': foreign['order_id']})).status_code == 404
+            linked = (await client.post(url, json={'shop': 'cake', 'order_id': placed['order_id']})).json()['shop_tasks']
+            assert linked[1]['order']['order_id'] == placed['order_id']
+            assert (await client.post(f"{base}/{tasks[0]['entry_id']}/dismiss")).status_code == 409
+            assert (await client.post(f"{base}/{tasks[2]['entry_id']}/dismiss")).status_code == 200
+    assert '店铺业务 Skill' in nova.SYSTEM_PROMPT
+    assert not [name for name in nova.TOOL_REGISTRY if any(word in name for word in ('pay', 'accept', 'confirm'))]
