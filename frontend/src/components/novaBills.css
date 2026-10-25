@@ -1,0 +1,4 @@
+.nova-bill-card { overflow-wrap: anywhere; }
+.nova-bill-card ul { margin: 12px 0; padding-left: 20px; }
+.nova-bill-card li { margin: 7px 0; line-height: 1.55; }
+.nova-bill-card .nova-transfer-actions { flex-wrap: wrap; }

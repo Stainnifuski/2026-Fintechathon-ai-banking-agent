@@ -95,6 +95,7 @@ NOVA 已增加[幻觉防护](docs/security/hallucination_guard.md)：关键业�
 
 - [账单增强：消费追溯、订阅联动、现金流与情景模拟](docs/contracts/账单洞察与现金流_API_v2.md)
 - [账单分类、预算、异常核对及原功能优化契约](docs/contracts/账单决策与优化_API_v4.md)与[本次验收记录](docs/validation/bill_decisions_20261019.md)
+- [NOVA 账单洞察接入契约](docs/contracts/NOVA账单洞察_API_v1.md)与[接入验收记录](docs/validation/nova_bill_insights_20261025.md)：统一提问、完整查询及账单整理确认卡。
 - [五项账单数据基础契约](docs/contracts/账单数据基础_API_v3.md)与[本次自检记录](docs/validation/bill_foundations_20261019.md)
 - [三项账单增强自检记录](docs/validation/bill_enhancements_20261014.md)
 

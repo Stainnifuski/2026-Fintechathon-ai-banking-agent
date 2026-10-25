@@ -32,6 +32,8 @@ TOOL_LABELS = {
     'list_forecast_reviews': '预测复盘', 'manage_transfer_request': '转账任务',
     'manage_collection_request': '收款草稿',
     'manage_wealth_request': '理财任务',
+    'get_bill_catalog': '账单整理目录', 'list_bill_anomalies': '账单异常核对',
+    'preview_bill_merchant_change': '商户变更预览', 'prepare_bill_change': '账单修改确认卡',
 }
 
 
@@ -108,10 +110,30 @@ def scope_text(value: dict) -> str:
 def transaction_text(row: dict) -> str:
     kinds = {'purchase': '消费', 'subscription': '订阅扣费', 'refund': '退款',
              'salary': '工资收入', 'transfer_in': '转入', 'transfer_out': '转出'}
-    return (f'{literal(row.get("timestamp", "时间未提供"))}，'
+    text = (f'{literal(row.get("timestamp", "时间未提供"))}，'
             f'交易对方 {literal(row.get("merchant_name") or row.get("counterparty") or "未提供")}，'
             f'{kinds.get(row.get("type"), "交易")}金额 {money(row.get("amount_fen"))}；'
             '此工具仅返回本人已完成流水。')
+    categories = {'dining':'餐饮','shopping':'购物','transport':'交通','entertainment':'娱乐',
+                  'subscription':'订阅','education':'学习','other':'其他'}
+    if row.get('category'):
+        text += '分类：' + categories.get(row['category'], '其他') + '。'
+    sources = {'transaction_override':'本人单笔修正','merchant_rule':'本人商户规则',
+               'original_transaction':'关联原交易','original':'原始分类'}
+    if row.get('category_source'):
+        text += '分类依据：' + sources.get(row['category_source'], '原始分类') + '。'
+    if row.get('suggested_category'):
+        text += '待本人核对的分类建议：' + categories.get(row['suggested_category'], '其他') + '；' + literal(row.get('suggestion_reason') or '无进一步依据') + '。'
+    text += '标签：' + ('、'.join(literal(t['name']) for t in row.get('tags', [])) or '无') + '。'
+    if row.get('original_tx_id'):
+        text += '退款已关联本人原交易，可继续查询原单。'
+    elif row.get('type') == 'refund':
+        text += '退款尚无唯一原单关联，不按名称或金额猜测。'
+    if row.get('refund_tx_ids'):
+        text += f'原单关联 {len(row["refund_tx_ids"])} 笔退款；' + amounts(row, {'refunded_fen':'已退款','refundable_fen':'剩余可退'}) + '。退款需商户处理。'
+    if row.get('paired_tx_id'):
+        text += '已核实为本人账户互转，并关联另一侧流水。'
+    return text
 
 
 def card_text(row: dict) -> str:
@@ -207,7 +229,7 @@ def report_rows(data: dict) -> list[str]:
             text += '；预测尚未结束，不计算最终误差'
         for key, labels in (
             ('kind', {'income': '收入', 'expense': '支出'}),
-            ('source', {'subscription': '银行订阅计划', 'manual': '手动计划', 'history': '历史估计'}),
+            ('source', {'subscription': '银行订阅计划', 'manual': '手动计划', 'history': '历史估计', 'detected':'历史估计'}),
             ('frequency', {'WEEKLY': '每周', 'MONTHLY': '每月', 'QUARTERLY': '每季度', 'YEARLY': '每年'}),
             ('status', {'ACTIVE': '生效', 'CANCELLED': '已取消', 'ok': '正常', 'warning': '接近预算',
                         'exceeded': '已超预算', 'projected_exceeded': '预计超预算', 'disabled': '未启用'}),
@@ -216,6 +238,16 @@ def report_rows(data: dict) -> list[str]:
                 text += '；' + labels[row[key]]
         if 'enabled' in row:
             text += '；' + ('纳入预测' if row['enabled'] else '未纳入预测')
+        if type(row.get('sample_count')) is int:
+            text += f'；历史依据 {row["sample_count"]} 笔'
+        if 'warning_percent' in row:
+            text += f'；预警阈值 {row["warning_percent"]}%'
+        if row.get('projection_has_variable_baseline') is False:
+            text += '；可变消费样本不足，预计消费仅为已知部分'
+        if 'current_count' in row:
+            text += f'；本期 {row["current_count"]} 笔，上期 {row.get("previous_count", 0)} 笔'
+        for explanation in row.get('explanations', [])[:3]:
+            text += '；核对说明：' + literal(explanation)
         lines.append(text + '。')
     return [page_notice(data, len(lines)), *lines]
 
@@ -263,10 +295,11 @@ def body(name: str, result: dict) -> list[str]:
             lines.append(f'趋势日期 {literal(row["date"])}，消费 {money(row["consumption_fen"])}。')
         if len(d.get('trend', [])) > 12:
             lines.append('趋势仅展示前12项，可继续查询。')
-        for row in d.get('anomalies', [])[:3]:
+        pending = [a for a in d.get('anomalies', []) if a.get('review_status', 'pending') == 'pending']
+        for row in pending[:3]:
             lines.append(f'待核对提示：{literal(row.get("title", "未提供"))}；原因 {literal(row.get("reason", "未提供"))}。')
         if 'anomalies_total' in d:
-            lines.append(f'待核对提示共 {d["anomalies_total"]} 项，最多展示3项。')
+            lines.append('异常核对可继续分页查询；已标记正常或已处理的记录不列为待核对。')
         if d.get('partial'):
             lines.append('本期尚未结束，当前仅为截至查询时间的数据。')
         lines.append('分类和异常明细可能截断；异常提示需核对，不认定欺诈或永久一次性支出。')
@@ -390,6 +423,41 @@ def body(name: str, result: dict) -> list[str]:
             '这是只读估计，历史高低线不是置信区间；缺失项目不表示未来为零，情景差额不表示已节省或到账。']
     if name in {'get_budget_status', 'list_forecast_reviews', 'list_recurring_records', 'get_subscription_insights'}:
         return report_rows(d) + ['计划、历史估计和实际扣款分别核对；此查询不执行取消、扣费或资金操作。']
+    if name == 'get_bill_catalog':
+        lines = [page_notice(d, min(len(d['items']), MAX_ROWS))]
+        for row in d['items'][:MAX_ROWS]:
+            if d['section'] == 'merchant_history':
+                lines.append('商户变更：' + literal(row.get('source_name') or '所选记录') + ' → ' + literal(row.get('target_name') or '所选商户')
+                             + '；' + ('可尝试撤销（仍需核对最新范围）' if row['can_undo'] else '不可直接撤销') + '。')
+            else:
+                text = literal(row.get('name') or '所选商户')
+                if 'aliases' in row:
+                    text += '；别名：' + ('、'.join(literal(a) for a in row['aliases'][:10]) or '无')
+                if 'transaction_count' in row:
+                    text += f'；关联 {row["transaction_count"]} 笔流水'
+                if row.get('category'):
+                    from ..bank.nova_bills import CATEGORIES
+                    text += '；分类规则：' + CATEGORIES[row['category']]
+                lines.append(text + '。')
+        return lines + [literal(n) for n in d.get('notices', [])]
+    if name == 'list_bill_anomalies':
+        statuses = {'pending':'待核对','normal':'正常','resolved':'已处理'}
+        return [page_notice(d, min(len(d['items']), MAX_ROWS)), *[
+            literal(r['title']) + '；依据：' + literal(r['reason']) + '；核对状态：' + statuses[r['review_status']]
+            + '；备注：' + literal(r['review_note'] or '无') + '。' for r in d['items'][:MAX_ROWS]]]
+    if name == 'preview_bill_merchant_change':
+        if d['mode'] == 'merge':
+            lines = [f'商户 {literal(d["source"])} → {literal(d["target"])}；移动 {d["transaction_count"]} 笔流水、{d["alias_count"]} 个别名。']
+        else:
+            lines = [f'商户 {literal(d["name"])} 共 {d["transaction_count"]} 笔流水；本次选择移动 {d["moving_count"]} 笔。',
+                     *[transaction_text(r) for r in d.get('items', [])[:MAX_ROWS]], page_notice(d, min(len(d.get('items', [])),MAX_ROWS))]
+        return lines + ['允许继续生成确认卡。' if d['allowed'] else '当前范围不允许此变更。', '此为只读预览，尚未修改。']
+    if name == 'prepare_bill_change':
+        card = d['card']
+        status = {'pending':'待本人确认，尚未保存','completed':'该卡片此前已确认保存','cancelled':'该卡片已取消','expired':'该卡片已过期，不能保存'}
+        return [literal(card['title']) + '；' + status[card['status']] + '。',
+                *[literal(line, 600) for line in card['lines']], literal(card['notice']),
+                '请在下方确认卡核对并点击；聊天文字不能代为确认。']
     if name in {'manage_transfer_request', 'manage_collection_request', 'manage_wealth_request'}:
         # 专用服务端流程生成文案，模型自由问题已在子流程入口替换。
         return [result.get('reply') or '请核对可信任务卡；聊天不代为确认、验证或执行交易。']

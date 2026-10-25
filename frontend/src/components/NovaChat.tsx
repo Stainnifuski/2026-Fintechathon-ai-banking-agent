@@ -14,6 +14,8 @@ import NovaCardOperationCard from './NovaCardOperationCard';
 import NovaSubscriptionCancelCard from './NovaSubscriptionCancelCard';
 import NovaCalendarCard from './NovaCalendarCard';
 import NovaShopCard from './NovaShopCard';
+import NovaBillCard from './NovaBillCard';
+import { getNovaBillActions, type NovaBillAction, type NovaPromptRequest } from '../services/nova';
 import * as bank from '../services/bank';
 import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask } from '../services/nova';
 
@@ -27,12 +29,19 @@ const TOOL_LABELS: Record<string, string> = {
   list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
   preview_card_operation: '卡片操作预览', request_subscription_cancellation: '取消订阅任务卡', create_calendar_event: '创建日程', prepare_shop_purchase: '店铺下单', list_card_transactions: '用卡记录', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
   manage_transfer_request: '转账任务规划', manage_collection_request: '收款草稿', manage_wealth_request:'理财任务',
+  get_bill_catalog: '商户、标签与分类规则', list_bill_anomalies: '账单异常核对',
+  preview_bill_merchant_change: '商户变更预览', prepare_bill_change: '账单修改确认卡',
+  get_budget_status: '预算与预警', list_forecast_reviews: '预测复盘', list_recurring_records: '周期收支',
 };
 const money = (value: unknown) => typeof value === 'number' ? (value / 100).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) : '暂无';
 function queryRecord(call: NovaReply['tool_calls'][number]): string {
   const result = call.result;
   if (result.error) return String(result.message || result.error);
   if (call.name === 'get_current_time') return `${result.local_time} · ${result.timezone}`;
+  if (call.name === 'prepare_bill_change') {
+    const card = (result.data as {card?: NovaBillAction})?.card;
+    return `模拟银行 · ${card?.title || '账单修改'} · ${card?.status === 'completed' ? '原卡片已保存' : '请查看确认卡状态，预览不代表已保存'}`;
+  }
   const data = result.data as { totals?: Record<string, unknown>; query?: { date?: string }; total?: number; page?: number; has_more?: boolean; tx_id?: string; counterparty?: string; amount_fen?: number } | undefined;
   if (call.name.includes('shop')) {
     const shop = result.data as { total?: number; order_id?: string; status?: string; requested_quantity?: number; estimated_total_fen?: number; product?: { name?: string; price_fen?: number } } | undefined;
@@ -115,6 +124,9 @@ function promptsFor(context: NovaPageContext): Prompt[] {
       prompts.push({ label: '解释这笔流水', text: '这笔流水是什么？' });
     }
     prompts.push({ label: '解释当前账单', text: '解释当前筛选的账单' });
+    prompts.push({ label: '支出为什么变化', text: '当前账期的支出为什么变化？请给出商户与流水依据。' },
+      { label: '预算是否超支', text: '查看当前账期的预算与超支预警' },
+      { label: '未来现金流', text: '估计未来30天的储蓄现金流，说明计划与历史估计的区别' });
   }
   if (context.shop) {
 
@@ -141,12 +153,16 @@ function promptsFor(context: NovaPageContext): Prompt[] {
   return prompts;
 }
 
-export default function NovaChat({ headerControls, name, userId, open, onClose, onNavigate, pageContext, onTransferActivity }: {
+export default function NovaChat({ headerControls, name, userId, open, onClose, onNavigate, pageContext, onTransferActivity, promptRequest, onPromptHandled }: {
   headerControls?:HTMLElement|null; name: string; userId: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
   onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
   onReviewCardOperation?: (operationId: string) => void;
   onTransferActivity?: () => void;
+  promptRequest?: NovaPromptRequest | null;
+  onPromptHandled?: (id: string) => void;
 }) {
+  const [billActions, setBillActions] = useState<NovaBillAction[]>([]);
+  const handledPrompt = useRef<string | null>(null);
   const [deleteTarget,setDeleteTarget]=useState<NovaConversation|null>(null);
   const [wealthFocus,setWealthFocus]=useState<{taskId:string;stage:string;label:string}|null>(null);
   const [wealthCards,setWealthCards]=useState<WealthCard[]>([]);
@@ -166,6 +182,16 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   useEffect(() => { setShowHelp(false); }, [contextKey]);
   const [conversations, setConversations] = useState<NovaConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const billSession = useRef<string | null>(null);
+  billSession.current = activeConversationId;
+  useEffect(() => {
+    setBillActions([]);
+    if (!activeConversationId) return;
+    let live = true;
+    void getNovaBillActions(activeConversationId).then(items => { if (live) setBillActions(items); })
+      .catch(() => { if (live) setError('账单确认卡读取失败，请重新打开对话核对。'); });
+    return () => { live = false; };
+  }, [activeConversationId]);
   const [taskSwitch,setTaskSwitch]=useState<NovaTaskSwitch|null>(null);
   useEffect(()=>{setTaskSwitch(null);if(!activeConversationId)return;let live=true;
     void getNovaTaskSwitch(activeConversationId).then(p=>{if(live)setTaskSwitch(p);}).catch(()=>{if(live)setError('任务切换状态读取失败，请重新打开对话核对。');});
@@ -194,6 +220,10 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         if(queueSession.current!==session)return;
         setExecutionQueue(result.execution_queue??null);
         if(result.wealth_cards)setWealthCards(result.wealth_cards);
+        if (result.tool_calls.some(call => call.name === 'prepare_bill_change')) {
+          void getNovaBillActions(session).then(items => { if (billSession.current === session) setBillActions(items); })
+            .catch(() => setError('账单确认卡读取失败，请重新打开对话核对。'));
+        }
         if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,subscription_tasks:previous?.subscription_tasks,calendar_tasks:previous?.calendar_tasks,shop_tasks:previous?.shop_tasks,focus_task_id:result.focus_task_id}));
         if(result.execution_queue?.steps.some(step=>step.review_operation_id))void getNovaTaskSession(session).then(fresh=>{if(queueSession.current===session)setTaskSession(fresh);}).catch(()=>{});
       }catch{if(queueSession.current===session){
@@ -327,7 +357,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     finally { setLoadingConversation(false); }
   }
 
-  async function send(text: string, candidateId?: string, selectedTaskId?: string, switchDecision?:{token:string;accept:boolean}) {
+  async function send(text: string, candidateId?: string, selectedTaskId?: string, switchDecision?:{token:string;accept:boolean}, contextOverride?: NovaPageContext) {
     const content = text.trim();
     if (!content || busy || queueLock.current || loadingConversation || request.current) return;
     if (uncertainRetry.current?.content !== content) uncertainRetry.current = null;
@@ -364,7 +394,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         setConversations(previous => [created, ...previous]);
       }
       await flushNovaWealthView(taskRequest.wealth_task_id);
-      const reply = await streamNova(content, controller.signal, pageContext, onEvent, taskRequest);
+      const reply = await streamNova(content, controller.signal, contextOverride || pageContext, onEvent, taskRequest);
       if(taskRequest.debug)setLastDebugRequest(taskRequest.request_id);
       if (!controller.signal.aborted) {
         uncertainRetry.current = null;
@@ -389,6 +419,10 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           void getNovaTaskSession(sessionId).then(setTaskSession).catch(() => setError('卡片任务卡读取失败，请重新打开对话。'));
         }
         void listNovaConversations().then(setConversations).catch(() => {});
+        if (sessionId && reply.tool_calls.some(call => call.name === 'prepare_bill_change')) {
+          void getNovaBillActions(sessionId).then(items => { if (billSession.current === sessionId) setBillActions(items); })
+            .catch(() => setError('账单确认卡读取失败，请重新打开对话核对。'));
+        }
       }
     } catch (failure: unknown) {
       if(taskRequest.debug)setLastDebugRequest(taskRequest.request_id);
@@ -398,6 +432,10 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         uncertainRetry.current = !status || status >= 500 ? { content, request: taskRequest } : null;
         setError(`${detail?.message || '查询失败，请重新发送。'}${detail?.code ? `（${detail.code}）` : ''}`);
         setInput(content);
+        if (taskRequest.session_id) {
+          const failedSession = taskRequest.session_id;
+          void getNovaBillActions(failedSession).then(items => { if (billSession.current === failedSession) setBillActions(items); }).catch(() => {});
+        }
         // 失败请求及其半截回答不进入下一轮上下文。
         setMessages(previous => previous[previous.length - 1]?.streaming ? previous.slice(0, -2) : previous.slice(0, -1));
       }
@@ -420,6 +458,13 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     }catch{setError('移除对话失败，请稍后重试。');}finally{setLoadingConversation(false);}
   }
   function submit(event: FormEvent) { event.preventDefault(); void send(input); }
+  useEffect(() => {
+    if (!promptRequest || promptRequest.userId !== userId || handledPrompt.current === promptRequest.id
+        || !open || busy || loadingConversation || queueBusy || queueLock.current || request.current) return;
+    handledPrompt.current = promptRequest.id;
+    void send(promptRequest.text, undefined, undefined, undefined, promptRequest.context);
+    onPromptHandled?.(promptRequest.id);
+  }, [promptRequest, userId, open, busy, loadingConversation, queueBusy]);
   if (!open) return null;
   const historyButton=<button type="button" className="nova-history-toggle" title="展开新建对话和历史记录" aria-expanded={showHistory} aria-controls="nova-history" onClick={() => { setShowHistory(value => !value); setShowHelp(false); }}>＋ 新建/历史对话 <svg className="nova-history-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>;
   const historyMenu=showHistory && <nav id="nova-history" className="nova-conversation-nav" aria-label="NOVA 对话历史">
@@ -465,6 +510,8 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         </div>}
         {messages.length === 0 && !error && <div className="nova-empty" aria-label={`${name}的银行助手`}><div className="eyebrow">YOUR AI BANKING AGENT</div><h1>今天想办理什么？</h1><p>查账、转账、管理财务，直接告诉 NOVA。</p><div className="nova-topic-ribbon"><span>💳 账户与卡片</span><span>🧾 账单洞察</span><span>📈 理财</span><span>🔁 转账</span></div></div>}
         <div className="nova-messages" aria-live="polite">
+          {!messages.some(entry => entry.role === 'assistant') && billActions.map(card => <NovaBillCard key={card.action_id} card={card} disabled={busy || loadingConversation || queueBusy}
+            onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onTransferActivity} />)}
           {messages.map((entry, index) => <div key={`${entry.request_id || index}-${entry.role}-${index}`} className="nova-turn-entry">
             <div className={`nova-message nova-${entry.role}`}>
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
@@ -477,6 +524,8 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             })[entry.details.grounding.status]}</small>}
             {entry.details?.tool_calls.map((call, callIndex) => <details key={callIndex}><summary>{TOOL_LABELS[call.name] || call.name}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
             </div>
+            {entry.role === 'assistant' && billActions.filter(card => card.request_id === entry.request_id || (!messages.some(m => m.role === 'assistant' && m.request_id === card.request_id) && index === messages.length-1)).map(card => <NovaBillCard key={card.action_id} card={card} disabled={busy || loadingConversation || queueBusy}
+              onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onTransferActivity} />)}
             {entry.role==='assistant'&&wealthCards.filter(card=>card.request_id===entry.request_id||(!messages.some(m=>m.role==='assistant'&&m.request_id===card.request_id)&&index===messages.length-1)).map(card=><Suspense fallback={<p>正在读取理财任务…</p>} key={`${card.task_id}:${card.request_id}:${!!card.paused}:${card.draft_epoch??0}`}><NovaWealthCard key={`${card.task_id}:${card.request_id}:${!!card.paused}:${card.draft_epoch??0}`} card={card} userId={userId} focusedStage={wealthFocus?.taskId===card.task_id?wealthFocus.stage:undefined} onFocus={(stage,label)=>{setFocusTaskId(undefined);setWealthFocus({taskId:card.task_id,stage,label});}} disabled={busy||loadingConversation} onUpdated={cards=>{if(wealthSession.current===card.nova_session_id)setWealthCards(cards);}} onActivity={()=>onTransferActivity?.()}/></Suspense>)}
             {taskGroups.get(index)?.map(task => <div key={task.chat_task_id} className="nova-task-anchor"
               ref={element => { taskAnchors.current[task.chat_task_id] = element; }}>

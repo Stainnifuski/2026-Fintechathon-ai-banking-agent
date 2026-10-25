@@ -166,6 +166,8 @@ app.include_router(wealth_bank_router)
 app.include_router(wealth_router)
 app.include_router(system_router)
 app.include_router(nova_router)
+from .routers.nova_bills import router as nova_bills_router
+app.include_router(nova_bills_router)
 app.include_router(bank_conversations_router)
 app.include_router(flower_shop_router)
 app.include_router(cake_shop_router)

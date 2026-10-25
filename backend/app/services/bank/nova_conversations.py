@@ -146,5 +146,8 @@ async def remove(db: AsyncSession,user_id: str,session_id: str):
         NovaExecutionORM.user_id==user_id))
     await db.execute(delete(NovaReferenceContextORM).where(NovaReferenceContextORM.conversation_id==session_id,
         NovaReferenceContextORM.user_id==user_id))
+    from ...models.nova_bill_action import NovaBillActionORM
+    await db.execute(delete(NovaBillActionORM).where(NovaBillActionORM.session_id==session_id,
+        NovaBillActionORM.user_id==user_id))
     await db.delete(row)
     await db.commit()
