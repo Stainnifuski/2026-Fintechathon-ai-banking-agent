@@ -73,12 +73,18 @@ def test_shared_tool_adapter_resolves_only_current_server_snapshot(tool):
     field,providers,_=REFERENCE_TOOLS[tool]
     rows=[{field:'one'},{field:'two'}]
     values={field:'第二个'}
-    if tool=='preview_card_operation':values['action']='card_lock'
     trace=[{'name':providers[0],'result':{'data':{'items':rows}}}]
     assert bind_tool_reference(tool,values,'看看第二个',trace)[field]=='two'
     with pytest.raises(ValueError):bind_tool_reference(tool,values,'看看第二个',[])
     with pytest.raises(ValueError):bind_tool_reference(tool,{**values,field:'one'},'第二个',trace)
     with pytest.raises(ValueError):bind_tool_reference(tool,values,'第二个',trace+[{'name':providers[0],'result':{'error':'FAILED'}}])
+
+
+def test_card_operation_keeps_model_selected_internal_id_without_regex_rebinding():
+    trace=[{'name':'list_cards','result':{'data':{'items':[{'card_id':'C1'},{'card_id':'C2'}]}}}]
+    values={'action':'card_lock','card_id':'C1'}
+    assert 'preview_card_operation' not in REFERENCE_TOOLS
+    assert bind_tool_reference('preview_card_operation',values,'请锁定第二张卡',trace)==values
 
 
 def test_future_adapter_can_register_fields_without_wealth_code_changes():
@@ -92,12 +98,10 @@ def test_future_adapter_can_register_fields_without_wealth_code_changes():
     with pytest.raises(ValueError):resolve_object('opaque:a',[{'id':'opaque:A','name':'甲基金'}])
 
 
-def test_card_limit_fields_share_role_binding_and_per_value_quotes():
-    values={'action':'card_set_transaction_limits','card_id':'C1','single_txn_limit':'100','daily_txn_limit':'200',
-            'value_quotes':{'single_txn_limit':'单笔100元','daily_txn_limit':'每日200元'}}
-    validate_tool_parameters('preview_card_operation',values,'单笔100元，每日200元')
-    with pytest.raises(ValueError):
-        validate_tool_parameters('preview_card_operation',{'action':'card_set_transaction_limits','daily_txn_limit':'100'},'单笔100元')
+def test_card_amounts_are_not_checked_against_message_text():
+    validate_tool_parameters('preview_card_operation',
+                             {'action':'card_set_transaction_limits','daily_txn_limit':'100'},
+                             '调整这张卡的交易限额')
 def test_product_number_and_chinese_comma_never_become_thousands_amount():
     from backend.app.services.ai.parameter_grounding import require_value,explicit_numbers
     from decimal import Decimal

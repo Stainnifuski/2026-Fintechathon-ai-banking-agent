@@ -53,6 +53,19 @@ async def test_cards_equal_page_masked_and_filters(db):
 
 
 @pytest.mark.asyncio
+async def test_card_ordinals_skip_lost_cards_by_default(db):
+    (await db.get(CardORM, 'C1')).status = 'LOST'
+    await db.commit()
+    data = (await nova.execute_tool(call('list_cards'), context(db)))['data']
+    cards = {row['card_id']: row for row in data['items']}
+    assert cards['C1']['lost_card_ordinal'] == 1
+    assert 'card_ordinal' not in cards['C1']
+    assert cards['C2']['card_ordinal'] == 1
+    assert 'lost_card_ordinal' not in cards['C2']
+    assert '未挂失卡' in data['ordinal_rule']
+
+
+@pytest.mark.asyncio
 async def test_subscriptions_equal_page_summary_all_pages_and_not_charges(db):
     await seed_subscriptions(db)
     result = await nova.execute_tool(call('list_subscriptions', {'page_size': 1}), context(db))
@@ -235,20 +248,26 @@ async def test_card_transactions_tool_explains_declines(db):
 
 
 @pytest.mark.asyncio
-async def test_preview_appears_as_chat_task_card_confirmed_only_by_user(client, db):
+async def test_card_form_appears_in_chat_and_only_user_confirms(client, db):
     from backend.app.services.ai.transfer_manager import get_session
     from backend.app.services.bank import nova_conversations
     session_id = (await nova_conversations.create(db, 'U1'))['session_id']
     ctx = replace(context(db, 'cards', cards=CardContext(selected_card_id='C1')),
                   session_id=session_id, request_id='REQ-card-1')
     result = await nova.execute_tool(call('preview_card_operation', {'action': 'card_lock'}), ctx)
-    assert '聊天中的卡片任务卡' in result['data']['next_step']
+    assert result['data']['form_opened'] and not result['data']['executed']
     session = await get_session(db, 'U1', session_id)
     task = session['card_operations'][0]
-    card = task['operation']
-    assert (card['operation_id'], task['origin_request_id']) == (result['data']['operation_id'], 'REQ-card-1')
-    assert card['status'] == 'AWAITING_CONFIRMATION' and 'confirm' in card['allowed_actions']
+    assert task['operation'] is None and task['origin_request_id'] == 'REQ-card-1'
     assert task['card']['card_id'] == 'C1' and session['session_version'] == 0
+    preview = (await client.post('/api/v1/cards/operations', headers=headers(), json={
+        'operation_id': 'chat-lock-op-1', 'action': 'card_lock', 'card_id': 'C1'})).json()
+    linked = await client.post(
+        f"/api/v1/nova/task-sessions/{session_id}/card-tasks/{task['entry_id']}/operation",
+        headers=headers(), json={'operation_id': preview['operation_id']})
+    assert linked.status_code == 200
+    card = linked.json()['card_operations'][0]['operation']
+    assert card['status'] == 'AWAITING_CONFIRMATION' and 'confirm' in card['allowed_actions']
     done = await client.post(f"/api/v1/cards/operations/{card['operation_id']}/confirm", headers=headers(),
                              json={'digest': card['digest']})
     assert done.json()['status'] == 'COMPLETED'
@@ -256,10 +275,89 @@ async def test_preview_appears_as_chat_task_card_confirmed_only_by_user(client, 
     assert refreshed['status'] == 'COMPLETED' and refreshed['allowed_actions'] == []
 
 
+@pytest.mark.asyncio
+async def test_card_form_defaults_to_transaction_limits_when_action_is_omitted(db):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db, 'cards', cards=CardContext(selected_card_id='C1')),
+                  session_id=session_id, request_id='REQ-card-default')
+    result = await nova.execute_tool(call('preview_card_operation'), ctx)
+    assert result['data']['form_opened'] and result['data']['action'] == 'card_set_transaction_limits'
+    task = (await get_session(db, 'U1', session_id))['card_operations'][0]
+    assert task['card_id'] == 'C1' and task['action'] == 'card_set_transaction_limits'
+    assert task['card']['single_txn_limit_fen'] is not None
+
+
+@pytest.mark.asyncio
+async def test_card_tool_reuses_one_unfinished_task_per_card(client, db):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db), session_id=session_id, request_id='REQ-edit-1')
+    first = await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_set_transaction_limits', 'card_id': 'C1', 'single_txn_limit': '100'}), ctx)
+    assert first['data']['form_opened'] and first['data']['task_updated'] is False
+    second = await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_set_transaction_limits', 'card_id': 'C1', 'daily_txn_limit': '200'}),
+        replace(ctx, request_id='REQ-edit-2'))
+    assert second['data']['task_updated'] is True
+    assert second['data']['missing_fields'] == []
+    tasks = (await get_session(db, 'U1', session_id))['card_operations']
+    assert len(tasks) == 1
+    assert tasks[0]['entry_id'] == first['data']['entry_id']
+    assert tasks[0]['prefill'] == {'single_txn_limit': '100', 'daily_txn_limit': '200'}
+
+    preview = (await client.post('/api/v1/cards/operations', headers=headers(), json={
+        'operation_id': 'chat-edit-op-1', 'action': 'card_set_transaction_limits',
+        'card_id': 'C1', 'single_txn_limit': '100', 'daily_txn_limit': '200'})).json()
+    linked = await client.post(
+        f"/api/v1/nova/task-sessions/{session_id}/card-tasks/{tasks[0]['entry_id']}/operation",
+        headers=headers(), json={'operation_id': preview['operation_id']})
+    assert linked.status_code == 200
+    changed = await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_set_channels', 'card_id': 'C1', 'online_enabled': False}),
+        replace(ctx, request_id='REQ-edit-3'))
+    assert changed['data']['task_updated'] is True
+    assert (await db.get(CardOperationORM, preview['operation_id'], populate_existing=True)).status == 'CANCELLED'
+    tasks = (await get_session(db, 'U1', session_id))['card_operations']
+    assert len(tasks) == 1 and tasks[0]['entry_id'] == first['data']['entry_id']
+    assert tasks[0]['action'] == 'card_set_channels' and tasks[0]['operation'] is None
+    assert tasks[0]['prefill'] == {'online_enabled': False}
+
+    # The user switches to another operation inside this same card task.
+    switched_preview = (await client.post('/api/v1/cards/operations', headers=headers(), json={
+        'operation_id': 'chat-edit-op-2', 'action': 'card_lock', 'card_id': 'C1'})).json()
+    switched = await client.post(
+        f"/api/v1/nova/task-sessions/{session_id}/card-tasks/{tasks[0]['entry_id']}/operation",
+        headers=headers(), json={'operation_id': switched_preview['operation_id']})
+    assert switched.status_code == 200
+    tasks = switched.json()['card_operations']
+    assert len(tasks) == 1 and tasks[0]['entry_id'] == first['data']['entry_id']
+    assert tasks[0]['action'] == 'card_lock' and tasks[0]['operation']['operation_id'] == switched_preview['operation_id']
+
+    other = await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_lock', 'card_id': 'C2'}), replace(ctx, request_id='REQ-edit-4'))
+    assert other['data']['task_updated'] is False
+    assert len((await get_session(db, 'U1', session_id))['card_operations']) == 2
+
+
 def test_agent_has_card_skill_but_no_authorization_tools():
     assert '卡片业务 Skill' in nova.SYSTEM_PROMPT and 'card_apply_virtual' in nova.SYSTEM_PROMPT
     assert 'list_card_transactions' in nova.TOOL_REGISTRY
     assert not [name for name in nova.TOOL_REGISTRY if any(word in name for word in ('confirm', 'verify', 'authorize'))]
+
+
+def test_card_tool_schema_explains_fields_without_value_quotes():
+    schema = nova.TOOL_REGISTRY['preview_card_operation']['schema']['function']
+    fields = schema['parameters']['properties']
+    assert 'value_quotes' not in fields
+    assert all(fields[name].get('description') for name in (
+        'action', 'card_id', 'account_id', 'credit_limit', 'single_txn_limit', 'daily_txn_limit',
+        'online_enabled', 'atm_enabled', 'overseas_enabled', 'contactless_enabled'))
+    assert '一次调用只操作一张卡' in schema['description']
+    assert '卡型、状态' in schema['description']
+    assert 'action' not in schema['parameters'].get('required', [])
 
 
 @pytest.mark.asyncio
@@ -309,9 +407,9 @@ async def test_incomplete_or_rejected_values_open_form_in_chat_and_user_complete
     rejected = await nova.execute_tool(call('preview_card_operation', {
         'action': 'card_set_transaction_limits', 'card_id': 'C1', 'single_txn_limit': '80000'}),
         replace(ctx, original_message='单笔限额改成80000元', request_id='REQ-form-2'))
-    assert rejected['data']['form_opened'] and rejected['data']['bank_message']
+    assert rejected['data']['form_opened'] and rejected['data']['bank_message'] is None
     tasks = (await get_session(db, 'U1', session_id))['card_operations']
-    assert tasks[-1]['notice'] == rejected['data']['bank_message']
+    assert tasks[-1]['prefill']['single_txn_limit'] == '80000'
     dismissed = await client.post(f"/api/v1/nova/task-sessions/{session_id}/card-tasks/{tasks[-1]['entry_id']}/dismiss",
                                   headers=headers())
     assert len(dismissed.json()['card_operations']) == 1

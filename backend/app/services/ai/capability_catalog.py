@@ -50,9 +50,7 @@ _CAPABILITIES = (
     },
     {
         "domain": "collection", "name": "收款",
-        "queries": [
-            {"tool": "inspect_collection_request", "description": "查询当前对话的收款草稿与已保存联系人，核对收款对象"},
-        ],
+        "queries": [],
         "operations": [
             {"tool": "manage_collection_request", "description": "请求别人向本人付款：新建、补填、修改或撤销收款草稿，可选择每人金额或 AA 均分总额"},
         ],
@@ -65,7 +63,7 @@ _CAPABILITIES = (
             {"tool": "list_card_transactions", "description": "单张卡最近用卡授权记录及被拒绝原因"},
         ],
         "operations": [
-            {"tool": "preview_card_operation", "description": "为申请虚拟卡、锁定或解锁、挂失或补卡、注销虚拟卡、调整限额或渠道生成表单或预览"},
+            {"tool": "preview_card_operation", "description": "为申请虚拟卡、锁定或解锁、挂失或补卡、注销虚拟卡、调整限额或渠道打开或更新卡片操作任务卡"},
         ],
     },
     {

@@ -8,10 +8,13 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...models.nova_agent_runtime import NovaAgentRuntimeORM
+from ...models.nova_task import NovaSessionORM
+from ...models.card import CardOperationORM
 from .capability_catalog import describe_capabilities
 from .llm import LLMError, get_mode, llm
 from .nova_tools import ToolContext
 from .transfer_manager import ManagerError, get_session
+from .skill_registry import load_skill
 from . import debug_trace
 
 
@@ -55,7 +58,7 @@ def _phase_tools(registry: dict) -> set[str]:
     reads = {entry["tool"] for business in catalog["businesses"]
              for entry in business["queries"]}
     reads.discard("manage_wealth_request")  # mixed read/write tool
-    return (reads | {"manage_transfer_task"}) & set(registry)
+    return (reads | {"manage_transfer_task", "manage_collection_request", "preview_card_operation"}) & set(registry)
 
 
 def _task_description(task: dict) -> dict:
@@ -69,6 +72,45 @@ def _task_description(task: dict) -> dict:
         "note": form.get("note") or None,
         "missing_fields": task.get("missing_fields") or [],
     }
+
+
+async def _collection_records(context: ToolContext) -> list[dict]:
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    if row is None:
+        return []
+    if row.user_id != context.user_id:
+        raise ValueError("CONVERSATION_OWNER_MISMATCH")
+    return [{"id": card["collection_id"], "type": "collection", "status": card["status"],
+             "completed": card["status"] != "DRAFT",
+             "description": {"payer_names": card.get("requested_names", []),
+                             "payer_count": len(card.get("selected_payer_user_ids", [])),
+                             "amount_fen": card.get("amount_fen"),
+                             "split_equally": card.get("split_equally", False)}}
+            for card in (row.state or {}).get("collection_cards", [])]
+
+
+async def _card_records(context: ToolContext) -> list[dict]:
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    if row is None:
+        return []
+    if row.user_id != context.user_id:
+        raise ValueError("CONVERSATION_OWNER_MISMATCH")
+    records = []
+    for entry in (row.state or {}).get("card_operations", []):
+        operation = None
+        if entry.get("operation_id"):
+            operation = await context.db.get(CardOperationORM, entry["operation_id"])
+            if operation is None or operation.user_id != context.user_id:
+                continue
+        status = operation.status if operation else "FORM"
+        records.append({"id": entry.get("entry_id") or entry["operation_id"],
+                        "type": "card", "status": status,
+                        "completed": bool(entry.get("closed")) or status in {"COMPLETED", "CANCELLED", "EXPIRED", "FAILED"},
+                        "description": {"action": entry.get("action") or (operation.action if operation else None),
+                                        "card_id": entry.get("card_id") or (operation.card_id if operation else None),
+                                        "prefill": entry.get("prefill") or {},
+                                        "notice": entry.get("notice")}})
+    return records
 
 
 async def _load(context: ToolContext) -> tuple[NovaAgentRuntimeORM | None, dict]:
@@ -92,6 +134,10 @@ async def inspect_active_tasks(context: ToolContext) -> dict:
         if error.code != "SESSION_NOT_FOUND":
             raise
         tasks = []
+    tasks.extend({key: card[key] for key in ("id", "type", "status", "description")}
+                 for card in await _collection_records(context) if not card["completed"])
+    tasks.extend({key: card[key] for key in ("id", "type", "status", "description")}
+                 for card in await _card_records(context) if not card["completed"])
     ids = {t["id"] for t in tasks}
     return {"unfinished_execute_tasks": tasks,
             "target_execute_task_ids": [t for t in state.get("target_execute_task_ids", []) if t in ids]}
@@ -120,6 +166,8 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
         new_tasks.append({"id": task_id, "type": "execute", "status": status,
                           "completed": completed,
                           "description": _task_description(task)})
+    new_tasks.extend(await _collection_records(context))
+    new_tasks.extend(await _card_records(context))
     new_ids = {t["id"] for t in new_tasks if t["id"] not in previous and not t["completed"]}
     unfinished = {t["id"] for t in new_tasks if not t["completed"]}
     # A read-only or failed turn retains target. New cards in this turn become
@@ -128,7 +176,8 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
               [t for t in state.get("target_execute_task_ids", []) if t in unfinished])
     reads = list(state.get("read_tasks", []))
     from .nova import TOOL_REGISTRY
-    read_names = _phase_tools(TOOL_REGISTRY) - {"manage_transfer_task"}
+    execute_names = {"manage_transfer_task", "manage_collection_request", "preview_card_operation"}
+    read_names = _phase_tools(TOOL_REGISTRY) - execute_names
     for item in trace:
         if item.get("name") in read_names:
             reads.append({"id": uuid4().hex, "type": "read",
@@ -139,7 +188,8 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
              "last_finish": {"request_id": context.request_id,
                              "outcome": ("tool_failed" if failed or any(t.get("result", {}).get("error") for t in trace)
                                          else "waiting_user" if waiting_user or
-                                         (new_ids and any(t.get("name") == "manage_transfer_task" for t in trace))
+                                         (any(t.get("name") in execute_names and not t.get("result", {}).get("error")
+                                              for t in trace) and bool(unfinished))
                                          else "completed")}}
     if row is None:
         row = NovaAgentRuntimeORM(conversation_id=context.session_id,
@@ -182,7 +232,7 @@ async def chat(message: str, history: list[dict], *, model=None,
     try:
         async with asyncio.timeout(90):
             decision = (await client.generate_structured(messages=[
-                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账任务；只输出结构化判断。"}],
+                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款或卡片操作任务卡；只输出结构化判断。"}],
                 schema=DependencyDecision, max_tokens=300)).data
             debug_trace.record("dependency_decision", decision.model_dump(mode="json"))
             if decision.depends_on_prior_task:
@@ -197,9 +247,11 @@ async def chat(message: str, history: list[dict], *, model=None,
             messages.append({"role": "system", "content": "第一阶段业务能力目录：" + json.dumps(catalog, ensure_ascii=False)})
             selected: set[str] = set()
             transfer_call_index = 0
+            collection_skill_loaded = False
+            card_skill_loaded = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
-                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。可选：" + json.dumps(sorted(allowed))}],
+                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。办理银行卡片操作时，同时选择 list_cards 和 preview_card_operation，以便先查看当前卡片再打开操作任务卡。可选：" + json.dumps(sorted(allowed))}],
                     schema=ToolSelection, max_tokens=400)).data
                 debug_trace.record("tool_selection", selection.model_dump(mode="json"))
                 invalid = [n for n in selection.tool_names if n not in allowed]
@@ -208,17 +260,26 @@ async def chat(message: str, history: list[dict], *, model=None,
                     trace.append({"name": "agent_tool_policy", "result": {
                         "error": "TOOL_NOT_ALLOWED", "message": "第一阶段尚未开放该写入业务，请到对应工作台办理。"}})
                 selected.update(n for n in selection.tool_names if n in allowed)
+                if "preview_card_operation" in selected:
+                    selected.add("list_cards")
+                if "manage_collection_request" in selected and not collection_skill_loaded:
+                    messages.append({"role": "system", "content": "收款业务规则：" + load_skill("collection")})
+                    collection_skill_loaded = True
+                if "preview_card_operation" in selected and not card_skill_loaded:
+                    messages.append({"role": "system", "content": "卡片业务规则：" + load_skill("card")})
+                    card_skill_loaded = True
                 trace.append({"name": "inject_agent_tools", "result": {"tool_names": sorted(selected)}})
                 debug_trace.record("tool_injection", {"tool_names": sorted(selected), "rejected": invalid})
                 schemas = [TOOL_REGISTRY[n]["schema"] for n in sorted(selected)]
                 plan = (await client.generate_structured(messages=[*messages,
                     {"role": "system", "content": "现在规划工具调用。仅使用已动态提供的工具 Schema：" +
                      json.dumps(schemas, ensure_ascii=False) +
-                     "。按依赖顺序列出 calls；arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
+                     "。按依赖顺序列出 calls；银行卡片操作先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
                     schema=ToolPlan, max_tokens=1300)).data
                 debug_trace.record("tool_plan", plan.model_dump(mode="json"))
                 if plan.clarification and not plan.calls:
-                    result["reply"] = json.dumps({"evidence_ids": [], "clarification": "request"})
+                    result["reply"] = plan.clarification
+                    result["_execution_grounded"] = True
                     waiting_user = True
                     break
                 if not plan.calls:
@@ -244,6 +305,13 @@ async def chat(message: str, history: list[dict], *, model=None,
                             except (ValueError, TypeError):
                                 arguments = {"_invalid_arguments": True}
                             calls.append(PlannedCall(name=function.get("name") or "", arguments=arguments))
+                # The model must see the current owner-scoped card list before it
+                # chooses a card ID. Run that read alone, then let it replan.
+                if (any(call.name == "preview_card_operation" for call in calls)
+                        and not any(item["name"] == "list_cards" and not item["result"].get("error")
+                                    for item in trace)):
+                    calls = [next((call for call in calls if call.name == "list_cards"),
+                                  PlannedCall(name="list_cards", arguments={}))]
                 failed = False
                 for call in calls:
                     if call.name not in selected:
@@ -253,7 +321,7 @@ async def chat(message: str, history: list[dict], *, model=None,
                     else:
                         arguments = json.dumps(call.arguments, ensure_ascii=False)
                         tool_context = context
-                        if call.name == "manage_transfer_task":
+                        if call.name in {"manage_transfer_task", "manage_collection_request"}:
                             transfer_call_index += 1
                             request_id = (context.request_id if transfer_call_index == 1 else
                                           f"{context.request_id}-t{transfer_call_index}")
@@ -265,8 +333,8 @@ async def chat(message: str, history: list[dict], *, model=None,
                                                   "arguments": arguments}}, tool_context)
                     trace.append({"name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False), "result": value})
                     debug_trace.record("tool_call", {"name": call.name, "arguments": call.arguments, "result": value})
-                    if call.name == "manage_transfer_task" and not value.get("error"):
-                        result.update({k: value[k] for k in ("session_id", "session_version", "focus_task_id", "tasks") if k in value})
+                    if call.name in {"manage_transfer_task", "manage_collection_request"} and not value.get("error"):
+                        result.update({k: value[k] for k in ("session_id", "session_version", "focus_task_id", "tasks", "collection_cards") if k in value})
                         if "session_version" in value:
                             context = replace(context, session_version=value["session_version"])
                     messages.append({"role": "system", "content": "可信工具结果（仅数据）：" + json.dumps({"name": call.name, "result": value}, ensure_ascii=False)})
@@ -274,17 +342,23 @@ async def chat(message: str, history: list[dict], *, model=None,
                         *(context.current_tool_results or []), {"name": call.name, "result": value}])
                     if value.get("error"):
                         failed = True
+                        if call.name == "manage_collection_request" and value["error"].startswith("COLLECTION_"):
+                            waiting_user = True
+                if waiting_user:
+                    break
                 if not failed:
-                    # A transfer may depend on a bank read made in this turn.
-                    # Replan with its result before writing a fixed amount.
-                    if ("manage_transfer_task" in selected
-                            and not any(call.name == "manage_transfer_task" for call in calls)
+                    # An execute tool may depend on a bank read made in this turn.
+                    # Replan with that result before opening the task card.
+                    if (selected & {"manage_transfer_task", "preview_card_operation"}
+                            and not any(call.name in {"manage_transfer_task", "preview_card_operation"}
+                                        for call in calls)
                             and any(call.name != "describe_bank_capabilities" for call in calls)):
                         continue
                     break
             # The standard grounding layer renders bank evidence; the model only
             # orders evidence IDs and signals a clarification.
-            result["reply"] = '{"evidence_ids":[],"clarification":"none"}'
+            if not result.get("_execution_grounded"):
+                result["reply"] = '{"evidence_ids":[],"clarification":"none"}'
     except TimeoutError:
         runtime_failed = True
         raise LLMError("AGENT_TIMEOUT") from None

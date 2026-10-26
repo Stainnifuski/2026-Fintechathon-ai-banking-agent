@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.models import Base
 from backend.app.models.nova_conversation import NovaConversationORM
+from backend.app.models.nova_task import NovaSessionORM
 from backend.app.services.ai import nova_runtime
 from backend.app.services.ai import nova
 from backend.app.services.ai import debug_trace
@@ -41,6 +42,20 @@ class FakeModel:
         if schema is nova_runtime.ToolSelection:
             return SimpleNamespace(data=schema(tool_names=self.names))
         return SimpleNamespace(data=schema(calls=self.calls))
+
+
+@pytest.mark.asyncio
+async def test_grounded_reply_is_sent_in_ordered_deltas():
+    events = []
+
+    async def on_event(event):
+        events.append(event)
+
+    reply = '已核验的银行卡信息会逐段显示。' * 5
+    await nova._stream_grounded_reply(on_event, {'mode': 'model', 'reply': reply})
+    assert len(events) > 1
+    assert all(event['type'] == 'delta' for event in events)
+    assert ''.join(event['text'] for event in events) == reply
 
 
 @pytest.mark.asyncio
@@ -113,7 +128,7 @@ async def test_multiple_cards_reconcile_and_terminal_target_clears(context, monk
 
 
 @pytest.mark.asyncio
-async def test_other_execute_tool_cannot_be_injected(context, monkeypatch):
+async def test_collection_tool_is_available_without_inspection_call(context, monkeypatch):
     async def bank(*args):
         raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")
 
@@ -121,10 +136,81 @@ async def test_other_execute_tool_cannot_be_injected(context, monkeypatch):
     model = FakeModel(False, ["manage_collection_request"],
                       [nova_runtime.PlannedCall(name="manage_collection_request", arguments={})])
     result = await nova_runtime.chat("向别人收款", [], model=model, context=context)
-    assert all(t["name"] != "manage_collection_request" or
-               t["result"].get("error") == "TOOL_NOT_ALLOWED" for t in result["tool_calls"])
+    assert any(t["name"] == "manage_collection_request" and
+               t["result"].get("error") == "INVALID_ARGUMENTS" for t in result["tool_calls"])
+    assert all(t["name"] != "inspect_collection_request" for t in result["tool_calls"])
     assert model.schemas[:3] == [nova_runtime.DependencyDecision,
                                  nova_runtime.ToolSelection, nova_runtime.ToolPlan]
+
+
+@pytest.mark.asyncio
+async def test_card_operation_is_injected_as_execute_tool(context, monkeypatch):
+    async def bank(*args):
+        raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")
+
+    seen = []
+
+    async def execute(call, tool_context):
+        seen.append(call["function"]["name"])
+        if call["function"]["name"] == "list_cards":
+            return {"data": {"items": [{"card_id": "C1"}]}}
+        row = NovaSessionORM(session_id=tool_context.session_id, user_id=tool_context.user_id,
+                             version=0, state={"card_operations": [{
+                                 "entry_id": "card-entry-1", "origin_request_id": tool_context.request_id,
+                                 "action": "card_lock", "card_id": None, "prefill": {},
+                                 "notice": None, "operation_id": None, "closed": False,
+                             }]})
+        tool_context.db.add(row)
+        await tool_context.db.commit()
+        return {"source": "cards.operation_form", "data": {"form_opened": True, "executed": False}}
+
+    monkeypatch.setattr(nova_runtime, "get_session", bank)
+    monkeypatch.setattr(nova, "execute_tool", execute)
+    model = FakeModel(False, ["preview_card_operation"], [
+        nova_runtime.PlannedCall(name="preview_card_operation", arguments={"action": "card_lock"})])
+    result = await nova_runtime.chat("锁定这张卡", [], model=model, context=context)
+    assert "preview_card_operation" in nova_runtime._phase_tools(nova.TOOL_REGISTRY)
+    assert seen == ["list_cards", "preview_card_operation"]
+    assert any(item["name"] == "preview_card_operation" and not item["result"].get("error")
+               for item in result["tool_calls"])
+    finish = result["tool_calls"][-1]["result"]
+    assert finish["outcome"] == "waiting_user"
+    assert finish["target_execute_task_ids"] == ["card-entry-1"]
+    assert finish["read_task_count"] == 1
+    assert (await nova_runtime.inspect_active_tasks(context))["unfinished_execute_tasks"][0]["type"] == "card"
+
+
+@pytest.mark.asyncio
+async def test_card_read_is_followed_by_operation_call(context, monkeypatch):
+    async def bank(*args):
+        raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")
+
+    seen = []
+
+    async def execute(call, tool_context):
+        name = call["function"]["name"]
+        seen.append(name)
+        return {"data": {"items": [{"card_id": "C1", "card_number": "****8842"}]}} if name == "list_cards" else {
+            "source": "cards.operation_form", "data": {"form_opened": True, "executed": False}}
+
+    class ReadThenOperate(FakeModel):
+        def __init__(self):
+            super().__init__(False, ["list_cards", "preview_card_operation"], [])
+            self.plans = 0
+
+        async def generate_structured(self, **kwargs):
+            if kwargs["schema"] is nova_runtime.ToolPlan:
+                self.plans += 1
+                call = (nova_runtime.PlannedCall(name="list_cards", arguments={}) if self.plans == 1
+                        else nova_runtime.PlannedCall(name="preview_card_operation",
+                                                      arguments={"action": "card_lock", "card_id": "C1"}))
+                return SimpleNamespace(data=nova_runtime.ToolPlan(calls=[call]))
+            return await super().generate_structured(**kwargs)
+
+    monkeypatch.setattr(nova_runtime, "get_session", bank)
+    monkeypatch.setattr(nova, "execute_tool", execute)
+    await nova_runtime.chat("锁定尾号8842的卡", [], model=ReadThenOperate(), context=context)
+    assert seen == ["list_cards", "preview_card_operation"]
 
 
 @pytest.mark.asyncio

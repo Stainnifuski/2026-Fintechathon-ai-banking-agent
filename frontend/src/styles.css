@@ -176,6 +176,11 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .nova-transfer-verify { display: grid; gap: 8px; }
 .nova-transfer-verify input { width: 100%; }
 .nova-collection-form { display: grid; gap: 10px; }
+.nova-card-current { display: flex; flex-wrap: wrap; gap: 4px 12px; color: #526174; font-size: 12px; }
+.nova-card-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; border-top: 1px solid #e5e9f2; border-bottom: 1px solid #e5e9f2; }
+.nova-card-actions button { min-height: 32px; padding: 5px 10px; border-radius: 999px; font-size: 12px; }
+.nova-card-actions button[aria-pressed="true"] { background: #2459cd; border-color: #2459cd; color: #fff; }
+.nova-card-actions button.card-danger:not([aria-pressed="true"]) { color: #b42318; border-color: #efccc9; }
 .nova-collection-form > label { display: grid; gap: 5px; font-size: 13px; }
 .nova-collection-form input:not([type="checkbox"]), .nova-collection-form select { width: 100%; }
 .nova-collection-form fieldset { display: grid; gap: 6px; min-width: 0; border: 1px solid #d9e2ff; border-radius: 8px; }

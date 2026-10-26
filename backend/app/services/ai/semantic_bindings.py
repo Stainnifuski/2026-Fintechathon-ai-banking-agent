@@ -110,11 +110,6 @@ CASH_FIELDS=(FieldSpec('reserve',('保留现金金额','保留现金','保留','
              FieldSpec('total',('总投资金额','总投资','总投入','总额','总资产','总资金','我有','现有','可支配')),
              FieldSpec('invest',('本次投资金额','新增投资金额','本次投资','新增投资','投入','投资','预算','买入','申购','拨')))
 
-CARD_FIELDS=(FieldSpec('credit_limit',('信用额度','信用卡额度','授信额度','额度')),
-             FieldSpec('single_txn_limit',('单笔限额','单次额度','单笔额度','单笔','单次')),
-             FieldSpec('daily_txn_limit',('每日限额','单日额度','每日额度','每天额度','每日','单日','每天')))
-
-
 def canonical_field(field: str | None) -> str | None:
     return {'investment':'invest','cash_reserve':'reserve','total_investment':'total'}.get(field,field)
 
@@ -151,7 +146,6 @@ def bind_field(proposed: str | None, quote: str, *, previous: str | None=None,
 REFERENCE_TOOLS={
     'get_card':('card_id',('list_cards',),('card_id','card_number')),
     'list_card_transactions':('card_id',('list_cards',),('card_id','card_number')),
-    'preview_card_operation':('card_id',('list_cards',),('card_id','card_number')),
     'get_subscription':('subscription_id',('list_subscriptions',),('merchant_name',)),
     'request_subscription_cancellation':('subscription_id',('list_subscriptions',),('merchant_name',)),
     'get_transaction':('tx_id',('list_transactions',),('tx_id',)),
@@ -170,7 +164,6 @@ def bind_tool_reference(name: str, values: dict, message: str, trace: list[dict]
     config=REFERENCE_TOOLS.get(name)
     if not config:return values
     field,providers,labels=config
-    if name=='preview_card_operation' and values.get('action')=='card_apply_virtual':return values
     reference=values.get(field)
     ranks=ordinals(message)
     if not ranks and ordinals(message,include_negated=True):raise ValueError('REFERENCE_NOT_GROUNDED')

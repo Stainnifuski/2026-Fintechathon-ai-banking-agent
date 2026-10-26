@@ -300,7 +300,7 @@ def body(name: str, result: dict) -> list[str]:
         if d.get('executed') is not False:
             raise ValueError('PREVIEW_STATE_NOT_VERIFIED')
         if d.get('form_opened'):
-            lines = [f'已在下方打开{literal(d.get("action_label", "卡片操作"))}表单，尚未生成预览，也未执行。']
+            lines = [f'{"已更新原有" if d.get("task_updated") else "已打开"}{literal(d.get("action_label", "卡片操作"))}任务表单，尚未生成预览，也未执行。']
             if d.get('bank_message'):
                 lines.append(f'银行提示：{literal(d["bank_message"])}；请在表单中调整后再生成确认信息。')
             if d.get('missing_fields'):
@@ -402,7 +402,7 @@ def body(name: str, result: dict) -> list[str]:
     if name in {'get_budget_status', 'list_forecast_reviews', 'list_recurring_records', 'get_subscription_insights'}:
         return report_rows(d) + ['计划、历史估计和实际扣款分别核对；此查询不执行取消、扣费或资金操作。']
     if name in {'manage_transfer_task', 'manage_collection_request', 'manage_wealth_request'}:
-        # 专用服务端流程生成文案，模型自由问题已在子流程入口替换。
+        # 业务工具返回经核验的草稿状态和服务端文案。
         return [result.get('reply') or '请核对可信任务卡；聊天不代为确认、验证或执行交易。']
     raise ValueError('UNSUPPORTED_EVIDENCE_SOURCE')
 
@@ -425,8 +425,8 @@ def evidence_for(index: int, item: dict) -> Evidence | None:
     if item.get('internal'):
         return None
     name, result = item['name'], item['result']
-    # 计划登记和收款语义解析是内部步骤；用户可见结论来自随后的业务工具结果。
-    if name in {'declare_goal_plan', 'inspect_collection_request',
+    # 内部调度步骤不作为用户可见的业务证据。
+    if name in {'declare_goal_plan',
                 'inspect_active_tasks', 'inject_agent_tools', 'llm_finish_tool'}:
         return None
     title = TOOL_LABELS.get(name, '工具查询')
@@ -445,6 +445,8 @@ def evidence_for(index: int, item: dict) -> Evidence | None:
                 'INVALID_ARGUMENTS', 'TOOL_NOT_ALLOWED', 'PARAMETER_NOT_GROUNDED'}:
             # 银行业务规则拒绝（如状态不允许、超出上限）原样告知；未生成任务卡，卡片未变更。
             clarification = f'银行未受理：{literal(result["message"])}。未生成任务卡，卡片未变更。'
+        if name == 'manage_collection_request' and result.get('message') and result['error'].startswith('COLLECTION_'):
+            clarification = literal(result['message'])
         lines = [clarification]
     else:
         try:
