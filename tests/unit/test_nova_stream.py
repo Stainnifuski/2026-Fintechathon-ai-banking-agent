@@ -59,7 +59,29 @@ async def test_client_streams_text_deltas_and_returns_full_message(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_loop_streams_progress_then_only_grounded_answer(monkeypatch):
+async def test_generate_text_streams_model_deltas_without_tool_schema(monkeypatch):
+    configure(monkeypatch)
+    requests, deltas = [], []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return sse(text_chunk('第一段'), text_chunk('第二段', 'stop'))
+
+    async def on_delta(chunk):
+        deltas.append(chunk)
+
+    client = LLMService(httpx.MockTransport(handler))
+    try:
+        result = await client.generate_text(messages=[{'role': 'user', 'content': '你好'}], on_delta=on_delta)
+    finally:
+        await client.aclose()
+    assert result.data == '第一段第二段'
+    assert deltas == ['第一段', '第二段']
+    assert requests[0]['stream'] is True and 'tools' not in requests[0]
+
+
+@pytest.mark.asyncio
+async def test_loop_streams_progress_then_returns_model_answer(monkeypatch):
     configure(monkeypatch)
     calls = []
     def handler(request):
@@ -79,10 +101,10 @@ async def test_loop_streams_progress_then_only_grounded_answer(monkeypatch):
         result = await nova.chat('纽约现在几点？', [], model=client, on_event=on_event)
     finally:
         await client.aclose()
-    assert 'America/New\\_York' in result['reply'] and len(result['tool_calls']) == 1
+    assert result['reply'] == '纽约时间查询完成' and len(result['tool_calls']) == 1
     assert events == [{'type': 'tool', 'name': 'get_current_time'},
                       {'type': 'delta', 'text': result['reply']}]
-    assert '我先查一下' not in str(events) and '纽约时间查询完成' not in str(events)
+    assert '我先查一下' not in str(events)
 
 
 @pytest.mark.asyncio
@@ -96,9 +118,9 @@ async def test_non_streaming_model_still_emits_final_answer(monkeypatch):
     async def on_event(event):
         events.append(event)
     result = await nova.chat('你好', [], model=Plain(), on_event=on_event)
-    assert result['reply'].startswith('你好，我是 NOVA')
+    assert result['reply'] == '一次性回答'
     assert events == [{'type': 'delta', 'text': result['reply']}]
-    assert result['grounding']['status'] == 'abstained'
+    assert 'grounding' not in result
 
 
 @pytest.mark.asyncio

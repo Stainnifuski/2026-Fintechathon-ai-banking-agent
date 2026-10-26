@@ -63,7 +63,7 @@ _CAPABILITIES = (
             {"tool": "list_card_transactions", "description": "单张卡最近用卡授权记录及被拒绝原因"},
         ],
         "operations": [
-            {"tool": "preview_card_operation", "description": "为申请虚拟卡、锁定或解锁、挂失或补卡、注销虚拟卡、调整限额或渠道打开或更新卡片操作任务卡"},
+            {"tool": "preview_card_operation", "description": "打开、更新或取消本人未完成的卡片操作任务卡，支持锁定、挂失、补卡、注销虚拟卡及调整限额或渠道等"},
         ],
     },
     {

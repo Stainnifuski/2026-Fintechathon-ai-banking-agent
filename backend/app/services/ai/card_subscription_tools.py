@@ -44,11 +44,15 @@ YUAN_PATTERN = r'^\d{1,9}(\.\d{1,2})?$'
 
 
 class CardPreviewArguments(StrictModel):
+    task_action: Literal['open', 'cancel'] = Field(default='open',
+        description='open 打开或更新卡片操作任务；cancel 取消当前会话中尚未完成的卡片操作任务。')
+    task_entry_id: str | None = Field(default=None, min_length=1, max_length=64,
+        description='取消任务时可填写未完成卡片任务的 entry_id；可从当前任务状态取得。')
     action: CardAction = Field(default='card_set_transaction_limits',
-                               description='要办理的卡片操作；用户未指定操作时默认打开交易限额栏目。')
+                               description='open 时要办理的卡片操作；用户未指定操作时默认打开交易限额栏目。cancel 时省略。')
     card_id: str | None = Field(
         default=None, min_length=1, max_length=32,
-        description='银行卡内部 ID，取自本轮 list_cards 的 card_id；勿填卡号或尾号。目标未确定时可省略，由任务卡选择。',
+        description='银行卡内部 ID；打开任务时取自本轮 list_cards，取消任务时也可从未完成任务状态取得。勿填卡号或尾号。',
     )
     account_id: str | None = Field(default=None, min_length=1, max_length=32, description='申请虚拟卡时关联的本人借记账户 ID。')
     credit_limit: str | None = Field(default=None, pattern=YUAN_PATTERN, description='新的信用额度，单位元。')
@@ -308,7 +312,7 @@ async def link_chat_card_operation(db, *, user_id: str, session_id: str, entry_i
 
 
 async def dismiss_chat_card_task(db, *, user_id: str, session_id: str, entry_id: str) -> list[dict]:
-    from ...integrations.card_authorization import AWAITING_CONFIRMATION, cancel
+    from ...integrations.card_authorization import OPEN_STATES, cancel
     row = await _owned_session(db, user_id, session_id)
     state = json.loads(json.dumps(row.state or {})) if row else {}
     entries = _entries(state)
@@ -317,15 +321,56 @@ async def dismiss_chat_card_task(db, *, user_id: str, session_id: str, entry_id:
         raise CardTaskError('卡片任务不存在', 'CARD_TASK_NOT_FOUND', 404)
     if entry.get('operation_id'):
         operation = await db.get(CardOperationORM, entry['operation_id'], with_for_update=True, populate_existing=True)
-        if operation and operation.status == AWAITING_CONFIRMATION:
-            cancel(db, operation)
-        elif operation and operation.status not in {'COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED'}:
-            raise CardTaskError('原操作已本人确认，请先完成验证或取消原操作', 'CARD_TASK_CONFIRMED', 409)
+        if operation and operation.user_id != user_id:
+            raise CardTaskError('卡片任务不存在', 'CARD_TASK_NOT_FOUND', 404)
+        if operation and operation.status in OPEN_STATES:
+            try:
+                cancel(db, operation)
+            except CardAuthorizationError as error:
+                if error.code != 'AUTHORIZATION_EXPIRED':
+                    raise
+        elif operation and operation.status == 'AUTHORIZED':
+            raise CardTaskError('卡片操作已授权，不能取消', 'CARD_TASK_CONFIRMED', 409)
     entry['closed'] = True
     state['card_operations'] = entries
     row.state = state
     await db.commit()
     return await chat_card_operations(db, user_id, state)
+
+
+async def cancel_pending_chat_card_task(context, arguments) -> dict:
+    if not context.session_id:
+        return dict(error='CARD_TASK_SESSION_REQUIRED', message='取消卡片任务需要当前会话。')
+    row = await _owned_session(context.db, context.user_id, context.session_id)
+    entries = _entries((row.state or {}) if row else {})
+    pending = []
+    for entry in entries:
+        if entry['closed']:
+            continue
+        operation = await context.db.get(CardOperationORM, entry['operation_id']) if entry.get('operation_id') else None
+        if operation and (operation.user_id != context.user_id or
+                          operation.status in {'COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED', 'AUTHORIZED'}):
+            continue
+        pending.append(entry)
+    if arguments.task_entry_id:
+        pending = [entry for entry in pending if entry['entry_id'] == arguments.task_entry_id]
+    if arguments.card_id:
+        pending = [entry for entry in pending if entry.get('card_id') == arguments.card_id]
+    if not arguments.task_entry_id and not arguments.card_id and context.focus_task_id:
+        focused = [entry for entry in pending if entry['entry_id'] == context.focus_task_id]
+        if focused:
+            pending = focused
+    if not pending:
+        return dict(error='CARD_TASK_NOT_FOUND', message='当前会话没有匹配的未完成卡片操作任务。')
+    if len(pending) != 1:
+        return dict(error='CARD_TASK_AMBIGUOUS', message='有多项未完成的卡片操作，请指定目标任务或卡片。')
+    entry = pending[0]
+    remaining = await dismiss_chat_card_task(context.db, user_id=context.user_id,
+                                             session_id=context.session_id, entry_id=entry['entry_id'])
+    return envelope('cards.operation_task_cancel', dict(
+        task_cancelled=True, card_operation_executed=False, entry_id=entry['entry_id'],
+        card_id=entry.get('card_id'), remaining_task_count=len(remaining),
+        message='未完成的卡片操作任务已取消；银行卡设置未因此改变。'))
 
 
 def _masked_change(change):
@@ -339,7 +384,13 @@ async def preview_card_operation(arguments, context):
 
     确认、强验证只能由本人在聊天中的卡片任务卡完成。
     """
-    values = arguments.model_dump(exclude_none=True)
+    if arguments.task_action == 'cancel':
+        if set(arguments.model_fields_set) - {'task_action', 'task_entry_id', 'card_id'}:
+            return dict(error='INVALID_ARGUMENTS', message='取消任务时只填写 task_action、task_entry_id 或 card_id。')
+        return await cancel_pending_chat_card_task(context, arguments)
+    if arguments.task_entry_id is not None:
+        return dict(error='INVALID_ARGUMENTS', message='打开卡片任务时无需填写 task_entry_id。')
+    values = arguments.model_dump(exclude_none=True, exclude={'task_action', 'task_entry_id'})
     action = values['action']
     if action != 'card_apply_virtual' and 'card_id' not in values:
         selected = context.page.cards.selected_card_id if context.page.cards else None
@@ -524,8 +575,9 @@ def card_subscription_tools():
          '支持申请虚拟卡、锁定、解锁、挂失、补卡、注销虚拟卡、调整单笔和单日交易限额、调整信用额度、修改交易渠道。'
          '选择对应 action 并只填写本次要修改的字段；卡型、状态和具体数值是否允许由银行服务校验。'
          '用户只要求打开某张卡的操作任务卡、未说明具体操作时，省略 action，默认停留在交易限额栏目。'
-         '先调用 list_cards 查看本人当前卡片，再把其中的内部 card_id 填入本工具，不填卡号或尾号；没有明确目标卡片时 card_id 可省略，由任务卡供本人选择。'
+         '打开或修改任务前先调用 list_cards 查看本人当前卡片，再把其中的内部 card_id 填入本工具，不填卡号或尾号；没有明确目标卡片时 card_id 可省略，由任务卡供本人选择。'
          '聊天中打开或更新该卡已有的操作任务表单，预填当前设置及本次修改；'
+         '取消未完成的卡片操作任务时，传 task_action=cancel，并用 task_entry_id 或 card_id 指定任务；当前会话只有一项未完成卡片任务时可省略目标。取消会撤销未完成预览并关闭任务卡，不会修改银行卡设置。'
          '本人在任务卡中生成预览、确认，必要时完成验证码验证。NOVA 不能代为确认或验证。'),
         ('request_subscription_cancellation', SubscriptionCancelArguments, request_subscription_cancellation, '用户要取消本人订阅时调用：在聊天中显示取消订阅任务卡，不会取消。省略 subscription_id 沿用 subscriptions.selected_subscription_id；按商户名先 list_subscriptions 定位，多个匹配先询问；用户没说是哪一项时不传，任务卡中会列出生效订阅供选择。已取消的订阅不能再取消。返回 executed=false：用户须在任务卡中查看取消详情并本人确认；NOVA 不能代为确认。'),
         ('list_subscriptions', SubscriptionListArguments, list_subscriptions, '分页查询本人订阅，可筛选 ACTIVE/CANCELLED 和商户 keyword。summary 是筛选后所有分页的生效订阅每月预计支出，仅 MONTHLY/CNY，非实际扣款。实际扣费请查询账单流水。'),

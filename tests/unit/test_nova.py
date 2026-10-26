@@ -76,9 +76,8 @@ async def test_native_tool_loop(monkeypatch):
     client = LLMService(httpx.MockTransport(handler))
     try:
         result = await nova.chat('纽约现在几点？', [], model=client)
-        assert result['mode'] == 'model' and 'America/New\\_York' in result['reply']
-        assert '纽约时间查询完成' not in result['reply']
-        assert result['grounding']['status'] == 'grounded'
+        assert result['mode'] == 'model' and result['reply'] == '纽约时间查询完成'
+        assert 'grounding' not in result
         assert len(result['tool_calls']) == 1 and len(seen) == 2
     finally:
         await client.aclose()

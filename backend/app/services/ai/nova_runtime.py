@@ -207,8 +207,7 @@ async def chat(message: str, history: list[dict], *, model=None,
     from .nova import TOOL_REGISTRY, execute_tool
 
     trace: list[dict] = []
-    result: dict = {"reply": '{"evidence_ids":[],"clarification":"request"}',
-                    "mode": "model", "tool_calls": trace}
+    result: dict = {"reply": "", "mode": "model", "tool_calls": trace}
     if get_mode() != "model" and model is None:
         result.update(reply="当前为离线模式，请启用模型后重试此业务请求。", mode="offline")
         await llm_finish_tool(context, trace)
@@ -251,7 +250,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             card_skill_loaded = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
-                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。办理银行卡片操作时，同时选择 list_cards 和 preview_card_operation，以便先查看当前卡片再打开操作任务卡。可选：" + json.dumps(sorted(allowed))}],
+                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。可选：" + json.dumps(sorted(allowed))}],
                     schema=ToolSelection, max_tokens=400)).data
                 debug_trace.record("tool_selection", selection.model_dump(mode="json"))
                 invalid = [n for n in selection.tool_names if n not in allowed]
@@ -274,12 +273,11 @@ async def chat(message: str, history: list[dict], *, model=None,
                 plan = (await client.generate_structured(messages=[*messages,
                     {"role": "system", "content": "现在规划工具调用。仅使用已动态提供的工具 Schema：" +
                      json.dumps(schemas, ensure_ascii=False) +
-                     "。按依赖顺序列出 calls；银行卡片操作先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
+                     "。按依赖顺序列出 calls；打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
                     schema=ToolPlan, max_tokens=1300)).data
                 debug_trace.record("tool_plan", plan.model_dump(mode="json"))
                 if plan.clarification and not plan.calls:
                     result["reply"] = plan.clarification
-                    result["_execution_grounded"] = True
                     waiting_user = True
                     break
                 if not plan.calls:
@@ -307,7 +305,8 @@ async def chat(message: str, history: list[dict], *, model=None,
                             calls.append(PlannedCall(name=function.get("name") or "", arguments=arguments))
                 # The model must see the current owner-scoped card list before it
                 # chooses a card ID. Run that read alone, then let it replan.
-                if (any(call.name == "preview_card_operation" for call in calls)
+                if (any(call.name == "preview_card_operation" and
+                        call.arguments.get("task_action") != "cancel" for call in calls)
                         and not any(item["name"] == "list_cards" and not item["result"].get("error")
                                     for item in trace)):
                     calls = [next((call for call in calls if call.name == "list_cards"),
@@ -355,10 +354,6 @@ async def chat(message: str, history: list[dict], *, model=None,
                             and any(call.name != "describe_bank_capabilities" for call in calls)):
                         continue
                     break
-            # The standard grounding layer renders bank evidence; the model only
-            # orders evidence IDs and signals a clarification.
-            if not result.get("_execution_grounded"):
-                result["reply"] = '{"evidence_ids":[],"clarification":"none"}'
     except TimeoutError:
         runtime_failed = True
         raise LLMError("AGENT_TIMEOUT") from None
@@ -370,4 +365,17 @@ async def chat(message: str, history: list[dict], *, model=None,
                                        failed=runtime_failed)
         trace.append({"name": "llm_finish_tool", "result": finish})
         debug_trace.record("runtime_finish", finish)
+    if not result["reply"]:
+        final_messages = [*messages, {"role": "system", "content":
+            "请直接用自然语言回答用户本轮请求，表达方式由你决定。以本轮可信工具结果和任务收尾状态为事实依据；"
+            "区分已生成任务卡、待本人确认、已完成和失败，不把预览说成已执行。"
+            "不要输出内部卡片 ID、工具参数或 JSON 证据编号。任务收尾状态：" +
+            json.dumps(finish, ensure_ascii=False)}]
+        async def on_delta(chunk: str) -> None:
+            if on_event is not None:
+                await on_event({"type": "delta", "text": chunk})
+        response = await client.generate_text(messages=final_messages, max_tokens=1200,
+                                              on_delta=on_delta if on_event is not None else None)
+        result["reply"] = response.data
+        result["_reply_streamed"] = on_event is not None
     return result

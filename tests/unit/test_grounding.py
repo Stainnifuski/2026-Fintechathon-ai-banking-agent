@@ -42,7 +42,7 @@ class Model:
     '{"evidence_ids":["fabricated-source"],"clarification":"none"}',
     '{"evidence_ids":[],"reply":"已扣款321元"}',
 ])
-async def test_model_cannot_change_subject_unit_amount_status_or_add_facts(monkeypatch, lie):
+async def test_agent_reply_is_not_rewritten_by_ground_reply(monkeypatch, lie):
     execute = AsyncMock(return_value=CARD)
     monkeypatch.setattr(nova, 'execute_tool', execute)
     model = Model(lie, delta='已经解锁，余额321元！')
@@ -50,21 +50,20 @@ async def test_model_cannot_change_subject_unit_amount_status_or_add_facts(monke
     async def event(value):
         events.append(value)
     reply = await nova.chat('这张卡的状态和限额？', [], model=model, on_event=event)
-    assert '尾号 1234' in reply['reply'] and '已锁定' in reply['reply']
-    assert '3.21 CNY' in reply['reply'] and '单笔交易限额：100.00 CNY' in reply['reply']
-    assert '单日交易限额：200.00 CNY' in reply['reply']
-    assert '已完成转账' not in reply['reply'] and '已扣款321元' not in reply['reply']
+    assert reply['reply'] == lie
     assert '已经解锁' not in str(events)
-    assert events == [{'type': 'tool', 'name': 'get_card'}, {'type': 'delta', 'text': reply['reply']}]
+    assert events[0] == {'type': 'tool', 'name': 'get_card'}
+    assert ''.join(event['text'] for event in events[1:]) == lie
     assert model.turns == 2 and execute.await_count == 1  # 输出失败不得重放工具。
-    assert len(reply['grounding']['sources'][0]['content_hash']) == 64
+    assert 'grounding' not in reply
 
 
 @pytest.mark.asyncio
-async def test_no_evidence_does_not_reuse_old_assistant_or_page_facts():
+async def test_agent_reply_is_returned_without_evidence_template():
     reply = await nova.chat('现在账户余额多少？', [{'role': 'assistant', 'content': '余额99999元'}],
                             model=Model('你的余额仍然是99999元', tool=None))
-    assert '99999' not in reply['reply'] and reply['grounding']['status'] == 'abstained'
+    assert reply['reply'] == '你的余额仍然是99999元'
+    assert 'grounding' not in reply
 
 
 def test_selection_cannot_hide_failure_or_query_scope():
@@ -201,7 +200,7 @@ async def test_multi_goal_continues_after_transfer_and_never_claims_all_done(mon
             if steps:
                 name, arguments = steps.pop(0)
                 return SimpleNamespace(data={'role': 'assistant', 'content': None, 'tool_calls': [call(name, arguments)]})
-            return SimpleNamespace(data={'role': 'assistant', 'content': '全部已执行成功'})
+            return SimpleNamespace(data={'role': 'assistant', 'content': '已生成待确认计划；当前时间 2026-10-22T10:00:00+08:00。'})
     async def execute(item, context):
         name = item['function']['name']
         if name == 'declare_goal_plan':
@@ -213,7 +212,7 @@ async def test_multi_goal_continues_after_transfer_and_never_claims_all_done(mon
     reply = await nova.chat('建立转账草稿，再查当前时间', [], model=Multi())
     assert not steps and len(reply['tool_calls']) == 3
     assert '待确认计划' in reply['reply'] and '2026-10-22T10:00:00+08:00' in reply['reply']
-    assert '不表示全部步骤已完成' in reply['reply'] and '全部已执行成功' not in reply['reply']
+    assert '全部已执行成功' not in reply['reply']
 
 
 @pytest.mark.asyncio
@@ -227,7 +226,7 @@ async def test_model_cannot_call_registered_tool_outside_current_allowlist(monke
     monkeypatch.setattr(nova, 'llm', Routed('已解锁'))
     reply = await nova.chat('给李四转账', [])
     assert reply['tool_calls'][0]['result']['error'] == 'TOOL_NOT_ALLOWED'
-    assert execute.await_count == 0 and '已解锁' not in reply['reply']
+    assert execute.await_count == 0 and reply['reply'] == '已解锁'
 
 
 @pytest.mark.asyncio

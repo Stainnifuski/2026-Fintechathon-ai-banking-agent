@@ -193,9 +193,10 @@ export default function NovaCardOperationCard({ task, sessionId, accounts, disab
       {ACTION_HINTS[activeAction] && <p className="hint">{ACTION_HINTS[activeAction]}</p>}
       <p className="hint">提交后由银行校验并返回变更明细，尚不会执行。</p>
       <div className="nova-transfer-actions">
-        {operation ? <button type="button" className="secondary" disabled={off}
+        {operation ? <><button type="button" className="secondary" disabled={off}
             onClick={() => { setActiveAction(operation.action); setEditing(false); }}>返回确认信息</button>
-          : <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>不办理</button>}
+          <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>取消任务</button></>
+          : <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>取消任务</button>}
         <button type="submit" disabled={off || !ready}>{busy ? '正在校验…' : '生成确认信息'}</button>
       </div>
     </form>}
@@ -216,7 +217,7 @@ export default function NovaCardOperationCard({ task, sessionId, accounts, disab
       </div>}
       <div className="nova-transfer-actions">
         {allowed.includes('confirm') && EDITABLE.has(operation.action) && <button className="secondary" disabled={off} onClick={() => setEditing(true)}>修改</button>}
-        {allowed.includes('cancel') && <button className="secondary" disabled={off} onClick={() => run(() => bank.cancelCardOperation(operation))}>取消</button>}
+        {allowed.includes('cancel') && <button className="secondary" disabled={off} onClick={() => void dismiss()}>取消任务</button>}
         {allowed.includes('confirm') && <button disabled={off} onClick={() => run(() => bank.confirmCardOperation(operation))}>{busy ? '处理中…' : operation.requires_mfa ? '确认，下一步验证' : '确认执行'}</button>}
         {allowed.includes('verify') && <button disabled={off || !factor || code.length !== 6} onClick={() => factor && run(() => bank.verifyCardOperation(operation, code, factor))}>{busy ? '验证中…' : '提交验证'}</button>}
         {!open && ['EXPIRED', 'CANCELLED', 'FAILED'].includes(operation.status) && <button className="secondary" disabled={off} onClick={() => setEditing(true)}>重新填写</button>}

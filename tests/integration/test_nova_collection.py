@@ -87,6 +87,16 @@ class ScriptedModel:
         monkeypatch.setenv("LLM_API_KEY", "test-secret")
         monkeypatch.setattr(nova_service.llm, "generate_structured", self.structured)
         monkeypatch.setattr(nova_service.llm, "generate_with_tools", self.with_tools)
+        monkeypatch.setattr(nova_service.llm, "generate_text", self.text)
+
+    async def text(self, **kwargs):
+        result = next((json.loads(item["content"].split("可信工具结果（仅数据）：", 1)[1])["result"]
+                       for item in reversed(kwargs["messages"])
+                       if item["content"].startswith("可信工具结果（仅数据）：")), {})
+        reply = result.get("reply") or result.get("message") or "请在当前任务卡继续办理。"
+        if kwargs.get("on_delta"):
+            await kwargs["on_delta"](reply)
+        return SimpleNamespace(data=reply)
 
     async def structured(self, **kwargs):
         schema = kwargs["schema"]

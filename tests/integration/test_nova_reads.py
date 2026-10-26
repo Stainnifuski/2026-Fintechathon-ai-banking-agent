@@ -15,7 +15,7 @@ from backend.app.models.wealth import WealthCashHoldORM
 from backend.app.models.wealth_research import WealthContextORM, WealthDatasetORM
 from backend.app.routers.nova import router
 from backend.app.schemas.nova import PageContext, BillFilters, Selection, BillDetailContext
-from backend.app.services.ai import nova
+from backend.app.services.ai import nova, nova_runtime
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.services.ai.llm import LLMService
 from backend.app.services.bank import bill_service, data_service
@@ -107,7 +107,8 @@ async def test_offline_business_same_tools(db):
         result = await nova.chat(message, [], context=ctx)
         assert result['mode'] == 'offline' and result['tool_calls'][0]['name'] == name
         assert '模拟银行' in result['reply']
-    assert not (await nova.chat('给别人转账并查询余额', [], context=ctx))['tool_calls']
+    transfer = await nova.chat('给别人转账并查询余额', [], context=ctx)
+    assert all(call['result'].get('error') for call in transfer['tool_calls'])
 
 
 @pytest.mark.asyncio
@@ -118,25 +119,29 @@ async def test_authenticated_api_native_business_loop_and_context_validation(db,
     def handler(request):
         body = json.loads(request.content)
         if body.get('response_format'):
+            schema = body['messages'][0]['content']
+            data = ({'depends_on_prior_task': False, 'reason': 'independent'}
+                    if 'depends_on_prior_task' in schema else
+                    {'tool_names': ['get_transaction']}
+                    if 'tool_names' in schema else
+                    {'calls': [{'name': 'get_transaction', 'arguments': {}}], 'clarification': None})
             return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
-                'content': json.dumps({'mode': 'direct_react', 'domains': ['transactions'],
-                                      'has_dependencies': False})}}]})
+                'content': json.dumps(data)}}]})
         seen.append(body)
         if len(seen) == 1:
             assert 'user_id' not in json.dumps(body)
-            page_message = next(m for m in body['messages'] if m['content'].startswith('当前页面提示'))
+            page_message = next(m for m in body['messages'] if 'page_context' in m['content'])
             assert 'own' in page_message['content'] and '2026-09' in page_message['content']
             return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {
                 'content': None, 'tool_calls': [{'id': 'selected', 'type': 'function', 'function': {
                     'name': 'get_transaction', 'arguments': '{}'}}]}}]})
-        tool = body['messages'][-1]
-        assert tool['role'] == 'tool' and tool['tool_call_id'] == 'selected'
-        assert json.loads(tool['content'])['data']['amount_fen'] == 321
+        assert any('"amount_fen": 321' in item['content'] for item in body['messages'])
         return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '模拟银行这笔消费为3.21元'}}]})
     monkeypatch.setenv('LLM_MODE', 'model')
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
     model = LLMService(httpx.MockTransport(handler))
     monkeypatch.setattr(nova, 'llm', model)
+    monkeypatch.setattr(nova_runtime, 'llm', model)
     app = FastAPI()
     app.include_router(router)
     async def request_db():
@@ -149,8 +154,8 @@ async def test_authenticated_api_native_business_loop_and_context_validation(db,
                 'filters': {'date': '2026-09'}, 'selected': {'type': 'transaction', 'id': 'own'},
                 'observed_as_of': '2026-10-01T00:00:00+08:00'}}
             response = await client.post('/api/v1/nova/chat', json=payload)
-            assert response.status_code == 200 and '3.21 CNY' in response.json()['reply']
-            assert response.json()['grounding']['status'] == 'grounded'
+            assert response.status_code == 200 and '3.21元' in response.json()['reply']
+            assert 'grounding' not in response.json()
             assert len(seen) == 2
             invalid = [
                 {'page': 'home', 'user_id': 'U2'}, {'version': 2, 'page': 'home'},

@@ -12,7 +12,7 @@ from backend.app.models import CalendarEventORM
 from backend.app.schemas.calendar import CalendarEventCreate
 from backend.app.schemas.nova import PageContext, CalendarContext, CalendarSelection
 from backend.app.services.calendar import events
-from backend.app.services.ai import nova, calendar_tools
+from backend.app.services.ai import nova, nova_runtime, calendar_tools
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.services.ai.llm import LLMService
 from backend.app.routers.nova import router
@@ -140,9 +140,14 @@ async def test_authenticated_calendar_tool_loop_and_page_validation(store, monke
     def handler(request):
         body = json.loads(request.content)
         if body.get('response_format'):
+            schema = body['messages'][0]['content']
+            data = ({'depends_on_prior_task': False, 'reason': 'independent'}
+                    if 'depends_on_prior_task' in schema else
+                    {'tool_names': ['get_calendar_event']}
+                    if 'tool_names' in schema else
+                    {'calls': [{'name': 'get_calendar_event', 'arguments': {}}], 'clarification': None})
             return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
-                'content': json.dumps({'mode': 'direct_react', 'domains': ['calendar'],
-                    'has_dependencies': False, 'goal_plan': None})}}]})
+                'content': json.dumps(data)}}]})
         seen.append(body)
         if len(seen) == 1:
             assert any(point['event_id'] in message.get('content', '') for message in body['messages'])
@@ -150,13 +155,13 @@ async def test_authenticated_calendar_tool_loop_and_page_validation(store, monke
             return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {
                 'content': None, 'tool_calls': [{'id': 'calendar', 'type': 'function', 'function': {
                     'name': 'get_calendar_event', 'arguments': '{}'}}]}}]})
-        tool = body['messages'][-1]
-        assert tool['tool_call_id'] == 'calendar' and json.loads(tool['content'])['data']['total'] == 1
+        assert any('"total": 1' in message['content'] for message in body['messages'])
         return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '项目答辩10月15日上午9点举行。'}}]})
     monkeypatch.setenv('LLM_MODE', 'model')
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
     model = LLMService(httpx.MockTransport(handler))
     monkeypatch.setattr(nova, 'llm', model)
+    monkeypatch.setattr(nova_runtime, 'llm', model)
     app = FastAPI()
     app.include_router(router)
     async def get_session():
@@ -171,8 +176,8 @@ async def test_authenticated_calendar_tool_loop_and_page_validation(store, monke
                 'event_id': point['event_id'], 'starts_at': '2026-10-15T01:00:00Z'}}
             reply = await client.post('/api/v1/nova/chat', json={'message': '这个活动什么时候举行？', 'page_context': {'page': 'thirdParty', 'calendar': calendar}})
             assert reply.status_code == 200 and '项目答辩' in reply.json()['reply']
-            assert '2026-10-15T09:00:00+08:00' in reply.json()['reply']
-            assert reply.json()['grounding']['status'] == 'grounded'
+            assert reply.json()['reply'] == '项目答辩10月15日上午9点举行。'
+            assert 'grounding' not in reply.json()
             for patch in ({'timezone': 'bad-zone'}, {'selected_date': '2026-02-30'}, {'user_id': 'U2'},
                           {'selected_event': {'event_id': point['event_id'], 'starts_at': '2026-10-15T09:00:00'}}):
                 assert (await client.post('/api/v1/nova/chat', json={'message': '日程', 'page_context': {

@@ -43,19 +43,42 @@ class FakeModel:
             return SimpleNamespace(data=schema(tool_names=self.names))
         return SimpleNamespace(data=schema(calls=self.calls))
 
+    async def generate_text(self, **kwargs):
+        reply = '模型根据工具结果给出的自然语言回复。'
+        if kwargs.get('on_delta'):
+            await kwargs['on_delta'](reply[:6])
+            await kwargs['on_delta'](reply[6:])
+        return SimpleNamespace(data=reply)
+
 
 @pytest.mark.asyncio
-async def test_grounded_reply_is_sent_in_ordered_deltas():
+async def test_fallback_reply_is_sent_in_ordered_deltas():
     events = []
 
     async def on_event(event):
         events.append(event)
 
     reply = '已核验的银行卡信息会逐段显示。' * 5
-    await nova._stream_grounded_reply(on_event, {'mode': 'model', 'reply': reply})
+    await nova._stream_reply(on_event, {'mode': 'model', 'reply': reply})
     assert len(events) > 1
     assert all(event['type'] == 'delta' for event in events)
     assert ''.join(event['text'] for event in events) == reply
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_model_final_answer_and_forwards_its_deltas(context):
+    events = []
+
+    async def on_event(event):
+        events.append(event)
+
+    model = FakeModel(False, ['get_current_time'], [
+        nova_runtime.PlannedCall(name='get_current_time', arguments={})])
+    result = await nova.chat('现在几点？', [], model=model, context=context, on_event=on_event)
+    assert result['reply'] == '模型根据工具结果给出的自然语言回复。'
+    assert [event['text'] for event in events if event['type'] == 'delta'] == [
+        '模型根据工具', '结果给出的自然语言回复。']
+    assert 'grounding' not in result
 
 
 @pytest.mark.asyncio
@@ -211,6 +234,25 @@ async def test_card_read_is_followed_by_operation_call(context, monkeypatch):
     monkeypatch.setattr(nova, "execute_tool", execute)
     await nova_runtime.chat("锁定尾号8842的卡", [], model=ReadThenOperate(), context=context)
     assert seen == ["list_cards", "preview_card_operation"]
+
+
+@pytest.mark.asyncio
+async def test_model_can_cancel_existing_card_task_without_opening_another_form(context):
+    context.db.add(NovaSessionORM(session_id=context.session_id, user_id=context.user_id,
+        version=0, state={'card_operations': [{
+            'entry_id': 'pending-card', 'origin_request_id': 'earlier-request',
+            'action': 'card_lock', 'card_id': None, 'prefill': {},
+            'notice': None, 'operation_id': None, 'closed': False,
+        }]}))
+    await context.db.commit()
+    model = FakeModel(True, ['preview_card_operation'], [
+        nova_runtime.PlannedCall(name='preview_card_operation',
+                                 arguments={'task_action': 'cancel', 'task_entry_id': 'pending-card'})])
+    result = await nova_runtime.chat('取消刚才的银行卡操作任务', [], model=model, context=context)
+    calls = [item for item in result['tool_calls'] if item['name'] == 'preview_card_operation']
+    assert len(calls) == 1 and calls[0]['result']['data']['task_cancelled']
+    assert not any(item['name'] == 'list_cards' for item in result['tool_calls'])
+    assert (await nova_runtime.inspect_active_tasks(context))['unfinished_execute_tasks'] == []
 
 
 @pytest.mark.asyncio

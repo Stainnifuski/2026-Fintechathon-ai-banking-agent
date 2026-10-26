@@ -165,6 +165,12 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
                 return SimpleNamespace(data=schema(tool_names=['get_shop_order']))
             return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
                 name='get_shop_order', arguments={})]))
+        async def generate_text(self, **kwargs):
+            from types import SimpleNamespace
+            reply = '该订单正在等待付款。'
+            if kwargs.get('on_delta'):
+                await kwargs['on_delta'](reply)
+            return SimpleNamespace(data=reply)
     monkeypatch.setenv('LLM_MODE', 'model')
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
     model = ReadModel()
@@ -183,7 +189,7 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
             assert result.status_code == 200 and '等待付款' in result.json()['reply']
             assert seen == [nova_runtime.DependencyDecision, nova_runtime.ToolSelection,
                             nova_runtime.ToolPlan]
-            assert result.json()['grounding']['status'] == 'grounded'
+            assert 'grounding' not in result.json()
             for bad in ({'shop': 'other'}, {'shop': 'cake', 'user_id': 'U2'}, {'shop': 'cake', 'selected': {'type': 'order', 'id': 'x', 'quantity': 2}}):
                 assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'thirdParty', 'shop': bad}})).status_code == 422
             assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'home', 'shop': shop}})).status_code == 422

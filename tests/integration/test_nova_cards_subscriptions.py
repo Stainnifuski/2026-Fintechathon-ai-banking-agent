@@ -290,6 +290,78 @@ async def test_card_form_defaults_to_transaction_limits_when_action_is_omitted(d
 
 
 @pytest.mark.asyncio
+async def test_agent_can_cancel_the_only_unfinished_card_task(db):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db), session_id=session_id, request_id='REQ-cancel-card')
+    opened = await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_lock', 'card_id': 'C1'}), ctx)
+    assert opened['data']['form_opened']
+    cancelled = await nova.execute_tool(call('preview_card_operation', {'task_action': 'cancel'}), ctx)
+    assert cancelled['data']['task_cancelled'] and cancelled['data']['remaining_task_count'] == 0
+    assert (await get_session(db, 'U1', session_id))['card_operations'] == []
+    assert (await db.get(CardORM, 'C1')).status == 'ACTIVE'
+    assert await db.scalar(select(func.count()).select_from(CardOperationORM)) == 0
+
+
+@pytest.mark.asyncio
+async def test_cancel_card_task_requires_unique_pending_target(db):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db), session_id=session_id, request_id='REQ-cancel-multiple')
+    first = await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_lock', 'card_id': 'C1'}), ctx)
+    await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_unlock', 'card_id': 'C2'}), ctx)
+    assert (await nova.execute_tool(call('preview_card_operation', {
+        'task_action': 'cancel'}), ctx))['error'] == 'CARD_TASK_AMBIGUOUS'
+    assert (await nova.execute_tool(call('preview_card_operation', {
+        'task_action': 'cancel', 'task_entry_id': first['data']['entry_id']}),
+        replace(ctx, user_id='U2')))['error'] == 'SESSION_NOT_FOUND'
+    cancelled = await nova.execute_tool(call('preview_card_operation', {
+        'task_action': 'cancel', 'task_entry_id': first['data']['entry_id']}), ctx)
+    assert cancelled['data']['task_cancelled']
+    assert len((await get_session(db, 'U1', session_id))['card_operations']) == 1
+    assert (await nova.execute_tool(call('preview_card_operation', {
+        'task_action': 'cancel', 'task_entry_id': first['data']['entry_id']}), ctx))['error'] == 'CARD_TASK_NOT_FOUND'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('via', ['ui', 'agent'])
+async def test_card_task_can_be_cancelled_after_confirmation_while_mfa_is_pending(client, db, via):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db), session_id=session_id, request_id='REQ-cancel-mfa')
+    opened = await nova.execute_tool(call('preview_card_operation', {
+        'action': 'card_report_lost', 'card_id': 'C1'}), ctx)
+    preview = (await client.post('/api/v1/cards/operations', headers=headers(), json={
+        'operation_id': 'chat-cancel-mfa-op', 'action': 'card_report_lost', 'card_id': 'C1'})).json()
+    entry_id = opened['data']['entry_id']
+    linked = await client.post(
+        f'/api/v1/nova/task-sessions/{session_id}/card-tasks/{entry_id}/operation',
+        headers=headers(), json={'operation_id': preview['operation_id']})
+    assert linked.status_code == 200
+    operation = linked.json()['card_operations'][0]['operation']
+    confirmed = await client.post(f"/api/v1/cards/operations/{operation['operation_id']}/confirm",
+                                  headers=headers(), json={'digest': operation['digest']})
+    assert confirmed.json()['status'] == 'AWAITING_MFA'
+    if via == 'ui':
+        dismissed = await client.post(
+            f'/api/v1/nova/task-sessions/{session_id}/card-tasks/{entry_id}/dismiss', headers=headers())
+        assert dismissed.status_code == 200 and dismissed.json()['card_operations'] == []
+    else:
+        cancelled = await nova.execute_tool(call('preview_card_operation', {
+            'task_action': 'cancel', 'task_entry_id': entry_id}), ctx)
+        assert cancelled['data']['task_cancelled']
+    assert (await db.get(CardOperationORM, operation['operation_id'], populate_existing=True)).status == 'CANCELLED'
+    assert (await get_session(db, 'U1', session_id))['card_operations'] == []
+    assert (await db.get(CardORM, 'C1', populate_existing=True)).status == 'ACTIVE'
+
+
+@pytest.mark.asyncio
 async def test_card_tool_reuses_one_unfinished_task_per_card(client, db):
     from backend.app.services.ai.transfer_manager import get_session
     from backend.app.services.bank import nova_conversations
