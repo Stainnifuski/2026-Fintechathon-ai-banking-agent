@@ -74,7 +74,7 @@ _CAPABILITIES = (
             {"tool": "get_subscription_insights", "description": "订阅计划金额与实际扣费的核对"},
         ],
         "operations": [
-            {"tool": "request_subscription_cancellation", "description": "打开取消订阅任务卡并选择要取消的订阅"},
+            {"tool": "manage_subscription_task", "description": "按订阅名称打开取消订阅任务卡，或关闭当前会话中未完成的订阅任务"},
         ],
     },
     {

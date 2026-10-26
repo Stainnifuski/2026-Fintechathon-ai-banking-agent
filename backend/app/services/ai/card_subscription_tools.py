@@ -84,6 +84,17 @@ class SubscriptionCancelArguments(SubscriptionArguments):
     pass
 
 
+class ManageSubscriptionTaskArguments(StrictModel):
+    action: Literal['open', 'cancel'] = Field(
+        description='open 打开取消订阅任务卡；cancel 关闭当前会话中尚未完成的取消订阅任务卡。')
+    merchant_name: str | None = Field(default=None, min_length=1, max_length=128,
+        description='订阅的商户名称；需与 list_subscriptions 返回的 merchant_name 一致。')
+    subscription_id: str | None = Field(default=None, min_length=1, max_length=40,
+        description='订阅内部 ID，可从 list_subscriptions 取得；有名称且唯一时可省略。')
+    task_entry_id: str | None = Field(default=None, min_length=1, max_length=64,
+        description='cancel 时可填写未完成取消订阅任务的 entry_id；当前只有一项时可省略。')
+
+
 def masked(value):
     return '****' + re.sub(r'\D', '', value)[-4:]
 
@@ -501,9 +512,11 @@ async def _owned_subscription(context_or_db, user_id: str, subscription_id: str)
     return SubscriptionView.model_validate(row).model_dump(mode='json') if row else None
 
 
-async def request_subscription_cancellation(arguments, context):
+async def request_subscription_cancellation(arguments, context, *, use_page_selection: bool = True,
+                                            merchant_name_hint: str | None = None):
     """在聊天中显示取消订阅任务卡；确认凭证只发给本人页面，取消须本人在任务卡中确认。"""
-    key = arguments.subscription_id or (context.page.subscriptions.selected_subscription_id if context.page.subscriptions else None)
+    key = arguments.subscription_id or (context.page.subscriptions.selected_subscription_id
+                                        if use_page_selection and context.page.subscriptions else None)
     subscription = None
     if key is not None:
         subscription = await _owned_subscription(context.db, context.user_id, key)
@@ -511,23 +524,100 @@ async def request_subscription_cancellation(arguments, context):
             raise BankError('订阅不存在', 'SUBSCRIPTION_NOT_FOUND', 404)
         if subscription['status'] != 'ACTIVE':
             return dict(error='SUBSCRIPTION_NOT_ACTIVE', message='该订阅已取消，无需再次取消。')
+    entry_id, reused = None, False
     if context.session_id and context.request_id:
         row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
         state = json.loads(json.dumps(row.state or {}))
-        entries = [item for item in _subscription_entries(state)
-                   if item['closed'] or key is None or item.get('subscription_id') != key]
-        entries.append({'entry_id': uuid4().hex, 'origin_request_id': context.request_id,
-                        'subscription_id': key, 'closed': False})
+        entries = _subscription_entries(state)
+        existing = next((item for item in reversed(entries) if not item['closed'] and
+                         item.get('subscription_id') == key and
+                         item.get('merchant_name_hint') == (merchant_name_hint if key is None else None)), None)
+        if existing:
+            entry_id, reused = existing['entry_id'], True
+        else:
+            entry_id = uuid4().hex
+            entries.append({'entry_id': entry_id, 'origin_request_id': context.request_id,
+                            'subscription_id': key, 'merchant_name_hint': merchant_name_hint if key is None else None,
+                            'closed': False})
         state['subscription_tasks'] = entries[-MAX_CHAT_CARD_OPERATIONS:]
         row.state = state
         await context.db.commit()
     data = dict(executed=False, form_opened=subscription is None,
+                entry_id=entry_id, task_updated=reused,
                 next_step='尚未取消。请在聊天中的取消订阅任务卡' + ('选择要取消的订阅，' if subscription is None else '')
                           + '查看取消详情并由本人确认；NOVA 不能代为确认。')
     if subscription:
         data.update({k: subscription[k] for k in ('subscription_id', 'merchant_name', 'amount_fen', 'currency',
                                                    'billing_cycle', 'next_charge_at', 'status')})
     return envelope('subscriptions.cancel_request', data)
+
+
+async def manage_subscription_task(arguments, context):
+    """模型只管理取消订阅任务卡；订阅取消仍由本人在 UI 中确认。"""
+    if arguments.action == 'open':
+        if arguments.task_entry_id:
+            return dict(error='INVALID_ARGUMENTS', message='打开订阅任务时无需填写 task_entry_id。')
+        key = arguments.subscription_id
+        if arguments.merchant_name:
+            matching = [row for row in await subscription_rows(context)
+                        if row['merchant_name'].casefold() == arguments.merchant_name.casefold()]
+            if not matching:
+                return dict(error='SUBSCRIPTION_NOT_FOUND', message='没有找到该名称的本人订阅，请先查询订阅列表。')
+            active = [row for row in matching if row['status'] == 'ACTIVE']
+            if not active:
+                return dict(error='SUBSCRIPTION_NOT_ACTIVE', message='该名称的订阅均已取消。')
+            if key and key not in {row['subscription_id'] for row in active}:
+                return dict(error='SUBSCRIPTION_TARGET_MISMATCH', message='订阅名称与内部 ID 不属于同一项生效订阅。')
+            if not key and len(active) == 1:
+                key = active[0]['subscription_id']
+            # 同名多项时拉起选择任务卡，由本人在 UI 中选具体订阅。
+        result = await request_subscription_cancellation(
+            SubscriptionCancelArguments(subscription_id=key), context,
+            use_page_selection=arguments.merchant_name is None,
+            merchant_name_hint=arguments.merchant_name if not key else None)
+        if arguments.merchant_name and not key and not result.get('error'):
+            result['data']['name_ambiguous'] = True
+            result['data']['next_step'] = '该名称对应多项生效订阅。请在聊天中的任务卡选择具体订阅，再由本人查看详情并确认。'
+        return result
+
+    if not context.session_id:
+        return dict(error='SUBSCRIPTION_TASK_SESSION_REQUIRED', message='取消订阅任务需要当前会话。')
+    row = await _owned_session(context.db, context.user_id, context.session_id)
+    entries = _subscription_entries((row.state or {}) if row else {})
+    pending = []
+    for entry in entries:
+        if entry['closed']:
+            continue
+        subscription = await _owned_subscription(context.db, context.user_id, entry['subscription_id']) if entry.get('subscription_id') else None
+        if subscription and subscription['status'] != 'ACTIVE':
+            continue
+        pending.append((entry, subscription))
+    if arguments.task_entry_id:
+        pending = [item for item in pending if item[0]['entry_id'] == arguments.task_entry_id]
+    if arguments.subscription_id:
+        pending = [item for item in pending if item[0].get('subscription_id') == arguments.subscription_id]
+    if arguments.merchant_name:
+        pending = [item for item in pending if
+                   (item[1]['merchant_name'] if item[1] else item[0].get('merchant_name_hint') or '').casefold()
+                   == arguments.merchant_name.casefold()]
+    if not any((arguments.task_entry_id, arguments.subscription_id, arguments.merchant_name)) and context.focus_task_id:
+        focused = [item for item in pending if item[0]['entry_id'] == context.focus_task_id]
+        if focused:
+            pending = focused
+    if not pending:
+        return dict(error='SUBSCRIPTION_TASK_NOT_FOUND', message='当前会话没有匹配的未完成取消订阅任务。')
+    if len(pending) != 1:
+        return dict(error='SUBSCRIPTION_TASK_AMBIGUOUS', message='有多项未完成取消订阅任务，请指定任务或订阅名称。')
+    entry, subscription = pending[0]
+    remaining = await update_chat_subscription_task(
+        context.db, user_id=context.user_id, session_id=context.session_id,
+        entry_id=entry['entry_id'], close=True)
+    return envelope('subscriptions.task_cancel', dict(
+        task_cancelled=True, subscription_cancelled=False,
+        entry_id=entry['entry_id'], subscription_id=entry.get('subscription_id'),
+        merchant_name=subscription['merchant_name'] if subscription else entry.get('merchant_name_hint'),
+        remaining_task_count=len(remaining),
+        message='取消订阅任务卡已关闭；订阅本身没有被取消。'))
 
 
 async def chat_subscription_tasks(db, user_id: str, state: dict) -> list[dict]:
@@ -537,7 +627,8 @@ async def chat_subscription_tasks(db, user_id: str, state: dict) -> list[dict]:
             continue
         subscription = await _owned_subscription(db, user_id, entry['subscription_id']) if entry.get('subscription_id') else None
         views.append({'entry_id': entry['entry_id'], 'origin_request_id': entry['origin_request_id'],
-                      'subscription_id': entry.get('subscription_id'), 'subscription': subscription})
+                      'subscription_id': entry.get('subscription_id'), 'subscription': subscription,
+                      'merchant_name_hint': entry.get('merchant_name_hint')})
     return views
 
 
@@ -580,6 +671,8 @@ def card_subscription_tools():
          '取消未完成的卡片操作任务时，传 task_action=cancel，并用 task_entry_id 或 card_id 指定任务；当前会话只有一项未完成卡片任务时可省略目标。取消会撤销未完成预览并关闭任务卡，不会修改银行卡设置。'
          '本人在任务卡中生成预览、确认，必要时完成验证码验证。NOVA 不能代为确认或验证。'),
         ('request_subscription_cancellation', SubscriptionCancelArguments, request_subscription_cancellation, '用户要取消本人订阅时调用：在聊天中显示取消订阅任务卡，不会取消。省略 subscription_id 沿用 subscriptions.selected_subscription_id；按商户名先 list_subscriptions 定位，多个匹配先询问；用户没说是哪一项时不传，任务卡中会列出生效订阅供选择。已取消的订阅不能再取消。返回 executed=false：用户须在任务卡中查看取消详情并本人确认；NOVA 不能代为确认。'),
+        ('manage_subscription_task', ManageSubscriptionTaskArguments, manage_subscription_task,
+         '执行类型工具：管理当前会话的取消订阅任务卡。action=open 时可传订阅商户名称 merchant_name（与 list_subscriptions 返回的名称一致）或 subscription_id，打开待本人确认的任务卡；同名多项时拉起选择界面。action=cancel 时传 task_entry_id、subscription_id 或 merchant_name 定位并关闭未完成任务；只有一项未完成任务时可省略目标。关闭任务不会取消订阅；订阅取消只能由本人在 UI 查看详情后确认。'),
         ('list_subscriptions', SubscriptionListArguments, list_subscriptions, '分页查询本人订阅，可筛选 ACTIVE/CANCELLED 和商户 keyword。summary 是筛选后所有分页的生效订阅每月预计支出，仅 MONTHLY/CNY，非实际扣款。实际扣费请查询账单流水。'),
         ('get_subscription', SubscriptionArguments, get_subscription, '查询本人订阅详情：商户、周期金额、扣费账户、状态、计划下次扣费、取消时间及识别来源流水。省略 subscription_id 沿用 subscriptions.selected_subscription_id；按商户名先 list_subscriptions，多匹配先询问。不取消、不扣费。'),
     ]

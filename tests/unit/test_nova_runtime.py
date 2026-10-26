@@ -204,6 +204,37 @@ async def test_card_operation_is_injected_as_execute_tool(context, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_subscription_operation_is_injected_and_recorded_as_execute_task(context, monkeypatch):
+    async def bank(*args):
+        raise nova_runtime.ManagerError('missing', 'SESSION_NOT_FOUND')
+
+    async def execute(call, tool_context):
+        assert call['function']['name'] == 'manage_subscription_task'
+        assert call['function']['arguments'] == '{"action": "open", "merchant_name": "音乐会员"}'
+        tool_context.db.add(NovaSessionORM(session_id=tool_context.session_id,
+            user_id=tool_context.user_id, version=0, state={'subscription_tasks': [{
+                'entry_id': 'sub-entry-1', 'origin_request_id': tool_context.request_id,
+                'subscription_id': None, 'closed': False,
+            }]}))
+        await tool_context.db.commit()
+        return {'source': 'subscriptions.cancel_request', 'data': {'form_opened': True, 'executed': False}}
+
+    monkeypatch.setattr(nova_runtime, 'get_session', bank)
+    monkeypatch.setattr(nova, 'execute_tool', execute)
+    model = FakeModel(False, ['manage_subscription_task'], [
+        nova_runtime.PlannedCall(name='manage_subscription_task',
+                                 arguments={'action': 'open', 'merchant_name': '音乐会员'})])
+    result = await nova_runtime.chat('取消音乐会员订阅', [], model=model, context=context)
+    assert 'manage_subscription_task' in nova_runtime._phase_tools(nova.TOOL_REGISTRY)
+    assert any(item['name'] == 'manage_subscription_task' and not item['result'].get('error')
+               for item in result['tool_calls'])
+    finish = result['tool_calls'][-1]['result']
+    assert finish['target_execute_task_ids'] == ['sub-entry-1']
+    assert finish['outcome'] == 'waiting_user'
+    assert (await nova_runtime.inspect_active_tasks(context))['unfinished_execute_tasks'][0]['type'] == 'subscription'
+
+
+@pytest.mark.asyncio
 async def test_card_read_is_followed_by_operation_call(context, monkeypatch):
     async def bank(*args):
         raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")

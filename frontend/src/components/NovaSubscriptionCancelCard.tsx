@@ -30,10 +30,12 @@ export default function NovaSubscriptionCancelCard({ task, sessionId, disabled, 
   useEffect(() => {
     if (task.subscription_id) return;
     let live = true;
-    bank.listSubscriptions().then(items => { if (live) setChoices(items.filter(item => item.status === 'ACTIVE')); })
+    bank.listSubscriptions().then(items => { if (live) setChoices(items.filter(item =>
+      item.status === 'ACTIVE' && (!task.merchant_name_hint ||
+        item.merchant_name.toLocaleLowerCase() === task.merchant_name_hint.toLocaleLowerCase()))); })
       .catch(err => { if (live) setError(errorText(err)); });
     return () => { live = false; };
-  }, [task.entry_id, task.subscription_id]);
+  }, [task.entry_id, task.subscription_id, task.merchant_name_hint]);
 
   const act = async (step: () => Promise<void>) => {
     if (busy || disabled) return;
@@ -67,7 +69,7 @@ export default function NovaSubscriptionCancelCard({ task, sessionId, disabled, 
         {choices.map(item => <option key={item.subscription_id} value={item.subscription_id}>{item.merchant_name} · {amountText(item)}</option>)}
       </select></label>
       <div className="nova-transfer-actions">
-        <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>不办理</button>
+        <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>取消任务</button>
         <button type="submit" disabled={off || !choice}>下一步</button>
       </div>
     </form>}
@@ -85,8 +87,9 @@ export default function NovaSubscriptionCancelCard({ task, sessionId, disabled, 
         <small className="hint">以上信息由银行返回；确认有效期至（北京时间）{beijingTime(preview.expires_at)}。NOVA 不能代为确认。</small>
       </div>}
       {!cancelled && <div className="nova-transfer-actions">
-        {!preview && <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>不取消</button>}
-        {preview && <button type="button" className="secondary" disabled={off} onClick={() => setPreview(null)}>返回</button>}
+        {!preview && <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>取消任务</button>}
+        {preview && <><button type="button" className="secondary" disabled={off} onClick={() => setPreview(null)}>返回</button>
+          <button type="button" className="secondary" disabled={off} onClick={() => void dismiss()}>取消任务</button></>}
         {!preview ? <button type="button" disabled={off} onClick={() => void review()}>{busy ? '正在读取…' : '查看取消详情'}</button>
           : <button type="button" disabled={off} onClick={() => void confirm()}>{busy ? '正在取消…' : '确认取消订阅'}</button>}
       </div>}

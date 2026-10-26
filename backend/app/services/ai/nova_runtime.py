@@ -58,7 +58,8 @@ def _phase_tools(registry: dict) -> set[str]:
     reads = {entry["tool"] for business in catalog["businesses"]
              for entry in business["queries"]}
     reads.discard("manage_wealth_request")  # mixed read/write tool
-    return (reads | {"manage_transfer_task", "manage_collection_request", "preview_card_operation"}) & set(registry)
+    return (reads | {"manage_transfer_task", "manage_collection_request",
+                     "preview_card_operation", "manage_subscription_task"}) & set(registry)
 
 
 def _task_description(task: dict) -> dict:
@@ -113,6 +114,29 @@ async def _card_records(context: ToolContext) -> list[dict]:
     return records
 
 
+async def _subscription_records(context: ToolContext) -> list[dict]:
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    if row is None:
+        return []
+    if row.user_id != context.user_id:
+        raise ValueError("CONVERSATION_OWNER_MISMATCH")
+    entries = (row.state or {}).get('subscription_tasks', [])
+    if not entries:
+        return []
+    from .card_subscription_tools import subscription_rows
+    subscriptions = {item['subscription_id']: item for item in await subscription_rows(context)}
+    records = []
+    for entry in entries:
+        subscription = subscriptions.get(entry.get('subscription_id'))
+        status = subscription['status'] if subscription else 'FORM'
+        records.append({'id': entry['entry_id'], 'type': 'subscription', 'status': status,
+                        'completed': bool(entry.get('closed')) or status == 'CANCELLED',
+                        'description': {'subscription_id': entry.get('subscription_id'),
+                                        'merchant_name': subscription['merchant_name'] if subscription else
+                                                         entry.get('merchant_name_hint')}})
+    return records
+
+
 async def _load(context: ToolContext) -> tuple[NovaAgentRuntimeORM | None, dict]:
     row = await context.db.get(NovaAgentRuntimeORM, context.session_id)
     if row and row.user_id != context.user_id:
@@ -138,6 +162,8 @@ async def inspect_active_tasks(context: ToolContext) -> dict:
                  for card in await _collection_records(context) if not card["completed"])
     tasks.extend({key: card[key] for key in ("id", "type", "status", "description")}
                  for card in await _card_records(context) if not card["completed"])
+    tasks.extend({key: task[key] for key in ("id", "type", "status", "description")}
+                 for task in await _subscription_records(context) if not task["completed"])
     ids = {t["id"] for t in tasks}
     return {"unfinished_execute_tasks": tasks,
             "target_execute_task_ids": [t for t in state.get("target_execute_task_ids", []) if t in ids]}
@@ -168,6 +194,7 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
                           "description": _task_description(task)})
     new_tasks.extend(await _collection_records(context))
     new_tasks.extend(await _card_records(context))
+    new_tasks.extend(await _subscription_records(context))
     new_ids = {t["id"] for t in new_tasks if t["id"] not in previous and not t["completed"]}
     unfinished = {t["id"] for t in new_tasks if not t["completed"]}
     # A read-only or failed turn retains target. New cards in this turn become
@@ -176,7 +203,8 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
               [t for t in state.get("target_execute_task_ids", []) if t in unfinished])
     reads = list(state.get("read_tasks", []))
     from .nova import TOOL_REGISTRY
-    execute_names = {"manage_transfer_task", "manage_collection_request", "preview_card_operation"}
+    execute_names = {"manage_transfer_task", "manage_collection_request",
+                     "preview_card_operation", "manage_subscription_task"}
     read_names = _phase_tools(TOOL_REGISTRY) - execute_names
     for item in trace:
         if item.get("name") in read_names:
@@ -231,7 +259,7 @@ async def chat(message: str, history: list[dict], *, model=None,
     try:
         async with asyncio.timeout(90):
             decision = (await client.generate_structured(messages=[
-                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款或卡片操作任务卡；只输出结构化判断。"}],
+                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款、银行卡或订阅操作任务卡；只输出结构化判断。"}],
                 schema=DependencyDecision, max_tokens=300)).data
             debug_trace.record("dependency_decision", decision.model_dump(mode="json"))
             if decision.depends_on_prior_task:
@@ -248,6 +276,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             transfer_call_index = 0
             collection_skill_loaded = False
             card_skill_loaded = False
+            subscription_skill_loaded = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
                     {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。可选：" + json.dumps(sorted(allowed))}],
@@ -267,6 +296,9 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if "preview_card_operation" in selected and not card_skill_loaded:
                     messages.append({"role": "system", "content": "卡片业务规则：" + load_skill("card")})
                     card_skill_loaded = True
+                if "manage_subscription_task" in selected and not subscription_skill_loaded:
+                    messages.append({"role": "system", "content": "订阅业务规则：" + load_skill("subscription")})
+                    subscription_skill_loaded = True
                 trace.append({"name": "inject_agent_tools", "result": {"tool_names": sorted(selected)}})
                 debug_trace.record("tool_injection", {"tool_names": sorted(selected), "rejected": invalid})
                 schemas = [TOOL_REGISTRY[n]["schema"] for n in sorted(selected)]
@@ -348,8 +380,9 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if not failed:
                     # An execute tool may depend on a bank read made in this turn.
                     # Replan with that result before opening the task card.
-                    if (selected & {"manage_transfer_task", "preview_card_operation"}
-                            and not any(call.name in {"manage_transfer_task", "preview_card_operation"}
+                    if (selected & {"manage_transfer_task", "preview_card_operation", "manage_subscription_task"}
+                            and not any(call.name in {"manage_transfer_task", "preview_card_operation",
+                                                       "manage_subscription_task"}
                                         for call in calls)
                             and any(call.name != "describe_bank_capabilities" for call in calls)):
                         continue

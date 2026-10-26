@@ -43,6 +43,7 @@ export type NovaChatCalendarTask = {
 /** 聊天中的取消订阅任务：确认凭证只由本人页面向订阅接口获取。 */
 export type NovaChatSubscriptionTask = {
   entry_id: string; origin_request_id: string; subscription_id?: string | null; subscription?: Subscription | null;
+  merchant_name_hint?: string | null;
 };
 /** 聊天中的卡片任务：未生成预览时是可编辑表单，生成后由本人确认/验证。 */
 export type NovaChatCardTask = {

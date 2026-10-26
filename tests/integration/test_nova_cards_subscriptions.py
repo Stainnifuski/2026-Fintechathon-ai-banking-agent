@@ -529,6 +529,72 @@ async def test_subscription_cancellation_is_a_chat_task_the_agent_cannot_confirm
 
 
 @pytest.mark.asyncio
+async def test_manage_subscription_task_opens_by_name_and_cancels_pending_task(db):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.ai.nova_runtime import inspect_active_tasks, llm_finish_tool
+    from backend.app.services.bank import nova_conversations
+    await seed_subscriptions(db)
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db), session_id=session_id, request_id='REQ-manage-sub')
+    opened = await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'open', 'merchant_name': '云盘会员'}), ctx)
+    assert opened['data']['subscription_id'] == 'S4'
+    assert opened['data']['executed'] is False
+    repeated = await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'open', 'merchant_name': '云盘会员'}), replace(ctx, request_id='REQ-manage-sub-repeat'))
+    assert repeated['data']['entry_id'] == opened['data']['entry_id']
+    assert repeated['data']['task_updated']
+    tasks = (await get_session(db, 'U1', session_id))['subscription_tasks']
+    assert len(tasks) == 1 and tasks[0]['subscription']['merchant_name'] == '云盘会员'
+    active = await inspect_active_tasks(ctx)
+    assert active['unfinished_execute_tasks'][0]['type'] == 'subscription'
+    finish = await llm_finish_tool(ctx, [{'name': 'manage_subscription_task', 'result': opened}])
+    assert finish['target_execute_task_ids'] == [tasks[0]['entry_id']]
+
+    cancelled = await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'cancel', 'merchant_name': '云盘会员'}), ctx)
+    assert cancelled['data']['task_cancelled'] and cancelled['data']['subscription_cancelled'] is False
+    assert (await get_session(db, 'U1', session_id))['subscription_tasks'] == []
+    assert (await db.get(SubscriptionORM, 'S4', populate_existing=True)).status == 'ACTIVE'
+    assert (await inspect_active_tasks(ctx))['unfinished_execute_tasks'] == []
+    closed = await llm_finish_tool(ctx, [{'name': 'manage_subscription_task', 'result': cancelled}])
+    assert closed['target_execute_task_ids'] == [] and closed['outcome'] == 'completed'
+
+
+@pytest.mark.asyncio
+async def test_manage_subscription_task_handles_duplicate_names_and_target_selection(db):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+    await seed_subscriptions(db)
+    (await db.get(SubscriptionORM, 'S4')).merchant_name = '音乐会员'
+    await db.commit()
+    session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+    ctx = replace(context(db), session_id=session_id, request_id='REQ-duplicate-sub')
+    picker = await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'open', 'merchant_name': '音乐会员'}), ctx)
+    assert picker['data']['form_opened'] and picker['data']['name_ambiguous']
+    pending = (await get_session(db, 'U1', session_id))['subscription_tasks'][0]
+    assert pending['subscription'] is None and pending['merchant_name_hint'] == '音乐会员'
+    assert (await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'open', 'merchant_name': '音乐会员', 'subscription_id': 'S3'}), ctx))['error'] == 'SUBSCRIPTION_TARGET_MISMATCH'
+    assert (await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'open', 'merchant_name': '不存在的订阅'}), ctx))['error'] == 'SUBSCRIPTION_NOT_FOUND'
+
+    await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'open', 'subscription_id': 'S1'}), ctx)
+    assert (await nova.execute_tool(call('manage_subscription_task', {'action': 'cancel'}), ctx))['error'] == 'SUBSCRIPTION_TASK_AMBIGUOUS'
+    task = next(item for item in (await get_session(db, 'U1', session_id))['subscription_tasks']
+                if item['subscription_id'] == 'S1')
+    assert (await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'cancel', 'task_entry_id': task['entry_id']}),
+        replace(ctx, user_id='U2')))['error'] == 'SESSION_NOT_FOUND'
+    cancelled = await nova.execute_tool(call('manage_subscription_task', {
+        'action': 'cancel', 'task_entry_id': task['entry_id']}), ctx)
+    assert cancelled['data']['task_cancelled']
+    assert len((await get_session(db, 'U1', session_id))['subscription_tasks']) == 1
+
+
+@pytest.mark.asyncio
 async def test_channel_preview_text_shows_on_off(db):
     from backend.app.services.ai.grounding import evidence_for
     ctx = context(db, 'cards', cards=CardContext(selected_card_id='C1'))
