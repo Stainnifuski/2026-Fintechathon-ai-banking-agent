@@ -155,13 +155,6 @@ async def manipulate_calendar_event(arguments: ManipulateCalendarArguments, cont
                       item.get('origin_request_id') == context.request_id and item.get('action') == arguments.action)), None)
     if arguments.task_entry_id and (existing is None or existing.get('action') != arguments.action):
         return {'error': 'CALENDAR_TASK_NOT_FOUND', 'message': '未找到可续接的日程任务卡'}
-    if not existing and not arguments.task_entry_id and not context.task_switch_approved and not context.execution_step:
-        from .task_flow import active, propose
-        current = await active(context)
-        if current and current.get('entry') and current['type'] == 'calendar' and current.get('request_id') != context.request_id:
-            pending = await propose(context, '新的日程操作')
-            if pending:
-                return pending
     if existing:
         if arguments.action != 'add':
             return {'error': 'CALENDAR_TASK_ACTION_UNSUPPORTED', 'message': '此日程任务暂不能通过聊天续接'}

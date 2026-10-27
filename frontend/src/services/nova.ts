@@ -88,7 +88,6 @@ export async function getNovaConversation(sessionId: string): Promise<NovaConver
   return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
 }
 export type NovaReply = {
-  task_switch?: NovaTaskSwitch | null;
   execution_queue?: NovaExecutionQueue | null;
   grounding?: {
     version: string;
@@ -176,7 +175,6 @@ export const sendNovaCollection = (sessionId: string, collectionId: string, payl
 
 export type NovaTaskRequest = {
   debug?: boolean;
-  task_switch_token?:string;accept_task_switch?:boolean;
   request_id: string; session_id?: string; session_version?: number;
   focus_task_id?: string; candidate_id?: string; wealth_task_id?:string; wealth_stage?:string;
 };
@@ -208,8 +206,6 @@ export async function downloadNovaDebug(requestId: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export type NovaTaskSwitch={token:string;current_label:string;target_label:string};
-export const getNovaTaskSwitch=(session:string)=>apiClient.get<NovaTaskSwitch|null>(`/nova/task-flow/${session}`).then(r=>r.data);
 
 export async function getNovaTaskSession(sessionId: string) {
   return apiClient.get<NovaTaskSession>(`/nova/task-sessions/${sessionId}`).then(r => r.data);
@@ -242,6 +238,7 @@ export async function askNova(message: string, signal: AbortSignal, pageContext:
 
 export type NovaStreamEvent =
   | { type: 'tool'; name: string }
+  | { type: 'status'; text: string }
   | { type: 'delta'; text: string }
   | { type: 'reset' };
 

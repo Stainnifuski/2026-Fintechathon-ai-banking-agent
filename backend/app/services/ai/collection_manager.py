@@ -196,11 +196,6 @@ async def create_collection_draft(context, *, decision: ManageCollectionRequestA
                   if card.get("status") == "DRAFT" and not card.get('agent_released')]
     contacts = await _contacts(context.db, context.user_id)
     rejected = rejected or []
-    if decision.action == 'create' and open_cards and not context.execution_step and not context.task_switch_approved:
-        from .task_flow import propose
-        pending = await propose(context, '新的收款')
-        if pending:
-            return pending
     if decision.action == "not_collection":
         raise CollectionError("这不是向别人发起收款的请求", "COLLECTION_INTENT_REQUIRED", 422)
     if decision.action == "clarify":

@@ -23,6 +23,7 @@ GROUPS = {'transfer': ('tasks', 'chat_task_id', '转账', 'transfer'),
 TERMINAL = {'SUCCEEDED', 'CANCELLED', 'FAILED', 'COMPLETED', 'SENT', 'FINISHED',
             'SETTLED', 'completed', 'cancelled', 'expired', 'REJECTED', 'EXPIRED'}
 DRAFT_FIELDS = {'recipient','amount','phone','card','clearPhone','clearCard','payer','note',
+               'executionMode','scheduledAt',
                'selected','account','split','cardId','accountId','singleLimit','dailyLimit','creditLimit','channels',
                'shop','productId','quantity','title','day','start','end','endDay','location','description','allDay'}
 
@@ -34,8 +35,11 @@ def validate_draft(draft):
 
 async def save_draft(ctx,key,draft):
     validate_draft(draft)
-    if not any(item['key']==key and not item['finished'] and not item['released'] for item in await inventory(ctx)):
+    item=next((item for item in await inventory(ctx) if item['key']==key),None)
+    if item is None:
         raise chats.ConversationError('原任务已结束或已人工接管，未改动表单。',409)
+    if item['finished'] or item['released']:
+        return {'saved':False,'reason':'task_finished'}
     row,data=await task_flow.load(ctx)
     data.setdefault('input_drafts',{})[key]=draft
     await task_flow.save(ctx,row,data)
@@ -103,6 +107,8 @@ async def inventory(ctx):
                 label += ' · '+item['recipient']
             status = item.get('status') or operation.get('status') or operation.get('outcome')
             finished = status in TERMINAL or item.get('closed') or item.get('event') is not None
+            if kind == 'transfer' and operation.get('phase') == 'WAITING_EXECUTION' and operation.get('scheduled_at'):
+                finished = True
             if kind == 'subscription':
                 finished = finished or (item.get('subscription') or {}).get('status') == 'CANCELLED'
             if kind == 'shop':
@@ -118,6 +124,8 @@ async def inventory(ctx):
             if finished:
                 summary={'CANCELLED':'已取消','FAILED':'失败','REJECTED':'已拒绝','EXPIRED':'已过期',
                          'SENT':'已发送','cancelled':'已取消','expired':'已过期'}.get(status,summary)
+                if kind == 'transfer' and operation.get('phase') == 'WAITING_EXECUTION' and operation.get('scheduled_at'):
+                    summary='已预约'
                 if item.get('deleted'):summary='已删除'
                 if kind=='shop':summary={'PAYMENT_CLOSED':'付款已关闭','REFUNDED':'已退款'}.get((item.get('order') or {}).get('status'),summary)
             result.append({'key': key, 'type': kind, 'id': item[field], 'label': label,
@@ -158,11 +166,6 @@ async def inventory(ctx):
         if key not in known:
             result.append({**receipt, 'finished': True, 'released': receipt,
                            'position': data.get('positions', {}).get(key)})
-    active_items=[item for item in result if not item['finished'] and not item['released']]
-    if len(active_items)>1:
-        for item in active_items:
-            item['blocked']=True
-            item['summary']='存在多个历史未结束任务，请先结束或接管多余任务'
     return result
 
 

@@ -4,6 +4,7 @@ import * as bank from '../services/bank';
 import { cancelNovaTaskCard, getNovaTaskSession, NovaTaskSession, NovaTransferTask, saveNovaTaskForm } from '../services/nova';
 import { SecondFactor } from './SecondFactor';
 import { beijingInput, beijingTime, fromBeijingInput } from '../utils/time';
+import { cardTypeLabel } from '../utils/accountType';
 
 type Props = {
   manual?:boolean;
@@ -193,7 +194,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       <label>付款账户<select value={payer} disabled={disabled || busy || !canSave} onChange={event => setPayer(event.target.value)}>
         <option value="">自动选择可用账户</option>
         {accounts.map(account => <option key={account.account_id} value={account.account_id}>
-          {account.account_type} · 尾号 {account.card_number.slice(-4)}
+          {cardTypeLabel(account.account_type)} · 尾号 {account.card_number.slice(-4)}
         </option>)}
       </select></label>
       <label>备注（可选）<input value={note} maxLength={256} disabled={disabled || busy || !canSave}

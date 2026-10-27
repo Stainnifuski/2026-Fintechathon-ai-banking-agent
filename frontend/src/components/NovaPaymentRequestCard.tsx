@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as bank from '../services/bank';
 import { getNovaTaskSession, NovaPaymentRequestTask, NovaTaskSession } from '../services/nova';
 import { beijingTime } from '../utils/time';
+import { cardTypeLabel } from '../utils/accountType';
 import { SecondFactor } from './SecondFactor';
 
 type Props = {
@@ -140,7 +141,7 @@ export default function NovaPaymentRequestCard({ task, sessionId, accounts, disa
       onChange={event => setPayerAccount(event.target.value)}>
         <option value="">请选择付款账户</option>
         {accounts.map(account => <option key={account.account_id} value={account.account_id}>
-          {account.account_type} · 尾号 {account.card_number.slice(-4)}
+          {cardTypeLabel(account.account_type)} · 尾号 {account.card_number.slice(-4)}
         </option>)}
       </select></label>}
     <ul className="history">{task.requests.map(request => <li key={request.payment_request_id}>

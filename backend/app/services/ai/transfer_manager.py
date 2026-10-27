@@ -637,10 +637,6 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
             "skill_instructions": load_skill("transfer"),
         })
         task_decisions = list(turn.tasks)
-        if context and focus_task_id and any(d.task_action=='create' for d in task_decisions):
-            from .task_flow import propose
-            proposed=await propose(context,'新的转账')
-            if proposed:return proposed
         chunks = [message] * len(task_decisions)
         extracted = [
             await _extract(nlu, message, bool(pending), decision)

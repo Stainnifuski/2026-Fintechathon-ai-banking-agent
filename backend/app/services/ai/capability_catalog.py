@@ -137,3 +137,9 @@ def describe_capabilities(registered_tools: set[str]) -> dict:
                                "queries": queries, "operations": operations})
     return {"source": "bank_agent.capabilities", "data_kind": "service_catalog",
             "catalog_version": 2, "businesses": businesses}
+
+
+def visible_business_tools(catalog: dict) -> set[str]:
+    """Only user-facing business calls may appear in streamed progress."""
+    return {entry['tool'] for business in catalog['businesses']
+            for group in ('queries', 'operations') for entry in business[group]}

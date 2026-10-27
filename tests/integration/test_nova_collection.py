@@ -500,32 +500,38 @@ async def test_chat_can_set_aa_edit_fields_and_cancel_collection(db, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_new_collection_requires_switch_and_preserves_original_until_confirmed(db, monkeypatch):
+async def test_multiple_collection_drafts_remain_independently_editable(db, monkeypatch):
     ScriptedModel(monkeypatch, {
         "向小李收100元": {"action": "create", "payers": named("set", "小李"), "amount_fen": 10000},
         "向王五收200元": {"action": "create", "payers": named("set", "王五"), "amount_fen": 20000},
         "改成AA": {"action": "clarify", "clarify_reason": "target_draft"},
         "把小李那笔收款改成AA": lambda payload: {"action": "update", "split_equally": True,
-                                       "target_card_id": card_id(0)(payload)},
-        "撤销第二张收款": lambda payload: {"action": "cancel", "target_card_id": card_id(1)(payload)},
+                                       "target_card_id": payload["open_collection_cards"][0]["collection_id"]},
+        "撤销第二张收款": lambda payload: {"action": "cancel", "target_card_id": payload["open_collection_cards"][1]["collection_id"]},
         "向李四收300元": {"action": "create", "payers": named("set", "李四"), "amount_fen": 30000},
     })
     await add_contact(db,"C2","李四","13900000002","小李")
     async with client_for(db) as client:
         first=await say(client,"向小李收100元")
-        second=await say(client,"向王五收200元",first)
-        assert second["task_switch"]["token"]
         session=await db.get(NovaSessionORM,first['session_id'],populate_existing=True)
-        assert len(session.state['collection_cards'])==1
-        assert session.state['collection_cards'][0]['status']=='DRAFT'
-        response=await client.post('/api/v1/nova/chat',json={
-            'message':'确认切换操作','request_id':uuid4().hex,'session_id':first['session_id'],
-            'session_version':first['session_version'],
-            'task_switch_token':second['task_switch']['token'],'accept_task_switch':True})
-        assert response.status_code==200,response.text
-        cards=response.json()['collection_cards']
-        assert len(cards)==2
-        assert [card['status'] for card in cards]==['CANCELLED','DRAFT']
+        session.state={**session.state,'calendar_tasks':[{
+            'kind':'mutation','entry_id':'birthday-draft','origin_request_id':'birthday-request',
+            'action':'add','timezone':'Asia/Shanghai','filters':{},
+            'changes':{'title':'朋友生日','start_date':'2026-11-03','start_time':'12:00'},
+            'targets':[],'snapshots':{},'status':'PENDING','closed':False,
+        }]}
+        await db.commit()
+        second=await say(client,"向王五收200元",first)
+        assert not second.get("task_switch")
+        session=await db.get(NovaSessionORM,first['session_id'],populate_existing=True)
+        assert len(session.state['collection_cards'])==2
+        assert session.state['calendar_tasks'][0]['closed'] is False
+        assert [card['status'] for card in session.state['collection_cards']]==['DRAFT','DRAFT']
+        changed=await say(client,"把小李那笔收款改成AA",second)
+        assert changed['collection_cards'][0]['split_equally'] is True
+        assert changed['collection_cards'][1]['split_equally'] is False
+        cancelled=await say(client,"撤销第二张收款",changed)
+        assert [card['status'] for card in cancelled['collection_cards']]==['DRAFT','CANCELLED']
 
 
 @pytest.mark.asyncio

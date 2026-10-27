@@ -307,6 +307,85 @@ async def test_collection_tool_is_available_without_inspection_call(context, mon
 
 
 @pytest.mark.asyncio
+async def test_collection_create_opens_draft_after_contact_reads_exhaust_planning(context, monkeypatch):
+    async def bank(*args):
+        raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")
+
+    calls = []
+
+    async def execute(call, tool_context):
+        name = call["function"]["name"]
+        calls.append(name)
+        if name == "list_contacts":
+            return {"data": {"items": [{"name": "李四"}]}}
+        assert call["function"]["arguments"] == '{"action": "create"}'
+        tool_context.db.add(NovaSessionORM(session_id=tool_context.session_id,
+            user_id=tool_context.user_id, version=0, state={"collection_cards": [{
+                "collection_id": "collection-1", "status": "DRAFT",
+                "requested_names": [], "selected_payer_user_ids": [],
+                "amount_fen": None, "split_equally": False,
+            }]}))
+        await tool_context.db.commit()
+        return {"collection_cards": [{"collection_id": "collection-1"}],
+                "reply": "收款草稿已生成"}
+
+    class ReadOnlyPlanner(FakeModel):
+        async def generate_structured(self, **kwargs):
+            schema = kwargs["schema"]
+            if schema is nova_runtime.ToolSelection:
+                return SimpleNamespace(data=schema(
+                    tool_names=["list_contacts"], collection_action="create"))
+            if schema is nova_runtime.ToolPlan:
+                return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
+                    name="list_contacts", arguments={})]))
+            return await super().generate_structured(**kwargs)
+
+    monkeypatch.setattr(nova_runtime, "get_session", bank)
+    monkeypatch.setattr(nova, "execute_tool", execute)
+    result = await nova_runtime.chat("向联系人发起收款", [], model=ReadOnlyPlanner(False, [], []), context=context)
+    assert calls == ["list_contacts"] * 3 + ["manage_collection_request"]
+    assert result["collection_cards"] == [{"collection_id": "collection-1"}]
+    assert result["tool_calls"][-1]["result"]["outcome"] == "waiting_user"
+
+
+@pytest.mark.asyncio
+async def test_collection_plan_survives_native_read_only_decision(context, monkeypatch):
+    async def bank(*args):
+        raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")
+
+    seen = []
+
+    async def execute(call, _context):
+        seen.append(call["function"]["name"])
+        return {"collection_cards": [{"collection_id": "collection-2"}]}
+
+    class NativeReadOnly(FakeModel):
+        async def generate_with_tools(self, **kwargs):
+            return SimpleNamespace(data={"tool_calls": [{"function": {
+                "name": "list_contacts", "arguments": "{}"}}]})
+
+    monkeypatch.setattr(nova_runtime, "get_session", bank)
+    monkeypatch.setattr(nova, "execute_tool", execute)
+    model = NativeReadOnly(False, ["list_contacts", "manage_collection_request"], [
+        nova_runtime.PlannedCall(name="manage_collection_request", arguments={"action": "create"})])
+    result = await nova_runtime.chat("发起收款申请", [], model=model, context=context)
+    assert seen == ["manage_collection_request"]
+    assert result["collection_cards"] == [{"collection_id": "collection-2"}]
+
+
+@pytest.mark.asyncio
+async def test_collection_reply_does_not_claim_card_without_collection_result(context, monkeypatch):
+    async def bank(*args):
+        raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")
+
+    monkeypatch.setattr(nova_runtime, "get_session", bank)
+    model = FakeModel(False, ["manage_collection_request"], [])
+    result = await nova_runtime.chat("发起收款", [], model=model, context=context)
+    assert "尚未生成" in result["reply"]
+    assert result["tool_calls"][-1]["result"]["outcome"] == "tool_failed"
+
+
+@pytest.mark.asyncio
 async def test_card_operation_is_injected_as_execute_tool(context, monkeypatch):
     async def bank(*args):
         raise nova_runtime.ManagerError("missing", "SESSION_NOT_FOUND")

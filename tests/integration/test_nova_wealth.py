@@ -68,7 +68,7 @@ async def test_state_cas_owner_and_forbidden_proof(store):
 
 
 @pytest.mark.asyncio
-async def test_name_ambiguity_and_missing_goal_are_clarified(store, monkeypatch):
+async def test_name_ambiguity_clarifies_but_recommend_opens_category_picker(store, monkeypatch):
     model=AsyncMock(return_value=SimpleNamespace(data=agent.IntentBatch(intents=[agent.WealthIntent(kind='purchase',product_queries=['同名']),agent.WealthIntent(kind='recommend')])))
     monkeypatch.setattr(agent.llm,'generate_structured',model)
     monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(assets=AsyncMock(return_value={'context_id':'test'}),
@@ -77,7 +77,8 @@ async def test_name_ambiguity_and_missing_goal_are_clarified(store, monkeypatch)
         await conversation(db)
         result=await agent.manage(agent.EmptyArguments(),context(db))
         assert len(result['wealth_cards'])==2
-        assert all(c['command']['kind']=='clarify' for c in result['wealth_cards'])
+        assert [c['command']['kind'] for c in result['wealth_cards']]==['clarify','recommend']
+        assert result['wealth_cards'][1]['command']['category'] is None
 
 
 @pytest.mark.asyncio

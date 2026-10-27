@@ -176,7 +176,10 @@ async def decide(ctx):
     if pending and time.time()-pending['created_at']>600:
         data.pop('pending');await save(ctx,row,data);pending=None
     if not ctx.task_switch_token:
-        if pending:return ctx,reply('请先确认是否结束“'+pending['current_label']+'”并转向“'+pending['target_label']+'”，或选择继续当前任务。',await public(ctx))
+        # A new chat turn is a new request. An unconfirmed proposal must not
+        # hold the conversation hostage; the old task is still intact.
+        if pending:
+            data.pop('pending');await save(ctx,row,data)
         return ctx,None
     if not pending or pending['token']!=ctx.task_switch_token or time.time()-pending['created_at']>600:
         return ctx,reply('切换确认已过期或已处理，请重新描述需求；未启动新任务。')
@@ -234,30 +237,6 @@ async def decide(ctx):
     return replace(ctx,original_message=pending['message'],wealth_task_id=None,wealth_stage=None,
                    session_version=transfers.version if transfers else 0,
                    focus_task_id=None,serial_focus_only=False,task_switch_token=None,accept_task_switch=None,task_switch_approved=True),None
-
-
-async def guard_tool(ctx,name):
-    if not ctx or not ctx.session_id or not ctx.original_message or ctx.execution_step or ctx.task_switch_approved:return None
-    domain={'manage_wealth_request':'wealth','manage_transfer_task':'transfer',
-            'manage_collection_request':'collection','preview_card_operation':'card',
-            'prepare_bill_change':'bill','manipulate_calender_event':'calendar',
-            'prepare_shop_purchase':'shop','manage_subscription_task':'subscription',
-            'manage_payment_requests':'payment_request'}.get(name)
-    if not domain:return None
-    current=await active(ctx)
-    if current and current['type']=='ambiguous':
-        # 转账卡由调用参数指定新建、修改或取消，多个未结束任务不阻止这张卡的操作。
-        if name == 'manage_transfer_task':
-            return None
-        return {'error':'TASK_CONTEXT_AMBIGUOUS','message':'当前有多个未结束任务，请说明要补充哪个任务，不能猜测或创建新操作。'}
-    if current and current['type']=='card' and domain=='card' and current.get('status') not in {None,'AWAITING_CONFIRMATION'}:
-        return {'error':'TASK_WRITE_BLOCKED','message':'当前卡片操作已经本人确认，请先在原卡片核对结果；不会通过对话重建或替换待验证操作。'}
-    if current and current['type']!=domain:
-        return await propose(ctx,ctx.original_message)
-    replay = current and name=='prepare_bill_change' and current.get('request_id')==ctx.request_id
-    if current and current.get('entry') and current['type']==domain and ctx.active_entry_id and ctx.active_entry_id!=current['id'] and not replay:
-        return await propose(ctx,ctx.original_message)
-    return None
 
 
 async def observe(ctx,result):

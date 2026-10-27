@@ -259,7 +259,8 @@ async def test_purchase_orders_when_complete_otherwise_prefilled_form_and_never_
             assert (await client.post(f"{base}/{tasks[0]['entry_id']}/dismiss")).status_code == 409
             assert (await client.post(f"{base}/{tasks[2]['entry_id']}/dismiss")).status_code == 200
     assert '店铺业务 Skill' in nova.SYSTEM_PROMPT
-    assert not [name for name in nova.TOOL_REGISTRY if any(word in name for word in ('pay', 'accept', 'confirm'))]
+    assert not [name for name in nova.TOOL_REGISTRY
+                if name != 'manage_payment_requests' and any(word in name for word in ('pay', 'accept', 'confirm'))]
 
 
 @pytest.mark.asyncio

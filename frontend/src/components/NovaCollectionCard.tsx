@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import AddContactForm from './AddContactForm';
 import { type NovaCollectionCard as CollectionCard, type NovaTaskSession,
   refreshNovaCollection, sendNovaCollection, getNovaTaskSession } from '../services/nova';
+import { cardTypeLabel } from '../utils/accountType';
 
 type Props = { card: CollectionCard; session: NovaTaskSession;manual?:boolean;
   onUpdated: (update: Pick<NovaTaskSession, 'session_id' | 'session_version' | 'collection_cards'>) => void;
@@ -81,7 +82,7 @@ export default function NovaCollectionCard({ card, session, onUpdated, onActivit
         <label>收款账户<select value={account} onChange={event => setAccount(event.target.value)} disabled={busy || disabled}>
           <option value="">请选择银行卡</option>
           {card.accounts.map(item => <option key={item.account_id} value={item.account_id}>
-            {item.account_type} · 尾号 {item.card_masked}
+            {cardTypeLabel(item.account_type)} · 尾号 {item.card_masked}
           </option>)}
         </select></label>
         <label>{split ? 'AA 总金额（元）' : '每人收款金额（元）'}<input required type="number" min="0.01" step="0.01"
