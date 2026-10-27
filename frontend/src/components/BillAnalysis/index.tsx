@@ -4,7 +4,7 @@ import * as echarts from 'echarts/core';
 import { PieChart, LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, AriaComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import type { NovaPageContext } from '../../services/nova';
+import type { NovaPageContext, BillResultTarget } from '../../services/nova';
 import type { Account } from '../../services/bank';
 import * as bills from '../../services/bills';
 import {ChangeExplanationPanel,SubscriptionInsightsPanel,CashflowPanel} from './Enhancements';
@@ -25,8 +25,8 @@ const descriptions:Record<BillSection,string>={overview:'查看收支、消费�
 const defaultOpen:Record<string,boolean>={anomalies:true,subscriptions:false,recurring:true,cashflow:false,history:false,merchants:true,rules:false};
 const quickQuestions:Record<string,string>={overview:'解释当前筛选的账单，并说明支出变化的主要依据',transactions:'查看当前筛选的交易明细',budgets:'查看当前预算月份的预算使用情况与超支预警',anomalies:'查看当前账期尚待核对的异常及其依据',subscriptions:'核对当前账期的订阅扣费及差异',recurring:'查看我的周期收支及纳入预测的设置',cashflow:'估计未来30天的储蓄现金流，说明计划与历史估计的区别',history:'查看我保存的基准预测与实际收支的偏差',merchants:'查看我的商户与别名目录',rules:'查看我的商户分类规则和流水标签'};
 
-type Props={accounts:Account[];revision:number;onViewCashflows?:()=>void;onContextChange?:(context:NovaPageContext)=>void;onManageSubscription?:(id:string)=>void;onAskNova:(text:string,context:NovaPageContext)=>void;onOpenNova:()=>void};
-export default function BillAnalysis({accounts,revision,onViewCashflows,onContextChange,onManageSubscription,onAskNova,onOpenNova}:Props) {
+type Props={navigation?:{id:string;target:BillResultTarget};accounts:Account[];revision:number;onViewCashflows?:()=>void;onContextChange?:(context:NovaPageContext)=>void;onManageSubscription?:(id:string)=>void;onAskNova:(text:string,context:NovaPageContext)=>void;onOpenNova:()=>void};
+export default function BillAnalysis({navigation,accounts,revision,onViewCashflows,onContextChange,onManageSubscription,onAskNova,onOpenNova}:Props) {
  const [section,setSection]=useState<BillSection>('overview');
  const [expanded,setExpanded]=useState(defaultOpen),[focused,setFocused]=useState<Record<string,string>>({checks:'anomalies',forecast:'recurring',organize:'merchants'});
  const [selections,setSelections]=useState<Record<string,BillSelection|null>>({});
@@ -61,6 +61,26 @@ export default function BillAnalysis({accounts,revision,onViewCashflows,onContex
  }),[section,subsection,historical,result,detailFilter,page,selected,budgetMonth,forecastAccount]);
  useEffect(()=>{onContextChange?.(pageContext);},[pageContext,onContextChange]);
  const drill=(category?:string,tx_ids?:string,label='报告内已完成明细')=>{setDetailFilter({category,tx_ids,label});setPage(1);selectAt('transactions',null);setSection('transactions');};
+ // A result-card link deliberately opens current bank data, never rewrites the snapshot.
+ const handledNavigation=useRef<string>();
+ useEffect(()=>{
+   if(!navigation||handledNavigation.current===navigation.id)return;
+   let live=true;
+   const apply=async()=>{
+     const dest=navigation.target;
+     if(dest.query){await load(dest.query,true);if(!live)return;}
+     setSection(dest.section);
+     if(dest.subsection){setExpanded(items=>({...items,[dest.subsection!]:true}));setFocused(items=>({...items,[dest.section]:dest.subsection!}));}
+     if(dest.budget_month){setBudgetMonth(dest.budget_month);setBudgetMonthDraft(dest.budget_month);}
+     if(dest.subsection==='cashflow')setForecastAccount(dest.account_id??null);
+     if(dest.section==='transactions'){
+       setPage(1);setDetailFilter({tx_ids:dest.tx_ids?.length?dest.tx_ids.join(','):undefined,label:dest.tx_ids?.length?'关联流水 · 最新查询':'查询范围内明细 · 最新查询'});
+       selectAt('transactions',dest.tx_id?{type:'transaction',id:dest.tx_id}:null);
+     }
+     handledNavigation.current=navigation.id;
+   };
+   void apply();return()=>{live=false;};
+ },[navigation]);
  const selectTransaction=(key:string,id:string)=>selectAt(key,{type:'transaction',id},'已选中一笔流水');
  const selectedTransaction=selected?.type==='transaction'?selected.id:null;
  const toggle=(id:string,open:boolean)=>{setExpanded(items=>({...items,[id]:open}));if(open)setFocused(items=>({...items,[section]:id}));};

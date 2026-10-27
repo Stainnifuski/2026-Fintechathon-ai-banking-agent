@@ -18,10 +18,12 @@ import NovaCalendarCard from './NovaCalendarCard';
 import NovaShopCard from './NovaShopCard';
 import NovaPaymentRequestCard from './NovaPaymentRequestCard';
 import NovaBillCard from './NovaBillCard';
+import {getNovaBillResults,type NovaBillResult,type BillResultTarget} from '../services/nova';
 import { getNovaBillActions, type NovaBillAction, type NovaPromptRequest } from '../services/nova';
 import * as bank from '../services/bank';
 import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask, NovaPaymentRequestTask } from '../services/nova';
 
+const NovaBillResults=lazy(()=>import('./NovaBillResults'));
 const NovaWealthCard=lazy(()=>import('./NovaWealthCard'));
 
 type Entry = NovaMessage & { details?: NovaReply; streaming?: boolean; status?: string };
@@ -186,13 +188,14 @@ function promptsFor(context: NovaPageContext): Prompt[] {
   return prompts;
 }
 
-export default function NovaChat({ headerControls, name, userId, open, onClose, onNavigate, pageContext, onTransferActivity, promptRequest, onPromptHandled }: {
+export default function NovaChat({ headerControls, name, userId, open, onClose, onNavigate, pageContext, onTransferActivity, promptRequest, onPromptHandled, onBillNavigate }: {
   headerControls?:HTMLElement|null; name: string; userId: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
   onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
   onReviewCardOperation?: (operationId: string) => void;
   onTransferActivity?: () => void;
   promptRequest?: NovaPromptRequest | null;
   onPromptHandled?: (id: string) => void;
+  onBillNavigate:(target:BillResultTarget)=>void;
 }) {
   const presentation=useNovaPresentation();
   const [taskMeta,setTaskMeta]=useState<Record<string,TaskMeta>>({});
@@ -200,6 +203,8 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   const refreshPresentation=async(session:string)=>{try{const {data}=await apiClient.get<(TaskMeta&{request_id?:string;position?:string})[]>(`/nova/presentation/${session}`);if(billSession.current!==session)return;setTaskMeta(Object.fromEntries(data.map(item=>[item.key,{...item,session}])));setPlacements(old=>({...old,...Object.fromEntries(data.filter(item=>item.position).map(item=>[item.key,item.position!]))}));}catch{setError('任务状态读取失败，请重新打开对话核对。');}};
   const metaFor=(key:string,label:string,destination:string,finished=false):TaskMeta=>({...taskMeta[key],key,label:taskMeta[key]?.label??label,destination,session:activeConversationId??'',ready:!!taskMeta[key]||finished,finished:taskMeta[key]?.finished??finished});
   const positionFor=(key:string,origin?:string|null)=>{const requestId=placements[key]??origin;const found=messages.findIndex(entry=>entry.role==='assistant'&&entry.request_id===requestId);return found<0?messages.length-1:found;};
+  const [billResults,setBillResults]=useState<NovaBillResult[]>([]);
+  const mergeBillResults=(items:NovaBillResult[])=>setBillResults(previous=>[...new Map([...previous,...items].map(item=>[item.result_id,item])).values()]);
   const [billActions, setBillActions] = useState<NovaBillAction[]>([]);
   const handledPrompt = useRef<string | null>(null);
   const [deleteTarget,setDeleteTarget]=useState<NovaConversation|null>(null);
@@ -253,6 +258,14 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       .catch(() => { if (live) setError('账单确认卡读取失败，请重新打开对话核对。'); });
     return () => { live = false; };
   }, [activeConversationId]);
+  useEffect(()=>{
+    setBillResults([]);
+    if(!activeConversationId)return;
+    let live=true;
+    getNovaBillResults(activeConversationId).then(items=>{if(live)mergeBillResults(items);})
+      .catch(()=>{if(live)setError('账单图表暂未恢复，原文字回答仍可查看，请重新打开对话重试。');});
+    return()=>{live=false;};
+  },[activeConversationId]);
   const [loadingConversation, setLoadingConversation] = useState(true);
   const [executionQueue,setExecutionQueue]=useState<NovaExecutionQueue|null>(null);
   const [queueBusy,setQueueBusy]=useState(false);
@@ -276,6 +289,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         if(debugRequestId)setLastDebugRequest(debugRequestId);
         if(queueSession.current!==session)return;
         setExecutionQueue(result.execution_queue??null);
+        if(result.bill_result_cards)mergeBillResults(result.bill_result_cards);
         if(result.wealth_cards)setWealthCards(result.wealth_cards);
         if (result.tool_calls.some(call => call.name === 'prepare_bill_change')) {
           void getNovaBillActions(session).then(items => { if (billSession.current === session) setBillActions(items); })
@@ -469,6 +483,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       if(taskRequest.debug)setLastDebugRequest(taskRequest.request_id);
       if (!controller.signal.aborted) {
         uncertainRetry.current = null;
+        if(reply.bill_result_cards)mergeBillResults(reply.bill_result_cards);
         setWealthFocus(null);setFocusTaskId(undefined);
         if(reply.wealth_cards)setWealthCards(reply.wealth_cards);
         if(reply.execution_queue!==undefined)setExecutionQueue(reply.execution_queue);
@@ -596,7 +611,9 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           {messages.map((entry, index) => <div key={`${entry.request_id || index}-${entry.role}-${index}`} className="nova-turn-entry">
             <div className={`nova-message nova-${entry.role}`}>
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
-            {entry.role === 'assistant' ? (entry.content ? <NovaMarkdown content={entry.content} onConversation={id=>{if(id===activeConversationId)body.current?.scrollTo({top:0,behavior:'smooth'});else void selectConversation(id);}} /> : null) : <p>{entry.content}</p>}
+            {entry.role === 'assistant' ? (entry.content ? (billResults.some(card=>card.request_id===entry.request_id)&&billResults.filter(card=>card.request_id===entry.request_id).every(card=>card.compact_reply)&&(!entry.details||entry.details.grounding?.status==='grounded')&&!entry.streaming
+              ? <details className="nova-result-evidence"><summary>查看完整分析与依据</summary><NovaMarkdown content={entry.content}/></details>
+              : <NovaMarkdown content={entry.content} onConversation={id=>{if(id===activeConversationId)body.current?.scrollTo({top:0,behavior:'smooth'});else void selectConversation(id);}} />) : null) : <p>{entry.content}</p>}
             {entry.streaming && <p className="hint" role="status">{entry.status ? `${entry.status}…` : entry.content ? '▍' : '正在理解你的需求…'}</p>}
             {entry.details && <small>{entry.details.mode === 'offline' ? '离线规则' : '模型回答'}{visibleToolCalls(entry.details).length > 0 && ` · 处理记录 ${visibleToolCalls(entry.details).length} 项`}</small>}
             {entry.details?.grounding && <small className="hint">{({
@@ -605,6 +622,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             })[entry.details.grounding.status]}</small>}
             {visibleToolCalls(entry.details).map((call, callIndex) => <details key={callIndex}><summary>{TOOL_LABELS[call.name]}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
             </div>
+            {entry.role==='assistant'&&billResults.filter(card=>card.request_id===entry.request_id).map(card=><Suspense key={card.result_id} fallback={<p role="status">正在加载账单图表…</p>}><NovaBillResults card={card} onNavigate={onBillNavigate}/></Suspense>)}
             {entry.role === 'assistant' && billActions.filter(card => positionFor('bill:'+card.action_id,card.request_id)===index).map(card => <NovaTaskSlot key={'bill:'+card.action_id} meta={metaFor('bill:'+card.action_id,card.title,'insights',card.status!=='pending')}><NovaBillCard key={card.action_id} card={card} disabled={busy || loadingConversation || queueBusy}
               onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onTransferActivity} /></NovaTaskSlot>)}
             {taskGroups.get(index)?.map(task => <div key={task.chat_task_id} className="nova-task-anchor"

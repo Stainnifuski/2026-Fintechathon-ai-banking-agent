@@ -709,9 +709,27 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/nova/conversations/{session_id}/bill-results",
+    "domain": "assistant",
+    "action": "result_cards"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/debug/conversations/{session_id}",
+    "domain": "assistant",
+    "action": "list_debug_for_conversation"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/nova/debug/{request_id}",
     "domain": "assistant",
     "action": "download_debug"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/debug/{request_id}/view",
+    "domain": "assistant",
+    "action": "view_debug"
   },
   {
     "method": "GET",
@@ -733,6 +751,36 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/nova/presentation/{session_id}",
+    "domain": "assistant",
+    "action": "presentation_state"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/candidate",
+    "domain": "assistant",
+    "action": "manual_candidate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/draft",
+    "domain": "assistant",
+    "action": "presentation_draft"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/position",
+    "domain": "assistant",
+    "action": "presentation_position"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/release",
+    "domain": "assistant",
+    "action": "presentation_release"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/nova/task-flow/{session_id}",
     "domain": "assistant",
     "action": "task_flow_state"
@@ -742,6 +790,12 @@
     "path": "/api/v1/nova/task-sessions/{session_id}",
     "domain": "assistant",
     "action": "task_session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{entry_id}/confirm",
+    "domain": "assistant",
+    "action": "confirm_calendar_mutation"
   },
   {
     "method": "POST",
@@ -904,6 +958,12 @@
     "path": "/api/v1/subscriptions/{subscription_id}/cancel-preview",
     "domain": "subscriptions",
     "action": "preview_cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/subscriptions/{subscription_id}/restore-test",
+    "domain": "subscriptions",
+    "action": "restore_user_subscription_for_testing"
   },
   {
     "method": "POST",

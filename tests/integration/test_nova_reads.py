@@ -119,7 +119,9 @@ async def test_authenticated_api_native_business_loop_and_context_validation(db,
     def handler(request):
         body = json.loads(request.content)
         if body.get('response_format'):
-            schema = body['messages'][0]['content']
+            # The security boundary precedes the schema system message.
+            schema = next(item['content'] for item in body['messages']
+                          if item['content'].startswith('Return one JSON object matching this schema: '))
             data = ({'depends_on_prior_task': False, 'reason': 'independent'}
                     if 'depends_on_prior_task' in schema else
                     {'tool_names': ['get_transaction']}
@@ -156,6 +158,10 @@ async def test_authenticated_api_native_business_loop_and_context_validation(db,
             response = await client.post('/api/v1/nova/chat', json=payload)
             assert response.status_code == 200 and '3.21元' in response.json()['reply']
             assert 'grounding' not in response.json()
+            cards = response.json()['bill_result_cards']
+            assert len(cards)==1 and cards[0]['kind']=='transaction'
+            assert cards[0]['rows'][0]['metrics'][0]['amount_fen']==321
+            assert not cards[0]['compact_reply']  # Preserve the new runtime's free answer.
             assert len(seen) == 2
             invalid = [
                 {'page': 'home', 'user_id': 'U2'}, {'version': 2, 'page': 'home'},

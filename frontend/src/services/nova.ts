@@ -32,6 +32,20 @@ export type NovaPageContext = {
 };
 
 export type NovaMessage = { role: 'user' | 'assistant'; content: string; request_id?: string };
+export type BillResultTarget = {
+  section:'overview'|'transactions'|'budgets'|'checks'|'forecast'|'organize';
+  subsection?:'anomalies'|'subscriptions'|'recurring'|'cashflow'|'history'|'merchants'|'rules'|null;
+  query?:BillQuery|null;tx_id?:string|null;tx_ids?:string[];budget_month?:string|null;account_id?:string|null;
+};
+export type BillResultMetric = {label:string;amount_fen:number|null;text:string|null};
+export type BillResultChart = {title:string;type:'bar'|'line';series:{name:string;points:{label:string;value_fen:number;target?:BillResultTarget|null}[]}[]};
+export type NovaBillResult = {
+  version:1;result_id:string;request_id:string;kind:string;position?:number;title:string;summary:string;as_of:string;
+  scope:string[];notices:string[];metrics:BillResultMetric[];charts:BillResultChart[];
+  rows:{title:string;description:string;badge:string;metrics:BillResultMetric[];progress:number|null;target:BillResultTarget|null}[];
+  total:number|null;has_more:boolean;target:BillResultTarget;evidence_id:string;content_hash:string;compact_reply:boolean;
+};
+export const getNovaBillResults=(sessionId:string)=>apiClient.get<NovaBillResult[]>(`/nova/conversations/${sessionId}/bill-results`).then(r=>r.data);
 export type NovaPromptRequest = { id: string; text: string; context: NovaPageContext; userId: string };
 export type NovaBillAction = {
   action_id: string; request_id: string; session_id: string;
@@ -88,6 +102,7 @@ export async function getNovaConversation(sessionId: string): Promise<NovaConver
   return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
 }
 export type NovaReply = {
+  bill_result_cards?: NovaBillResult[];
   execution_queue?: NovaExecutionQueue | null;
   grounding?: {
     version: string;

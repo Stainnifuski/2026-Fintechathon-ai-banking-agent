@@ -104,6 +104,7 @@ from . import wealth_research
 from . import bill_foundation
 from . import bill_features
 from .nova_bill_action import NovaBillActionORM
+from .nova_bill_result import NovaBillResultORM
 from .audit_event import AuditEventORM, AuditEventObjectORM
 # Install once for every SQLAlchemy session, including workers and local tools.
 from ..services.audit import hooks as _audit_hooks

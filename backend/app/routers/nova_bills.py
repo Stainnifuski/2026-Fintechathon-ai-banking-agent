@@ -21,3 +21,14 @@ async def decide(session_id:str, action_id:str, body:BillCardDecision,
                  user=Depends(get_current_user), db:AsyncSession=Depends(get_db)):
     async with guarded(db, write=True):
         return await nova_bills.decide(db, user['user_id'], session_id, action_id, body.decision)
+
+
+@router.get('/{session_id}/bill-results')
+async def result_cards(session_id:str, user=Depends(get_current_user), db:AsyncSession=Depends(get_db)):
+    from ..services.bank import nova_bill_results
+    from ..services.bank.nova_conversations import ConversationError
+    from fastapi import HTTPException
+    try:
+        return await nova_bill_results.cards(db,user['user_id'],session_id)
+    except ConversationError as error:
+        raise HTTPException(error.status_code,detail={'code':'CONVERSATION_NOT_FOUND','message':error.message}) from error

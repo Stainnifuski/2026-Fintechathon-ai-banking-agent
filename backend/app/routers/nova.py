@@ -195,6 +195,9 @@ async def _finish(request: ChatRequest, user_id: str, db: AsyncSession, reply: d
     wealth_cards = await cards(db, user_id, request.session_id)
     if wealth_cards:
         reply = {**reply, "wealth_cards": wealth_cards}
+    from ..services.bank import nova_bill_results
+    reply = {**reply, "bill_result_cards": await nova_bill_results.save(
+        db, user_id, request.session_id, request.request_id, reply)}
     await bank_conversations.append_turn(db, user_id, request.session_id,
                                          request.request_id, request.message, reply["reply"])
     return {**reply, "session_id": request.session_id}
@@ -678,6 +681,11 @@ async def execution_advance(session_id:str,request:ExecutionAction,current_user:
             from ..services.ai.wealth_agent import cards
             reply['wealth_cards']=await cards(db,current_user['user_id'],session_id)
             if await db.get(NovaSessionORM,session_id):reply.update(await get_session(db,current_user['user_id'],session_id))
+            from ..services.bank import nova_bill_results
+            root_request = (reply.get('execution_queue') or {}).get('request_id')
+            if root_request:
+                reply['bill_result_cards'] = await nova_bill_results.save(db,current_user['user_id'],session_id,root_request,reply)
+                await db.commit()
             debug_trace.record('final_response',reply)
             return reply
     except bank_conversations.ConversationError as error:raise _transfer_error(error) from error
