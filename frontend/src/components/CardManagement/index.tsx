@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import * as bank from '../../services/bank';
 import { beijingTime } from '../../utils/time';
 import { SecondFactor } from '../SecondFactor';
+import { formatFen } from '../../utils/money';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
-const yuan = (fen?: number | null) => fen == null ? '-' : `¥${(fen / 100).toFixed(2)}`;
+const yuan = (fen?: number | null) => fen == null ? '-' : formatFen(fen);
 const STATUS_LABELS: Record<string, string> = { ACTIVE: '正常', LOCKED: '已锁定', LOST: '已挂失', CANCELLED: '已注销' };
 const ACTION_LABELS: Record<bank.CardAction, string> = {
   card_apply_virtual: '申请虚拟卡', card_set_transaction_limits: '设置交易限额',

@@ -325,3 +325,7 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 /* 新版本部署提示：固定在顶部，不遮挡安全区。 */
 .app-update-banner { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 50%; z-index: 1000; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; max-width: calc(100% - 32px); padding: 10px 16px; border: 1px solid #c7d4ff; border-radius: 10px; background: #f3f6ff; color: #1f2a44; box-shadow: 0 6px 20px rgba(31, 42, 68, 0.12); font-size: 14px; }
 .app-update-banner button { padding: 6px 12px; }
+
+/* 侧栏导航线条图标：颜色继承外层（彩色方块里为白色），尺寸不随按钮字号变化 */
+.bank-sidebar .nav-icon {width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block}
+.sidebar-audit-button .nav-icon {width:18px;height:18px}

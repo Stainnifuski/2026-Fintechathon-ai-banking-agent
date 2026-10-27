@@ -4,6 +4,7 @@ import * as bank from '../services/bank';
 import { dismissNovaCardTask, linkNovaCardTask, type NovaChatCardTask } from '../services/nova';
 import { beijingTime } from '../utils/time';
 import { SecondFactor } from './SecondFactor';
+import { formatFen } from '../utils/money';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const ACTION_LABELS: Record<bank.CardAction, string> = {
@@ -34,7 +35,7 @@ const ELIGIBLE: Record<bank.CardAction, (card: bank.BankCard) => boolean> = {
   card_reissue: card => card.status === 'LOST' && !card.replaced_by_card_id,
 };
 const EDITABLE = new Set<bank.CardAction>(['card_apply_virtual', 'card_set_transaction_limits', 'card_adjust_credit_limit', 'card_set_channels']);
-const yuan = (fen?: number | null) => fen == null ? '-' : `¥${(fen / 100).toFixed(2)}`;
+const yuan = (fen?: number | null) => fen == null ? '-' : formatFen(fen);
 const fenText = (fen?: number | null) => fen == null ? '' : (fen / 100).toFixed(2);
 const changeValue = (change: bank.CardChange, value?: boolean | number | string | null) => {
   if (value == null) return '无';

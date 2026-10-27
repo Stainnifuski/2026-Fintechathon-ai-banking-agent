@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import * as bank from '../services/bank';
 import { dismissNovaSubscriptionTask, selectNovaSubscriptionTask, type NovaChatSubscriptionTask } from '../services/nova';
 import { beijingTime } from '../utils/time';
+import { formatFen } from '../utils/money';
 
 const CYCLES: Record<string, string> = { MONTHLY: '每月', YEARLY: '每年', WEEKLY: '每周' };
 const amountText = (subscription: bank.Subscription) =>
-  `${(subscription.amount_fen / 100).toFixed(2)} ${subscription.currency} / ${CYCLES[subscription.billing_cycle] ?? subscription.billing_cycle}`;
+  `${subscription.currency === 'CNY' ? formatFen(subscription.amount_fen) : `${(subscription.amount_fen / 100).toFixed(2)} ${subscription.currency}`} / ${CYCLES[subscription.billing_cycle] ?? subscription.billing_cycle}`;
 const errorText = (err: unknown) => {
   const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;
   if (typeof detail === 'string') return detail;

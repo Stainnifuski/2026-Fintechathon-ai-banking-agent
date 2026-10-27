@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import * as bank from '../services/bank';
 import { cancelNovaTaskCard, getNovaTaskSession, NovaTaskSession, NovaTransferTask, saveNovaTaskForm } from '../services/nova';
 import { SecondFactor } from './SecondFactor';
+import { formatYuan, formatYuanText } from '../utils/money';
 
 type Props = {
   manual?:boolean;
@@ -150,7 +151,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
 
   return <article className={`card nova-transfer-card${focused?' is-focused':''}`} aria-label={`转账任务：${task.recipient || '待填写收款人'}`} onFocusCapture={onFocus} onPointerDown={onFocus}>
     <div className="nova-transfer-card-head"><div><strong>转账任务</strong>
-      <small>{task.recipient || '待填写收款人'} · {task.form.amount_yuan ? `¥${task.form.amount_yuan}` : '待填写金额'}
+      <small>{task.recipient || '待填写收款人'} · {task.form.amount_yuan ? formatYuanText(task.form.amount_yuan) : '待填写金额'}
         {succeeded ? ' · 已完成' : task.missing_fields.length ? ' · 待补充' : ' · 待核对'}</small></div>
       <div className="nova-transfer-card-controls"><button type="button" className="secondary nova-transfer-toggle"
         aria-expanded={!collapsed} aria-label={collapsed ? '展开转账任务' : '折叠转账任务'}
@@ -162,7 +163,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
     {!collapsed && <>
     <p className="hint">{visible?.message || (task.missing_fields.length ? `还需：${task.missing_fields.join('、')}` : '请核对转账信息')}</p>
     {task.form.amount_rule && <p className="hint">金额来源：{task.form.amount_rule}{typeof task.form.amount_basis_available_fen === 'number'
-      ? `（计算时可用余额 ¥${(task.form.amount_basis_available_fen / 100).toFixed(2)}）` : '；请选择付款账户后计算'}。生成计划后金额固定，确认前请核对。</p>}
+      ? `（计算时可用余额 ${formatYuan((task.form.amount_basis_available_fen / 100))}）` : '；请选择付款账户后计算'}。生成计划后金额固定，确认前请核对。</p>}
     <form onSubmit={event => void save(event)} className="nova-transfer-form">
       <label>收款人姓名<input value={recipient} maxLength={100} disabled={disabled || busy || !canSave}
         onChange={event => setRecipient(event.target.value)} placeholder="请输入收款人姓名" /></label>
@@ -197,7 +198,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       <strong>请核对后确认</strong>
       <p>从 {visible.confirmation_card.payer_card_masked || '付款账户'} 转给 {visible.confirmation_card.recipient_name}<br />
         收款账户：{visible.confirmation_card.recipient_card_masked || visible.confirmation_card.recipient_phone_masked || '请核对收款人'}<br />
-        金额：¥{visible.confirmation_card.amount.toFixed(2)} · 备注：{visible.confirmation_card.note || '无'}</p>
+        金额：{formatYuan(visible.confirmation_card.amount)} · 备注：{visible.confirmation_card.note || '无'}</p>
       <p className="hint">风险级别：{visible.confirmation_card.risk_level}。点击确认后将按银行规则执行；高风险转账还需验证码。</p>
     </div>}
     <div className="nova-transfer-actions">

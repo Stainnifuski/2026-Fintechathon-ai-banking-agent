@@ -950,3 +950,18 @@
 .home-workspace .agent-compose button:disabled {background:#9682b8;color:#fff;opacity:1}
 .home-workspace .agent-compose button:not(:disabled):hover {background:#35165f}
 .home-workspace .agent-compose button:focus-visible {outline:3px solid #b5a4e3;outline-offset:3px}
+
+/*
+ * NOVA 吉祥物：.nova-mascot-anchor 是落点（位置沿用上面的 .nova-mascot-* 规则，不再过渡、不可见），
+ * .nova-mascot-layer 是唯一的球，由 NovaMascot.tsx 每帧平移缩放到落点。
+ */
+.home-workspace .nova-mascot.nova-mascot-anchor { transition:none; visibility:hidden; }
+.home-workspace .nova-mascot.nova-mascot-layer { left:0; top:0; width:480px; height:480px; transform-origin:0 0; opacity:0; transition:opacity .3s ease, filter .5s ease; will-change:transform; }
+.home-workspace .nova-mascot.nova-mascot-layer[data-ready="true"] { opacity:.96; }
+.home-workspace .nova-mascot-layer[data-state="thinking"] { filter:saturate(1.16) brightness(1.08); }
+.home-workspace .nova-mascot-layer[data-state="typing"] { filter:saturate(1.08) brightness(1.03); }
+/* 收起到侧栏时，无论是否开始对话，球都移到面板头部 */
+@media(min-width:1101px) {
+  .home-workspace.nova-docked .nova-mascot.nova-mascot-anchor { left:10px; right:auto; top:73px; bottom:auto; width:62px; height:62px; }
+  .home-workspace.nova-docked .agent-head { padding-left:82px; }
+}

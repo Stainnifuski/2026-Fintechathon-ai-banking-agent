@@ -3,6 +3,7 @@ import type { PortfolioPlan, PortfolioSelection, PortfolioSnapshot, PortfolioMod
 import styles from './PortfolioAllocation.module.css';
 import { beijingTime } from '../../utils/time';
 import { fenRatio, percentToRatio, ratioToPercent, ratioFen, portfolioExplanation, isIntegerPercentageRatio } from '../../services/wealthPortfolio';
+import { formatFen } from '../../utils/money';
 export interface PortfolioAllocationProps {
   plan: PortfolioPlan | null; snapshot?: PortfolioSnapshot | null; modelView?: PortfolioModelView | null;
   loading?: boolean; error?: string | null; readOnly?: boolean; controlHint?: string; contextId: string;
@@ -13,7 +14,7 @@ export interface PortfolioAllocationProps {
   assetTotals?: { available_cash_fen: number | null; held_fen: number | null } | null;
 }
 const names = { cash_management: '活钱', stable: '稳健', growth: '进取' };
-const yuan = (fen: number | null | undefined) => fen == null ? '未知' : `¥${(fen / 100).toFixed(2)}`;
+const yuan = (fen: number | null | undefined) => fen == null ? '未知' : formatFen(fen);
 const percent = (ratio: string | number) => `${(Number(ratio) * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%`;
 export default function PortfolioAllocation({ plan, snapshot, modelView, assetTotals, loading = false, error, readOnly = false, controlHint, contextId, onAdjust, onPreferenceChange, onAccepted, showProductEditor = true,modelOnly=false }: PortfolioAllocationProps) {
   const [accepted, setAccepted] = useState<PortfolioPlan | null>(plan);

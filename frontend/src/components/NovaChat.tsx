@@ -21,6 +21,7 @@ import NovaBillCard from './NovaBillCard';
 import { getNovaBillActions, type NovaBillAction, type NovaPromptRequest } from '../services/nova';
 import * as bank from '../services/bank';
 import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask } from '../services/nova';
+import { formatYuanText } from '../utils/money';
 
 const NovaWealthCard=lazy(()=>import('./NovaWealthCard'));
 
@@ -499,8 +500,8 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   }
   useEffect(()=>{if(deleteTarget)void removeConversation();},[deleteTarget]);
   function submit(event: FormEvent) { event.preventDefault(); void send(input); }
-  const hasConversationHistory = messages.length > 0 || activeConversationId !== null;
-  const isNewConversation = !hasConversationHistory;
+  // 吉祥物跟随界面：还没有消息、显示“今天想办理什么？”时在正中间，有消息后移到右侧。
+  const isNewConversation = messages.length === 0;
   const mascotState: NovaMascotState = busy ? 'thinking' : (composerFocused || input.trim() ? 'typing' : 'waiting');
   useEffect(() => {
     if (!promptRequest || promptRequest.userId !== userId || handledPrompt.current === promptRequest.id
@@ -548,7 +549,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
               if (!task) return null;
               return <button type="button" key={id} className="nova-pinned-task" onClick={() =>
                 taskAnchors.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-                <strong>{task.recipient || '待填写收款人'} · {task.form.amount_yuan ? `¥${task.form.amount_yuan}` : '待填写金额'}</strong>
+                <strong>{task.recipient || '待填写收款人'} · {task.form.amount_yuan ? formatYuanText(task.form.amount_yuan) : '待填写金额'}</strong>
                 <small>还需：{task.missing_fields.join('、')} · 点击查看任务卡</small>
               </button>;
             })}
