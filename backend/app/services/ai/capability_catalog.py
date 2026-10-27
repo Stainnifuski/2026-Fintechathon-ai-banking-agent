@@ -85,7 +85,7 @@ _CAPABILITIES = (
             {"tool": "get_calendar_event", "description": "单项日程及重复事件的实际发生时间"},
         ],
         "operations": [
-            {"tool": "create_calendar_event", "description": "创建日程或打开预填日程表单"},
+            {"tool": "manipulate_calender_event", "description": "筛选日程并打开添加、批量修改或批量删除的待确认任务卡"},
         ],
     },
     {

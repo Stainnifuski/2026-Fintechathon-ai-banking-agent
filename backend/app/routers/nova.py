@@ -24,6 +24,7 @@ from ..services.ai.transfer_manager import (
 )
 from ..services.ai.collection_manager import CollectionError, refresh_collection, submit_collection
 from ..services.ai.calendar_tools import update_chat_calendar_task
+from ..services.ai.calendar_mutation import confirm_calendar_task, ManipulateCalendarArguments
 from ..services.ai.shop_tools import update_chat_shop_task
 from ..services.ai.card_subscription_tools import (
     CardTaskError, dismiss_chat_card_task, link_chat_card_operation, update_chat_subscription_task,
@@ -117,6 +118,20 @@ class ShopTaskLink(BaseModel):
 class CalendarTaskLink(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str = Field(min_length=1, max_length=40)
+
+
+class CalendarTaskConfirm(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    changes: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator('changes')
+    @classmethod
+    def valid_changes(cls, value):
+        allowed = {'title', 'start_date', 'start_time', 'end_date', 'end_time', 'location', 'description'}
+        if set(value) - allowed:
+            raise ValueError('包含不支持的日程字段')
+        ManipulateCalendarArguments(action='add', **value)
+        return value
 
 
 class CardTaskLink(BaseModel):
@@ -300,6 +315,19 @@ async def dismiss_calendar_task(session_id: str, entry_id: str,
         await bank_conversations.get(db, current_user["user_id"], session_id)
         return {"calendar_tasks": await update_chat_calendar_task(
             db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, close=True)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post('/task-sessions/{session_id}/calendar-tasks/{entry_id}/confirm')
+async def confirm_calendar_mutation(session_id: str, entry_id: str, request: CalendarTaskConfirm,
+                                    current_user: dict = Depends(get_current_user),
+                                    db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user['user_id'], session_id)
+        return {'calendar_tasks': await confirm_calendar_task(db, user_id=current_user['user_id'],
+                session_id=session_id, entry_id=entry_id, changes=request.changes)}
     except (CardTaskError, bank_conversations.ConversationError) as error:
         await db.rollback()
         raise _transfer_error(error) from error

@@ -26,7 +26,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表',
   get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情',
   list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
-  preview_card_operation: '卡片操作预览', request_subscription_cancellation: '取消订阅任务卡', manage_subscription_task: '订阅操作任务卡', create_calendar_event: '创建日程', prepare_shop_purchase: '店铺下单', list_card_transactions: '用卡记录', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
+  preview_card_operation: '卡片操作预览', request_subscription_cancellation: '取消订阅任务卡', manage_subscription_task: '订阅操作任务卡', manipulate_calender_event: '日程操作任务卡', prepare_shop_purchase: '店铺下单', list_card_transactions: '用卡记录', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
   manage_transfer_task: '转账任务规划', manage_collection_request: '收款草稿', manage_wealth_request:'理财任务',
 };
 const money = (value: unknown) => typeof value === 'number' ? (value / 100).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) : '暂无';
@@ -409,7 +409,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           setFocusTaskId(undefined);
         }
         const sessionId = taskRequest.session_id;
-        if (sessionId && reply.tool_calls.some(call => ['preview_card_operation', 'request_subscription_cancellation', 'manage_subscription_task', 'create_calendar_event', 'prepare_shop_purchase'].includes(call.name) && !call.result.error)) {
+        if (sessionId && reply.tool_calls.some(call => ['preview_card_operation', 'request_subscription_cancellation', 'manage_subscription_task', 'manipulate_calender_event', 'prepare_shop_purchase'].includes(call.name) && !call.result.error)) {
           // 卡片任务卡状态以服务端授权单为准，随会话一起读取。
           void getNovaTaskSession(sessionId).then(setTaskSession).catch(() => setError('卡片任务卡读取失败，请重新打开对话。'));
         }

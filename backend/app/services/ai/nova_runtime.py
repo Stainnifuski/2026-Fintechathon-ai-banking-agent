@@ -59,7 +59,7 @@ def _phase_tools(registry: dict) -> set[str]:
              for entry in business["queries"]}
     reads.discard("manage_wealth_request")  # mixed read/write tool
     return (reads | {"manage_transfer_task", "manage_collection_request",
-                     "preview_card_operation", "manage_subscription_task"}) & set(registry)
+                     "preview_card_operation", "manage_subscription_task", "manipulate_calender_event"}) & set(registry)
 
 
 def _task_description(task: dict) -> dict:
@@ -137,6 +137,19 @@ async def _subscription_records(context: ToolContext) -> list[dict]:
     return records
 
 
+async def _calendar_records(context: ToolContext) -> list[dict]:
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    if row is None:
+        return []
+    if row.user_id != context.user_id:
+        raise ValueError('CONVERSATION_OWNER_MISMATCH')
+    return [{'id': entry['entry_id'], 'type': 'calendar', 'status': entry.get('status', 'PENDING'),
+             'completed': entry.get('closed', False) or entry.get('status') == 'COMPLETED',
+             'description': {'action': entry.get('action'), 'targets': entry.get('targets', []),
+                             'changes': entry.get('changes', {})}}
+            for entry in (row.state or {}).get('calendar_tasks', []) if entry.get('kind') == 'mutation']
+
+
 async def _load(context: ToolContext) -> tuple[NovaAgentRuntimeORM | None, dict]:
     row = await context.db.get(NovaAgentRuntimeORM, context.session_id)
     if row and row.user_id != context.user_id:
@@ -164,6 +177,8 @@ async def inspect_active_tasks(context: ToolContext) -> dict:
                  for card in await _card_records(context) if not card["completed"])
     tasks.extend({key: task[key] for key in ("id", "type", "status", "description")}
                  for task in await _subscription_records(context) if not task["completed"])
+    tasks.extend({key: task[key] for key in ('id', 'type', 'status', 'description')}
+                 for task in await _calendar_records(context) if not task['completed'])
     ids = {t["id"] for t in tasks}
     return {"unfinished_execute_tasks": tasks,
             "target_execute_task_ids": [t for t in state.get("target_execute_task_ids", []) if t in ids]}
@@ -195,6 +210,7 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     new_tasks.extend(await _collection_records(context))
     new_tasks.extend(await _card_records(context))
     new_tasks.extend(await _subscription_records(context))
+    new_tasks.extend(await _calendar_records(context))
     new_ids = {t["id"] for t in new_tasks if t["id"] not in previous and not t["completed"]}
     unfinished = {t["id"] for t in new_tasks if not t["completed"]}
     # A read-only or failed turn retains target. New cards in this turn become
@@ -204,7 +220,7 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     reads = list(state.get("read_tasks", []))
     from .nova import TOOL_REGISTRY
     execute_names = {"manage_transfer_task", "manage_collection_request",
-                     "preview_card_operation", "manage_subscription_task"}
+                     "preview_card_operation", "manage_subscription_task", "manipulate_calender_event"}
     read_names = _phase_tools(TOOL_REGISTRY) - execute_names
     for item in trace:
         if item.get("name") in read_names:
@@ -259,7 +275,7 @@ async def chat(message: str, history: list[dict], *, model=None,
     try:
         async with asyncio.timeout(90):
             decision = (await client.generate_structured(messages=[
-                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款、银行卡或订阅操作任务卡；只输出结构化判断。"}],
+                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款、银行卡、订阅或日历操作任务卡；只输出结构化判断。"}],
                 schema=DependencyDecision, max_tokens=300)).data
             debug_trace.record("dependency_decision", decision.model_dump(mode="json"))
             if decision.depends_on_prior_task:
@@ -277,9 +293,14 @@ async def chat(message: str, history: list[dict], *, model=None,
             collection_skill_loaded = False
             card_skill_loaded = False
             subscription_skill_loaded = False
+            calendar_skill_loaded = False
+            calendar_query_skill_loaded = False
+            calendar_search_empty = False
+            calendar_list_after_search = False
+            calendar_list_replanned = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
-                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。可选：" + json.dumps(sorted(allowed))}],
+                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
                     schema=ToolSelection, max_tokens=400)).data
                 debug_trace.record("tool_selection", selection.model_dump(mode="json"))
                 invalid = [n for n in selection.tool_names if n not in allowed]
@@ -290,6 +311,8 @@ async def chat(message: str, history: list[dict], *, model=None,
                 selected.update(n for n in selection.tool_names if n in allowed)
                 if "preview_card_operation" in selected:
                     selected.add("list_cards")
+                if selected & {'search_calendar_events', 'list_calendar_events', 'get_calendar_event'}:
+                    selected.update({'search_calendar_events', 'list_calendar_events', 'get_calendar_event'} & allowed)
                 if "manage_collection_request" in selected and not collection_skill_loaded:
                     messages.append({"role": "system", "content": "收款业务规则：" + load_skill("collection")})
                     collection_skill_loaded = True
@@ -299,13 +322,19 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if "manage_subscription_task" in selected and not subscription_skill_loaded:
                     messages.append({"role": "system", "content": "订阅业务规则：" + load_skill("subscription")})
                     subscription_skill_loaded = True
+                if 'manipulate_calender_event' in selected and not calendar_skill_loaded:
+                    messages.append({'role': 'system', 'content': '日历业务规则：' + load_skill('calendar')})
+                    calendar_skill_loaded = True
+                if selected & {'search_calendar_events', 'list_calendar_events', 'get_calendar_event'} and not calendar_query_skill_loaded:
+                    messages.append({'role': 'system', 'content': '日历信息查询规则：' + load_skill('calendar_query')})
+                    calendar_query_skill_loaded = True
                 trace.append({"name": "inject_agent_tools", "result": {"tool_names": sorted(selected)}})
                 debug_trace.record("tool_injection", {"tool_names": sorted(selected), "rejected": invalid})
                 schemas = [TOOL_REGISTRY[n]["schema"] for n in sorted(selected)]
                 plan = (await client.generate_structured(messages=[*messages,
                     {"role": "system", "content": "现在规划工具调用。仅使用已动态提供的工具 Schema：" +
                      json.dumps(schemas, ensure_ascii=False) +
-                     "。按依赖顺序列出 calls；打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
+                     "。按依赖顺序列出 calls；打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。日历添加即使缺少事件名称或具体时间也要调用 manipulate_calender_event(action=add) 打开可补全的任务卡；若先查当前时间，本轮查完后继续规划并调用日历操作工具。日历事件按名称或地点搜索无结果时，使用 list_calendar_events 查看相关日期范围的活动，再根据列表规划下一步。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
                     schema=ToolPlan, max_tokens=1300)).data
                 debug_trace.record("tool_plan", plan.model_dump(mode="json"))
                 if plan.clarification and not plan.calls:
@@ -375,14 +404,23 @@ async def chat(message: str, history: list[dict], *, model=None,
                         failed = True
                         if call.name == "manage_collection_request" and value["error"].startswith("COLLECTION_"):
                             waiting_user = True
+                    if call.name == 'search_calendar_events' and not value.get('error') and value.get('data', {}).get('total') == 0:
+                        calendar_search_empty = True
+                    if call.name == 'list_calendar_events' and calendar_search_empty and not value.get('error'):
+                        calendar_list_after_search = True
                 if waiting_user:
                     break
                 if not failed:
+                    if calendar_search_empty and not calendar_list_after_search:
+                        continue
+                    if calendar_list_after_search and not calendar_list_replanned:
+                        calendar_list_replanned = True
+                        continue
                     # An execute tool may depend on a bank read made in this turn.
                     # Replan with that result before opening the task card.
-                    if (selected & {"manage_transfer_task", "preview_card_operation", "manage_subscription_task"}
+                    if (selected & {"manage_transfer_task", "preview_card_operation", "manage_subscription_task", "manipulate_calender_event"}
                             and not any(call.name in {"manage_transfer_task", "preview_card_operation",
-                                                       "manage_subscription_task"}
+                                                       "manage_subscription_task", "manipulate_calender_event"}
                                         for call in calls)
                             and any(call.name != "describe_bank_capabilities" for call in calls)):
                         continue
@@ -398,6 +436,13 @@ async def chat(message: str, history: list[dict], *, model=None,
                                        failed=runtime_failed)
         trace.append({"name": "llm_finish_tool", "result": finish})
         debug_trace.record("runtime_finish", finish)
+    if 'manipulate_calender_event' in selected and not any(
+            item.get('name') == 'manipulate_calender_event' and
+            (item.get('result', {}).get('task_opened') or item.get('result', {}).get('task_updated'))
+            for item in trace):
+        failure = next((item.get('result', {}).get('message') for item in reversed(trace)
+                        if item.get('name') == 'manipulate_calender_event' and item.get('result', {}).get('error')), None)
+        result['reply'] = (failure or '日程任务卡尚未生成，请再试一次；我没有对日历进行修改。')
     if not result["reply"]:
         final_messages = [*messages, {"role": "system", "content":
             "请直接用自然语言回答用户本轮请求，表达方式由你决定。以本轮可信工具结果和任务收尾状态为事实依据；"

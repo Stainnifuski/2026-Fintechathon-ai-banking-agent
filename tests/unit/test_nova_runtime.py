@@ -52,6 +52,82 @@ class FakeModel:
 
 
 @pytest.mark.asyncio
+async def test_calendar_query_skill_replans_after_search_and_list(context, monkeypatch):
+    class CalendarModel:
+        def __init__(self):
+            self.round = 0
+            self.planning_messages = []
+
+        async def generate_structured(self, **kwargs):
+            schema = kwargs['schema']
+            if schema is nova_runtime.DependencyDecision:
+                return SimpleNamespace(data=schema(depends_on_prior_task=False, reason='calendar query'))
+            if schema is nova_runtime.ToolSelection:
+                name = ('search_calendar_events', 'list_calendar_events', 'get_calendar_event')[self.round]
+                self.round += 1
+                return SimpleNamespace(data=schema(tool_names=[name]))
+            self.planning_messages.append(kwargs['messages'])
+            name = ('search_calendar_events', 'list_calendar_events', 'get_calendar_event')[self.round - 1]
+            arguments = {'keyword': '会议'} if name == 'search_calendar_events' else {}
+            return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(name=name, arguments=arguments)]))
+
+        async def generate_text(self, **kwargs):
+            return SimpleNamespace(data='已根据实际日程核对。')
+
+    observed = []
+    async def execute(call, _context):
+        name = call['function']['name']
+        observed.append(name)
+        if name == 'search_calendar_events':
+            return {'data': {'items': [], 'total': 0}}
+        if name == 'list_calendar_events':
+            return {'data': {'items': [{'event_id': 'CE1', 'title': '项目会'}], 'total': 1}}
+        return {'data': {'event_id': 'CE1', 'title': '项目会'}}
+
+    monkeypatch.setattr(nova, 'execute_tool', execute)
+    model = CalendarModel()
+    await nova_runtime.chat('查询会议', [], model=model, context=context)
+    assert observed == ['search_calendar_events', 'list_calendar_events', 'get_calendar_event']
+    assert any('日历信息查询规则' in item['content'] for item in model.planning_messages[0])
+    assert any('"total": 0' in item['content'] for item in model.planning_messages[1])
+    assert any('项目会' in item['content'] for item in model.planning_messages[2])
+
+
+@pytest.mark.asyncio
+async def test_calendar_add_continues_after_time_read_and_opens_card(context):
+    class CalendarAddModel(FakeModel):
+        def __init__(self):
+            super().__init__(False, ['get_current_time', 'manipulate_calender_event'], [])
+            self.round = 0
+
+        async def generate_structured(self, **kwargs):
+            schema = kwargs['schema']
+            if schema is nova_runtime.ToolPlan:
+                self.round += 1
+                call = (nova_runtime.PlannedCall(name='get_current_time', arguments={}) if self.round == 1 else
+                        nova_runtime.PlannedCall(name='manipulate_calender_event', arguments={
+                            'action': 'add', 'start_date': '2026-10-28'}))
+                return SimpleNamespace(data=schema(calls=[call]))
+            return await super().generate_structured(**kwargs)
+
+    result = await nova_runtime.chat('明天上午添加一个事件', [], model=CalendarAddModel(), context=context)
+    assert [item['name'] for item in result['tool_calls'] if item['name'] in
+            {'get_current_time', 'manipulate_calender_event'}] == ['get_current_time', 'manipulate_calender_event']
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    assert len(row.state['calendar_tasks']) == 1
+    assert row.state['calendar_tasks'][0]['changes'] == {'start_date': '2026-10-28'}
+
+
+@pytest.mark.asyncio
+async def test_calendar_add_never_claims_card_without_successful_tool_call(context):
+    model = FakeModel(False, ['get_current_time', 'manipulate_calender_event'], [
+        nova_runtime.PlannedCall(name='get_current_time', arguments={})])
+    result = await nova_runtime.chat('明天上午添加一个事件', [], model=model, context=context)
+    assert '尚未生成' in result['reply']
+    assert not any(item['name'] == 'manipulate_calender_event' for item in result['tool_calls'])
+
+
+@pytest.mark.asyncio
 async def test_fallback_reply_is_sent_in_ordered_deltas():
     events = []
 

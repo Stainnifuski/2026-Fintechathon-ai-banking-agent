@@ -37,8 +37,12 @@ export type NovaChatShopTask = {
 /** 聊天中的日程：信息完整时已创建（event），否则为预填表单（prefill）。 */
 export type NovaChatCalendarTask = {
   entry_id: string; origin_request_id: string; timezone: string; notice?: string | null;
-  prefill: { title?: string; start_date?: string; start_time?: string; end_date?: string; end_time?: string; location?: string; description?: string };
-  event_id?: string | null; event?: CalendarEvent | null; deleted: boolean;
+  prefill?: { title?: string; start_date?: string; start_time?: string; end_date?: string; end_time?: string; location?: string; description?: string };
+  event_id?: string | null; event?: CalendarEvent | null; deleted?: boolean;
+  kind?: 'mutation'; action?: 'add' | 'modify' | 'delete'; status?: 'PENDING' | 'COMPLETED';
+  filters?: Record<string, string | string[]>; changes?: Record<string, string>;
+  targets?: { event_id: string; title: string; starts_at_local: string; ends_at_local?: string | null; location?: string; recurring?: boolean }[];
+  result?: { event_id: string; title: string }[];
 };
 /** 聊天中的取消订阅任务：确认凭证只由本人页面向订阅接口获取。 */
 export type NovaChatSubscriptionTask = {
@@ -130,6 +134,9 @@ export const linkNovaCalendarTask = (sessionId: string, entryId: string, eventId
     { event_id: eventId }).then(r => r.data.calendar_tasks);
 export const dismissNovaCalendarTask = (sessionId: string, entryId: string) =>
   apiClient.post<{ calendar_tasks: NovaChatCalendarTask[] }>(`/nova/task-sessions/${sessionId}/calendar-tasks/${entryId}/dismiss`)
+    .then(r => r.data.calendar_tasks);
+export const confirmNovaCalendarTask = (sessionId: string, entryId: string, changes: Record<string, string>) =>
+  apiClient.post<{ calendar_tasks: NovaChatCalendarTask[] }>(`/nova/task-sessions/${sessionId}/calendar-tasks/${entryId}/confirm`, { changes })
     .then(r => r.data.calendar_tasks);
 
 export const linkNovaShopTask = (sessionId: string, entryId: string, shop: 'flower' | 'cake', orderId: string) =>
