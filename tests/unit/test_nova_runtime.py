@@ -1,4 +1,5 @@
 """The phase-one runtime keeps task state from bank facts and scopes tools."""
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from backend.app.models import Base
 from backend.app.models.nova_conversation import NovaConversationORM
 from backend.app.models.nova_task import NovaSessionORM
+from backend.app.models.wealth import WealthConversationORM
 from backend.app.services.ai import nova_runtime
 from backend.app.services.ai import nova
 from backend.app.services.ai import debug_trace
@@ -49,6 +51,45 @@ class FakeModel:
             await kwargs['on_delta'](reply[:6])
             await kwargs['on_delta'](reply[6:])
         return SimpleNamespace(data=reply)
+
+
+@pytest.mark.asyncio
+async def test_wealth_tool_is_selected_and_registered_as_pending_card(context, monkeypatch):
+    assert 'manage_wealth_request' in nova_runtime._phase_tools(nova.TOOL_REGISTRY)
+
+    async def open_wealth_card(_arguments, tool_context):
+        tool_context.db.add(WealthConversationORM(
+            session_id='NW-TEST-WEALTH', user_id=tool_context.user_id, version=1,
+            data={'nova_session_id': tool_context.session_id, 'request_id': tool_context.request_id,
+                  'command': {'kind': 'planning'}, 'closed': False}))
+        await tool_context.db.commit()
+        return {'reply': '已打开理财规划任务卡。'}
+
+    monkeypatch.setitem(nova.TOOL_REGISTRY, 'manage_wealth_request', {
+        **nova.TOOL_REGISTRY['manage_wealth_request'], 'execute': open_wealth_card})
+    model = FakeModel(False, ['manage_wealth_request'], [nova_runtime.PlannedCall(
+        name='manage_wealth_request', arguments={})])
+    result = await nova_runtime.chat('帮我做理财规划', [], model=model, context=context)
+    assert any(item['name'] == 'manage_wealth_request' and item['result']['reply'] == '已打开理财规划任务卡。'
+               for item in result['tool_calls'])
+    finish = result['tool_calls'][-1]['result']
+    assert finish['outcome'] == 'waiting_user'
+    assert finish['target_execute_task_ids'] == ['NW-TEST-WEALTH']
+    active = await nova_runtime.inspect_active_tasks(context)
+    assert active['unfinished_execute_tasks'][0]['type'] == 'wealth'
+
+    observed = []
+    async def continue_wealth_card(_arguments, tool_context):
+        observed.append(tool_context.wealth_task_id)
+        return {'reply': '已续接原理财任务卡。'}
+
+    monkeypatch.setitem(nova.TOOL_REGISTRY, 'manage_wealth_request', {
+        **nova.TOOL_REGISTRY['manage_wealth_request'], 'execute': continue_wealth_card})
+    followup = FakeModel(True, ['manage_wealth_request'], [nova_runtime.PlannedCall(
+        name='manage_wealth_request', arguments={})])
+    await nova_runtime.chat('继续这个理财规划', [], model=followup,
+                            context=replace(context, request_id='r2', original_message='继续这个理财规划'))
+    assert observed == ['NW-TEST-WEALTH']
 
 
 @pytest.mark.asyncio
