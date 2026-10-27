@@ -61,7 +61,11 @@ async def active(ctx):
         from .transfer_manager import get_session
         fresh=await get_session(ctx.db,ctx.user_id,ctx.session_id)
         statuses={t['chat_task_id']:t['status'] for t in fresh['tasks']}
-        tasks=[{**t,'status':statuses.get(t['chat_task_id'],t['status'])} for t in tasks]
+        scheduled_confirmed={t['chat_task_id'] for t in fresh['tasks']
+            if t.get('task') and t['task'].get('phase')=='WAITING_EXECUTION'
+            and t['task'].get('scheduled_at')}
+        tasks=[{**t,'status':statuses.get(t['chat_task_id'],t['status'])} for t in tasks
+               if t['chat_task_id'] not in scheduled_confirmed]
     tasks=[t for t in tasks if t.get('status') not in {'SUCCEEDED','CANCELLED','FAILED'}]
     if not wealth and not transfer and not saved:
         if len(cards)+len(tasks)==1:

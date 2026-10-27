@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import * as bank from '../services/bank';
 import { cancelNovaTaskCard, getNovaTaskSession, NovaTaskSession, NovaTransferTask, saveNovaTaskForm } from '../services/nova';
 import { SecondFactor } from './SecondFactor';
+import { beijingInput, beijingTime, fromBeijingInput } from '../utils/time';
 
 type Props = {
   task: NovaTransferTask; session: NovaTaskSession; accounts: bank.Account[]; focused: boolean;
@@ -25,6 +26,8 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
   const [clearCard, setClearCard] = useState(false);
   const [payer, setPayer] = useState(task.form.payer_account_id);
   const [note, setNote] = useState(task.form.note);
+  const [executionMode, setExecutionMode] = useState<'instant' | 'scheduled'>(task.form.execution_mode ?? 'instant');
+  const [scheduledAt, setScheduledAt] = useState(task.form.scheduled_at ? beijingInput(new Date(task.form.scheduled_at)) : '');
   const [snapshot, setSnapshot] = useState<bank.TaskSnapshot | null>(null);
   const [factor, setFactor] = useState<bank.SecondFactor | null>({ method: 'totp' });
   const [code, setCode] = useState('');
@@ -33,22 +36,27 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
   const [notice, setNotice] = useState('');
   const visible = snapshot || task.task || null;
   const succeeded = task.status === 'SUCCEEDED' || visible?.outcome === 'SUCCEEDED';
-  const [collapsed, setCollapsed] = useState(succeeded);
+  const scheduled = visible?.phase === 'WAITING_EXECUTION' && !!visible.scheduled_at;
+  const [collapsed, setCollapsed] = useState(succeeded || scheduled);
   const formSignature = JSON.stringify(task.form);
   useEffect(() => {
     setRecipient(task.form.recipient); setAmount(task.form.amount_yuan);
     setPhone(task.form.phone_masked || ''); setCard(task.form.card_masked || '');
     setClearPhone(false); setClearCard(false);
     setPayer(task.form.payer_account_id); setNote(task.form.note);
+    setExecutionMode(task.form.execution_mode ?? 'instant');
+    setScheduledAt(task.form.scheduled_at ? beijingInput(new Date(task.form.scheduled_at)) : '');
   }, [formSignature]);
-  useEffect(() => { if (succeeded) setCollapsed(true); }, [succeeded]);
+  useEffect(() => { if (succeeded || scheduled) setCollapsed(true); }, [succeeded, scheduled]);
   useEffect(() => { setSnapshot(null); }, [task.task?.state_version, task.task?.plan_version, task.task?.outcome]);
   const ended = task.status === 'CANCELLED' || visible?.phase === 'FINISHED';
   const newPhone = phone !== (task.form.phone_masked || '') && !!phone;
   const newCard = card !== (task.form.card_masked || '') && !!card;
   const dirty = recipient !== task.form.recipient || amount !== task.form.amount_yuan ||
     phone !== (task.form.phone_masked || '') || card !== (task.form.card_masked || '') ||
-    clearPhone || clearCard || payer !== task.form.payer_account_id || note !== task.form.note;
+    clearPhone || clearCard || payer !== task.form.payer_account_id || note !== task.form.note ||
+    executionMode !== (task.form.execution_mode ?? 'instant') ||
+    (executionMode === 'scheduled' && scheduledAt !== (task.form.scheduled_at ? beijingInput(new Date(task.form.scheduled_at)) : ''));
   const canCancel = !ended && (!visible || visible.allowed_actions.includes('cancel'));
   const canSave = !ended && (!visible || visible.allowed_actions.includes('modify'));
 
@@ -60,12 +68,18 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
   async function save(event: FormEvent) {
     event.preventDefault();
     if (disabled || busy || !dirty || !canSave) return;
+    if (executionMode === 'scheduled' && !scheduledAt) { setError('请选择定时执行时间'); return; }
+    if (executionMode === 'scheduled' && new Date(fromBeijingInput(scheduledAt)).getTime() <= Date.now()) {
+      setError('定时执行时间必须晚于当前时间'); return;
+    }
     setBusy(true); setError(''); setNotice('');
     try {
       const updated = await saveNovaTaskForm(session.session_id, task.chat_task_id, session.session_version, {
         recipient, amount_yuan: amount, phone: newPhone ? phone.trim() : null, card: newCard ? card.trim() : null,
         clear_phone: clearPhone || (!!task.form.phone_masked && !phone),
         clear_card: clearCard || (!!task.form.card_masked && !card), payer_account_id: payer, note,
+        execution_mode: executionMode,
+        scheduled_at: executionMode === 'scheduled' ? fromBeijingInput(scheduledAt) : null,
       });
       onUpdated(updated);
       setNotice('卡片信息已保存，请核对最新计划。');
@@ -145,7 +159,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
   return <article className={`card nova-transfer-card${focused?' is-focused':''}`} aria-label={`转账任务：${task.recipient || '待填写收款人'}`} onFocusCapture={onFocus} onPointerDown={onFocus}>
     <div className="nova-transfer-card-head"><div><strong>转账任务</strong>
       <small>{task.recipient || '待填写收款人'} · {task.form.amount_yuan ? `¥${task.form.amount_yuan}` : '待填写金额'}
-        {succeeded ? ' · 已完成' : task.missing_fields.length ? ' · 待补充' : ' · 待核对'}</small></div>
+        {succeeded ? ' · 已完成' : scheduled ? ' · 已预约' : task.missing_fields.length ? ' · 待补充' : ' · 待核对'}</small></div>
       <div className="nova-transfer-card-controls"><button type="button" className="secondary nova-transfer-toggle"
         aria-expanded={!collapsed} aria-label={collapsed ? '展开转账任务' : '折叠转账任务'}
         onClick={() => setCollapsed(value => !value)}>{collapsed ? '展开' : '折叠'}</button>
@@ -178,6 +192,19 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       </select></label>
       <label>备注（可选）<input value={note} maxLength={256} disabled={disabled || busy || !canSave}
         onChange={event => setNote(event.target.value)} placeholder="转账备注" /></label>
+      <label>执行方式<select value={executionMode} disabled={disabled || busy || !canSave}
+        onChange={event => {
+          const mode = event.target.value as 'instant' | 'scheduled';
+          setExecutionMode(mode);
+          if (mode === 'scheduled' && !scheduledAt) setScheduledAt(beijingInput(new Date(Date.now() + 2 * 60_000)));
+        }}><option value="instant">立即转账</option><option value="scheduled">定时转账</option></select></label>
+      {executionMode === 'scheduled' && <>
+        <label>执行时间（北京时间）<input type="datetime-local" required min={beijingInput(new Date())}
+          value={scheduledAt} disabled={disabled || busy || !canSave} onChange={event => setScheduledAt(event.target.value)} />
+          <small>到达设定时间后才执行；确认前可修改。</small></label>
+        <button type="button" className="secondary" disabled={disabled || busy || !canSave}
+          onClick={() => setScheduledAt(beijingInput(new Date(Date.now() + 2 * 60_000)))}>快速设置为约 2 分钟后</button>
+      </>}
       {canSave && <button type="submit" disabled={disabled || busy || !dirty}>保存卡片信息</button>}
     </form>
     {task.candidates.length > 0 && <div className="nova-transfer-candidates"><p>请选择匹配的账户：</p>
@@ -189,11 +216,12 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       <p>从 {visible.confirmation_card.payer_card_masked || '付款账户'} 转给 {visible.confirmation_card.recipient_name}<br />
         收款账户：{visible.confirmation_card.recipient_card_masked || visible.confirmation_card.recipient_phone_masked || '请核对收款人'}<br />
         金额：¥{visible.confirmation_card.amount.toFixed(2)} · 备注：{visible.confirmation_card.note || '无'}</p>
-      <p className="hint">风险级别：{visible.confirmation_card.risk_level}。点击确认后将按银行规则执行；高风险转账还需验证码。</p>
+      {visible.scheduled_at && <p>计划执行时间：{beijingTime(visible.scheduled_at)}（北京时间）</p>}
+      <p className="hint">风险级别：{visible.confirmation_card.risk_level}。{visible.scheduled_at ? '确认后等待计划时间执行' : '点击确认后将按银行规则执行'}；高风险转账还需验证码。</p>
     </div>}
     <div className="nova-transfer-actions">
       {visible?.allowed_actions.includes('confirm') && <button type="button" disabled={disabled || busy || dirty}
-        onClick={() => void confirm()}>确认转账</button>}
+        onClick={() => void confirm()}>{visible.scheduled_at ? '确认定时转账' : '确认转账'}</button>}
       {visible?.allowed_actions.includes('reconcile') && <button type="button" disabled={disabled || busy}
         onClick={() => void reconcile()}>核对银行结果</button>}
     </div>
@@ -201,7 +229,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       <strong>身份验证</strong><SecondFactor purpose="transfer" referenceId={visible.task_id} factor={factor} onChange={setFactor} disabled={disabled || busy} />
       <input aria-label="转账验证码" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
         value={code} disabled={disabled || busy} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 位验证码" />
-      <button type="submit" disabled={disabled || busy || !factor || code.length !== 6}>验证并执行</button>
+      <button type="submit" disabled={disabled || busy || !factor || code.length !== 6}>{visible.scheduled_at ? '验证并安排定时转账' : '验证并执行'}</button>
     </form>}
     {notice && <p className="hint" role="status">{notice}</p>}
     {error && <p className="nova-error" role="alert">{error}</p>}

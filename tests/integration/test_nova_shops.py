@@ -260,3 +260,26 @@ async def test_purchase_orders_when_complete_otherwise_prefilled_form_and_never_
             assert (await client.post(f"{base}/{tasks[2]['entry_id']}/dismiss")).status_code == 200
     assert '店铺业务 Skill' in nova.SYSTEM_PROMPT
     assert not [name for name in nova.TOOL_REGISTRY if any(word in name for word in ('pay', 'accept', 'confirm'))]
+
+
+@pytest.mark.asyncio
+async def test_flower_purchase_tool_creates_pending_order_card_without_payment(store):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+
+    async with store() as db:
+        session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+        before = (await db.get(AccountORM, 'A1')).balance_fen
+        tool_context = replace(context(db, 'flower'), original_message='买两束经典玫瑰',
+                               session_id=session_id, request_id='flower-order-1')
+        result = await nova.execute_tool(call('prepare_shop_purchase', {
+            'shop': 'flower', 'product_id': 'ROSE_CLASSIC', 'quantity': 2, 'quantity_quote': '两束'}), tool_context)
+        assert result['data']['created']
+        assert result['data']['order']['status'] == 'PENDING_PAYMENT'
+        assert result['data']['order']['total_fen'] == 19800
+        tasks = (await get_session(db, 'U1', session_id))['shop_tasks']
+        assert len(tasks) == 1 and tasks[0]['order']['product_id'] == 'ROSE_CLASSIC'
+        records = await nova_runtime._shop_records(tool_context)
+        assert records[0]['status'] == 'PENDING_PAYMENT' and not records[0]['completed']
+        assert await db.scalar(select(func.count()).select_from(PaymentRequestORM)) == 1
+        assert (await db.get(AccountORM, 'A1', populate_existing=True)).balance_fen == before

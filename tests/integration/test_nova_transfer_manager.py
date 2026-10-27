@@ -11,12 +11,15 @@ from sqlalchemy import func, select
 
 from tests.integration.test_task_transfer_flow import db, InProcessBankApi
 from backend.app.models import ContactORM, TransferTaskORM, UserORM, AccountORM, TransactionORM
+from backend.app.models.nova_conversation import NovaConversationORM
 from backend.app.services.ai.nlu import (
     Extraction, NLUEngine, TransferTaskExtraction, TransferTurnExtraction,
 )
 from backend.app.services.ai import nova
 from backend.app.services.ai import nova_runtime
+from backend.app.services.ai import task_flow
 from backend.app.services.ai.nova_tools import ToolContext
+from backend.app.services.orchestration import confirm_task
 from backend.app.schemas.nova import PageContext
 from backend.app.services.bank import nova_conversations as bank_conversations
 from backend.app.services.bank import bill_service
@@ -549,6 +552,77 @@ async def test_manage_transfer_task_empty_draft_update_and_cancel(db, monkeypatc
         replace(context, original_message="取消这笔", request_id=uuid4().hex,
                 session_version=updated["session_version"]))
     assert cancelled["tasks"][0]["status"] == "CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_manage_transfer_task_scheduled_and_form_switches_execution_mode(db):
+    scheduled_at = datetime.now(timezone.utc) + timedelta(hours=2)
+    context = ToolContext(
+        "U1", db, PageContext(), original_message="两小时后给李四手机号13900000002转100元",
+        request_id=uuid4().hex, session_id="NOVA-SCHEDULED-TRANSFER",
+        bank_api=InProcessBankApi(db),
+    )
+    result = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="李四", recipient_phone_ref=1, amount_fen=10000,
+        execution_mode="scheduled", scheduled_at=scheduled_at,
+    ), context)
+    task = result["tasks"][0]
+    assert task["form"]["execution_mode"] == "scheduled"
+    assert datetime.fromisoformat(task["form"]["scheduled_at"]) == scheduled_at
+    assert datetime.fromisoformat(task["task"]["scheduled_at"]) == scheduled_at
+    assert task["task"]["phase"] == "WAITING_CONFIRMATION"
+    assert (await db.get(AccountORM, "A1")).balance == 5000
+
+    form = dict(user_id="U1", session_id=result["session_id"],
+                chat_task_id=task["chat_task_id"],
+                session_version=result["session_version"], request_id=uuid4().hex,
+                recipient="李四", amount_yuan="100", phone=None, card=None,
+                clear_phone=False, clear_card=False, payer_account_id="A1", note="")
+    instant = await change_task_form(db, context.bank_api, **form,
+                                     execution_mode="instant", scheduled_at=None)
+    instant_task = instant["tasks"][0]
+    assert instant_task["form"]["execution_mode"] == "instant"
+    assert instant_task["task"]["scheduled_at"] is None
+
+    form["session_version"] = instant["session_version"]
+    form["request_id"] = uuid4().hex
+    new_time = scheduled_at + timedelta(hours=1)
+    scheduled = await change_task_form(db, context.bank_api, **form,
+                                       execution_mode="scheduled", scheduled_at=new_time)
+    assert datetime.fromisoformat(scheduled["tasks"][0]["task"]["scheduled_at"]) == new_time
+
+    db.add(NovaConversationORM(conversation_id=context.session_id, user_id="U1", title_ciphertext="test"))
+    await db.commit()
+    pending = scheduled["tasks"][0]["task"]
+    confirmed = await confirm_task(
+        db, task_id=pending["task_id"], user_id="U1", request_id=uuid4().hex,
+        state_version=pending["state_version"], plan_version=pending["plan_version"])
+    assert confirmed["phase"] == "WAITING_EXECUTION"
+    assert (await db.get(AccountORM, "A1")).balance == 5000
+    assert (await nova_runtime.inspect_active_tasks(context))["unfinished_execute_tasks"] == []
+    assert await task_flow.active(context) is None
+    finish = await nova_runtime.llm_finish_tool(context, [{"name": "manage_transfer_task", "result": {}}])
+    assert finish["outcome"] == "completed"
+    assert finish["target_execute_task_ids"] == []
+    assert finish["execute_tasks"][0]["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_manage_transfer_task_scheduled_without_time_keeps_editable_draft(db):
+    context = ToolContext(
+        "U1", db, PageContext(), original_message="给李四定时转100元",
+        request_id=uuid4().hex, session_id="NOVA-SCHEDULED-DRAFT",
+        bank_api=InProcessBankApi(db),
+    )
+    result = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="李四", amount_fen=10000,
+        execution_mode="scheduled",
+    ), context)
+    task = result["tasks"][0]
+    assert task["form"]["execution_mode"] == "scheduled"
+    assert task["form"]["scheduled_at"] is None
+    assert "定时执行时间" in task["missing_fields"]
+    assert task["task"] is None
 
 
 @pytest.mark.asyncio

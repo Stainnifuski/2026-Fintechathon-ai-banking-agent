@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from uuid import uuid4
 from typing import Literal
 
@@ -83,6 +84,15 @@ class TaskFormRequest(BaseModel):
     clear_card: bool = False
     payer_account_id: str = Field(default="", max_length=64)
     note: str = Field(default="", max_length=256)
+    execution_mode: Literal["instant", "scheduled"] | None = None
+    scheduled_at: datetime | None = None
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def schedule_has_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("定时执行时间须包含时区")
+        return value
 
 
 class TaskCardAction(BaseModel):
@@ -203,7 +213,7 @@ async def task_session(session_id: str, current_user: dict = Depends(get_current
         await bank_conversations.get(db, current_user["user_id"], session_id)
         if await db.get(NovaSessionORM, session_id) is None:
             return {"session_id": session_id, "session_version": 0, "focus_task_id": None,
-                    "tasks": [], "collection_cards": [], "card_operations": [], "subscription_tasks": [], "calendar_tasks": [], "shop_tasks": []}
+                    "tasks": [], "collection_cards": [], "card_operations": [], "subscription_tasks": [], "calendar_tasks": [], "shop_tasks": [], "payment_request_tasks": []}
         return await get_session(db, current_user["user_id"], session_id)
     except (ManagerError, bank_conversations.ConversationError) as error:
         raise _transfer_error(error) from error

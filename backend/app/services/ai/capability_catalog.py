@@ -45,14 +45,17 @@ _CAPABILITIES = (
             {"tool": "list_transactions", "description": "查询已完成转出流水和历史转账记录"},
         ],
         "operations": [
-            {"tool": "manage_transfer_task", "description": "向别人付款：新建、补充、修改或撤销单张即时人民币转账草稿"},
+            {"tool": "manage_transfer_task", "description": "向别人付款：新建、补充、修改或撤销单张立即或定时人民币转账草稿"},
         ],
     },
     {
         "domain": "collection", "name": "收款",
-        "queries": [],
+        "queries": [
+            {"tool": "manage_payment_requests", "description": "查看本人发出和收到的现有收款申请及其状态"},
+        ],
         "operations": [
             {"tool": "manage_collection_request", "description": "请求别人向本人付款：新建、补填、修改或撤销收款草稿，可选择每人金额或 AA 均分总额"},
+            {"tool": "manage_payment_requests", "description": "筛选现有收款申请，在任务卡中批量取消本人发出的待处理申请，或支付/拒绝别人发来的申请"},
         ],
     },
     {

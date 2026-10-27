@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import time
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models.nova_task import NovaMessageReceiptORM, NovaSessionORM, NovaTaskMessageORM
+from ...domain.time import utc_now
 from ...integrations.bank_api import BankApi, BankApiError
 from ..bank.nova_transfer_facts import known_recipients as _known, card_matches as _card_match, historical_recipient
 from ..bank.transfer_cards import transfer_card_number
@@ -57,6 +59,25 @@ def _masked_message(message: str) -> str:
     return re.sub(PHONE, "<手机号>", re.sub(CARD, "<银行卡号>", message))
 
 
+def _scheduled_iso(value: datetime | str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value) if isinstance(value, str) else value
+    except ValueError as error:
+        raise ManagerError("定时执行时间无效", "SCHEDULE_TIME_INVALID", 422) from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ManagerError("定时执行时间必须包含时区", "SCHEDULE_TIMEZONE_REQUIRED", 422)
+    if parsed.astimezone(timezone.utc) <= utc_now():
+        raise ManagerError("定时执行时间必须晚于当前时间", "SCHEDULE_TIME_IN_PAST", 422)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _plan_time(slots: dict) -> datetime | None:
+    raw = slots.get("scheduled_at") if slots.get("execution_mode") == "scheduled" else None
+    return datetime.fromisoformat(raw) if raw else None
+
+
 def _public_task(task: dict, snapshot: dict | None = None) -> dict:
     slots = task.get("slots", {})
     return {"chat_task_id": task["chat_task_id"], "status": task["status"],
@@ -67,7 +88,9 @@ def _public_task(task: dict, snapshot: dict | None = None) -> dict:
                      "phone_masked": "••••" + slots["phone"][-4:] if slots.get("phone") else None,
                      "card_masked": "••••" + slots["card"][-4:] if slots.get("card") else None,
                      "payer_account_id": slots.get("from_account") or slots.get("payer") or "",
-                     "note": slots.get("note") or ""},
+                     "note": slots.get("note") or "",
+                     "execution_mode": slots.get("execution_mode") or "instant",
+                     "scheduled_at": slots.get("scheduled_at") if slots.get("execution_mode") == "scheduled" else None},
             "missing_fields": task.get("missing_fields", []),
             "candidates": task.get("candidates", []),
             "transfer_task_id": task.get("transfer_task_id"), "task": snapshot,
@@ -90,13 +113,15 @@ async def _view(db: AsyncSession, row: NovaSessionORM) -> dict:
     from .card_subscription_tools import chat_card_operations, chat_subscription_tasks
     from .calendar_tools import chat_calendar_tasks
     from .shop_tools import chat_shop_tasks
+    from .payment_request_tools import chat_payment_request_tasks
     return {"session_id": row.session_id, "session_version": row.version,
             "focus_task_id": state.get("focus_task_id"), "tasks": tasks,
             "collection_cards": await collection_cards(db, row.user_id, row.session_id),
             "card_operations": await chat_card_operations(db, row.user_id, state),
             "subscription_tasks": await chat_subscription_tasks(db, row.user_id, state),
             "calendar_tasks": await chat_calendar_tasks(db, row.user_id, state),
-            "shop_tasks": await chat_shop_tasks(db, row.user_id, state)}
+            "shop_tasks": await chat_shop_tasks(db, row.user_id, state),
+            "payment_request_tasks": await chat_payment_request_tasks(row.user_id, state)}
 
 
 async def get_session(db: AsyncSession, user_id: str, session_id: str) -> dict:
@@ -111,10 +136,12 @@ async def change_task_form(db: AsyncSession, bank: BankApi, *, user_id: str, ses
                            chat_task_id: str, session_version: int, request_id: str,
                            recipient: str, amount_yuan: str, phone: str | None,
                            card: str | None, clear_phone: bool, clear_card: bool,
-                           payer_account_id: str, note: str) -> dict:
+                           payer_account_id: str, note: str,
+                           execution_mode: str | None = None, scheduled_at: datetime | None = None) -> dict:
     receipt_id = _digest([user_id, request_id])
     payload = ["form", session_id, chat_task_id, session_version, recipient, amount_yuan,
-               phone, card, clear_phone, clear_card, payer_account_id, note]
+               phone, card, clear_phone, clear_card, payer_account_id, note,
+               execution_mode, scheduled_at.isoformat() if scheduled_at else None]
     digest = _digest(payload)
     receipt = await db.get(NovaMessageReceiptORM, receipt_id)
     if receipt:
@@ -190,6 +217,16 @@ async def change_task_form(db: AsyncSession, bank: BankApi, *, user_id: str, ses
     elif old.get("from_account"):
         slots.pop("from_account", None)
         slots.pop("payer", None)
+    if execution_mode is not None:
+        if execution_mode not in {"instant", "scheduled"}:
+            raise ManagerError("执行方式无效", "INVALID_EXECUTION_MODE", 422)
+        slots["execution_mode"] = execution_mode
+        if execution_mode == "instant":
+            slots.pop("scheduled_at", None)
+        elif scheduled_at is None:
+            slots.pop("scheduled_at", None)
+        else:
+            slots["scheduled_at"] = _scheduled_iso(scheduled_at)
     if slots == old:
         return await _view(db, row)
     changed = await db.execute(update(NovaSessionORM).where(
@@ -210,7 +247,7 @@ async def change_task_form(db: AsyncSession, bank: BankApi, *, user_id: str, ses
                       amount=Decimal(slots["amount_fen"]) / 100, note=slots.get("note"),
                       note_source=("manual" if slots.get("note") else
                                    "cleared" if slots.get("note_cleared") else "automatic"),
-                      recipient_phone=slots.get("phone"), commit=False)
+                      recipient_phone=slots.get("phone"), scheduled_at=_plan_time(slots), commit=False)
         if target.get("transfer_task_id"):
             current = await task_snapshot(db, target["transfer_task_id"], user_id)
             planned = await modify_task(db, bank, task_id=current["task_id"],
@@ -314,6 +351,8 @@ async def _resolve(db: AsyncSession, bank: BankApi, user_id: str, task: dict) ->
     slots = task["slots"]
     name, phone, card = slots.get("recipient"), slots.get("phone"), slots.get("card")
     missing = []
+    schedule_missing = (["定时执行时间"] if slots.get("execution_mode") == "scheduled" and
+                        not slots.get("scheduled_at") else [])
     task["candidates"] = []
     task["candidate_map"] = []
     if not name:
@@ -321,7 +360,7 @@ async def _resolve(db: AsyncSession, bank: BankApi, user_id: str, task: dict) ->
     if not slots.get("amount_fen"):
         missing.append("转账金额")
     if not name:
-        task["missing_fields"], task["status"] = missing, "COLLECTING"
+        task["missing_fields"], task["status"] = missing + schedule_missing, "COLLECTING"
         return
     history_recipient = None
     if slots.get("history_reference_tx_id") and slots.get("to_account"):
@@ -358,7 +397,7 @@ async def _resolve(db: AsyncSession, bank: BankApi, user_id: str, task: dict) ->
             else:
                 missing.append("完整手机号或完整银行卡号")
     if missing:
-        task["missing_fields"], task["status"] = missing, "COLLECTING"
+        task["missing_fields"], task["status"] = missing + schedule_missing, "COLLECTING"
         return
     try:
         directory = await transfer_directory(db, subject_user_id=user_id,
@@ -405,6 +444,7 @@ async def _resolve(db: AsyncSession, bank: BankApi, user_id: str, task: dict) ->
             task["candidate_expires_at"] = time.time() + 600
     except (BankError, BankApiError) as error:
         missing.append(error.message)
+    missing.extend(schedule_missing)
     task["missing_fields"] = missing
     task["status"] = "NEEDS_SELECTION" if task["candidates"] else "COLLECTING" if missing else "READY_FOR_REVIEW"
 
@@ -706,6 +746,16 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                     "amount_source_tx_id", "history_reference_tx_id", "payer", "note"):
             if item.get(key) is not None:
                 slots[key] = item[key]
+        if item.get("execution_mode") is not None:
+            slots["execution_mode"] = item["execution_mode"]
+            if item["execution_mode"] == "instant":
+                slots.pop("scheduled_at", None)
+        elif item.get("scheduled_at") is not None:
+            slots["execution_mode"] = "scheduled"
+        elif is_new:
+            slots.setdefault("execution_mode", "instant")
+        if item.get("scheduled_at") is not None and slots.get("execution_mode") == "scheduled":
+            slots["scheduled_at"] = item["scheduled_at"]
         if item.get("clear_note"):
             slots["note"] = None
             slots["note_cleared"] = True
@@ -740,7 +790,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                           note=slots.get("note"),
                           note_source=("manual" if slots.get("note") else
                                        "cleared" if slots.get("note_cleared") else "automatic"),
-                          recipient_phone=slots.get("phone"), commit=False)
+                          recipient_phone=slots.get("phone"), scheduled_at=_plan_time(slots), commit=False)
             if target.get("transfer_task_id"):
                 current = await task_snapshot(db, target["transfer_task_id"], user_id)
                 snapshot = await modify_task(db, bank, task_id=target["transfer_task_id"],

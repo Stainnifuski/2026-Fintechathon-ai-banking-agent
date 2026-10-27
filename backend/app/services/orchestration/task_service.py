@@ -65,6 +65,9 @@ class TaskError(Exception):
         super().__init__(message)
 
 
+_UNCHANGED_SCHEDULE = object()
+
+
 def _validated_note(note: str | None, source: str | None) -> tuple[str | None, str | None]:
     if source not in {None, "manual", "automatic", "cleared"}:
         raise TaskError("备注来源无效", 422, "INVALID_NOTE_SOURCE")
@@ -916,6 +919,7 @@ async def modify_task(
     note: str | None,
     recipient_phone: str | None = None,
     note_source: str | None = None,
+    scheduled_at: datetime | None | object = _UNCHANGED_SCHEDULE,
     commit: bool = True,
 ) -> dict:
     task = await _owned_task(db, task_id, user_id)
@@ -934,6 +938,17 @@ async def modify_task(
     except ValueError as error:
         raise TaskError(str(error)) from error
     old_plan = await _current_plan(db, task)
+    if scheduled_at is _UNCHANGED_SCHEDULE:
+        scheduled_at_value = old_plan.params.get("scheduled_at")
+    elif scheduled_at is None:
+        scheduled_at_value = None
+    else:
+        if not isinstance(scheduled_at, datetime) or scheduled_at.tzinfo is None or scheduled_at.utcoffset() is None:
+            raise TaskError("定时执行时间必须包含时区", 422, "SCHEDULE_TIMEZONE_REQUIRED")
+        scheduled_at_utc = scheduled_at.astimezone(timezone.utc)
+        if scheduled_at_utc <= datetime.now(timezone.utc):
+            raise TaskError("定时执行时间必须晚于当前时间", 422, "SCHEDULE_TIME_IN_PAST")
+        scheduled_at_value = scheduled_at_utc.isoformat()
     if recipient_phone is None and to_account == old_operation.to_account:
         recipient_phone = old_plan.params.get("recipient_phone")
     try:
@@ -985,7 +1000,7 @@ async def modify_task(
                 old_plan.params.get("recipient_card_confirmed", False)
                 and to_account == old_operation.to_account
             ),
-            "scheduled_at": old_plan.params.get("scheduled_at"),
+            "scheduled_at": scheduled_at_value,
         },
     )
     db.add(new_plan)

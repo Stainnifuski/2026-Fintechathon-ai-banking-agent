@@ -6,6 +6,7 @@ import json
 import re
 import inspect
 import logging
+from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Literal
@@ -29,6 +30,7 @@ from .collection_manager import (
     CollectionError, ManageCollectionRequestArguments, manage_collection_request,
     open_collection_drafts,
 )
+from .payment_request_tools import ManagePaymentRequestsArguments, manage_payment_requests
 from ...integrations.bank_api import BankApiError, get_bank_api
 from ..orchestration import TaskError
 from ..bank.transfer_service import BankError
@@ -93,6 +95,17 @@ class ManageTransferTaskArguments(BaseModel):
     payer_account_id: str | None = Field(default=None, min_length=1, max_length=32)
     note: str | None = Field(default=None, max_length=256)
     clear_note: bool = False
+    execution_mode: Literal["instant", "scheduled"] | None = Field(
+        default=None, description="执行方式：instant 立即转账；scheduled 定时转账。新建省略时默认立即")
+    scheduled_at: datetime | None = Field(
+        default=None, description="定时执行的具体时刻，须为带时区的 ISO 8601 时间；例如 2026-10-28T09:00:00+08:00")
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def schedule_has_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("定时执行时间须包含时区")
+        return value
 
     @model_validator(mode="after")
     def valid_action(self):
@@ -108,6 +121,10 @@ class ManageTransferTaskArguments(BaseModel):
             raise ValueError("收款手机号和手机号引用只能选择一种")
         if self.recipient_card is not None and self.recipient_card_ref is not None:
             raise ValueError("收款银行卡和银行卡引用只能选择一种")
+        if self.execution_mode == "instant" and self.scheduled_at is not None:
+            raise ValueError("立即转账不能填写定时执行时间")
+        if self.action == "cancel" and (self.execution_mode is not None or self.scheduled_at is not None):
+            raise ValueError("取消任务不需要执行方式或时间")
         return self
 
 
@@ -259,13 +276,16 @@ async def manage_transfer_task(
         if not any((arguments.recipient, arguments.recipient_phone, arguments.recipient_phone_ref,
                     arguments.recipient_card, arguments.recipient_card_ref,
                     arguments.amount_fen, arguments.payer_account_id,
-                    arguments.note, arguments.clear_note)):
+                    arguments.note, arguments.clear_note, arguments.execution_mode,
+                    arguments.scheduled_at)):
             return {"reply": "没有提供要修改的信息，请补充具体字段。",
                     "mode": "model", "tool_calls": [], **view}
     if arguments.payer_account_id is not None:
         funding = await bank.transfer_funding_accounts(subject_user_id=context.user_id)
         if arguments.payer_account_id not in {item["account_id"] for item in funding["accounts"]}:
             return {"error": "PAYER_ACCOUNT_INVALID", "message": "付款账户不属于本人当前可转账账户"}
+    if arguments.scheduled_at is not None and arguments.scheduled_at.astimezone(timezone.utc) <= utc_now():
+        return {"error": "SCHEDULE_TIME_IN_PAST", "message": "定时执行时间必须晚于当前时间"}
     # A model may use a trusted contact query to resolve a reference. Names or
     # numbers with neither user-text nor bank-backed evidence are dropped alone.
     message = context.original_message
@@ -308,7 +328,12 @@ async def manage_transfer_task(
     fields = {"intent": decision.intent, "recipient": recipient, "phone": phone,
               "card": card, "amount_fen": arguments.amount_fen,
               "payer": arguments.payer_account_id,
-              "note": note, "clear_note": arguments.clear_note}
+              "note": note, "clear_note": arguments.clear_note,
+              "execution_mode": (arguments.execution_mode or
+                                 ("scheduled" if arguments.scheduled_at is not None else
+                                  "instant" if arguments.action == "create" else None)),
+              "scheduled_at": (arguments.scheduled_at.astimezone(timezone.utc).isoformat()
+                               if arguments.scheduled_at is not None else None)}
     response = await process_message(
         context.db, bank, get_nlu(), user_id=context.user_id,
         message=message, request_id=context.request_id, session_id=context.session_id,
@@ -352,9 +377,12 @@ TOOL_REGISTRY = {
         "schema": {"type": "function", "function": {
             "name": "manage_transfer_task",
             "description": (
-                "在涉及到从自己账户向他人转账时调用，支持操作：新建转账任务卡，修改、取消某张转账任务卡"
+                "在涉及到从自己账户向他人转账时调用，支持操作：新建转账任务卡，修改、取消某张转账任务卡。"
                 "action=create 新建，update 修改指定 chat_task_id，"
                 "cancel 取消指定 chat_task_id。新建时收款人、号码、金额、付款账户和备注都可留空，生成待填写草稿；"
+                "execution_mode 省略时新建默认为 instant 立即转账；用户指定定时转账时填 scheduled，"
+                "并用带时区的 scheduled_at 表示执行时间。用户只要求定时但未给具体时间时仍创建草稿，"
+                "由本人在任务卡选择时间。update 可以调整立即/定时方式和定时执行时间。"
                 "修改时只填写要变更的字段。amount_fen 是确定的整数分；按余额比例转账时，"
                 "先用 get_financial_overview 查询所选账户可用余额，计算出具体分金额后再填写；"
                 "本工具不接受比例参数。"
@@ -397,6 +425,21 @@ TOOL_REGISTRY = {
         "execute": manage_collection_request,
         "requires_identity": True,
     },
+    "manage_payment_requests": {
+        "schema": {"type": "function", "function": {
+            "name": "manage_payment_requests",
+            "description": ("查看本人可见的现有收款申请，或按对方姓名、金额、创建时间、可信申请 ID 筛选申请。"
+                            "action=list 返回当前申请内容；action=cancel 对本人发出的待处理申请打开单笔或批量取消任务卡；"
+                            "action=respond 对别人向本人发出的申请打开支付或拒绝任务卡。"
+                            "未指定筛选条件时选中该方向所有可处理申请。工具仅打开任务卡，不取消、不支付、不拒绝；"
+                            "最终操作必须由本人点击卡片按钮。金额用整数分，时间用带时区的 ISO 8601 边界；"
+                            "相对日期先调用 get_current_time 确定时间范围。"),
+            "parameters": ManagePaymentRequestsArguments.model_json_schema(),
+        }},
+        "arguments": ManagePaymentRequestsArguments,
+        "execute": manage_payment_requests,
+        "requires_identity": True,
+    },
 }
 TOOL_REGISTRY.update(business_tools())
 from .wealth_agent import wealth_tools
@@ -413,9 +456,9 @@ TOOL_REGISTRY["describe_bank_capabilities"] = {
 }
 SYSTEM_PROMPT = """你是 NOVA 银行助手。服务端会先提供结构化路由：direct_react 表示单一目标，直接使用当前允许的业务工具；goal_plan 表示多目标或条件依赖，按其中DAG执行。不得自行改写路由或重复登记计划。批量转账的 Goal Plan 只是高层执行意图，具体新建或调整几笔任务仍以转账子模型结合未终结任务后的结构化判断为准。
 你必须根据用户本轮目标自主规划所需工具；一个要求可以依次调用多个工具，前一步结果可用于决定下一步，但不得编造工具结果或跳过必要核验。
-你可查询现实时间、本人账户概览、联系人及历史转账人、卡片及订阅、月度/年度账单、已完成流水、本人日历活动、模拟鲜花店和蛋糕店商品及本人订单，可用 manage_transfer_task 处理本人付款的即时人民币转账草稿，可用 manage_collection_request 处理本人向别人请求付款的收款草稿，并可为本人卡片操作生成待确认预览。
+你可查询现实时间、本人账户概览、联系人及历史转账人、卡片及订阅、现有收款申请、月度/年度账单、已完成流水、本人日历活动、模拟鲜花店和蛋糕店商品及本人订单，可用 manage_transfer_task 处理本人付款的立即或定时人民币转账草稿，可用 manage_collection_request 处理本人向别人请求付款的收款草稿，可用 manage_payment_requests 查看现有申请并打开取消或付款/拒绝任务卡，并可为本人卡片操作生成待确认预览。
 用户询问 BankAgent 支持哪些业务、各业务可查询或可办理的事项时，调用 describe_bank_capabilities 取得当前业务目录；目录不是用户授权，不得据此执行操作。
-转账=本人从自己账户付给别人；收款=本人请求别人付给自己。不得因两者都含“款”而互换工具；“别人向我收款”不是本人发起收款。
+转账=本人从自己账户付给别人；收款=本人请求别人付给自己。不得因两者都含“款”而互换工具；“别人向我收款”属于现有收款申请的处理，应使用 manage_payment_requests(action=respond)，不是新建收款草稿。
 理财查询、产品推荐、规划、申购、赎回或理财任务修改恢复必须调用manage_wealth_request。理财交易仅由本人在可信卡片确认和MFA；聊天不能授权。
 当前时间日期必须调用 get_current_time，不可猜测。默认北京时间 Asia/Shanghai。
 账户和账单事实必须调用工具，不能使用历史回答或页面提示作为当前事实。所有金额 *_fen 单位为分，展示时换算人民币元。
@@ -451,10 +494,11 @@ COMPLETED是模拟银行交易完成，不代表配送；REFUNDED表示整单已
 待核对提示只举最多3条并说明总数；不要逐条抄写全部月份、异常或统计口径。用户明确要求详细报告时再展开。
 卡片事实和操作按“卡片业务 Skill”办理。所有页面均可查本人数据。
 不模拟订阅扣费或刷卡消费；这些操作引导对应管理页面。
-即时人民币转账必须调用 manage_transfer_task，明确 action、现有卡片 ID 和本次已知字段；新建草稿时字段可留空。文字“确认”“执行”仍不授权扣款。
+人民币转账（立即或定时）必须调用 manage_transfer_task，明确 action、现有卡片 ID 和本次已知字段；新建草稿时字段可留空。定时执行时间使用带时区的具体时间，用户没给具体时间就留空让其在卡片中选择。文字“确认”“执行”仍不授权扣款。
+定时转账经用户在任务卡确认并完成必要验证后，聊天任务即告完成；银行按预约时间执行。回复应说“已预约”，不要说“已到账”。
 若一句话同时包含查询和转账等多个目标，应分别调用所需工具，不要只完成其中一个。涉及历史转账人、金额或付款账户的指代时先查询本人事实，再把已核实字段填写到转账工具参数；不得把列表展示名当作可信收款账户。按余额比例转账时先查询对应账户的可用余额，再按用户给定比例计算整数分金额，转账工具只接收具体金额。一个收款对象对应一次转账工具调用，不要补造没有依据的字段。
 修改或补充已有转账任务时使用可信任务上下文：用户未明确对象且有 focus_task_id 时直接选择焦点任务；用户明确收款人时选择该收款人唯一对应的 chat_task_id；有多个同名任务才追问。不要因为会话中有多笔任务而忽略焦点任务。
-除受控转账草稿、收款草稿、卡片操作预览、取消订阅任务卡、创建本人日程和店铺下单外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
+除受控转账草稿、收款草稿、现有收款申请任务卡、卡片操作预览、取消订阅任务卡、创建本人日程和店铺下单外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
 SYSTEM_PROMPT += "\n收款业务 Skill：\n" + load_skill("collection")
 SYSTEM_PROMPT += "\n卡片业务 Skill：\n" + load_skill("card")
 SYSTEM_PROMPT += "\n订阅业务 Skill：\n" + load_skill("subscription")
@@ -775,7 +819,7 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                 elif direct_transfer:
                     allowed_names = {"manage_transfer_task"}
                 elif direct_collection:
-                    allowed_names = {"manage_collection_request"}
+                    allowed_names = {"manage_collection_request", "manage_payment_requests"}
                 elif route is not None:
                     allowed_names = set(TOOL_REGISTRY) - {"declare_goal_plan"}
                 else:

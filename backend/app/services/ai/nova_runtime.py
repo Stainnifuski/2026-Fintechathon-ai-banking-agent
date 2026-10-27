@@ -59,7 +59,9 @@ def _phase_tools(registry: dict) -> set[str]:
              for entry in business["queries"]}
     reads.discard("manage_wealth_request")  # mixed read/write tool
     return (reads | {"manage_transfer_task", "manage_collection_request",
-                     "preview_card_operation", "manage_subscription_task", "manipulate_calender_event"}) & set(registry)
+                     "manage_payment_requests",
+                     "preview_card_operation", "manage_subscription_task", "manipulate_calender_event",
+                     "prepare_shop_purchase"}) & set(registry)
 
 
 def _task_description(task: dict) -> dict:
@@ -71,6 +73,8 @@ def _task_description(task: dict) -> dict:
         "amount_fen": task.get("amount_fen"),
         "payer_account_id": form.get("payer_account_id") or None,
         "note": form.get("note") or None,
+        "execution_mode": form.get("execution_mode", "instant"),
+        "scheduled_at": form.get("scheduled_at"),
         "missing_fields": task.get("missing_fields") or [],
     }
 
@@ -150,11 +154,64 @@ async def _calendar_records(context: ToolContext) -> list[dict]:
             for entry in (row.state or {}).get('calendar_tasks', []) if entry.get('kind') == 'mutation']
 
 
+async def _shop_records(context: ToolContext) -> list[dict]:
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    if row is None:
+        return []
+    if row.user_id != context.user_id:
+        raise ValueError('CONVERSATION_OWNER_MISMATCH')
+    from .. import shop_reads
+    records = []
+    for entry in (row.state or {}).get('shop_tasks', []):
+        order = None
+        if entry.get('shop') and entry.get('order_id'):
+            try:
+                order = (await shop_reads.orders(context.db, context.user_id, entry['shop'],
+                                                order_id=entry['order_id']))[0]
+            except shop_reads.ShopReadError:
+                pass
+        status = order['status'] if order else 'FORM'
+        records.append({'id': entry['entry_id'], 'type': 'shop', 'status': status,
+                        'completed': bool(entry.get('closed')) or status in {
+                            'COMPLETED', 'PAYMENT_CLOSED', 'REFUNDED', 'PARTIALLY_REFUNDED'},
+                        'description': {'shop': entry.get('shop'), 'prefill': entry.get('prefill') or {},
+                                        'order_id': entry.get('order_id'),
+                                        'product_name': order['product_name'] if order else None}})
+    return records
+
+
+async def _payment_request_records(context: ToolContext) -> list[dict]:
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    if row is None:
+        return []
+    if row.user_id != context.user_id:
+        raise ValueError("CONVERSATION_OWNER_MISMATCH")
+    from .payment_request_tools import chat_payment_request_tasks
+    cards = await chat_payment_request_tasks(context.user_id, row.state or {})
+    return [{'id': card['entry_id'], 'type': 'payment_request', 'status': card['action'],
+             'completed': not any(request['status'] == 'PENDING' if card['action'] == 'cancel' else
+                                  request['status'] in {'PENDING', 'ACCEPTED'}
+                                  for request in card['requests']),
+             'description': {'action': card['action'], 'request_count': len(card['requests']),
+                             'request_ids': [request['payment_request_id'] for request in card['requests']]}}
+            for card in cards]
+
+
 async def _load(context: ToolContext) -> tuple[NovaAgentRuntimeORM | None, dict]:
     row = await context.db.get(NovaAgentRuntimeORM, context.session_id)
     if row and row.user_id != context.user_id:
         raise ValueError("CONVERSATION_OWNER_MISMATCH")
     return row, dict(row.state or {}) if row else {"execute_tasks": [], "read_tasks": [], "target_execute_task_ids": []}
+
+
+def _transfer_chat_completed(task: dict) -> bool:
+    """A confirmed reservation finishes the chat workflow before bank execution."""
+    status = task["status"]
+    bank_task = task.get("task") or {}
+    actions = bank_task.get("allowed_actions")
+    return (status in {"CANCELLED", "SUCCEEDED", "FAILED"}
+            or (bank_task.get("phase") == "WAITING_EXECUTION" and bool(bank_task.get("scheduled_at")))
+            or (actions is not None and not any(action in actions for action in ("modify", "cancel"))))
 
 
 async def inspect_active_tasks(context: ToolContext) -> dict:
@@ -164,9 +221,7 @@ async def inspect_active_tasks(context: ToolContext) -> dict:
         bank = await get_session(context.db, context.user_id, context.session_id)
         tasks = [dict(id=t["chat_task_id"], type="execute", status=t["status"],
                       description=_task_description(t)) for t in bank["tasks"]
-                 if t["status"] not in {"CANCELLED", "SUCCEEDED", "FAILED"}
-                 and (not t.get("task") or any(a in t["task"].get("allowed_actions", ["modify"])
-                                                for a in ("modify", "cancel")))]
+                 if not _transfer_chat_completed(t)]
     except ManagerError as error:
         if error.code != "SESSION_NOT_FOUND":
             raise
@@ -179,6 +234,10 @@ async def inspect_active_tasks(context: ToolContext) -> dict:
                  for task in await _subscription_records(context) if not task["completed"])
     tasks.extend({key: task[key] for key in ('id', 'type', 'status', 'description')}
                  for task in await _calendar_records(context) if not task['completed'])
+    tasks.extend({key: task[key] for key in ('id', 'type', 'status', 'description')}
+                 for task in await _shop_records(context) if not task['completed'])
+    tasks.extend({key: task[key] for key in ('id', 'type', 'status', 'description')}
+                 for task in await _payment_request_records(context) if not task['completed'])
     ids = {t["id"] for t in tasks}
     return {"unfinished_execute_tasks": tasks,
             "target_execute_task_ids": [t for t in state.get("target_execute_task_ids", []) if t in ids]}
@@ -200,10 +259,7 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     for task in current:
         task_id = task["chat_task_id"]
         status = task["status"]
-        bank_task = task.get("task") or {}
-        actions = bank_task.get("allowed_actions")
-        completed = (status in {"CANCELLED", "SUCCEEDED", "FAILED"}
-                     or (actions is not None and not any(a in actions for a in ("modify", "cancel"))))
+        completed = _transfer_chat_completed(task)
         new_tasks.append({"id": task_id, "type": "execute", "status": status,
                           "completed": completed,
                           "description": _task_description(task)})
@@ -211,6 +267,8 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     new_tasks.extend(await _card_records(context))
     new_tasks.extend(await _subscription_records(context))
     new_tasks.extend(await _calendar_records(context))
+    new_tasks.extend(await _shop_records(context))
+    new_tasks.extend(await _payment_request_records(context))
     new_ids = {t["id"] for t in new_tasks if t["id"] not in previous and not t["completed"]}
     unfinished = {t["id"] for t in new_tasks if not t["completed"]}
     # A read-only or failed turn retains target. New cards in this turn become
@@ -220,7 +278,9 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     reads = list(state.get("read_tasks", []))
     from .nova import TOOL_REGISTRY
     execute_names = {"manage_transfer_task", "manage_collection_request",
-                     "preview_card_operation", "manage_subscription_task", "manipulate_calender_event"}
+                     "manage_payment_requests",
+                     "preview_card_operation", "manage_subscription_task", "manipulate_calender_event",
+                     "prepare_shop_purchase"}
     read_names = _phase_tools(TOOL_REGISTRY) - execute_names
     for item in trace:
         if item.get("name") in read_names:
@@ -262,9 +322,9 @@ async def chat(message: str, history: list[dict], *, model=None,
     catalog = describe_capabilities(business_tools)
     trace.append({"name": "describe_bank_capabilities", "result": catalog, "internal": True})
     debug_trace.record("capability_catalog", catalog)
-    _, state = await _load(context)
+    active_tasks = await inspect_active_tasks(context)
     status = {"recent_turns": history[-10:],
-              "target_execute_task_ids": state.get("target_execute_task_ids", [])}
+              "target_execute_task_ids": active_tasks["target_execute_task_ids"]}
     messages = [{"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps({"system_status": status,
                     "message": message, "page_context": context.page.model_dump(mode="json", exclude_none=True)}, ensure_ascii=False)}]
@@ -275,7 +335,7 @@ async def chat(message: str, history: list[dict], *, model=None,
     try:
         async with asyncio.timeout(90):
             decision = (await client.generate_structured(messages=[
-                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款、银行卡、订阅或日历操作任务卡；只输出结构化判断。"}],
+                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款、银行卡、订阅、日历或店铺订单任务卡；只输出结构化判断。"}],
                 schema=DependencyDecision, max_tokens=300)).data
             debug_trace.record("dependency_decision", decision.model_dump(mode="json"))
             if decision.depends_on_prior_task:
@@ -294,13 +354,14 @@ async def chat(message: str, history: list[dict], *, model=None,
             card_skill_loaded = False
             subscription_skill_loaded = False
             calendar_skill_loaded = False
+            shop_skill_loaded = False
             calendar_query_skill_loaded = False
             calendar_search_empty = False
             calendar_list_after_search = False
             calendar_list_replanned = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
-                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
+                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。查看或处理现有收款申请使用 manage_payment_requests；新建向别人收款的草稿使用 manage_collection_request。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。用户要在花店或蛋糕店购买商品时选择 prepare_shop_purchase；商品或数量未确定也可打开订单表单，不要查完商品就结束。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
                     schema=ToolSelection, max_tokens=400)).data
                 debug_trace.record("tool_selection", selection.model_dump(mode="json"))
                 invalid = [n for n in selection.tool_names if n not in allowed]
@@ -311,9 +372,11 @@ async def chat(message: str, history: list[dict], *, model=None,
                 selected.update(n for n in selection.tool_names if n in allowed)
                 if "preview_card_operation" in selected:
                     selected.add("list_cards")
+                if 'prepare_shop_purchase' in selected:
+                    selected.add('list_shop_products')
                 if selected & {'search_calendar_events', 'list_calendar_events', 'get_calendar_event'}:
                     selected.update({'search_calendar_events', 'list_calendar_events', 'get_calendar_event'} & allowed)
-                if "manage_collection_request" in selected and not collection_skill_loaded:
+                if selected & {"manage_collection_request", "manage_payment_requests"} and not collection_skill_loaded:
                     messages.append({"role": "system", "content": "收款业务规则：" + load_skill("collection")})
                     collection_skill_loaded = True
                 if "preview_card_operation" in selected and not card_skill_loaded:
@@ -325,6 +388,9 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if 'manipulate_calender_event' in selected and not calendar_skill_loaded:
                     messages.append({'role': 'system', 'content': '日历业务规则：' + load_skill('calendar')})
                     calendar_skill_loaded = True
+                if 'prepare_shop_purchase' in selected and not shop_skill_loaded:
+                    messages.append({'role': 'system', 'content': '店铺业务规则：' + load_skill('shop')})
+                    shop_skill_loaded = True
                 if selected & {'search_calendar_events', 'list_calendar_events', 'get_calendar_event'} and not calendar_query_skill_loaded:
                     messages.append({'role': 'system', 'content': '日历信息查询规则：' + load_skill('calendar_query')})
                     calendar_query_skill_loaded = True
@@ -334,7 +400,7 @@ async def chat(message: str, history: list[dict], *, model=None,
                 plan = (await client.generate_structured(messages=[*messages,
                     {"role": "system", "content": "现在规划工具调用。仅使用已动态提供的工具 Schema：" +
                      json.dumps(schemas, ensure_ascii=False) +
-                     "。按依赖顺序列出 calls；打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。日历添加即使缺少事件名称或具体时间也要调用 manipulate_calender_event(action=add) 打开可补全的任务卡；若先查当前时间，本轮查完后继续规划并调用日历操作工具。日历事件按名称或地点搜索无结果时，使用 list_calendar_events 查看相关日期范围的活动，再根据列表规划下一步。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
+                     "。按依赖顺序列出 calls；查看或处理现有收款申请调用 manage_payment_requests，取消/支付/拒绝只打开待本人操作的卡片。打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。日历添加即使缺少事件名称或具体时间也要调用 manipulate_calender_event(action=add) 打开可补全的任务卡；若先查当前时间，本轮查完后继续规划并调用日历操作工具。花店或蛋糕店购买时先查 list_shop_products，再按可信商品 ID 调用 prepare_shop_purchase；缺商品或数量仍须打开可补全订单表单。日历事件按名称或地点搜索无结果时，使用 list_calendar_events 查看相关日期范围的活动，再根据列表规划下一步。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
                     schema=ToolPlan, max_tokens=1300)).data
                 debug_trace.record("tool_plan", plan.model_dump(mode="json"))
                 if plan.clarification and not plan.calls:
@@ -372,6 +438,15 @@ async def chat(message: str, history: list[dict], *, model=None,
                                     for item in trace)):
                     calls = [next((call for call in calls if call.name == "list_cards"),
                                   PlannedCall(name="list_cards", arguments={}))]
+                purchase = next((call for call in calls if call.name == 'prepare_shop_purchase'), None)
+                shop_hint = (purchase.arguments.get('shop') or (context.page.shop.shop if context.page.shop else None)) if purchase else None
+                selected_product = bool(context.page.shop and context.page.shop.shop == shop_hint and
+                                        context.page.shop.selected and context.page.shop.selected.type == 'product')
+                if (purchase and shop_hint and not selected_product and
+                        not any(item['name'] == 'list_shop_products' and not item['result'].get('error')
+                                    for item in trace)):
+                    calls = [next((call for call in calls if call.name == 'list_shop_products'),
+                                  PlannedCall(name='list_shop_products', arguments={'shop': shop_hint}))]
                 failed = False
                 for call in calls:
                     if call.name not in selected:
@@ -418,9 +493,10 @@ async def chat(message: str, history: list[dict], *, model=None,
                         continue
                     # An execute tool may depend on a bank read made in this turn.
                     # Replan with that result before opening the task card.
-                    if (selected & {"manage_transfer_task", "preview_card_operation", "manage_subscription_task", "manipulate_calender_event"}
+                    if (selected & {"manage_transfer_task", "manage_payment_requests", "preview_card_operation", "manage_subscription_task", "manipulate_calender_event", "prepare_shop_purchase"}
                             and not any(call.name in {"manage_transfer_task", "preview_card_operation",
-                                                       "manage_subscription_task", "manipulate_calender_event"}
+                                                       "manage_subscription_task", "manipulate_calender_event",
+                                                       "prepare_shop_purchase", "manage_payment_requests"}
                                         for call in calls)
                             and any(call.name != "describe_bank_capabilities" for call in calls)):
                         continue
@@ -443,6 +519,14 @@ async def chat(message: str, history: list[dict], *, model=None,
         failure = next((item.get('result', {}).get('message') for item in reversed(trace)
                         if item.get('name') == 'manipulate_calender_event' and item.get('result', {}).get('error')), None)
         result['reply'] = (failure or '日程任务卡尚未生成，请再试一次；我没有对日历进行修改。')
+    if 'prepare_shop_purchase' in selected and not any(
+            item.get('name') == 'prepare_shop_purchase' and
+            (item.get('result', {}).get('data', {}).get('created') or
+             item.get('result', {}).get('data', {}).get('form_opened'))
+            for item in trace):
+        failure = next((item.get('result', {}).get('message') for item in reversed(trace)
+                        if item.get('name') == 'prepare_shop_purchase' and item.get('result', {}).get('error')), None)
+        result['reply'] = failure or '订单任务卡尚未生成，也没有提交订单，请再试一次。'
     if not result["reply"]:
         final_messages = [*messages, {"role": "system", "content":
             "请直接用自然语言回答用户本轮请求，表达方式由你决定。以本轮可信工具结果和任务收尾状态为事实依据；"

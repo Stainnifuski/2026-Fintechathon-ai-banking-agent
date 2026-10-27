@@ -128,6 +128,29 @@ async def test_calendar_add_never_claims_card_without_successful_tool_call(conte
 
 
 @pytest.mark.asyncio
+async def test_flower_purchase_reads_catalog_then_opens_order_form(context):
+    model = FakeModel(False, ['prepare_shop_purchase'], [
+        nova_runtime.PlannedCall(name='prepare_shop_purchase', arguments={'shop': 'flower'})])
+    result = await nova_runtime.chat('想在花店买花', [], model=model, context=context)
+    assert [item['name'] for item in result['tool_calls'] if item['name'] in
+            {'list_shop_products', 'prepare_shop_purchase'}] == [
+                'list_shop_products', 'prepare_shop_purchase']
+    row = await context.db.get(NovaSessionORM, context.session_id)
+    assert row.state['shop_tasks'][0]['shop'] == 'flower'
+    assert row.state['shop_tasks'][0]['order_id'] is None
+    assert result['tool_calls'][-2]['result']['data']['form_opened']
+
+
+@pytest.mark.asyncio
+async def test_flower_purchase_does_not_claim_order_card_without_tool(context):
+    model = FakeModel(False, ['prepare_shop_purchase'], [
+        nova_runtime.PlannedCall(name='list_shop_products', arguments={'shop': 'flower'})])
+    result = await nova_runtime.chat('想在花店买花', [], model=model, context=context)
+    assert '订单任务卡尚未生成' in result['reply']
+    assert not any(item['name'] == 'prepare_shop_purchase' for item in result['tool_calls'])
+
+
+@pytest.mark.asyncio
 async def test_fallback_reply_is_sent_in_ordered_deltas():
     events = []
 
