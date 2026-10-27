@@ -18,8 +18,11 @@ _CAPABILITIES = (
             {"tool": "get_bill_analysis", "description": "月度和年度收支、分类、趋势、上期比较及待核对提示"},
             {"tool": "list_transactions", "description": "已完成流水列表及筛选结果"},
             {"tool": "get_transaction", "description": "单笔已完成流水详情"},
+            {"tool": "get_bill_catalog", "description": "本人商户、标签、分类规则及商户整理历史"},
+            {"tool": "list_bill_anomalies", "description": "账单异常及核对状态"},
+            {"tool": "preview_bill_merchant_change", "description": "商户归并或拆分的只读范围预览"},
         ],
-        "operations": [],
+        "operations": [{"tool": "prepare_bill_change", "description": "生成待本人确认的账单修改任务卡"}],
     },
     {
         "domain": "planning", "name": "预算与现金流",

@@ -2,6 +2,8 @@
 
 本仓库的 `backend` 和 `frontend` Docker 服务从源码构建镜像；运行中的容器不会自动加载后来修改的应用代码。
 
+重建前先核对运行容器的 Compose 配置文件标签与实际 `DATABASE_URL`。存在覆盖文件时必须沿用；不要只运行基础 Compose 而静默切库。常规启动使用 `start_bank.cmd` 或 `scripts/start_bank.ps1`，启动器会复用本机存在的覆盖配置。本机当前全部业务账本统一为默认 PostgreSQL 库 `banking_agent`；历史库名只用于迁移记录，不应重新选作运行库。
+
 完成会影响运行中前后端行为的修改并通过相关验证后，如果本仓库的 Docker Compose 服务正在运行，从仓库根目录执行：
 
 ```bash

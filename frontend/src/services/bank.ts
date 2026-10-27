@@ -104,6 +104,11 @@ export const cancelSubscription = (subscription: Subscription, confirmationToken
     state_version: subscription.state_version,
     confirmation_token: confirmationToken,
   }).then(r => r.data);
+// 仅订阅页调试使用，不注册为 NOVA 工具。
+export const restoreSubscriptionForTesting = (subscription: Subscription) =>
+  apiClient.post<Subscription>(`/subscriptions/${subscription.subscription_id}/restore-test`, {
+    state_version: subscription.state_version,
+  }).then(r => r.data);
 export const simulateSubscriptionCharge = (subscription: Subscription, idempotencyKey: string) =>
   apiClient.post<SubscriptionChargeResult>(`/subscriptions/${subscription.subscription_id}/simulate-charge`, {
     state_version: subscription.state_version,

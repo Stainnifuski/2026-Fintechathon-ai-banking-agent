@@ -1,15 +1,15 @@
 """JWT 认证中间件"""
 
-import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from ..security.auth_configuration import jwt_signing_secret
 
 # ──────────────────── 常量 ────────────────────
 
-JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-key-change-in-production")
+JWT_SECRET: str = jwt_signing_secret()
 JWT_ALGORITHM: str = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 

@@ -9,8 +9,8 @@ def transfer_card_number(account_id: str) -> str:
     # Account.card_number is masked historical display data, so it cannot identify a receiver.
     # Account IDs appear in transfer APIs. A keyed derivation prevents callers
     # from reconstructing another person's card number from an account ID.
-    key = (os.getenv("TRANSFER_CARD_SECRET") or os.getenv("JWT_SECRET") or
-           "dev-secret-key-change-in-production").encode()
+    from ...security.auth_configuration import jwt_signing_secret
+    key = (os.getenv("TRANSFER_CARD_SECRET") or jwt_signing_secret()).encode()
     digest = hmac.new(key, account_id.encode(), sha256).hexdigest()
     stem = "6214" + str(int(digest, 16) % 10**11).zfill(11)
     total = 0

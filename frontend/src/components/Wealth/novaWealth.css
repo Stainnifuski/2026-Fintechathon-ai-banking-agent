@@ -35,3 +35,23 @@
 .nova-execution-queue ol{padding-left:22px;display:grid;gap:10px}
 .nova-execution-queue li[aria-current=step]{font-weight:600;color:#364ee8}
 .nova-execution-queue details{font-weight:400;color:#233451}
+
+/* Each Agent step is a separate card; workspace themes must not re-wrap
+   the complete task or its source fieldsets in another large panel. */
+.nova-messages .nova-wealth-card.wealth-page{border:0;background:transparent;box-shadow:none;padding:0;border-radius:0}
+.nova-wealth-timeline:empty{display:none}
+.nova-wealth-card .wealth-page{background:transparent;border:0;box-shadow:none;padding:0}
+.nova-messages .nova-wealth-card.wealth-page .structured-actions>fieldset,
+.nova-messages .nova-wealth-card.wealth-page .wealth-step-body>fieldset{border:0;background:transparent;box-shadow:none;padding:0;margin:0}
+.nova-wealth-card .wealth-step-card{scroll-margin-block:12px}
+.nova-wealth-card .wealth-step-card.is-completed{padding:8px 12px;margin:8px 0}
+.nova-wealth-card .wealth-step-card>header{min-height:32px}
+.nova-wealth-card .wealth-step-card>header>strong{flex:1;min-width:0}
+.nova-wealth-card .wealth-step-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.nova-wealth-card .wealth-step-actions button{min-height:28px;margin:0;padding:4px 8px;font-size:12px;white-space:nowrap}
+.nova-wealth-card .wealth-step-card.is-completed .wealth-step-body:not([hidden]){margin-top:10px}
+@media(max-width:420px){
+ .nova-wealth-card .wealth-step-card.is-completed>header>strong{font-size:13px}
+ .nova-wealth-card .wealth-step-actions{gap:0}
+ .nova-wealth-card .wealth-step-actions button{padding:4px;font-size:11px}
+}

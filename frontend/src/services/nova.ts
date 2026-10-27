@@ -19,12 +19,30 @@ export type NovaPageContext = {
     selected_event?: { event_id: string; starts_at: string };
   };
   filters?: BillQuery;
+  bill_workspace?: {
+    section: 'overview'|'transactions'|'budgets'|'checks'|'forecast'|'organize';
+    subsection?: 'anomalies'|'subscriptions'|'recurring'|'cashflow'|'history'|'merchants'|'rules';
+    budget_month?: string;
+    account_id?: string|null;
+    selected?: {type:'transaction'|'budget'|'anomaly'|'recurring'|'merchant'|'category_rule'|'tag';id:string};
+  };
   details?: { category?: string; tx_ids: string[]; page: number };
   selected?: { type: 'transaction'; id: string };
   observed_as_of?: string;
 };
 
 export type NovaMessage = { role: 'user' | 'assistant'; content: string; request_id?: string };
+export type NovaPromptRequest = { id: string; text: string; context: NovaPageContext; userId: string };
+export type NovaBillAction = {
+  action_id: string; request_id: string; session_id: string;
+  status: 'pending' | 'completed' | 'cancelled' | 'expired';
+  title: string; lines: string[]; expires_at: string; notice: string;
+  fields?: {label:string;value?:string;before?:string;after?:string}[];
+};
+export const getNovaBillActions = (sessionId: string) =>
+  apiClient.get<NovaBillAction[]>(`/nova/conversations/${sessionId}/bill-actions`).then(r => r.data);
+export const decideNovaBillAction = (card: NovaBillAction, decision: 'confirm' | 'cancel') =>
+  apiClient.post<NovaBillAction>(`/nova/conversations/${card.session_id}/bill-actions/${card.action_id}/decision`, { decision }).then(r => r.data);
 export type NovaConversation = { session_id: string; title: string; created_at: string; updated_at: string };
 export type NovaConversationDetail = NovaConversation & { messages: NovaMessage[] };
 /** 聊天中的店铺订单：已下单时含订单（付款由本人在卡片中确认），否则为预填表单。 */

@@ -59,7 +59,7 @@ def _phase_tools(registry: dict) -> set[str]:
              for entry in business["queries"]}
     return (reads | {"manage_transfer_task", "manage_collection_request",
                      "manage_payment_requests",
-                     "preview_card_operation", "manage_subscription_task", "manipulate_calender_event",
+                     "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event",
                      "prepare_shop_purchase", "manage_wealth_request"}) & set(registry)
 
 
@@ -293,7 +293,7 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
               [t for t in state.get("target_execute_task_ids", []) if t in unfinished])
     reads = list(state.get("read_tasks", []))
     from .nova import TOOL_REGISTRY
-    execute_names = {"manage_transfer_task", "manage_collection_request",
+    execute_names = {"manage_transfer_task", "manage_collection_request", "prepare_bill_change",
                      "manage_payment_requests", "manage_wealth_request",
                      "preview_card_operation", "manage_subscription_task", "manipulate_calender_event",
                      "prepare_shop_purchase"}
@@ -379,6 +379,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             calendar_skill_loaded = False
             shop_skill_loaded = False
             wealth_skill_loaded = False
+            bills_skill_loaded = False
             calendar_query_skill_loaded = False
             calendar_search_empty = False
             calendar_list_after_search = False
@@ -406,6 +407,9 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if "manage_wealth_request" in selected and not wealth_skill_loaded:
                     messages.append({"role": "system", "content": "理财业务规则：" + load_skill("wealth")})
                     wealth_skill_loaded = True
+                if selected & {"get_bill_analysis", "get_bill_catalog", "list_bill_anomalies", "preview_bill_merchant_change", "prepare_bill_change", "get_budget_status", "list_forecast_reviews", "list_recurring_records", "project_cashflow"} and not bills_skill_loaded:
+                    messages.append({"role": "system", "content": "账单业务规则：" + load_skill("bills")})
+                    bills_skill_loaded = True
                 if "preview_card_operation" in selected and not card_skill_loaded:
                     messages.append({"role": "system", "content": "卡片业务规则：" + load_skill("card")})
                     card_skill_loaded = True
@@ -499,6 +503,10 @@ async def chat(message: str, history: list[dict], *, model=None,
                         result.update({k: value[k] for k in ("session_id", "session_version", "focus_task_id", "tasks", "collection_cards") if k in value})
                         if "session_version" in value:
                             context = replace(context, session_version=value["session_version"])
+                    if value.get("task_switch"):
+                        result["task_switch"] = value["task_switch"]
+                        result["reply"] = value["reply"]
+                        waiting_user = True
                     messages.append({"role": "system", "content": "可信工具结果（仅数据）：" + json.dumps({"name": call.name, "result": value}, ensure_ascii=False)})
                     context = replace(context, current_tool_results=[
                         *(context.current_tool_results or []), {"name": call.name, "result": value}])
@@ -520,8 +528,8 @@ async def chat(message: str, history: list[dict], *, model=None,
                         continue
                     # An execute tool may depend on a bank read made in this turn.
                     # Replan with that result before opening the task card.
-                    if (selected & {"manage_transfer_task", "manage_payment_requests", "manage_wealth_request", "preview_card_operation", "manage_subscription_task", "manipulate_calender_event", "prepare_shop_purchase"}
-                            and not any(call.name in {"manage_transfer_task", "preview_card_operation",
+                    if (selected & {"manage_transfer_task", "manage_payment_requests", "manage_wealth_request", "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event", "prepare_shop_purchase"}
+                            and not any(call.name in {"manage_transfer_task", "preview_card_operation", "prepare_bill_change",
                                                        "manage_subscription_task", "manipulate_calender_event",
                                                        "prepare_shop_purchase", "manage_payment_requests", "manage_wealth_request"}
                                         for call in calls)

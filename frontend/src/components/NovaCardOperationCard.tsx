@@ -1,3 +1,4 @@
+import {useTaskField,useTaskPrefill} from './NovaTaskPresentation';
 import { useEffect, useState } from 'react';
 import * as bank from '../services/bank';
 import { dismissNovaCardTask, getNovaTaskSession, linkNovaCardTask, type NovaChatCardTask } from '../services/nova';
@@ -34,18 +35,20 @@ export default function NovaCardOperationCard({ task, sessionId, accounts, disab
   const [editing, setEditing] = useState(!task.operation);
   const [activeAction, setActiveAction] = useState<bank.CardAction>(initialCardAction(task.card, task.action));
   const [cards, setCards] = useState<bank.BankCard[]>(task.card ? [task.card] : []);
-  const [cardId, setCardId] = useState(task.card_id ?? '');
+  const [cardId, setCardId] = useTaskField('cardId',task.card_id ?? '');
   const eligibleAccounts = accounts.filter(a => ['savings', 'checking'].includes(a.account_type));
-  const [accountId, setAccountId] = useState(String(prefill.account_id ?? ''));
-  const [singleLimit, setSingleLimit] = useState(String(prefill.single_txn_limit ?? fenText(task.card?.single_txn_limit_fen)));
-  const [dailyLimit, setDailyLimit] = useState(String(prefill.daily_txn_limit ?? fenText(task.card?.daily_txn_limit_fen)));
-  const [creditLimit, setCreditLimit] = useState(String(prefill.credit_limit ?? fenText(task.card?.credit_limit_fen)));
-  const [channels, setChannels] = useState<Channels>(() => Object.fromEntries(CHANNELS.map(([key]) =>
+  const [accountId, setAccountId] = useTaskField('accountId',String(prefill.account_id ?? ''));
+  const [singleLimit, setSingleLimit] = useTaskField('singleLimit',String(prefill.single_txn_limit ?? fenText(task.card?.single_txn_limit_fen)));
+  const [dailyLimit, setDailyLimit] = useTaskField('dailyLimit',String(prefill.daily_txn_limit ?? fenText(task.card?.daily_txn_limit_fen)));
+  const [creditLimit, setCreditLimit] = useTaskField('creditLimit',String(prefill.credit_limit ?? fenText(task.card?.credit_limit_fen)));
+  const [channels, setChannels] = useTaskField<Channels>('channels',() => Object.fromEntries(CHANNELS.map(([key]) =>
     [key, typeof prefill[key] === 'boolean' ? prefill[key] as boolean : task.card?.[key] ?? false])) as Channels);
   const [code, setCode] = useState('');
+  useEffect(()=>{const clear=()=>setCode('');window.addEventListener('nova-clear-verification',clear);return()=>window.removeEventListener('nova-clear-verification',clear);},[]);
   const [factor, setFactor] = useState<bank.SecondFactor | null>({ method: 'totp' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(task.notice ?? '');
+  useTaskPrefill({...prefill,card_id:task.card_id},{card_id:v=>setCardId(String(v??'')),account_id:v=>setAccountId(String(v??'')),single_txn_limit:v=>setSingleLimit(String(v??'')),daily_txn_limit:v=>setDailyLimit(String(v??'')),credit_limit:v=>setCreditLimit(String(v??'')),...Object.fromEntries(CHANNELS.map(([key])=>[key,(v:unknown)=>{if(typeof v==='boolean')setChannels(old=>({...old,[key]:v}));}]))});
 
   useEffect(() => {
     setOperation(task.operation ?? null);

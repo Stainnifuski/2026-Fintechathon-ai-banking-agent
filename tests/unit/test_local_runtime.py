@@ -31,8 +31,20 @@ def test_explicit_isolated_postgres_retains_local_preferences(monkeypatch):
     monkeypatch.setattr(policy, 'ASSESSMENT_DAILY_LIMIT', 2)
     monkeypatch.setattr(policy, 'ASSESSMENT_ROLLING_YEAR_LIMIT', 8)
     with pytest.raises(ValueError):
-        configure_local_test_limits('postgresql+asyncpg://localhost/banking_agent')
+        configure_local_test_limits('postgresql+asyncpg://localhost/production')
     with pytest.raises(ValueError):
         configure_local_test_limits('postgresql+asyncpg://localhost/bank_local')
     assert configure_local_test_limits('postgresql+asyncpg://localhost/bank_local_wealth_20261017')
+    assert (policy.ASSESSMENT_DAILY_LIMIT, policy.ASSESSMENT_ROLLING_YEAR_LIMIT) == (0, 0)
+
+
+@pytest.mark.parametrize('host', ['postgres', 'localhost', '127.0.0.1', '[::1]'])
+def test_default_database_retains_existing_test_preferences(monkeypatch, host):
+    monkeypatch.setenv('BANK_LOCAL_TEST_MODE', 'true')
+    monkeypatch.setenv('WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT', 'true')
+    monkeypatch.setenv('WEALTH_TEST_DISABLE_ASSESSMENT_YEAR_LIMIT', 'true')
+    monkeypatch.setattr(policy, 'ASSESSMENT_DAILY_LIMIT', 2)
+    monkeypatch.setattr(policy, 'ASSESSMENT_ROLLING_YEAR_LIMIT', 8)
+    url = f'postgresql+asyncpg://{host}/banking_agent'
+    assert configure_local_test_limits(url)
     assert (policy.ASSESSMENT_DAILY_LIMIT, policy.ASSESSMENT_ROLLING_YEAR_LIMIT) == (0, 0)

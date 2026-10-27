@@ -222,8 +222,9 @@ async def _register_calendar_task(context, *, prefill: dict, zone: str, notice: 
     row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
     state = json.loads(json.dumps(row.state or {}))
     entries = list(state.get('calendar_tasks', []))
-    entries.append({'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'prefill': prefill,
-                    'timezone': zone, 'notice': notice, 'event_id': event_id, 'closed': False})
+    from .task_presentation import replace_or_append
+    entries = replace_or_append(entries, {'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'prefill': prefill,
+                    'timezone': zone, 'notice': notice, 'event_id': event_id, 'closed': False}, context, 'calendar')
     state['calendar_tasks'] = entries[-MAX_CHAT_CALENDAR_TASKS:]
     row.state = state
     await context.db.commit()
@@ -231,6 +232,10 @@ async def _register_calendar_task(context, *, prefill: dict, zone: str, notice: 
 
 async def create_calendar_event(arguments, context):
     """信息完整时直接创建本人日程；缺项或时间无法核验时在聊天中打开预填表单，由本人补全。"""
+    from .task_presentation import continuation_entry
+    previous = await continuation_entry(context, 'calendar')
+    if previous and previous.get('event_id'):
+        return {'error':'TASK_ALREADY_ACCEPTED','message':'该日程已创建，请在原日程核对，不会重复创建。'}
     zone = arguments.timezone or (context.page.calendar.timezone if context.page.calendar else 'Asia/Shanghai')
     message = context.original_message or ''
     values = arguments.model_dump(exclude_none=True, exclude={'timezone', 'time_quote'})
@@ -246,6 +251,7 @@ async def create_calendar_event(arguments, context):
             values.pop(key)
             unverified.append(CALENDAR_FIELD_LABELS[key])
     notice = ('以下内容未能从你的原话中确认，请在表单中填写：' + '、'.join(unverified) + '。') if unverified else None
+    if previous: values = {**previous.get('prefill', {}), **values}
     starts = ends = None
     if 'start_date' in values and 'start_time' in values:
         tz = ZoneInfo(zone)

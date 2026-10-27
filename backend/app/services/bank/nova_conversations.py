@@ -12,6 +12,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models.nova_conversation import NovaConversationORM, NovaConversationMessageORM
+from ...security.auth_configuration import jwt_signing_secret
 
 
 class ConversationError(Exception):
@@ -21,7 +22,7 @@ class ConversationError(Exception):
 
 
 def _key() -> bytes:
-    secret = os.getenv("NOVA_CONVERSATION_KEY") or os.getenv("JWT_SECRET", "dev-secret-key-change-in-production")
+    secret = os.getenv("NOVA_CONVERSATION_KEY") or jwt_signing_secret()
     return hashlib.sha256(("nova-conversations-v1:" + secret).encode()).digest()
 
 
@@ -146,5 +147,8 @@ async def remove(db: AsyncSession,user_id: str,session_id: str):
         NovaExecutionORM.user_id==user_id))
     await db.execute(delete(NovaReferenceContextORM).where(NovaReferenceContextORM.conversation_id==session_id,
         NovaReferenceContextORM.user_id==user_id))
+    from ...models.nova_bill_action import NovaBillActionORM
+    await db.execute(delete(NovaBillActionORM).where(NovaBillActionORM.session_id==session_id,
+        NovaBillActionORM.user_id==user_id))
     await db.delete(row)
     await db.commit()

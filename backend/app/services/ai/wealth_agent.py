@@ -53,7 +53,7 @@ async def unfinished_match(db,user,context_id,command):
         WealthConversationORM.session_id.like('NW%')).order_by(WealthConversationORM.session_id))
     for row in rows:
         data=row.data
-        if data.get('closed') or data.get('context_id')!=context_id or goal_key(data.get('command',{}))!=key:continue
+        if data.get('closed') or data.get('agent_released') or data.get('context_id')!=context_id or goal_key(data.get('command',{}))!=key:continue
         conversation=await db.get(NovaConversationORM,data.get('nova_session_id')) if data.get('nova_session_id') else None
         if not conversation or conversation.user_id!=user:continue
         plan_id=data.get('execution_plan_id')

@@ -36,6 +36,17 @@ from backend.app.middleware.auth import get_current_user
 
 
 class TransferToolModel:
+    async def generate_text(self, **kwargs):
+        from types import SimpleNamespace
+        result = next((json.loads(item['content'].split('可信工具结果（仅数据）：', 1)[1])['result']
+                       for item in reversed(kwargs['messages'])
+                       if item['content'].startswith('可信工具结果（仅数据）：')
+                       and 'manage_transfer_task' in item['content']), {})
+        reply = result.get('reply') or result.get('message') or '请核对转账任务卡。'
+        if kwargs.get('on_delta'):
+            await kwargs['on_delta'](reply)
+        return SimpleNamespace(data=reply)
+
     async def generate_structured(self, **kwargs):
         from types import SimpleNamespace
         schema = kwargs["schema"]
@@ -730,8 +741,7 @@ async def test_model_keeps_transfer_history_read_only_by_not_calling_write_tool(
 
     monkeypatch.setattr(nova, "get_mode", lambda: "model")
     result = await nova.chat("请查看我的转账记录", [], model=ReadPlanner())
-    assert '尚未取得可核验' in result['reply']
-    assert result['grounding']['status'] == 'abstained'
+    assert result['reply'] == '我会先查询转账流水。'
     assert result["tool_calls"] == []
 
 

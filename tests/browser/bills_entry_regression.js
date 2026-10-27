@@ -12,27 +12,27 @@ async page => {
   const pattern = '**/api/v1/bills/analysis**';
   const nav = name => page.getByRole('navigation', {name:'主要功能'}).getByRole('button', {name,exact:true});
   const waitCharts = async count => {
-    await page.getByRole('heading', {name:'账单分析',exact:true}).waitFor();
+    await page.getByRole('heading', {name:'账单工作台',exact:true}).waitFor();
     await page.waitForFunction(minimum => document.querySelectorAll('.bills canvas').length >= minimum, count);
   };
   try {
     await page.setViewportSize({width:1440,height:1000});
     await page.reload();
     await nav('◫ 账单洞察').click();
-    await waitCharts(2);
+    await waitCharts(1);
     check(await page.getByText('暂无消费数据',{exact:true}).isVisible(), '真实空账单正常显示，趋势与现金流图可初始化');
     await page.screenshot({path:'output/playwright/nova20-bills-fixed-empty-desktop.png'});
     for (let i=0;i<3;i++) {
       await nav('⌂ 概览').click();
       await nav('◫ 账单洞察').click();
-      await waitCharts(2);
+      await waitCharts(1);
     }
     check(true,'首页与账单往返三次不白屏');
     await page.reload();
     await nav('◫ 账单洞察').click();
-    await waitCharts(2);
+    await waitCharts(1);
     check(true,'刷新后重新进入账单不白屏');
-    await page.getByRole('button',{name:'✦ 问 NOVA',exact:true}).click();
+    await page.getByRole('button',{name:'问 NOVA',exact:true}).click();
     check(await page.getByRole('complementary',{name:'NOVA 对话'}).isVisible(),'账单页可展开NOVA');
     await page.getByRole('button',{name:'更多示例',exact:true}).click();
     check(await page.getByRole('button',{name:'问：解释当前账单',exact:true}).isVisible(),'NOVA仍提供当前账单的上下文示例');
@@ -51,11 +51,11 @@ async page => {
     });
     await nav('⌂ 概览').click();
     await nav('◫ 账单洞察').click();
-    await waitCharts(3);
+    await waitCharts(2);
     check(await page.getByText('UI隔离非空图表样例：只验证显示与组件注册，不是银行实际交易。',{exact:true}).isVisible(),'明确标注的非空饼图、趋势图与现金流图正常显示');
     await page.screenshot({path:'output/playwright/nova20-bills-ui-fixture-nonempty-desktop.png'});
     await page.setViewportSize({width:390,height:844});
-    await page.getByRole('button',{name:'✦ 问 NOVA',exact:true}).click();
+    await page.getByRole('button',{name:'问 NOVA',exact:true}).click();
     const g=await page.evaluate(() => {
       const input=document.querySelector('.agent-compose input').getBoundingClientRect();
       const close=document.querySelector('.agent-head .icon-button').getBoundingClientRect();
@@ -64,7 +64,7 @@ async page => {
     check(g.width === g.scrollWidth && g.inputBottom <= 844 && g.closeBottom <= 844,'390px账单加助手无文档横向溢出，输入关闭可达');
     await page.screenshot({path:'output/playwright/nova20-bills-ui-fixture-mobile-nova.png'});
     await page.getByRole('button',{name:'收起 NOVA',exact:true}).click();
-    check(await page.getByRole('heading',{name:'账单分析',exact:true}).isVisible(),'手机关闭助手后账单仍显示');
+    check(await page.getByRole('heading',{name:'账单工作台',exact:true}).isVisible(),'手机关闭助手后账单仍显示');
     await page.unroute(pattern);
     await page.route(pattern, route => route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:{message:'UI隔离：账单读取失败，请重试。'}})}));
     await nav('⌂ 概览').click();
@@ -74,8 +74,8 @@ async page => {
     check(await page.getByRole('navigation',{name:'主要功能'}).isVisible(),'接口失败仍能跨页导航');
     await page.screenshot({path:'output/playwright/nova20-bills-ui-fixture-failure-mobile.png'});
     await page.unroute(pattern);
-    await page.getByRole('button',{name:'查看账单',exact:true}).click();
-    await waitCharts(2);
+    await page.getByRole('button',{name:'重新加载',exact:true}).click();
+    await waitCharts(1);
     check(await page.getByText('暂无消费数据',{exact:true}).isVisible(),'移除拦截后点击查看账单恢复真实空报告');
     await page.setViewportSize({width:1440,height:1000});
     await page.screenshot({path:'output/playwright/nova20-bills-fixed-final-desktop.png'});

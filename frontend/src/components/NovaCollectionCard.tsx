@@ -1,9 +1,10 @@
+import {useTaskField} from './NovaTaskPresentation';
 import { useEffect, useState, type FormEvent } from 'react';
 import AddContactForm from './AddContactForm';
 import { type NovaCollectionCard as CollectionCard, type NovaTaskSession,
-  refreshNovaCollection, sendNovaCollection } from '../services/nova';
+  refreshNovaCollection, sendNovaCollection, getNovaTaskSession } from '../services/nova';
 
-type Props = { card: CollectionCard; session: NovaTaskSession;
+type Props = { card: CollectionCard; session: NovaTaskSession;manual?:boolean;
   onUpdated: (update: Pick<NovaTaskSession, 'session_id' | 'session_version' | 'collection_cards'>) => void;
   onActivity?: () => void; disabled: boolean };
 
@@ -12,12 +13,12 @@ function errorText(error: unknown) {
   return detail?.message || (error instanceof Error ? error.message : '操作失败，请稍后重试。');
 }
 
-export default function NovaCollectionCard({ card, session, onUpdated, onActivity, disabled }: Props) {
-  const [selected, setSelected] = useState(card.selected_payer_user_ids);
-  const [account, setAccount] = useState(card.receive_account_id);
-  const [amount, setAmount] = useState(card.amount_fen ? (card.amount_fen / 100).toFixed(2) : '');
-  const [split, setSplit] = useState(card.split_equally);
-  const [note, setNote] = useState(card.note);
+export default function NovaCollectionCard({ card, session, onUpdated, onActivity, disabled,manual }: Props) {
+  const [selected, setSelected] = useTaskField('selected',card.selected_payer_user_ids);
+  const [account, setAccount] = useTaskField('account',card.receive_account_id);
+  const [amount, setAmount] = useTaskField('amount',card.amount_fen ? (card.amount_fen / 100).toFixed(2) : '');
+  const [split, setSplit] = useTaskField('split',card.split_equally);
+  const [note, setNote] = useTaskField('note',card.note);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,7 +31,8 @@ export default function NovaCollectionCard({ card, session, onUpdated, onActivit
   useEffect(() => { setNote(card.note); }, [card.note]);
 
   async function refresh() {
-    const updated = await refreshNovaCollection(session.session_id, card.collection_id, session.session_version);
+    const latest=manual?await getNovaTaskSession(session.session_id):session;
+    const updated = await refreshNovaCollection(session.session_id, card.collection_id, latest.session_version);
     onUpdated(updated);
   }
 
@@ -39,8 +41,10 @@ export default function NovaCollectionCard({ card, session, onUpdated, onActivit
     if (busy || disabled || card.status !== 'DRAFT') return;
     setBusy(true); setError('');
     try {
+      const latest=manual?await getNovaTaskSession(session.session_id):session;
+      if(manual){const current=latest.collection_cards.find(item=>item.collection_id===card.collection_id);if(!current||current.status!=='DRAFT')throw new Error('原收款任务已变化，请重新核对，未重复发送。');}
       const updated = await sendNovaCollection(session.session_id, card.collection_id, {
-        session_version: session.session_version, payer_user_ids: selected,
+        session_version: latest.session_version, payer_user_ids: selected,
         receive_account_id: account, amount: Number(amount), split_equally: split, note: note.trim(),
       });
       onUpdated(updated); onActivity?.();

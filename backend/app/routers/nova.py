@@ -8,7 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..middleware.auth import get_current_user
@@ -369,6 +369,104 @@ async def dismiss_shop_task(session_id: str, entry_id: str,
     except (CardTaskError, bank_conversations.ConversationError) as error:
         await db.rollback()
         raise _transfer_error(error) from error
+
+
+class PresentationAction(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    key: str = Field(min_length=3, max_length=110)
+    mode: Literal['manual', 'cancel']
+    request_id: str = Field(min_length=8, max_length=64)
+    draft: dict = Field(default_factory=dict)
+
+
+@router.get('/presentation/{session_id}')
+async def presentation_state(session_id: str, current_user: dict = Depends(get_current_user),
+                             db: AsyncSession = Depends(get_db)):
+    from ..services.ai.task_presentation import inventory
+    try:
+        return JSONResponse(await inventory(ToolContext(current_user['user_id'], db, PageContext(), session_id=session_id)),headers={'Cache-Control':'no-store'})
+    except bank_conversations.ConversationError as error:
+        raise _transfer_error(error) from error
+
+
+class PresentationPosition(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    key: str = Field(min_length=3,max_length=110)
+    request_id: str = Field(min_length=8,max_length=64,pattern=r'^[A-Za-z0-9_-]+$')
+    existing: bool = False
+
+
+@router.post('/presentation/{session_id}/position')
+async def presentation_position(session_id: str, request: PresentationPosition,
+                                current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from ..services.ai.task_presentation import position
+    try:
+        return await position(ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id),
+                              request.key,request.request_id,request.existing)
+    except bank_conversations.ConversationError as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+class PresentationDraft(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    key: str=Field(min_length=3,max_length=110)
+    draft: dict=Field(default_factory=dict)
+
+
+@router.post('/presentation/{session_id}/draft')
+async def presentation_draft(session_id:str,request:PresentationDraft,
+                             current_user:dict=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    from ..services.ai.task_presentation import save_draft
+    try:
+        return await save_draft(ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id),request.key,request.draft)
+    except bank_conversations.ConversationError as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+class ManualCandidate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    task_id: str = Field(min_length=1,max_length=64)
+    candidate_id: str = Field(min_length=1,max_length=64)
+
+
+@router.post('/presentation/{session_id}/candidate')
+async def manual_candidate(session_id: str, request: ManualCandidate,
+                           current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from ..services.ai.task_presentation import released
+    from ..services.ai.transfer_manager import process_message
+    from ..models.nova_task import NovaSessionORM
+    from types import SimpleNamespace
+    ctx=ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id)
+    receipt=(await released(ctx)).get('transfer:'+request.task_id)
+    if not receipt or receipt['mode']!='manual':
+        raise HTTPException(409,detail={'message':'请先人工接管这笔任务。'})
+    row=await db.get(NovaSessionORM,session_id,populate_existing=True)
+    task=next((t for t in row.state.get('tasks',[]) if t['chat_task_id']==request.task_id),None)
+    if not task or not any(c['candidate_id']==request.candidate_id for c in task.get('candidate_map',[])):
+        raise HTTPException(409,detail={'message':'候选已变化，请重新核对。'})
+    try:
+        return await process_message(db,get_bank_api(),SimpleNamespace(mode='offline'),user_id=current_user['user_id'],
+            message='手动选择收款账户',request_id=uuid4().hex,session_id=session_id,
+            session_version=row.version,focus_task_id=request.task_id,candidate_id=request.candidate_id)
+    except ManagerError as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post('/presentation/{session_id}/release')
+async def presentation_release(session_id: str, request: PresentationAction,
+                               current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from ..services.ai.task_presentation import release
+    try:
+        return await release(ToolContext(current_user['user_id'], db, PageContext(), session_id=session_id),
+                             request.key, request.mode, request.request_id, request.draft)
+    except Exception as error:
+        await db.rollback()
+        if isinstance(error, bank_conversations.ConversationError):
+            raise _transfer_error(error) from error
+        raise HTTPException(409, detail={'message': '当前任务无法安全接管或结束，请先核对原卡片状态。'}) from error
 
 
 @router.get('/task-flow/{session_id}')

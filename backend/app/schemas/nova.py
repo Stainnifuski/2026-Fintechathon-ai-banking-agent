@@ -88,6 +88,45 @@ class SubscriptionContext(StrictModel):
     selected_subscription_id: str | None = Field(default=None, min_length=1, max_length=40)
 
 
+class BillWorkspaceSelection(StrictModel):
+    type: Literal['transaction','budget','anomaly','recurring','merchant','category_rule','tag']
+    id: str = Field(min_length=1, max_length=40)
+
+    @model_validator(mode='after')
+    def valid_id(self):
+        if self.type == 'transaction' and len(self.id) > 32:
+            raise ValueError('流水 ID 长度最多32')
+        return self
+
+
+class BillWorkspaceContext(StrictModel):
+    section: Literal['overview','transactions','budgets','checks','forecast','organize']
+    subsection: Literal['anomalies','subscriptions','recurring','cashflow','history','merchants','rules'] | None = None
+    budget_month: str | None = Field(default=None, pattern=r'^\d{4}-\d{2}$')
+    account_id: str | None = Field(default=None, min_length=1, max_length=32)
+    selected: BillWorkspaceSelection | None = None
+
+    @model_validator(mode='after')
+    def valid_scope(self):
+        groups = {'checks':{'anomalies','subscriptions'}, 'forecast':{'recurring','cashflow','history'}, 'organize':{'merchants','rules'}}
+        if self.subsection is not None and self.subsection not in groups.get(self.section,set()):
+            raise ValueError('账单子功能与当前功能不匹配')
+        if self.budget_month:
+            month = date.fromisoformat(self.budget_month+'-01')
+            if self.section != 'budgets' or not 2000 <= month.year <= 2099:
+                raise ValueError('预算月份仅适用于预算管理，年份范围2000至2099')
+        if self.account_id is not None and (self.section,self.subsection) != ('forecast','cashflow'):
+            raise ValueError('独立预测账户仅适用于现金流预测')
+        if self.selected:
+            allowed = {'budget':self.section=='budgets','anomaly':self.subsection=='anomalies',
+                       'recurring':self.subsection=='recurring','merchant':self.subsection=='merchants',
+                       'tag':self.subsection=='rules','category_rule':self.subsection=='rules',
+                       'transaction':self.section in {'overview','transactions'} or self.subsection in {'anomalies','subscriptions'}}
+            if not allowed[self.selected.type]:
+                raise ValueError('选中对象与当前账单功能不匹配')
+        return self
+
+
 class PageContext(StrictModel):
     version: Literal[1] = 1
     page: Literal["home", "transfer", "insights", "cards", "subscriptions", "wealth", "thirdParty"] = "home"
@@ -96,6 +135,7 @@ class PageContext(StrictModel):
     shop: ShopContext | None = None
     calendar: CalendarContext | None = None
     filters: BillFilters | None = None
+    bill_workspace: BillWorkspaceContext | None = None
     details: BillDetailContext | None = None
     selected: Selection | None = None
     observed_as_of: datetime | None = Field(default=None, strict=False)
@@ -111,8 +151,12 @@ class PageContext(StrictModel):
         if self.calendar is not None and self.page != "thirdParty":
             raise ValueError("日历上下文仅适用于 thirdParty 页面")
         if self.page != "insights" and any(v is not None for v in (
-                self.filters, self.details, self.selected, self.observed_as_of)):
+                self.filters, self.details, self.selected, self.observed_as_of, self.bill_workspace)):
             raise ValueError("账单筛选和选择仅适用于 insights 页面")
+        if self.bill_workspace and self.bill_workspace.selected and self.selected:
+            item = self.bill_workspace.selected
+            if item.type != 'transaction' or item.id != self.selected.id:
+                raise ValueError('账单选中对象与流水选择不一致')
         if self.observed_as_of is not None and self.observed_as_of.tzinfo is None:
             raise ValueError("页面数据截止时间须带时区")
         if self.details and any(not 1 <= len(key) <= 32 for key in self.details.tx_ids):

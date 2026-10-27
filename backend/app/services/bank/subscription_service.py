@@ -174,6 +174,46 @@ async def cancel_subscription(
 
 
 @audited("subscriptions")
+async def restore_subscription_for_testing(
+    *, subscription_id: str, user_id: str, state_version: int,
+) -> dict:
+    """订阅页测试专用：恢复取消状态，不扣款、不改计划日期。"""
+    async with AsyncSessionLocal() as session:
+        if session.get_bind().dialect.name == "sqlite":
+            await session.execute(update(SubscriptionORM).where(
+                SubscriptionORM.subscription_id == subscription_id,
+                SubscriptionORM.user_id == user_id,
+            ).values(state_version=SubscriptionORM.state_version))
+        row = (await session.execute(
+            select(SubscriptionORM, AccountORM)
+            .join(AccountORM, AccountORM.account_id == SubscriptionORM.debit_account_id)
+            .where(SubscriptionORM.subscription_id == subscription_id,
+                   SubscriptionORM.user_id == user_id, AccountORM.user_id == user_id)
+            .with_for_update()
+        )).one_or_none()
+        if row is None:
+            raise BankError("订阅不存在", "SUBSCRIPTION_NOT_FOUND", 404)
+        subscription, account = row
+        if subscription.state_version != state_version:
+            raise BankError("订阅状态已更新，请刷新后重试", "STALE_STATE_VERSION", 409)
+        if subscription.status != CANCELLED:
+            raise BankError("仅已取消的订阅可恢复", "SUBSCRIPTION_NOT_CANCELLED", 409)
+        subscription.status = ACTIVE
+        subscription.cancelled_at = None
+        subscription.state_version += 1
+        record_bank_event(session, event_key=f"{subscription_id}:{subscription.state_version}",
+            subject_user_id=user_id, action="subscription_restore_test", result="active",
+            facts={"subscription_id": subscription_id, "state_version": subscription.state_version,
+                   "test_only": True},
+            decision_chain=["ownership_checked", "version_checked", "subscription_restored_for_testing"])
+        from .bill_foundation import sync_users
+        await sync_users(session, [user_id], changed_tx_ids=[])
+        await session.commit()
+        await session.refresh(subscription)
+        return _view(subscription, account)
+
+
+@audited("subscriptions")
 async def simulate_subscription_charge(
     *,
     subscription_id: str,

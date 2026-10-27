@@ -1,5 +1,6 @@
 """日历工具闭环：日期、搜索、重复例外、页面选择和身份隔离。"""
 import json
+from types import SimpleNamespace
 from datetime import datetime, timezone
 
 import httpx
@@ -136,30 +137,25 @@ async def test_offline_dates_names_and_multiple_matches(store, monkeypatch):
 @pytest.mark.asyncio
 async def test_authenticated_calendar_tool_loop_and_page_validation(store, monkeypatch):
     point, _ = await seed()
-    seen = []
-    def handler(request):
-        body = json.loads(request.content)
-        if body.get('response_format'):
-            schema = body['messages'][0]['content']
-            data = ({'depends_on_prior_task': False, 'reason': 'independent'}
-                    if 'depends_on_prior_task' in schema else
-                    {'tool_names': ['get_calendar_event']}
-                    if 'tool_names' in schema else
-                    {'calls': [{'name': 'get_calendar_event', 'arguments': {}}], 'clarification': None})
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
-                'content': json.dumps(data)}}]})
-        seen.append(body)
-        if len(seen) == 1:
-            assert any(point['event_id'] in message.get('content', '') for message in body['messages'])
-            assert 'user_id' not in json.dumps(body)
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {
-                'content': None, 'tool_calls': [{'id': 'calendar', 'type': 'function', 'function': {
-                    'name': 'get_calendar_event', 'arguments': '{}'}}]}}]})
-        assert any('"total": 1' in message['content'] for message in body['messages'])
-        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '项目答辩10月15日上午9点举行。'}}]})
+    class Model:
+        async def generate_structured(self, **kwargs):
+            schema = kwargs['schema']
+            if schema is nova_runtime.DependencyDecision:
+                return SimpleNamespace(data=schema(depends_on_prior_task=False, reason='独立查询'))
+            if schema is nova_runtime.ToolSelection:
+                assert point['event_id'] in json.dumps(kwargs['messages'])
+                assert 'user_id' not in json.dumps(kwargs['messages'])
+                return SimpleNamespace(data=schema(tool_names=['get_calendar_event']))
+            assert schema is nova_runtime.ToolPlan
+            return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(name='get_calendar_event', arguments={})]))
+        async def generate_with_tools(self, **kwargs):
+            return SimpleNamespace(data={'role': 'assistant', 'content': None, 'tool_calls': []})
+        async def generate_text(self, **kwargs):
+            assert any('"total": 1' in message['content'] for message in kwargs['messages'])
+            return SimpleNamespace(data='项目答辩10月15日上午9点举行。')
     monkeypatch.setenv('LLM_MODE', 'model')
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
-    model = LLMService(httpx.MockTransport(handler))
+    model = Model()
     monkeypatch.setattr(nova, 'llm', model)
     monkeypatch.setattr(nova_runtime, 'llm', model)
     app = FastAPI()
@@ -184,7 +180,7 @@ async def test_authenticated_calendar_tool_loop_and_page_validation(store, monke
                     'page': 'thirdParty', 'calendar': {**calendar, **patch}}})).status_code == 422
             assert (await client.post('/api/v1/nova/chat', json={'message': '日程', 'page_context': {'page': 'home', 'calendar': calendar}})).status_code == 422
     finally:
-        await model.aclose()
+        pass
 
 
 @pytest.mark.asyncio

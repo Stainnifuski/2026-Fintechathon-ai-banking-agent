@@ -18,7 +18,9 @@
 
 Docker环境自动设置`WEALTH_CATALOG_AUTO_UPGRADE=true`。原生Python环境需要安装依赖、提供备份工具，并显式配置该开关。固定资料安装器本身不改数据库，启动时的银行升级才修改数据库。运行配置中的DATABASE_URL不被升级器改写。
 
-本机已按用户确认迁移到独立PostgreSQL合并副本，3000不再使用SQLite。原PG账户本金为准，SQLite有效理财记录及占款映射到原用户/账户，研究初始化本金不叠加。原PG库及SQLite备份保留，详见`docs/validation/postgres_cutover_20261017.md`。私有`.deps/bank-runtime.override.yml`由启动器复用，不发送给队友；队友继续使用自己的原PG库及正常增量升级。
+本机已于2026-10-25将整套应用账本统一到默认PostgreSQL库`banking_agent`，不再通过私有覆盖文件选择`bank_local_wealth_20261017`。该历史库是10月17日银行与理财合并后的全业务账本，不仅包含理财。历史合并口径及SQLite备份见`docs/validation/postgres_cutover_20261017.md`；本次统一、全表核验和备份位置见`docs/validation/database_unification_20261025.md`。本机凭据保存在不提交的`.env`中，队友继续使用自己的数据库及正常增量升级。
+
+本项目模拟测试环境的Compose及`.env.example`默认启用`BANK_LOCAL_TEST_MODE=true`和两个`WEALTH_TEST_DISABLE_ASSESSMENT_*_LIMIT=true`，队友拉取后重建即可重复做理财问卷测试，无每日/滚动年度次数限制，不需要本机私有覆盖文件。已有`.env`若显式设了`BANK_LOCAL_TEST_MODE=false`，将其改为`true`；这类显式选择优先于Compose缺省值。需要普通2次/日、滚动年度8次限制时设为`false`。本人确认、MFA、风险和资金校验保持不变；此设置不解除其他业务自身的限额。
 
 ## 保护与拒绝条件
 

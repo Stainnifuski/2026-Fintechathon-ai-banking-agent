@@ -60,8 +60,8 @@ async def undo(event_id:str,user=Depends(get_current_user),db:AsyncSession=Depen
     async with guarded(db,write=True):return await bill_merchants.undo(db,user['user_id'],event_id)
 
 @router.get('/merchants/{merchant_id}/split-preview')
-async def split_preview(merchant_id:str,user=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
-    async with guarded(db):return await bill_merchants.split_preview(db,user['user_id'],merchant_id)
+async def split_preview(merchant_id:str,page:int=Query(1,ge=1,le=10000),user=Depends(get_current_user),db:AsyncSession=Depends(get_db)):
+    async with guarded(db):return await bill_merchants.split_candidates(db,user['user_id'],merchant_id,page)
 
 @router.post('/merchants/{merchant_id}/split')
 async def split(merchant_id:str,body:MerchantSplit,user=Depends(get_current_user),db:AsyncSession=Depends(get_db)):

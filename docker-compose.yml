@@ -62,6 +62,10 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://bankuser:bankpass@postgres:5432/banking_agent
+      # Shared simulation defaults: teammates can repeat questionnaire tests.
+      BANK_LOCAL_TEST_MODE: ${BANK_LOCAL_TEST_MODE:-true}
+      WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT: ${WEALTH_TEST_DISABLE_ASSESSMENT_DAILY_LIMIT:-true}
+      WEALTH_TEST_DISABLE_ASSESSMENT_YEAR_LIMIT: ${WEALTH_TEST_DISABLE_ASSESSMENT_YEAR_LIMIT:-true}
       BANK_API_BASE_URL: http://127.0.0.1:8000
       WEALTH_CATALOG_AUTO_UPGRADE: "true"
       AUDIT_FALLBACK_DIR: /app/var/audit-recovery
@@ -69,6 +73,7 @@ services:
     volumes:
       - audit_recovery:/app/var/audit-recovery
       - nova_debug:/app/var/nova-debug
+      - agent_security:/app/var/agent-security
       - type: bind
         source: ./.deps/wealth_portfolio_data/snapshots
         target: /app/.deps/wealth_portfolio_data/snapshots
@@ -99,7 +104,7 @@ services:
     container_name: banking-frontend
     restart: unless-stopped
     ports:
-      - "3101:80"
+      - "3000:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -117,6 +122,8 @@ volumes:
   audit_recovery:
     driver: local
   nova_debug:
+    driver: local
+  agent_security:
     driver: local
   postgres_data:
     driver: local

@@ -12,6 +12,71 @@ from backend.app.services.bank import subscription_service
 from backend.app.services.bank.transfer_service import BankError
 
 
+@pytest.mark.asyncio
+async def test_restore_for_testing_preserves_money_history_and_allows_cancellation_again(subscription_store):
+    from backend.app.models.audit_log import AuditLogORM
+
+    preview = await subscription_service.preview_subscription_cancellation(subscription_id="SUB1", user_id="U1")
+    await subscription_service.cancel_subscription(subscription_id="SUB1", user_id="U1", state_version=1,
+        confirmation_token=preview["confirmation_token"])
+    restored = await subscription_service.restore_subscription_for_testing(
+        subscription_id="SUB1", user_id="U1", state_version=2)
+    assert restored["status"] == "ACTIVE" and restored["state_version"] == 3
+    assert restored["cancelled_at"] is None
+    for key in ("amount_fen", "currency", "billing_cycle", "next_charge_at", "source_transaction_id"):
+        assert restored[key] == preview["subscription"][key]
+    async with subscription_store() as session:
+        assert (await session.get(AccountORM, "A1")).balance == 100
+        assert list(await session.scalars(select(TransactionORM))) == []
+        audit = await session.scalar(select(AuditLogORM).where(AuditLogORM.action == "subscription_restore_test"))
+        assert audit.params["test_only"] is True
+    with pytest.raises(BankError):
+        await subscription_service.cancel_subscription(subscription_id="SUB1", user_id="U1", state_version=1,
+            confirmation_token=preview["confirmation_token"])
+    fresh = await subscription_service.preview_subscription_cancellation(subscription_id="SUB1", user_id="U1")
+    cancelled = await subscription_service.cancel_subscription(subscription_id="SUB1", user_id="U1", state_version=3,
+        confirmation_token=fresh["confirmation_token"])
+    assert cancelled["status"] == "CANCELLED" and cancelled["state_version"] == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("user,version,code", [
+    ("U2", 2, "SUBSCRIPTION_NOT_FOUND"),
+    ("U1", 1, "STALE_STATE_VERSION"),
+])
+async def test_restore_for_testing_rejects_wrong_owner_and_stale_version(subscription_store, user, version, code):
+    preview = await subscription_service.preview_subscription_cancellation(subscription_id="SUB1", user_id="U1")
+    await subscription_service.cancel_subscription(subscription_id="SUB1", user_id="U1", state_version=1,
+        confirmation_token=preview["confirmation_token"])
+    with pytest.raises(BankError) as error:
+        await subscription_service.restore_subscription_for_testing(subscription_id="SUB1", user_id=user, state_version=version)
+    assert error.value.code == code
+    assert (await subscription_service.list_subscriptions(user_id="U1"))[0]["status"] == "CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_restore_test_endpoint_authentication_and_state_checks(subscription_store):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from backend.app.middleware.auth import get_current_user
+    from backend.app.routers.subscriptions import router
+
+    app = FastAPI()
+    app.include_router(router)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post("/api/v1/subscriptions/SUB1/restore-test", json={"state_version": 1})).status_code in (401, 403)
+        app.dependency_overrides[get_current_user] = lambda: {"user_id": "U1"}
+        response = await client.post("/api/v1/subscriptions/SUB1/restore-test", json={"state_version": 1})
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "SUBSCRIPTION_NOT_CANCELLED"
+        preview = await subscription_service.preview_subscription_cancellation(subscription_id="SUB1", user_id="U1")
+        await subscription_service.cancel_subscription(subscription_id="SUB1", user_id="U1", state_version=1,
+            confirmation_token=preview["confirmation_token"])
+        response = await client.post("/api/v1/subscriptions/SUB1/restore-test", json={"state_version": 2})
+        assert response.status_code == 200 and response.json()["status"] == "ACTIVE"
+        assert (await client.post("/api/v1/subscriptions/SUB1/restore-test", json={"state_version": 2})).status_code == 409
+
+
 @pytest_asyncio.fixture
 async def subscription_store(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

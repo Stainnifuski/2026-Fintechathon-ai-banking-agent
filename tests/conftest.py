@@ -6,6 +6,9 @@ import os
 import pytest
 import pytest_asyncio
 
+# Set before application imports: ordinary tests never read a real signing key.
+os.environ['JWT_SECRET'] = 'isolated-test-only-jwt-signing-key-32-bytes'
+
 # 必须在应用包读取 .env 前确定付费联调开关，避免普通 pytest 被本地文件自动开启。
 for _flag, _default in (("WEALTH_LIVE_TEST", "false"), ("WEALTH_SEMANTIC_LIVE", "0"),
                         ("WEALTH_WORKSPACE_LIVE", "0")):
@@ -26,6 +29,12 @@ def isolated_llm_environment(monkeypatch, request):
         if name.startswith("LLM_") or name.startswith(("TRANSFER_MODEL_", "WEALTH_MODEL_", "BILL_MODEL_")):
             monkeypatch.delenv(name)
     monkeypatch.setenv("LLM_MODE", "offline")
+
+
+@pytest.fixture(autouse=True)
+def isolated_knowledge_key(monkeypatch):
+    """Never read or create a deployment's knowledge signing secret in tests."""
+    monkeypatch.setenv('AGENT_KNOWLEDGE_SIGNING_KEY', 'isolated-test-knowledge-key-at-least-32-bytes')
 
 
 @pytest_asyncio.fixture(autouse=True)

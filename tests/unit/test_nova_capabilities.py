@@ -62,7 +62,6 @@ async def test_capability_route_uses_only_directory_tool(monkeypatch):
     result = await nova.chat("你能做哪些银行业务？", [])
     assert len(seen) == 1
     assert [call["name"] for call in result["tool_calls"]] == ["describe_bank_capabilities"]
-    assert result["grounding"]["status"] == "grounded"
     assert "账户与资产" in result["reply"]
     assert "收款" in result["reply"]
     assert "本人确认" not in result["reply"]

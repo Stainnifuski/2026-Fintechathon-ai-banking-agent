@@ -525,7 +525,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         raise ManagerError("会话已更新，请刷新后重试", "STALE_SESSION_VERSION")
     state = json.loads(json.dumps(row.state)) if row else {"tasks": [], "focus_task_id": None}
     tasks = state["tasks"]
-    pending = [task for task in tasks if task["status"] in {"COLLECTING", "NEEDS_SELECTION"}]
+    pending = [task for task in tasks if task["status"] in {"COLLECTING", "NEEDS_SELECTION"} and not task.get('agent_released')]
     if structured_tasks is None and scope_guard(message):
         return {"reply": "目前聊天仅支持即时人民币转账；定时、周期、AA及外币业务请使用对应工作台。", "mode": nlu.mode,
                 "tool_calls": [], **(await _view(db, row) if row else {"session_id": None, "session_version": 0, "tasks": [], "focus_task_id": None})}
@@ -598,6 +598,8 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
         ]
         active_tasks = []
         for task in tasks:
+            if task.get('agent_released'):
+                continue
             current_status = task["status"]
             if task.get("transfer_task_id"):
                 snapshot = await task_snapshot(db, task["transfer_task_id"], user_id)

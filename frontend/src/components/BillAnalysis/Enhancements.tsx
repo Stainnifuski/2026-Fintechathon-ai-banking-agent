@@ -14,21 +14,9 @@ function Evidence({ current, previous, onSelect, selectedId }: { current: bills.
   return <details className="insight-evidence"><summary>查看本期与上期流水依据</summary>{([['本期', current], ['上期', previous]] as [string, bills.Evidence[]][]).map(([label, rows]) => <div key={label}><strong>{label}</strong>{rows.length === 0 ? <p className="hint">当前对比范围没有对应流水</p> : rows.map(tx => <div className="insight-evidence-row" key={tx.tx_id}><span>{time(tx.timestamp)} · {money(tx.amount_fen)}<small>本人账户流水</small></span><button className="secondary" aria-pressed={selectedId === tx.tx_id} onClick={() => onSelect(tx.tx_id)}>{selectedId === tx.tx_id ? '已选中 · 可问 NOVA' : '选中供 NOVA 解释'}</button></div>)}</div>)}</details>;
 }
 
-export default function Enhancements({ result, revision, onSelect, onManage, selectedId }: {
-  result: bills.BillAnalysis; revision: number; selectedId: string | null; onSelect: (id: string) => void; onManage?: (id: string) => void;
-}) {
-  const [subscriptions, setSubscriptions] = useState<bills.SubscriptionInsights | null>(null);
-  const [subError, setSubError] = useState('');
-  const [retry, setRetry] = useState(0);
-  const [subBusy, setSubBusy] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    setSubscriptions(null); setSubError(''); setSubBusy(true);
-    bills.subscriptionInsights(result.query).then(data => { if (!cancelled) setSubscriptions(data); })
-      .catch(e => { if (!cancelled) setSubError(errorText(e)); })
-      .finally(() => { if (!cancelled) setSubBusy(false); });
-    return () => { cancelled = true; };
-  }, [result, revision, retry]);
+type EvidenceProps = { result: bills.BillAnalysis; selectedId: string | null; onSelect: (id: string) => void; onManage?: (id: string) => void; revision?: number };
+
+export function ChangeExplanationPanel({result,onSelect,selectedId}: EvidenceProps) {
   const explanation = result.change_explanation;
   return <>
     <section className="bill-enhancement" aria-labelledby="bill-drivers"><h3 id="bill-drivers">消费变化追溯</h3>
@@ -41,6 +29,23 @@ export default function Enhancements({ result, revision, onSelect, onManage, sel
       </details>)}
       <details className="bill-notices"><summary>变化分解说明</summary>{explanation.notices.map(n => <p key={n}>{n}</p>)}</details>
     </section>
+  </>;
+}
+
+export function SubscriptionInsightsPanel({result,onSelect,selectedId,onManage,revision}: EvidenceProps) {
+  const [subscriptions, setSubscriptions] = useState<bills.SubscriptionInsights | null>(null);
+  const [subError, setSubError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const [subBusy, setSubBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setSubscriptions(null); setSubError(''); setSubBusy(true);
+    bills.subscriptionInsights(result.query).then(data => { if (!cancelled) setSubscriptions(data); })
+      .catch(e => { if (!cancelled) setSubError(errorText(e)); })
+      .finally(() => { if (!cancelled) setSubBusy(false); });
+    return () => { cancelled = true; };
+  }, [result, revision, retry]);
+  return <>
     <section className="bill-enhancement" aria-labelledby="bill-subscriptions"><h3 id="bill-subscriptions">订阅扣费核对与处理</h3><p className="hint">账户与账期沿用报告，消费分类筛选不影响本区。实际扣费与当前计划分开展示。</p>
       {subBusy && <p role="status">正在关联订阅及扣费流水…</p>}
       {subError && <p className="error" role="alert">{subError} <button onClick={() => setRetry(n => n + 1)}>重试</button></p>}
@@ -50,11 +55,10 @@ export default function Enhancements({ result, revision, onSelect, onManage, sel
         {item.active_subscription_ids.map((id, index) => <button key={id} className="secondary" disabled={!onManage} onClick={() => onManage?.(id)}>核对第 {index + 1} 项订阅</button>)}
       </article>)}<details className="bill-notices"><summary>关联口径</summary>{subscriptions.notices.map(n => <p key={n}>{n}</p>)}</details></>}
     </section>
-    <CashflowPanel accountId={result.query.account_id || null} revision={revision} />
   </>;
 }
 
-function CashflowPanel({ accountId, revision }: { accountId: string | null; revision: number }) {
+export function CashflowPanel({ accountId, revision, onSaved }: { accountId: string | null; revision: number; onSaved?: () => void }) {
   const initial = (): bills.CashflowScenario => ({ days: 30, account_id: accountId, reductions: [], excluded_subscription_ids: [],one_off_events:[] });
   const [draft, setDraft] = useState<bills.CashflowScenario>(initial);
   const [data, setData] = useState<bills.CashflowProjection | null>(null);
@@ -63,15 +67,20 @@ function CashflowPanel({ accountId, revision }: { accountId: string | null; revi
   const [retry, setRetry] = useState(0);
   const [oneOff,setOneOff]=useState({label:'',at:'',amount:'',direction:'expense'});
   const generation = useRef(0);
+  const appliedScenario=useRef<bills.CashflowScenario|null>(null);
+  const lastAccount=useRef(accountId);
   const load = async (scenario: bills.CashflowScenario) => {
     const id = ++generation.current;
     setError(''); setBusy(true);
-    try { const result = await bills.cashflow(scenario); if (id === generation.current) setData(result); }
+    try { const result = await bills.cashflow(scenario); if (id === generation.current) {setData(result);appliedScenario.current=scenario;} }
     catch (e) { if (id === generation.current) { setError(errorText(e)); setData(null); } }
     finally { if (id === generation.current) setBusy(false); }
   };
   useEffect(() => {
-    const scenario = initial(); setDraft(scenario); setData(null); void load(scenario);
+    const accountChanged=lastAccount.current!==accountId;lastAccount.current=accountId;
+    const scenario=accountChanged||!appliedScenario.current?initial():appliedScenario.current;
+    if(accountChanged){setDraft(scenario);setData(null);}
+    void load(scenario);
     return () => { generation.current++; };
   }, [accountId, revision, retry]);
   const updateReduction = (category: string, percent: number) => setDraft(s => ({ ...s, reductions: [...s.reductions.filter(r => r.category !== category), { category, percent }] }));
@@ -100,7 +109,7 @@ function CashflowPanel({ accountId, revision }: { accountId: string | null; revi
         { name: '历史低支出', type: 'line', data: data.timeline.map(p => p.historical_high_balance_fen), showSymbol: false, lineStyle: { type: 'dotted', opacity: .5 } },
       ], color: ['#1769e0', '#159a8c', '#815ac0', '#dd7184', '#e8a346'] }} /></div>
       <details className="insight-evidence"><summary>计划与估计依据 · {data.events.length} 项</summary>{data.events.map((e, i) => <p key={`${e.reference_id}-${i}`}>{time(e.at)} · {e.label} · {money(e.amount_fen)}{e.excluded_in_scenario && ' · 本次假设排除'}<small>{['salary_estimate', 'recurring_estimate'].includes(e.source) ? `历史周期估计，依据 ${e.evidence_tx_ids.length} 笔流水` : e.source==='scenario'?'本次临时假设，不会执行收支':'当前已保存计划，尚未执行'}</small></p>)}{data.spending_baselines.map(b => <p key={b.category}>{labels[b.category]}：{b.sample_count} 笔／{b.observed_months} 个月样本，日均约 {money(b.daily_fen)}；本期基准 {money(b.estimated_total_fen)}，假设 {money(b.scenario_total_fen)}。</p>)}</details>
-      <ForecastHistory scenario={data.scenario} dirty={!!dirty}/>
+      <ForecastHistory scenario={data.scenario} dirty={!!dirty} mode="save" onSaved={onSaved}/>
       <details className="bill-notices"><summary>估计方法与数据不足说明</summary>{data.notices.map(n => <p key={n}>{n}</p>)}</details>
     </>}
   </section>;
