@@ -32,7 +32,10 @@ TOOL_LABELS = {
     'list_recurring_records': '周期收支查询', 'get_budget_status': '预算查询',
     'list_forecast_reviews': '预测复盘', 'manage_transfer_task': '转账任务',
     'manage_collection_request': '收款草稿',
-    'manage_wealth_request': '理财任务',
+    'assess_wealth_risk': '理财风险评估',
+    'plan_wealth': '理财规划与推荐',
+    'manage_wealth_positions': '理财持仓',
+    'show_wealth_returns': '理财收益',
     'get_bill_catalog': '账单整理目录', 'list_bill_anomalies': '账单异常核对',
     'preview_bill_merchant_change': '商户变更预览', 'prepare_bill_change': '账单修改确认卡',
 }
@@ -267,7 +270,7 @@ def body(name: str, result: dict) -> list[str]:
             operations = '、'.join(literal(entry['description']) for entry in item['operations']) or '暂无可由 Agent 发起的操作'
             lines.append(f'{literal(item["name"])}：可查询 {queries}；可办理 {operations}。')
         return lines
-    if name not in {'get_current_time', 'manage_transfer_task', 'manage_collection_request', 'manage_wealth_request'} and not isinstance(d, dict):
+    if name not in {'get_current_time', 'manage_transfer_task', 'manage_collection_request', 'assess_wealth_risk', 'plan_wealth', 'manage_wealth_positions', 'show_wealth_returns'} and not isinstance(d, dict):
         raise ValueError('INVALID_EVIDENCE_SHAPE')
     if name == 'get_current_time':
         return [f'当前时间 {literal(result["local_time"])}，时区 {literal(result["timezone"])}。']
@@ -470,8 +473,7 @@ def body(name: str, result: dict) -> list[str]:
         return [literal(card['title']) + '；' + status[card['status']] + '。',
                 *[literal(line, 600) for line in card['lines']], literal(card['notice']),
                 '请在下方确认卡核对并点击；聊天文字不能代为确认。']
-    if name in {'manage_transfer_task', 'manage_collection_request', 'manage_wealth_request'}:
-        # 专用服务端流程生成文案，模型自由问题已在子流程入口替换。
+    if name in {'manage_transfer_task', 'manage_collection_request', 'assess_wealth_risk', 'plan_wealth', 'manage_wealth_positions', 'show_wealth_returns'}:
         return [result.get('reply') or '请核对可信任务卡；聊天不代为确认、验证或执行交易。']
     raise ValueError('UNSUPPORTED_EVIDENCE_SOURCE')
 
@@ -539,7 +541,7 @@ def evidence_for(index: int, item: dict) -> Evidence | None:
             if value:
                 prefix.append(f'{label}：{value if isinstance(scope[key], dict) else literal(value)}。')
     kind = result.get('data_kind')
-    if kind == 'simulated_bank' or name in {'manage_transfer_task', 'manage_collection_request', 'manage_wealth_request'}:
+    if kind == 'simulated_bank' or name in {'manage_transfer_task', 'manage_collection_request', 'assess_wealth_risk', 'plan_wealth', 'manage_wealth_positions', 'show_wealth_returns'}:
         prefix.append('数据类型：模拟银行数据。')
     elif kind == 'simulated_merchant':
         prefix.append(f'数据类型：模拟店铺，店铺 {literal(result.get("shop_name", "未提供"))}。')

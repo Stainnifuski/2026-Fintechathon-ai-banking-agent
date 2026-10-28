@@ -1,7 +1,7 @@
 from dataclasses import replace
 import pytest
 from backend.app.models.wealth import WealthConversationORM,WealthPlanORM
-from backend.app.routers.nova import WealthCardState
+from backend.app.routers.nova import WealthCardState,WealthViewContext
 from backend.app.services.ai import wealth_agent as agent,wealth_steps
 from backend.app.integrations.wealth_authorization import WealthPolicyError
 from backend.app.services.orchestration.wealth_nova_guard import require_no_pending_backtrack
@@ -86,6 +86,27 @@ def test_dependency_reset_keeps_independent_pool_and_clears_budget():
     assert result['view_context']['selected_products']==[{'product_id':'B017','bucket':'cash_management'}]
     assert result['command']['cash_yuan'] is None
     assert value['command']['cash_yuan']=='1000'
+
+
+def test_explicit_planning_workflow_on_recommend_card_uses_planning_dependencies():
+    value=data();value['request_id']='request-1'
+    value['view_context'].update(workflow='planning',workflow_request_id='request-1',
+        completed_stages=['match','cash_management','stable','growth','selected','budget'],
+        selected_products=[{'product_id':'B017','bucket':'stable'}],cash_yuan='1000')
+    assert WealthViewContext(version=1,workflow='planning',workflow_request_id='request-1').workflow=='planning'
+    assert wealth_steps.effective_kind(value)=='planning'
+    result=wealth_steps.reset_data(value,'stable')
+    assert result['view_context']['completed_stages']==['match','cash_management','growth']
+    assert result['view_context']['selected_products']==[]
+    value['request_id']='request-2'
+    assert wealth_steps.effective_kind(value)=='recommend'
+
+
+def test_wealth_view_rejects_invalid_risk_answer_draft():
+    from pydantic import ValidationError
+    assert WealthViewContext(version=1,risk_answers={'payment':2}).risk_answers=={'payment':2}
+    for answers in ({'unknown':1},{'payment':4},{'payment':True}):
+        with pytest.raises(ValidationError):WealthViewContext(version=1,risk_answers=answers)
 
 
 @pytest.mark.asyncio

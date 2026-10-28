@@ -198,8 +198,12 @@ async def wealth_state(context, key, completion):
     if kind=='assessment':
         from ...integrations.wealth_authorization import latest_assessment,aware
         from ...domain.time import utc_now
+        from datetime import datetime
         a=await latest_assessment(context.db,context.user_id)
-        return 'completed' if a and a.confirmed_at and aware(a.expires_at)>utc_now() else 'waiting'
+        reassess_started=data.get('reassess_started_at')
+        confirmed_after_reassessment=(not reassess_started or bool(a and a.confirmed_at and
+            aware(a.confirmed_at)>=aware(datetime.fromisoformat(reassess_started))))
+        return 'completed' if a and a.confirmed_at and aware(a.expires_at)>utc_now() and confirmed_after_reassessment else 'waiting'
     view=data.get('view_context') or {}
     if completion=='selection' and kind=='recommend':
         return 'completed' if view.get('selected_products') else 'waiting'

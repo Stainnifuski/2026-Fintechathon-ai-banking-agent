@@ -449,6 +449,7 @@ from .bill_tools import bill_tools
 TOOL_REGISTRY.update(bill_tools())
 from .wealth_agent import wealth_tools
 TOOL_REGISTRY.update(wealth_tools())
+WEALTH_TOOL_NAMES = frozenset({'assess_wealth_risk','plan_wealth','manage_wealth_positions','show_wealth_returns'})
 TOOL_REGISTRY["describe_bank_capabilities"] = {
     "schema": {"type": "function", "function": {
         "name": "describe_bank_capabilities",
@@ -464,7 +465,7 @@ SYSTEM_PROMPT = """你是 NOVA 银行助手。服务端会先提供结构化路�
 你可查询现实时间、本人账户概览、联系人及历史转账人、卡片及订阅、现有收款申请、月度/年度账单、已完成流水、本人日历活动、模拟鲜花店和蛋糕店商品及本人订单，可用 manage_transfer_task 处理本人付款的立即或定时人民币转账草稿，可用 manage_collection_request 处理本人向别人请求付款的收款草稿，可用 manage_payment_requests 查看现有申请并打开取消或付款/拒绝任务卡，并可为本人卡片操作生成待确认预览。
 用户询问 BankAgent 支持哪些业务、各业务可查询或可办理的事项时，调用 describe_bank_capabilities 取得当前业务目录；目录不是用户授权，不得据此执行操作。
 转账=本人从自己账户付给别人；收款=本人请求别人付给自己。不得因两者都含“款”而互换工具；“别人向我收款”属于现有收款申请的处理，应使用 manage_payment_requests(action=respond)，不是新建收款草稿。
-理财查询、产品推荐、规划、申购、赎回或理财任务修改恢复必须调用manage_wealth_request。理财交易仅由本人在可信卡片确认和MFA；聊天不能授权。
+理财风险评估调用 assess_wealth_risk，规划、推荐和产品查看调用 plan_wealth，持仓查询或赎回调用 manage_wealth_positions，整体收益调用 show_wealth_returns。主模型直接填写结构化参数。理财交易仅由本人在可信卡片确认和MFA；聊天不能授权。
 当前时间日期必须调用 get_current_time，不可猜测。默认北京时间 Asia/Shanghai。
 账户和账单事实必须调用工具，不能使用历史回答或页面提示作为当前事实。所有金额 *_fen 单位为分，展示时换算人民币元。
 工具返回的用户、账户、流水、任务、操作、产品及订阅 ID 只用于内部定位，不向用户复述；回答使用已核实的人名、商户名、产品名、账户尾号和时间。缺少可核实名称时说明资料不足，不展示内部代号。
@@ -522,7 +523,7 @@ async def execute_tool(call: dict, context: ToolContext | None = None) -> dict:
         raw = call['function']['arguments']
         if not isinstance(raw, str) or len(raw.encode()) > MAX_ARGUMENT_BYTES or not isinstance(strict_json(raw), dict):
             raise ValueError('INVALID_ARGUMENTS')
-        arguments = tool["arguments"].model_validate_json(call["function"]["arguments"])
+        arguments = tool["arguments"].model_validate_json(raw)
     except (ValueError, TypeError, KeyError, RecursionError):
         return {"error": "INVALID_ARGUMENTS", "message": "参数不符合工具 Schema；请检查字段、类型和取值"}
     if tool.get("requires_identity") and (context is None or not context.user_id):
@@ -843,7 +844,7 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                 direct_wealth = route is not None and route.mode == "direct_react" and route.domains == ["wealth"]
                 direct_capabilities = route is not None and route.mode == "direct_react" and route.domains == ["capabilities"]
                 if direct_wealth:
-                    allowed_names = {"manage_wealth_request"}
+                    allowed_names = set(WEALTH_TOOL_NAMES)
                 elif direct_capabilities:
                     allowed_names = {"describe_bank_capabilities"}
                 elif direct_transfer:
@@ -978,7 +979,7 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                         return {'reply':'','mode':'model','tool_calls':trace}
                     if consecutive_tool_failures >= 3:
                         raise LLMError("AGENT_CONSECUTIVE_FAILURES")
-                    if direct_wealth and call["function"]["name"] == "manage_wealth_request":
+                    if direct_wealth and call["function"]["name"] in WEALTH_TOOL_NAMES:
                         return {"reply":result.get("reply",result.get("message","理财任务暂时无法处理，请重试。")),"mode":"model","tool_calls":trace, "wealth_cards":result.get("wealth_cards",[])}
                     if direct_capabilities and name == "describe_bank_capabilities":
                         businesses = result.get('businesses', [])

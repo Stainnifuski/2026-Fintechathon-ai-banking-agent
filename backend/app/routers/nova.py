@@ -733,6 +733,9 @@ class WealthViewContext(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     version: int = Field(ge=1)
     selection_kind: Literal['positions','products'] | None = None
+    workflow: Literal['planning','target'] | None = None
+    workflow_request_id: str | None = Field(default=None,max_length=128)
+    risk_answers: dict[str,int] = Field(default_factory=dict,max_length=9)
     visible_products: list[WealthViewProduct] = Field(default_factory=list,max_length=60)
     selected_products: list[WealthViewProduct] = Field(default_factory=list,max_length=160)
     cash_field: Literal['reserve','investment','total'] | None = None
@@ -746,6 +749,16 @@ class WealthViewContext(BaseModel):
         import re
         if any(len(k)>120 or not re.fullmatch(r'(?:\d{1,12}(?:\.\d{0,2})?)?',v) for k,v in value.items()):
             raise ValueError('金额输入格式不合法')
+        return value
+
+    @field_validator('risk_answers')
+    @classmethod
+    def valid_risk_answers(cls,value):
+        from ..domain.wealth_risk import QUESTIONS
+        ids={question[0] for question in QUESTIONS}
+        if any(key not in ids or type(answer) is not int or not 0<=answer<=3
+               for key,answer in value.items()):
+            raise ValueError('风险问卷答案不合法')
         return value
 
 

@@ -36,7 +36,8 @@ const TOOL_LABELS: Record<string, string> = {
   get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情',
   list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
   preview_card_operation: '卡片操作预览', request_subscription_cancellation: '取消订阅任务卡', manage_subscription_task: '订阅操作任务卡', manipulate_calender_event: '日程操作任务卡', prepare_shop_purchase: '店铺下单', list_card_transactions: '用卡记录', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
-  manage_transfer_task: '转账任务规划', manage_collection_request: '收款草稿', manage_payment_requests: '现有收款申请', manage_wealth_request:'理财任务',
+  manage_transfer_task: '转账任务规划', manage_collection_request: '收款草稿', manage_payment_requests: '现有收款申请',
+  assess_wealth_risk:'风险评估',plan_wealth:'理财规划与推荐',manage_wealth_positions:'持仓查询与调整',show_wealth_returns:'理财收益',
   get_bill_catalog: '商户、标签与分类规则', list_bill_anomalies: '账单异常核对',
   preview_bill_merchant_change: '商户变更预览', prepare_bill_change: '账单修改确认卡',
   get_budget_status: '预算与预警', list_forecast_reviews: '预测复盘', list_recurring_records: '周期收支',
@@ -505,8 +506,8 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           // 卡片任务卡状态以服务端授权单为准，随会话一起读取。
           void getNovaTaskSession(sessionId).then(setTaskSession).catch(() => setError('卡片任务卡读取失败，请重新打开对话。'));
         }
-        if(sessionId&&reply.tool_calls.some(call=>['manage_transfer_task','manage_collection_request','manage_wealth_request','preview_card_operation','manage_subscription_task','manipulate_calender_event','prepare_shop_purchase','prepare_bill_change','manage_payment_requests'].includes(call.name)&&!call.result.error)){
-          const domainKeys:Record<string,string>={manage_transfer_task:'transfer',manage_collection_request:'collection',manage_wealth_request:'wealth',preview_card_operation:'card',manage_subscription_task:'subscription',manipulate_calender_event:'calendar',prepare_shop_purchase:'shop',prepare_bill_change:'bill',manage_payment_requests:'payment_request'};
+        if(sessionId&&reply.tool_calls.some(call=>['manage_transfer_task','manage_collection_request','assess_wealth_risk','plan_wealth','manage_wealth_positions','show_wealth_returns','preview_card_operation','manage_subscription_task','manipulate_calender_event','prepare_shop_purchase','prepare_bill_change','manage_payment_requests'].includes(call.name)&&!call.result.error)){
+          const domainKeys:Record<string,string>={manage_transfer_task:'transfer',manage_collection_request:'collection',assess_wealth_risk:'wealth',plan_wealth:'wealth',manage_wealth_positions:'wealth',show_wealth_returns:'wealth',preview_card_operation:'card',manage_subscription_task:'subscription',manipulate_calender_event:'calendar',prepare_shop_purchase:'shop',prepare_bill_change:'bill',manage_payment_requests:'payment_request'};
           void apiClient.get<(TaskMeta&{type:string;request_id?:string})[]>(`/nova/presentation/${sessionId}`).then(({data})=>{if(billSession.current!==sessionId)return;const changed=data.filter(item=>!item.finished&&!item.released&&reply.tool_calls.some(call=>domainKeys[call.name]===item.type));setPlacements(old=>({...old,...Object.fromEntries(changed.map(item=>[item.key,taskRequest.request_id]))}));for(const item of changed)void apiClient.post(`/nova/presentation/${sessionId}/position`,{key:item.key,request_id:taskRequest.request_id,existing:true}).catch(()=>{});});
         }
         void listNovaConversations().then(setConversations).catch(() => {});

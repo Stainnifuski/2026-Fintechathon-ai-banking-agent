@@ -1,6 +1,7 @@
 """The phase-one runtime keeps task state from bank facts and scopes tools."""
 from dataclasses import replace
 from types import SimpleNamespace
+import json
 
 import pytest
 import pytest_asyncio
@@ -13,6 +14,8 @@ from backend.app.models.wealth import WealthConversationORM, WealthPlanORM
 from backend.app.services.ai import nova_runtime, task_flow
 from backend.app.services.ai import nova
 from backend.app.services.ai import debug_trace
+from backend.app.services.ai.wealth_agent import wealth_tools
+from backend.app.services.ai import wealth_agent
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.schemas.nova import PageContext
 
@@ -53,9 +56,35 @@ class FakeModel:
         return SimpleNamespace(data=reply)
 
 
+def test_wealth_tools_expose_structured_main_model_arguments():
+    assert set(wealth_tools())=={'assess_wealth_risk','plan_wealth','manage_wealth_positions','show_wealth_returns'}
+    definition=wealth_tools()['plan_wealth']['schema']['function']
+    assert '理财子模型' not in definition['description']
+    assert {'kind','product_queries','candidate_indices','cash_yuan','advance'} <= set(definition['parameters']['properties'])
+    assert definition['parameters']['additionalProperties'] is False
+    assert '当前可见候选' in definition['description']
+
+
+@pytest.mark.asyncio
+async def test_wealth_tool_validates_model_arguments_and_keeps_authenticated_context(context,monkeypatch):
+    async def capture(arguments,tool_context):
+        return {'arguments':arguments.model_dump(),'user_id':tool_context.user_id,
+                'message':tool_context.original_message}
+    monkeypatch.setitem(nova.TOOL_REGISTRY,'plan_wealth',{
+        **nova.TOOL_REGISTRY['plan_wealth'],'execute':capture})
+    for payload in ({},{'kind':'recommend','category':'bond_fund'}):
+        result=await nova.execute_tool({'function':{'name':'plan_wealth',
+            'arguments':json.dumps(payload)}},context)
+        assert result['arguments']['kind']==payload.get('kind','planning')
+        assert result['user_id']=='u1' and result['message']=='查询'
+    for raw in ('[]','null','{bad json','{"user_id":"other"}','{"arguments":{}}'):
+        result=await nova.execute_tool({'function':{'name':'plan_wealth','arguments':raw}},context)
+        assert result['error']=='INVALID_ARGUMENTS'
+
+
 @pytest.mark.asyncio
 async def test_wealth_tool_is_selected_and_registered_as_pending_card(context, monkeypatch):
-    assert 'manage_wealth_request' in nova_runtime._phase_tools(nova.TOOL_REGISTRY)
+    assert 'plan_wealth' in nova_runtime._phase_tools(nova.TOOL_REGISTRY)
 
     async def open_wealth_card(_arguments, tool_context):
         tool_context.db.add(WealthConversationORM(
@@ -65,12 +94,12 @@ async def test_wealth_tool_is_selected_and_registered_as_pending_card(context, m
         await tool_context.db.commit()
         return {'reply': '已打开理财规划任务卡。'}
 
-    monkeypatch.setitem(nova.TOOL_REGISTRY, 'manage_wealth_request', {
-        **nova.TOOL_REGISTRY['manage_wealth_request'], 'execute': open_wealth_card})
-    model = FakeModel(False, ['manage_wealth_request'], [nova_runtime.PlannedCall(
-        name='manage_wealth_request', arguments={})])
+    monkeypatch.setitem(nova.TOOL_REGISTRY, 'plan_wealth', {
+        **nova.TOOL_REGISTRY['plan_wealth'], 'execute': open_wealth_card})
+    model = FakeModel(False, ['plan_wealth'], [nova_runtime.PlannedCall(
+        name='plan_wealth', arguments={})])
     result = await nova_runtime.chat('帮我做理财规划', [], model=model, context=context)
-    assert any(item['name'] == 'manage_wealth_request' and item['result']['reply'] == '已打开理财规划任务卡。'
+    assert any(item['name'] == 'plan_wealth' and item['result']['reply'] == '已打开理财规划任务卡。'
                for item in result['tool_calls'])
     finish = result['tool_calls'][-1]['result']
     assert finish['outcome'] == 'waiting_user'
@@ -83,13 +112,50 @@ async def test_wealth_tool_is_selected_and_registered_as_pending_card(context, m
         observed.append(tool_context.wealth_task_id)
         return {'reply': '已续接原理财任务卡。'}
 
-    monkeypatch.setitem(nova.TOOL_REGISTRY, 'manage_wealth_request', {
-        **nova.TOOL_REGISTRY['manage_wealth_request'], 'execute': continue_wealth_card})
-    followup = FakeModel(True, ['manage_wealth_request'], [nova_runtime.PlannedCall(
-        name='manage_wealth_request', arguments={})])
+    monkeypatch.setitem(nova.TOOL_REGISTRY, 'plan_wealth', {
+        **nova.TOOL_REGISTRY['plan_wealth'], 'execute': continue_wealth_card})
+    followup = FakeModel(True, ['plan_wealth'], [nova_runtime.PlannedCall(
+        name='plan_wealth', arguments={})])
     await nova_runtime.chat('继续这个理财规划', [], model=followup,
                             context=replace(context, request_id='r2', original_message='继续这个理财规划'))
     assert observed == ['NW-TEST-WEALTH']
+
+
+@pytest.mark.asyncio
+async def test_main_model_opens_planning_and_risk_form_without_wealth_submodel(context,monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(wealth_agent.llm,'generate_structured',AsyncMock(
+        side_effect=AssertionError('理财子模型不得运行')))
+    monkeypatch.setattr(wealth_agent,'HttpWealthBankApi',lambda:SimpleNamespace(
+        assets=AsyncMock(return_value={'context_id':'test'})))
+    model=FakeModel(False,['plan_wealth'],[nova_runtime.PlannedCall(name='plan_wealth',arguments={})])
+    result=await nova_runtime.chat('我要理财',[],model=model,
+        context=replace(context,original_message='我要理财',request_id='risk-gated-request'))
+    tool=next(item for item in result['tool_calls'] if item['name']=='plan_wealth')
+    assert tool['result']['wealth_cards'][0]['command']['kind']=='planning'
+    assert tool['result']['wealth_cards'][0]['assessment_pending']
+    wealth_agent.llm.generate_structured.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_trusted_planning_reply_skips_freeform_final_generation(context, monkeypatch):
+    async def open_wealth_card(_arguments, tool_context):
+        tool_context.db.add(WealthConversationORM(
+            session_id='NW-TRUSTED-INTRO', user_id=tool_context.user_id, version=1,
+            data={'nova_session_id':tool_context.session_id,'request_id':tool_context.request_id,
+                  'command':{'kind':'planning'},'closed':False}))
+        await tool_context.db.commit()
+        return {'reply':'受控的投资模型介绍。','trusted_reply':'受控的投资模型介绍。'}
+
+    monkeypatch.setitem(nova.TOOL_REGISTRY,'plan_wealth',{
+        **nova.TOOL_REGISTRY['plan_wealth'],'execute':open_wealth_card})
+    model=FakeModel(False,['plan_wealth'],[
+        nova_runtime.PlannedCall(name='plan_wealth',arguments={})])
+    async def unexpected_final(**_kwargs):
+        raise AssertionError('理财规划回复不应再由主 Agent 自由生成')
+    model.generate_text=unexpected_final
+    result=await nova_runtime.chat('帮我做理财规划',[],model=model,context=context)
+    assert result['reply']=='受控的投资模型介绍。'
 
 
 @pytest.mark.asyncio

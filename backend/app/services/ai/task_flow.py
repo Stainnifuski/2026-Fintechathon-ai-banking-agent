@@ -97,9 +97,12 @@ async def active(ctx):
         if c and c.data.get('execution_plan_id'):
             from .execution_queue import wealth_state
             if await wealth_state(ctx,wealth,'settled')=='completed':return None
-        if c:return {'type':'wealth','id':wealth,'version':c.version,'label':TITLES[c.data['command']['kind']],
+        if c:
+            from .wealth_steps import effective_kind
+            kind=effective_kind(c.data)
+            return {'type':'wealth','id':wealth,'version':c.version,'label':TITLES[kind],
                      'digest':hashlib.sha256(json.dumps(c.data,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
-                     'kind':c.data['command']['kind']}
+                     'kind':kind}
     if transfer:
         t=next((t for t in tasks if t['chat_task_id']==transfer),None)
         if t:return {'type':'transfer','id':transfer,'version':transfers.version,

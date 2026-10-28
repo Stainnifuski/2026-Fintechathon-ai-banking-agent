@@ -220,6 +220,8 @@ async def simulate_subscription_charge(
     user_id: str,
     state_version: int,
     idempotency_key: str,
+    due_only: bool = False,
+    execution_time: datetime | None = None,
 ) -> dict:
     """模拟一个月度扣费周期，并在同一银行事务内更新余额和流水。"""
     async with AsyncSessionLocal() as session:
@@ -271,6 +273,10 @@ async def simulate_subscription_charge(
             raise BankError("已取消的订阅不会继续扣费", "SUBSCRIPTION_NOT_ACTIVE", 409)
         if subscription.state_version != state_version:
             raise BankError("订阅状态已更新，请刷新后重试", "STALE_STATE_VERSION", 409)
+        now = execution_time or datetime.now(timezone.utc)
+        if due_only and (subscription.billing_cycle != "MONTHLY" or
+                         as_utc(subscription.next_charge_at, legacy_utc=True) > now):
+            raise BankError("订阅尚未到续费时间", "SUBSCRIPTION_NOT_DUE", 409)
         if account.status != "active":
             raise BankError("扣费账户当前不可用", "ACCOUNT_INACTIVE", 403)
         if subscription.currency != "CNY" or subscription.amount_fen <= 0:
@@ -287,7 +293,6 @@ async def simulate_subscription_charge(
         if await available_cash(session, account.account_id, balance_fen) < subscription.amount_fen:
             raise BankError("扣费账户余额不足", "INSUFFICIENT_FUNDS", 409)
 
-        now = datetime.now(timezone.utc)
         transaction = TransactionORM(
             tx_id=f"STX{uuid4().hex[:18].upper()}",
             operation_id=idempotency_key,

@@ -320,12 +320,13 @@ export interface NovaWealthCard {
  command:NovaWealthCommand; view_context?:NovaWealthView; closed:boolean; paused?:boolean; instruction?:{id:string;action:string;stage:string|null}; draft_epoch?:number; execution_plan_id?:string;
  pending_backtrack?:{token:string;stage:string;label:string;invalidated:string[]};
  reopen_stage?:string;
+ reassess_open?:boolean;
 }
 export const getNovaWealthCards=(session:string)=>apiClient.get<NovaWealthCard[]>(`/nova/wealth-sessions/${session}`).then(r=>r.data);
 export const updateNovaWealthCard=(card:NovaWealthCard,change:{execution_plan_id?:string;closed?:boolean;paused?:boolean;reset_draft?:boolean;backtrack_stage?:string;backtrack_token?:string;accept_backtrack?:boolean})=>
  apiClient.post<NovaWealthCard[]>(`/nova/wealth-sessions/${card.nova_session_id}/cards/${card.task_id}`,{version:card.version,...change}).then(r=>r.data);
 
-export type NovaWealthView={selection_kind?:'positions'|'products';completed_stages?:string[];cash_field?:'reserve'|'investment'|'total';cash_yuan?:string;amounts_yuan?:Record<string,string>;visible_products:NovaWealthCommand['products'];selected_products:NovaWealthCommand['products']};
+export type NovaWealthView={selection_kind?:'positions'|'products';workflow?:'planning'|'target';workflow_request_id?:string;completed_stages?:string[];risk_answers?:Record<string,number>;cash_field?:'reserve'|'investment'|'total';cash_yuan?:string;amounts_yuan?:Record<string,string>;visible_products:NovaWealthCommand['products'];selected_products:NovaWealthCommand['products']};
 const pendingWealthViews=new Map<string,Promise<unknown>>();
 export function saveNovaWealthView(card:NovaWealthCard,view:NovaWealthView){
  const previous=pendingWealthViews.get(card.task_id);

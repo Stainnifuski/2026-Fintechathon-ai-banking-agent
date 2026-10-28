@@ -3,6 +3,7 @@ import {createContext,useContext,useState,useRef,useLayoutEffect,useEffect,useCa
 import {createPortal} from 'react-dom';
 import {apiClient} from '../services/api';
 import {flushNovaWealthView} from '../services/nova';
+import {selectHandoffCandidate} from './novaHandoffCandidate';
 import './novaTaskPresentation.css';
 
 export type TaskMeta={key:string;session:string;label:string;destination:string;ready?:boolean;blocked?:boolean;service?:'flower'|'cake';finished?:boolean;summary?:string;released?:{mode:string;message:string;draft?:Record<string,unknown>}|null};
@@ -90,7 +91,7 @@ export function NovaPresentationProvider({children}:{children:ReactNode}){
   setRecords(old=>{const next=new Map(old),prior=next.get(item.meta.key);if(prior?.manual||prior?.ended)return old;if(prior&&fingerprint(prior)===fingerprint(item))return old;next.set(item.meta.key,{...item,collapsed:item.meta.finished&&!prior?.meta.finished?true:prior?.collapsed??!!item.meta.finished,completed:prior?.completed&&(!isValidElement(prior.node)||!isValidElement(item.node)||prior.node.key===item.node.key),uncertain:prior?.uncertain,uncertainMode:prior?.uncertainMode,host:prior?.host??item.host,draft:prior?.draft??item.meta.released?.draft??item.draft});return next;});
   return()=>{queueMicrotask(()=>{if(registrations.current.get(item.meta.key)!==ticket)return;setRecords(old=>{const prior=old.get(item.meta.key);if(!prior||prior.manual||prior.anchor!==item.anchor)return old;const next=new Map(old);next.delete(item.meta.key);return next;});});};
  },[]);
- const candidate=(session:string)=>{const values=[...recordsRef.current.values()].filter(x=>x.meta.session===session&&x.meta.ready!==false&&!x.manual&&!x.ended&&!x.uncertain&&!x.meta.finished&&!x.completed&&!x.meta.released);return values.find(x=>x.meta.key===focused.current)??(values.length===1?values[0]:undefined);};
+ const candidate=(session:string)=>selectHandoffCandidate(recordsRef.current.values(),session,focused.current);
  const finishRelease=(item:RecordItem,mode:'manual'|'cancel',message:string)=>{
    setRecords(old=>{const next=new Map(old);next.set(item.meta.key,{...item,uncertain:false,manual:mode==='manual',ended:mode==='cancel',receipt:message});return next;});
    releaseRequests.current.delete(item.meta.key);

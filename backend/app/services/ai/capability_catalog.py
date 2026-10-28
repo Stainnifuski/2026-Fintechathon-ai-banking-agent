@@ -109,10 +109,13 @@ _CAPABILITIES = (
     {
         "domain": "wealth", "name": "理财",
         "queries": [
-            {"tool": "manage_wealth_request", "description": "资产、持仓、整体收益、产品详情与比较"},
+            {"tool": "manage_wealth_positions", "description": "本人持仓查询与调整"},
+            {"tool": "show_wealth_returns", "description": "本人整体理财收益"},
         ],
         "operations": [
-            {"tool": "manage_wealth_request", "description": "目标推荐、配置规划、风险评估任务、申购或赎回草稿及未完成任务的修改与恢复"},
+            {"tool": "assess_wealth_risk", "description": "本人风险评估或重新评估"},
+            {"tool": "plan_wealth", "description": "理财规划、目标推荐、产品查看与申购草稿"},
+            {"tool": "manage_wealth_positions", "description": "持仓查询、调整及赎回草稿"},
         ],
     },
     {

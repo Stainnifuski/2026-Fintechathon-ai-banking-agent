@@ -356,7 +356,7 @@ async def test_lifecycle_always_releases_llm_and_database(monkeypatch, failure, 
     monkeypatch.setattr(wealth_retire_pending, 'retire', no_bank_work)
     monkeypatch.setattr(bill_foundation, 'refresh_all', no_bank_work)
     monkeypatch.setattr(main.app.state.wealth_portfolio_source, 'preload', no_op)
-    for name in ("scheduled_transfer_loop", "wealth_task_loop"):
+    for name in ("scheduled_transfer_loop", "subscription_charge_loop", "wealth_task_loop"):
         monkeypatch.setattr(main, name, worker)
 
     async def run():
@@ -371,7 +371,7 @@ async def test_lifecycle_always_releases_llm_and_database(monkeypatch, failure, 
     else:
         await run()
     assert events[-2:] == ["llm", "database"]
-    assert events.count("worker") == (0 if failure == "initialization" else 2)
+    assert events.count("worker") == (0 if failure == "initialization" else 3)
     if failure == "worker":
         assert "后台任务" in caplog.text and "RuntimeError" in caplog.text
 

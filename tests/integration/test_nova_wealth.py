@@ -62,6 +62,8 @@ async def test_missing_assessment_uses_gate_prompt_and_opens_assessment_first(st
         ctx=replace(context(db),original_message='我要理财')
         first=await agent.manage(agent.EmptyArguments(),ctx)
         assert '先完成并本人确认风险评估' in first['reply']
+        assert first['trusted_reply']==first['reply']
+        assert '三板块资产配置模型' not in first['reply']
         assert first['wealth_cards'][0]['command']['kind']=='planning'
         assert first['wealth_cards'][0]['command']['products']==[]
         assert first['wealth_cards'][0]['assessment_pending']
@@ -70,6 +72,7 @@ async def test_missing_assessment_uses_gate_prompt_and_opens_assessment_first(st
         assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
         repeated=await agent.manage(agent.EmptyArguments(),ctx)
         assert repeated['wealth_cards']==first['wealth_cards'] and len(calls)==1
+        assert repeated['trusted_reply']==first['reply']
         now=datetime.now(timezone.utc)
         db.add(WealthAssessmentORM(assessment_id='WA-after-gate',user_id='U1',profile_version=1,
             questionnaire_version='test',score_version='test',answers={},
@@ -78,6 +81,142 @@ async def test_missing_assessment_uses_gate_prompt_and_opens_assessment_first(st
         await db.commit()
         await agent.manage(agent.EmptyArguments(),replace(ctx,request_id='request-after-assessment'))
         assert calls[-1]['schema'] is agent.IntentBatch
+
+
+@pytest.mark.asyncio
+async def test_planning_intro_is_trusted_and_replayed(store,monkeypatch):
+    model=AsyncMock(return_value=SimpleNamespace(data=agent.IntentBatch(intents=[agent.WealthIntent(kind='planning')])))
+    monkeypatch.setattr(agent.llm,'generate_structured',model)
+    monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(assets=AsyncMock(return_value={'context_id':'test'})))
+    async with store() as db:
+        await conversation(db)
+        ctx=replace(context(db),original_message='帮我做理财规划')
+        first=await agent.manage(agent.EmptyArguments(),ctx)
+        assert first['wealth_cards'][0]['command']['kind']=='planning'
+        assert first['trusted_reply']==first['reply']==agent.PLANNING_MODEL_INTRO
+        assert '三板块资产配置模型' in first['reply']
+        assert '交易仍需本人确认和验证' in first['reply']
+        repeated=await agent.manage(agent.EmptyArguments(),ctx)
+        assert repeated['trusted_reply']==first['trusted_reply']
+        assert model.await_count==1
+
+
+@pytest.mark.asyncio
+async def test_main_model_tools_open_planning_positions_and_returns_without_submodel(store,monkeypatch):
+    model=AsyncMock(side_effect=AssertionError('理财工具不得调用子模型'))
+    monkeypatch.setattr(agent.llm,'generate_structured',model)
+    monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(
+        assets=AsyncMock(return_value={'context_id':'test','cash':[], 'asset_summary':{}}),
+        call=AsyncMock(return_value={'performance':{'amount_fen':0,'rate_percent':'0','notice':'已核对'}})))
+    async with store() as db:
+        await conversation(db)
+        calls=[(agent.WealthPlanningArguments(kind='planning'),'request-direct-plan'),
+               (agent.WealthPositionsArguments(kind='positions'),'request-direct-positions'),
+               (agent.WealthPositionsArguments(kind='redeem'),'request-direct-redeem'),
+               (agent.WealthReturnsArguments(period='month'),'request-direct-returns')]
+        for arguments,request_id in calls:
+            response=await agent.manage(arguments,replace(context(db,request_id),original_message='理财操作'))
+            assert any(card['command']['kind']==arguments.kind for card in response['wealth_cards'])
+        returns=next(card for card in response['wealth_cards'] if card['command']['kind']=='returns')
+        changed=await agent.manage(agent.WealthReturnsArguments(task_id=returns['task_id'],period='year'),
+            replace(context(db,'request-direct-returns-update'),original_message='查看近一年的整体理财收益'))
+        assert len(changed['wealth_cards'])==len(response['wealth_cards'])
+        assert next(card for card in changed['wealth_cards'] if card['task_id']==returns['task_id'])['command']['period']=='year'
+        model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_main_model_planning_opens_risk_form_without_submodel_when_unassessed(store,monkeypatch):
+    model=AsyncMock(side_effect=AssertionError('理财工具不得调用子模型'))
+    monkeypatch.setattr(agent.llm,'generate_structured',model)
+    monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(
+        assets=AsyncMock(return_value={'context_id':'test'})))
+    async with store() as db:
+        await conversation(db,assessed=False)
+        result=await agent.manage(agent.WealthPlanningArguments(kind='planning'),
+            replace(context(db),original_message='开始做理财规划'))
+        assert result['wealth_cards'][0]['assessment_pending']
+        assert result['wealth_cards'][0]['command']['kind']=='planning'
+        model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_chat_risk_answer_updates_pending_planning_card(store,monkeypatch):
+    monkeypatch.setattr(agent.llm,'generate_structured',AsyncMock(side_effect=AssertionError('不应调用子模型')))
+    monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(
+        assets=AsyncMock(return_value={'context_id':'test'})))
+    async with store() as db:
+        await conversation(db,assessed=False)
+        opened=await agent.manage(agent.WealthPlanningArguments(),replace(context(db),original_message='开始理财'))
+        card=opened['wealth_cards'][0]
+        answer=agent.WealthRiskArguments(action='answer',task_id=card['task_id'],answers={'payment':2},
+            answer_evidence={'payment':agent.RiskAnswerEvidence(
+                question_quote='财务支付能力',option_quote='稳定结余')})
+        updated=await agent.manage_risk(answer,replace(context(db,'answer-pending'),
+            wealth_task_id=card['task_id'],original_message='财务支付能力选稳定结余'))
+        assert len(updated['wealth_cards'])==1
+        assert updated['wealth_cards'][0]['command']['kind']=='planning'
+        assert updated['wealth_cards'][0]['view_context']['risk_answers']=={'payment':2}
+
+
+@pytest.mark.asyncio
+async def test_main_model_can_select_visible_planning_product_and_fill_budget(store,monkeypatch):
+    monkeypatch.setattr(agent.llm,'generate_structured',AsyncMock(side_effect=AssertionError('不应调用子模型')))
+    product={'product_id':'B017','product_version':1,'name':'测试活钱','bucket':'cash_management'}
+    monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(
+        assets=AsyncMock(return_value={'context_id':'test','cash':[], 'asset_summary':{}}),
+        call=AsyncMock(return_value=[{'product_id':'B017','version':1,'name':'测试活钱'}])))
+    async with store() as db:
+        await conversation(db)
+        db.add(WealthConversationORM(session_id='NW-direct-plan',user_id='U1',version=1,data={
+            'nova_session_id':'NOVA-test-session','request_id':'prior','context_id':'test','closed':False,
+            'command':{'kind':'planning','products':[],'cash_yuan':None,'cash_field':None},
+            'view_context':{'visible_products':[product],'selected_products':[],'completed_stages':[]}}))
+        await db.commit()
+        picked=await agent.manage(agent.WealthPlanningArguments(kind='planning',task_id='NW-direct-plan',
+            candidate_indices=[1],selection_operation='add'),replace(context(db,'pick'),
+            original_message='选第一个产品'))
+        card=next(c for c in picked['wealth_cards'] if c['task_id']=='NW-direct-plan')
+        assert card['command']['products'][0]['product_id']=='B017'
+        budget=await agent.manage(agent.WealthPlanningArguments(kind='planning',task_id='NW-direct-plan',
+            cash_field='invest',cash_yuan='1000',cash_quote='本次投资1000元'),
+            replace(context(db,'budget'),original_message='本次投资1000元'))
+        card=next(c for c in budget['wealth_cards'] if c['task_id']=='NW-direct-plan')
+        assert card['command']['cash_yuan']=='1000' and card['command']['products'][0]['product_id']=='B017'
+        advanced=await agent.manage(agent.WealthPlanningArguments(kind='planning',task_id='NW-direct-plan',
+            candidate_indices=[1],selection_operation='add',advance='continue',
+            advance_quote='继续核对'),replace(context(db,'pick-and-continue'),
+            wealth_task_id='NW-direct-plan',wealth_stage='cash_management',
+            original_message='选第一个产品并继续核对'))
+        card=next(c for c in advanced['wealth_cards'] if c['task_id']=='NW-direct-plan')
+        assert card['command']['products'][0]['product_id']=='B017'
+        assert card['instruction']['action']=='continue'
+
+
+@pytest.mark.asyncio
+async def test_main_model_can_prefill_redeem_from_visible_holding(store,monkeypatch):
+    monkeypatch.setattr(agent.llm,'generate_structured',AsyncMock(side_effect=AssertionError('不应调用子模型')))
+    product={'product_id':'B017','product_version':1,'name':'测试活钱'}
+    monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(
+        assets=AsyncMock(return_value={'context_id':'test','cash':[], 'asset_summary':{}}),
+        call=AsyncMock(return_value=[{'product_id':'B017','version':1,'name':'测试活钱'}])))
+    async with store() as db:
+        await conversation(db)
+        db.add(WealthConversationORM(session_id='NW-direct-holdings',user_id='U1',version=1,data={
+            'nova_session_id':'NOVA-test-session','request_id':'prior','context_id':'test','closed':False,
+            'command':{'kind':'positions','products':[]},
+            'view_context':{'selection_kind':'positions','visible_products':[product],
+                            'selected_products':[],'completed_stages':[]}}))
+        await db.commit()
+        result=await agent.manage(agent.WealthPositionsArguments(kind='redeem',task_id='NW-direct-holdings',
+            candidate_indices=[1],redemption_input='market_value',redemption_value='100',
+            redemption_quote='赎回100元'),replace(context(db,'redeem'),
+            wealth_task_id='NW-direct-holdings',wealth_stage='redemption_input',
+            original_message='赎回第一个持仓，赎回100元'))
+        card=next(c for c in result['wealth_cards'] if c['task_id']=='NW-direct-holdings')
+        assert card['command']['kind']=='redeem'
+        assert card['command']['products'][0]['product_id']=='B017'
+        assert card['command']['redemption_value']=='100'
 
 
 @pytest.mark.asyncio
