@@ -953,8 +953,8 @@
 @media(min-width:1101px) {
   .home-workspace.nova-docked .nova-mascot.nova-mascot-anchor.nova-mascot-started,
   .home-workspace.nova-docked .nova-mascot.nova-mascot-anchor.nova-mascot-thinking { left:-27.2px; right:auto; top:35.8px; bottom:auto; width:136.4px; height:136.4px; }
-  .home-workspace.nova-docked .agent-head { padding-left:24px; }
-  .home-workspace.nova-docked .agent-panel:has(.nova-mascot-started, .nova-mascot-thinking) .agent-head { padding-left:82px; }
+  .home-workspace.nova-docked .agent-head { padding-left:112px; }
+  .home-workspace.nova-docked .agent-panel:has(.nova-mascot-started, .nova-mascot-thinking) .agent-head { padding-left:112px; }
   .home-workspace .agent-panel { transition:left 380ms cubic-bezier(.333333,1,.666667,1); }
   .home-workspace .bank-topbar { transition:background-color 100ms ease,border-color 100ms ease; }
   .home-workspace .bank-topbar > div:first-child,
