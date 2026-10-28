@@ -28,7 +28,7 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const renderer = createMascot(canvas, { style: 3, seed: 826917 });
+    const renderer = createMascot(canvas, { style: 4, seed: 826917 });
     rendererRef.current = renderer;
     return () => {
       renderer.destroy();
@@ -37,7 +37,7 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
   }, []);
 
   useEffect(() => {
-    rendererRef.current?.setBusy(state === 'thinking');
+  (rendererRef.current as (typeof rendererRef.current & { setState?: (value: NovaMascotState) => void }) | undefined)?.setState?.(state);
   }, [state]);
 
   useEffect(() => {
