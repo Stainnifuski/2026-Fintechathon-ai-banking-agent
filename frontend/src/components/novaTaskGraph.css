@@ -1,0 +1,19 @@
+.nova-task-graph{border:1px solid #ded8f1;border-radius:12px;background:#fbfaff;margin:8px 0;padding:0 12px;color:#25283e;min-width:0}
+.nova-task-graph>summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;font-size:12px;color:#5d4d8a;font-weight:600}
+.nova-task-graph-outcome{font-size:10px;font-weight:500;border-radius:20px;padding:3px 8px;background:#f0edf8;color:#715d9e;flex-shrink:0}
+.nova-task-graph-outcome.is-cancelled,.nova-task-graph-outcome.is-partially_cancelled,.nova-task-graph-outcome.is-incomplete{background:#f0f0f4;color:#62657a}.nova-task-graph-outcome.is-completed{background:#eaf6ef;color:#2f7a4d}.nova-task-graph-outcome.is-waiting_user{background:#fff4e2;color:#94600f}.nova-task-graph-outcome.is-failed{background:#fdecec;color:#a33a3a}
+.nova-task-graph-rationale{font-size:11px;line-height:1.6;color:#6c6f81;margin:0 0 8px}
+.nova-task-graph-scroll{overflow-x:auto;padding-bottom:10px}
+.nova-task-graph-canvas{position:relative;margin:0 auto}
+.nova-task-graph-canvas svg{position:absolute;inset:0;overflow:visible}
+.nova-task-graph-canvas svg path{fill:none;stroke:#b7abd8;stroke-width:1.4}.nova-task-graph-canvas svg marker path{fill:#b7abd8;stroke:none}
+.nova-task-graph-node{position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;border:1px solid #d6cdee;border-left-width:3px;border-radius:8px;background:#fff;color:#2f2b45;padding:6px 8px;font:inherit;cursor:pointer;box-shadow:0 1px 3px #47316b0d;overflow:hidden}
+.nova-task-graph-node small{font-size:10px;color:#7a6e98;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.nova-task-graph-node span{font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.nova-task-graph-node.is-query{border-left-color:#7b9bd8}.nova-task-graph-node.is-prepare{border-left-color:#8a6fd1}.nova-task-graph-node.is-await_user{border-left-color:#d79a2b}.nova-task-graph-node.is-answer{border-left-color:#4fa37a}.nova-task-graph-node.is-clarify{border-left-color:#c07a9c}
+.nova-task-graph-node.is-selected,.nova-task-graph-node:focus-visible{outline:2px solid #7b68c9;outline-offset:1px}
+.nova-task-graph-detail{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:11px;line-height:1.6;margin:0 0 10px;padding:8px 10px;background:#fff;border-radius:8px;border:1px solid #eeebf5}
+.nova-task-graph-detail dt{color:#77679b}.nova-task-graph-detail dd{margin:0;color:#37324e;overflow-wrap:anywhere}
+.nova-task-graph-node.status-done{background:#f3faf6}.nova-task-graph-node.status-waiting_user{background:#fffaf0}.nova-task-graph-node.status-failed{background:#fdf3f3}
+.nova-task-graph-node.status-cancelled,.nova-task-graph-node.status-skipped{background:#f6f6f8;color:#8a8c99;border-style:dashed}.nova-task-graph-node.status-cancelled span,.nova-task-graph-node.status-skipped span{text-decoration:line-through}
+.nova-task-graph-node.status-blocked,.nova-task-graph-node.status-not_started{background:#fafafc}

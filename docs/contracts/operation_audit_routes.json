@@ -733,6 +733,12 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/nova/conversations/{session_id}/task-graphs",
+    "domain": "assistant",
+    "action": "task_graphs"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/nova/debug/conversations/{session_id}",
     "domain": "assistant",
     "action": "list_debug_for_conversation"

@@ -45,6 +45,17 @@ export type NovaBillResult = {
   rows:{title:string;description:string;badge:string;metrics:BillResultMetric[];progress:number|null;target:BillResultTarget|null}[];
   total:number|null;has_more:boolean;target:BillResultTarget;evidence_id:string;content_hash:string;compact_reply:boolean;
 };
+export type NovaTaskGraphNode = {
+  id: string; goal: string; kind: 'query' | 'prepare' | 'await_user' | 'answer' | 'clarify';
+  domains: string[]; domain_names: string[]; depends_on: string[]; done_when: string; level: number; task_ids?: string[];
+  status: 'planned' | 'done' | 'waiting_user' | 'cancelled' | 'failed' | 'skipped' | 'blocked' | 'not_started';
+};
+export type NovaTaskGraph = {
+  graph_id: string; version: number; request_id: string; rationale: string;
+  nodes: NovaTaskGraphNode[]; complex: boolean; outcome: 'planned' | 'completed' | 'waiting_user' | 'failed';
+  state: 'planned' | 'completed' | 'waiting_user' | 'failed' | 'cancelled' | 'partially_cancelled' | 'incomplete';
+};
+export const getNovaTaskGraphs=(sessionId:string)=>apiClient.get<NovaTaskGraph[]>(`/nova/conversations/${sessionId}/task-graphs`).then(r=>r.data);
 export const getNovaBillResults=(sessionId:string)=>apiClient.get<NovaBillResult[]>(`/nova/conversations/${sessionId}/bill-results`).then(r=>r.data);
 export type NovaPromptRequest = { id: string; text: string; context: NovaPageContext; userId: string };
 export type NovaBillAction = {
@@ -107,6 +118,7 @@ export async function getNovaConversation(sessionId: string): Promise<NovaConver
   return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
 }
 export type NovaReply = {
+  task_graph?: NovaTaskGraph | null;
   bill_result_cards?: NovaBillResult[];
   execution_queue?: NovaExecutionQueue | null;
   grounding?: {
@@ -265,6 +277,7 @@ export async function askNova(message: string, signal: AbortSignal, pageContext:
 
 export type NovaStreamEvent =
   | { type: 'tool'; name: string }
+  | { type: 'plan'; graph: NovaTaskGraph }
   | { type: 'status'; text: string }
   | { type: 'delta'; text: string }
   | { type: 'reset' };

@@ -15,7 +15,7 @@ from .llm import LLMError, get_mode, llm
 from .nova_tools import ToolContext
 from .transfer_manager import ManagerError, get_session
 from .skill_registry import load_skill
-from . import debug_trace
+from . import debug_trace, task_graph, task_graph_status
 
 
 class DependencyDecision(BaseModel):
@@ -347,6 +347,43 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
             "read_task_count": len(reads), "outcome": state["last_finish"]["outcome"]}
 
 
+async def _save_graph(context: ToolContext, graph: dict) -> dict | None:
+    from ..bank import nova_task_graphs
+    from ..bank.nova_conversations import ConversationError
+    try:
+        saved = await nova_task_graphs.save(context.db, context.user_id, context.session_id,
+                                            context.request_id, graph)
+        await context.db.commit()
+    except ConversationError:
+        return task_graph.public(graph)
+    debug_trace.record("task_graph", saved)
+    return task_graph.public(saved)
+
+
+async def _graph_cards(context: ToolContext) -> dict | None:
+    """The graph is presentation only: a failure to read cards drops it, never the turn."""
+    try:
+        return await task_graph_status.card_states(context)
+    except Exception:
+        task_graph.logger.exception("NOVA task graph card states unavailable")
+        return None
+
+
+async def _finish_graph(context: ToolContext, graph: dict, outcome: str, cards_before: set[str],
+                        result: dict) -> None:
+    states = await _graph_cards(context)
+    if states is None:
+        return
+    try:
+        graph = task_graph_status.link(task_graph.settle(graph, outcome), cards_before, states)
+        saved = await _save_graph(context, graph)
+    except Exception:
+        task_graph.logger.exception("NOVA task graph not saved")
+        return
+    if saved["complex"]:
+        result["task_graph"] = task_graph_status.derive(saved, states)
+
+
 async def chat(message: str, history: list[dict], *, model=None,
                context: ToolContext, on_event=None) -> dict:
     from .nova import TOOL_REGISTRY, execute_tool
@@ -376,6 +413,8 @@ async def chat(message: str, history: list[dict], *, model=None,
                                            "page_context": context.page.model_dump(mode="json", exclude_none=True)})
     waiting_user = False
     runtime_failed = False
+    graph = None
+    cards_before: set[str] = set()
     try:
         async with asyncio.timeout(90):
             decision = (await client.generate_structured(messages=[
@@ -402,6 +441,17 @@ async def chat(message: str, history: list[dict], *, model=None,
                 context = replace(context, focus_task_id=None, wealth_task_id=None, wealth_stage=None,
                                   active_entry_type=None, active_entry_id=None)
             messages.append({"role": "system", "content": "第一阶段业务能力目录：" + json.dumps(catalog, ensure_ascii=False)})
+            if task_graph.enabled():
+                # Phase one plans and shows the graph; tool execution below is unchanged.
+                from ..bank import nova_task_graphs
+                previous = await nova_task_graphs.latest(context.db, context.user_id, context.session_id)
+                graph = await task_graph.plan(client, messages, catalog, previous, context.request_id)
+                if graph is not None:
+                    before = await _graph_cards(context)
+                    graph, cards_before = (None, set()) if before is None else (graph, set(before))
+                # A single chain is a simple task: kept for revisions, not shown.
+                if graph is not None and graph["complex"] and on_event is not None:
+                    await on_event({"type": "plan", "graph": task_graph_status.derive(task_graph.public(graph), {})})
             selected: set[str] = set()
             collection_create_requested = False
             transfer_call_index = 0
@@ -620,6 +670,8 @@ async def chat(message: str, history: list[dict], *, model=None,
                                        failed=runtime_failed)
         trace.append({"name": "llm_finish_tool", "result": finish})
         debug_trace.record("runtime_finish", finish)
+        if graph is not None:
+            await _finish_graph(context, graph, finish["outcome"], cards_before, result)
     if 'manipulate_calender_event' in selected and not any(
             item.get('name') == 'manipulate_calender_event' and
             (item.get('result', {}).get('task_opened') or item.get('result', {}).get('task_updated'))

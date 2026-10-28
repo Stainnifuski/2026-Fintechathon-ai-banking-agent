@@ -19,7 +19,8 @@ import NovaShopCard from './NovaShopCard';
 import NovaScheduledTaskCard from './NovaScheduledTaskCard';
 import NovaPaymentRequestCard from './NovaPaymentRequestCard';
 import NovaBillCard from './NovaBillCard';
-import {getNovaBillResults,type NovaBillResult,type BillResultTarget} from '../services/nova';
+import {getNovaBillResults,getNovaTaskGraphs,type NovaBillResult,type BillResultTarget,type NovaTaskGraph as TaskGraph} from '../services/nova';
+import NovaTaskGraph from './NovaTaskGraph';
 import { getNovaBillActions, type NovaBillAction, type NovaPromptRequest } from '../services/nova';
 import * as bank from '../services/bank';
 import { formatYuanText } from '../utils/money';
@@ -208,6 +209,8 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   const metaFor=(key:string,label:string,destination:string,finished=false):TaskMeta=>({...taskMeta[key],key,label:taskMeta[key]?.label??label,destination,session:activeConversationId??'',ready:!!taskMeta[key]||finished,finished:!!taskMeta[key]?.finished||finished});
   const positionFor=(key:string,origin?:string|null)=>{const requestId=placements[key]??origin;const found=messages.findIndex(entry=>entry.role==='assistant'&&entry.request_id===requestId);return found<0?messages.length-1:found;};
   const [billResults,setBillResults]=useState<NovaBillResult[]>([]);
+  const [taskGraphs,setTaskGraphs]=useState<Record<string,TaskGraph>>({});
+  const mergeTaskGraphs=(items:TaskGraph[])=>setTaskGraphs(previous=>({...previous,...Object.fromEntries(items.map(graph=>[graph.request_id,graph]))}));
   const mergeBillResults=(items:NovaBillResult[])=>setBillResults(previous=>[...new Map([...previous,...items].map(item=>[item.result_id,item])).values()]);
   const [billActions, setBillActions] = useState<NovaBillAction[]>([]);
   const handledPrompt = useRef<string | null>(null);
@@ -262,6 +265,23 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       .catch(() => { if (live) setError('账单确认卡读取失败，请重新打开对话核对。'); });
     return () => { live = false; };
   }, [activeConversationId]);
+  useEffect(()=>{
+    setTaskGraphs({});
+    if(!activeConversationId)return;
+    let live=true;
+    // 任务图只用于展示规划，读取失败不影响对话本身。
+    getNovaTaskGraphs(activeConversationId).then(items=>{if(live)mergeTaskGraphs(items);}).catch(()=>{});
+    return()=>{live=false;};
+  },[activeConversationId]);
+  const graphSession=useRef<string|null>(null);
+  graphSession.current=activeConversationId;
+  // 卡片被确认、取消或完成后，任务图节点状态随卡片的实际状态刷新。
+  const refreshTaskGraphs=()=>{
+    const session=graphSession.current;
+    if(!session)return;
+    void getNovaTaskGraphs(session).then(items=>{if(graphSession.current===session)mergeTaskGraphs(items);}).catch(()=>{});
+  };
+  const onCardActivity=()=>{onTransferActivity?.();refreshTaskGraphs();};
   useEffect(()=>{
     setBillResults([]);
     if(!activeConversationId)return;
@@ -439,6 +459,10 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     finally { setLoadingConversation(false); }
   }
 
+  const hasTaskGraphs=Object.keys(taskGraphs).length>0;
+  // 任务卡状态变化（含在卡片上取消）时刷新任务图；只依赖卡片状态本身。
+  useEffect(()=>{if(hasTaskGraphs)refreshTaskGraphs();},[taskSession,wealthCards,billActions]);
+
   async function newConversation() {
     if (busy || loadingConversation) return;
     setLoadingConversation(true); setError(''); setShowHelp(false);
@@ -477,6 +501,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       if (event.type === 'delta') updateDraft(draft => ({ ...draft, content: draft.content + event.text, status: undefined }));
       else if (event.type === 'reset') updateDraft(draft => ({ ...draft, content: '' }));
       else if (event.type === 'status') updateDraft(draft => ({ ...draft, status: event.text }));
+      else if (event.type === 'plan') mergeTaskGraphs([event.graph]);
       else if (event.name !== 'describe_bank_capabilities' && TOOL_LABELS[event.name])
         updateDraft(draft => ({ ...draft, status: `正在处理：${TOOL_LABELS[event.name]}` }));
     };
@@ -494,6 +519,9 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       if (!controller.signal.aborted) {
         uncertainRetry.current = null;
         if(reply.bill_result_cards)mergeBillResults(reply.bill_result_cards);
+        if(reply.task_graph)mergeTaskGraphs([reply.task_graph]);
+        // 本轮可能在对话里取消或完成了先前任务图中的任务卡。
+        else if(hasTaskGraphs)refreshTaskGraphs();
         setWealthFocus(null);setFocusTaskId(undefined);
         if(reply.wealth_cards)setWealthCards(reply.wealth_cards);
         if(reply.execution_queue!==undefined)setExecutionQueue(reply.execution_queue);
@@ -623,8 +651,9 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         <div className="nova-task-workbench" ref={presentation.setWorkbench} aria-label="展开的任务卡片" />
         <div className="nova-messages" aria-live="polite">
           {!messages.some(entry => entry.role === 'assistant') && billActions.map(card => <NovaTaskSlot key={'bill:'+card.action_id} meta={metaFor('bill:'+card.action_id,card.title,'insights',card.status!=='pending')}><NovaBillCard key={card.action_id} card={card} disabled={busy || loadingConversation || queueBusy}
-            onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onTransferActivity} /></NovaTaskSlot>)}
+            onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onCardActivity} /></NovaTaskSlot>)}
           {messages.map((entry, index) => <div key={`${entry.request_id || index}-${entry.role}-${index}`} className="nova-turn-entry">
+            {entry.role==='assistant'&&entry.request_id&&taskGraphs[entry.request_id]?.complex&&<NovaTaskGraph graph={taskGraphs[entry.request_id!]} streaming={entry.streaming}/>}
             <div className={`nova-message nova-${entry.role}`}>
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
             {entry.role === 'assistant' ? (entry.content ? (billResults.some(card=>card.request_id===entry.request_id)&&billResults.filter(card=>card.request_id===entry.request_id).every(card=>card.compact_reply)&&(!entry.details||entry.details.grounding?.status==='grounded')&&!entry.streaming
@@ -640,7 +669,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             </div>
             {entry.role==='assistant'&&billResults.filter(card=>card.request_id===entry.request_id).map(card=><Suspense key={card.result_id} fallback={<p role="status">正在加载账单图表…</p>}><NovaBillResults card={card} onNavigate={onBillNavigate}/></Suspense>)}
             {entry.role === 'assistant' && billActions.filter(card => positionFor('bill:'+card.action_id,card.request_id)===index).map(card => <NovaTaskSlot key={'bill:'+card.action_id} meta={metaFor('bill:'+card.action_id,card.title,'insights',card.status!=='pending')}><NovaBillCard key={card.action_id} card={card} disabled={busy || loadingConversation || queueBusy}
-              onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onTransferActivity} /></NovaTaskSlot>)}
+              onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onCardActivity} /></NovaTaskSlot>)}
             {taskGroups.get(index)?.map(task => <div key={task.chat_task_id} className="nova-task-anchor"
               ref={element => { taskAnchors.current[task.chat_task_id] = element; }}>
               <NovaTaskSlot key={'transfer:'+task.chat_task_id} meta={metaFor('transfer:'+task.chat_task_id,'转账任务','transfer',['SUCCEEDED','CANCELLED','FAILED'].includes(task.status))}><NovaTransferCard task={task} session={taskSession!} accounts={payerAccounts}
@@ -648,39 +677,39 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
                 onUpdated={updated => { setTaskSession(updated); setFocusTaskId(updated.focus_task_id || undefined); }}
                 onFocus={() => {setWealthFocus(null);setFocusTaskId(task.chat_task_id);}}
                 onSelectCandidate={candidateId => void send('选择收款账户', candidateId, task.chat_task_id)}
-                onTransferActivity={onTransferActivity} /></NovaTaskSlot>
+                onTransferActivity={onCardActivity} /></NovaTaskSlot>
 
           </div>)}
             {collectionGroups.get(index)?.map(card => <NovaTaskSlot key={'collection:'+card.collection_id} meta={metaFor('collection:'+card.collection_id,'收款申请','transfer',card.status!=='DRAFT')}><NovaCollectionCard key={card.collection_id}
               card={card} session={taskSession!} disabled={busy || loadingConversation}
               onUpdated={updated => setTaskSession(previous => previous ? { ...previous, ...updated } : null)}
-              onActivity={onTransferActivity} /></NovaTaskSlot>)}
+              onActivity={onCardActivity} /></NovaTaskSlot>)}
             {paymentRequestGroups.get(index)?.map(task => <NovaTaskSlot key={'payment_request:'+task.entry_id} meta={metaFor('payment_request:'+task.entry_id,'收款申请','transfer')}><NovaPaymentRequestCard key={task.entry_id}
               task={task} sessionId={taskSession!.session_id} accounts={payerAccounts}
-              disabled={busy || loadingConversation} onUpdated={setTaskSession} onActivity={onTransferActivity} /></NovaTaskSlot>)}
+              disabled={busy || loadingConversation} onUpdated={setTaskSession} onActivity={onCardActivity} /></NovaTaskSlot>)}
             {cardOperationGroups.get(index)?.map(task => <NovaTaskSlot key={'card:'+task.entry_id} meta={metaFor('card:'+task.entry_id,'卡片操作','cards',task.operation?.status==='COMPLETED')}><NovaCardOperationCard key={task.entry_id}
               task={task} sessionId={taskSession!.session_id} accounts={payerAccounts}
               disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, card_operations: tasks } : previous)}
-              onActivity={onTransferActivity} /></NovaTaskSlot>)}
+              onActivity={onCardActivity} /></NovaTaskSlot>)}
             {scheduledGroups.get(index)?.map(task => <NovaScheduledTaskCard key={'scheduled:'+task.entry_id}
               task={task} sessionId={taskSession!.session_id} accounts={payerAccounts} disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, scheduled_tasks: tasks } : previous)}
               onStart={started => { if (started.dispatch_request_id) void send(started.description, undefined, undefined, undefined, started.dispatch_request_id); }}
-              onActivity={onTransferActivity} />)}
+              onActivity={onCardActivity} />)}
             {shopGroups.get(index)?.map(task => <NovaTaskSlot key={'shop:'+task.entry_id} meta={metaFor('shop:'+task.entry_id,'店铺订单','thirdParty',task.order?.status==='COMPLETED')}><NovaShopCard key={task.entry_id}
               task={task} sessionId={taskSession!.session_id} accounts={payerAccounts} disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, shop_tasks: tasks } : previous)}
-              onActivity={onTransferActivity} /></NovaTaskSlot>)}
+              onActivity={onCardActivity} /></NovaTaskSlot>)}
             {calendarGroups.get(index)?.map(task => <NovaTaskSlot key={'calendar:'+task.entry_id} meta={metaFor('calendar:'+task.entry_id,'日程','calendar',!!task.event)}><NovaCalendarCard key={task.entry_id}
               task={task} sessionId={taskSession!.session_id} disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, calendar_tasks: tasks } : previous)} /></NovaTaskSlot>)}
             {subscriptionGroups.get(index)?.map(task => <NovaTaskSlot key={'subscription:'+task.entry_id} meta={metaFor('subscription:'+task.entry_id,'取消订阅','subscriptions',task.subscription?.status==='CANCELLED')}><NovaSubscriptionCancelCard key={task.entry_id}
               task={task} sessionId={taskSession!.session_id} disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, subscription_tasks: tasks } : previous)}
-              onActivity={onTransferActivity} /></NovaTaskSlot>)}
+              onActivity={onCardActivity} /></NovaTaskSlot>)}
             <div className="nova-wealth-timeline" aria-label="理财任务步骤">
-            {wealthCards.filter(card=>positionFor('wealth:'+card.task_id,card.request_id)===index).map(card=><Suspense fallback={<p>正在读取理财任务…</p>} key={`${card.task_id}:${!!card.paused}:${card.draft_epoch??0}`}><NovaTaskSlot key={'wealth:'+card.task_id} meta={metaFor('wealth:'+card.task_id,'理财任务','wealth',!!card.closed||['assets','returns','detail','compare'].includes(card.command.kind))}><NovaWealthCard key={`${card.task_id}:${!!card.paused}:${card.draft_epoch??0}`} card={card} userId={userId} focusedStage={wealthFocus?.taskId===card.task_id?wealthFocus.stage:undefined} onFocus={(stage,label)=>{setFocusTaskId(undefined);setWealthFocus({taskId:card.task_id,stage,label});}} disabled={busy||loadingConversation} onUpdated={cards=>{if(wealthSession.current===card.nova_session_id)setWealthCards(cards);}} onActivity={()=>onTransferActivity?.()}/></NovaTaskSlot></Suspense>)}
+            {wealthCards.filter(card=>positionFor('wealth:'+card.task_id,card.request_id)===index).map(card=><Suspense fallback={<p>正在读取理财任务…</p>} key={`${card.task_id}:${!!card.paused}:${card.draft_epoch??0}`}><NovaTaskSlot key={'wealth:'+card.task_id} meta={metaFor('wealth:'+card.task_id,'理财任务','wealth',!!card.closed||['assets','returns','detail','compare'].includes(card.command.kind))}><NovaWealthCard key={`${card.task_id}:${!!card.paused}:${card.draft_epoch??0}`} card={card} userId={userId} focusedStage={wealthFocus?.taskId===card.task_id?wealthFocus.stage:undefined} onFocus={(stage,label)=>{setFocusTaskId(undefined);setWealthFocus({taskId:card.task_id,stage,label});}} disabled={busy||loadingConversation} onUpdated={cards=>{if(wealthSession.current===card.nova_session_id)setWealthCards(cards);}} onActivity={onCardActivity}/></NovaTaskSlot></Suspense>)}
           </div>
           </div>)}
           {error && <p className="nova-error" role="alert">{error}</p>}

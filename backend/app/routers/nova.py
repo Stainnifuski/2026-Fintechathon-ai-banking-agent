@@ -642,6 +642,23 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@router.get('/conversations/{session_id}/task-graphs')
+async def task_graphs(session_id: str, current_user: dict = Depends(get_current_user),
+                      db: AsyncSession = Depends(get_db)) -> list[dict]:
+    from ..services.bank import nova_task_graphs
+    from ..services.ai import task_graph_status
+    try:
+        graphs = await nova_task_graphs.graphs(db, current_user['user_id'], session_id)
+        if not graphs:
+            return []
+        # Status follows the cards' live state, including cancellations made on the cards.
+        states = await task_graph_status.card_states(ToolContext(current_user['user_id'], db, PageContext(),
+                                                                 session_id=session_id))
+        return [task_graph_status.derive(graph, states) for graph in graphs]
+    except bank_conversations.ConversationError as error:
+        raise HTTPException(error.status_code, detail={'code': 'CONVERSATION_NOT_FOUND', 'message': error.message}) from error
+
+
 @router.get('/debug/{request_id}')
 async def download_debug(request_id: str, current_user: dict = Depends(get_current_user)) -> Response:
     try:

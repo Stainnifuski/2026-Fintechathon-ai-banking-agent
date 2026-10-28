@@ -29,6 +29,8 @@ def isolated_llm_environment(monkeypatch, request):
         if name.startswith("LLM_") or name.startswith(("TRANSFER_MODEL_", "WEALTH_MODEL_", "BILL_MODEL_")):
             monkeypatch.delenv(name)
     monkeypatch.setenv("LLM_MODE", "offline")
+    # Fake models answer by schema order; task-graph tests opt in explicitly.
+    monkeypatch.setenv("NOVA_TASK_GRAPH", "0")
 
 
 @pytest.fixture(autouse=True)
