@@ -1,7 +1,9 @@
 // NOVA orb motion studies. Presentation-only Canvas renderer.
 export function createMascot(canvas, { style = 1, seed = 20261025 } = {}) {
   const x = canvas.getContext('2d'); if (!x) return {destroy(){},setBusy(){},setState(){}};
-  let raf=0,dead=false,busy=false,mode='waiting',w=1,h=1,phase=0,last=0,tempo=1,state=seed>>>0;
+  let raf=0,dead=false,busy=false,mode='waiting',w=1,h=1,phase=0,last=0,tempo=1,state=seed>>>0,pixelRatio=1,transitionAlpha=0;
+  const transitionCanvas=document.createElement('canvas');
+  const transitionCtx=transitionCanvas.getContext('2d');
   const rnd=()=>{state=(1664525*state+1013904223)>>>0;return state/4294967296};
   const dots=Array.from({length:70},()=>({a:rnd()*6.28,r:.5+rnd()*.5,v:.14+rnd()*.36,z:.6+rnd()*2.4,o:.2+rnd()*.6}));
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
@@ -116,9 +118,25 @@ export function createMascot(canvas, { style = 1, seed = 20261025 } = {}) {
     }
     x.restore();
   }
-  function draw(t){x.clearRect(0,0,w,h);x.save();x.translate(w/2,h*.5);const s=Math.min(w/410,h/260,1.45);[prism,liquid,orbit,nebula][Math.max(0,Math.min(3,style-1))](t,s);x.restore()}
-  const resize=new ResizeObserver(([e])=>{w=e.contentRect.width;h=e.contentRect.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;x.setTransform(d,0,0,d,0,0);draw(phase)});resize.observe(canvas);
+  function draw(t){
+    x.clearRect(0,0,w,h);
+    x.save();
+    x.translate(w/2,h*.5);
+    const s=Math.min(w/410,h/260,1.45);
+    [prism,liquid,orbit,nebula][Math.max(0,Math.min(3,style-1))](t,s);
+    x.restore();
+    if(transitionAlpha>0&&transitionCanvas.width){
+      x.save();
+      x.setTransform(1,0,0,1,0,0);
+      x.globalAlpha=transitionAlpha;
+      x.drawImage(transitionCanvas,0,0,canvas.width,canvas.height);
+      x.restore();
+      x.setTransform(pixelRatio,0,0,pixelRatio,0,0);
+    }
+  }
+  const resize=new ResizeObserver(([e])=>{w=e.contentRect.width;h=e.contentRect.height;pixelRatio=Math.min(devicePixelRatio||1,2);canvas.width=w*pixelRatio;canvas.height=h*pixelRatio;transitionCanvas.width=canvas.width;transitionCanvas.height=canvas.height;x.setTransform(pixelRatio,0,0,pixelRatio,0,0);draw(phase)});resize.observe(canvas);
   const onReduced=()=>{last=0;draw(phase)};reduced.addEventListener('change',onReduced);
-  function frame(now){if(dead)return;const target=mode==='thinking'?2.35:mode==='typing'?1.42:.88;tempo+=(target-tempo)*.05;if(last&&!document.hidden&&!reduced.matches)phase+=Math.min((now-last)/1000,.05)*tempo;last=now;if(!document.hidden&&!reduced.matches)draw(phase);raf=requestAnimationFrame(frame)}
-  raf=requestAnimationFrame(frame);return {setBusy(v){busy=Boolean(v);if(v)mode='thinking'},setState(v){mode=v==='thinking'||v==='typing'?v:'waiting';busy=mode==='thinking'},destroy(){dead=true;cancelAnimationFrame(raf);resize.disconnect();reduced.removeEventListener('change',onReduced)},get phase(){return phase}};
+  function frame(now){if(dead)return;const elapsed=last?Math.min((now-last)/1000,.05):0;const target=mode==='thinking'?2.35:mode==='typing'?1.42:.88;tempo+=(target-tempo)*.05;if(elapsed&&!document.hidden&&!reduced.matches)phase+=elapsed*tempo;if(transitionAlpha>0&&!reduced.matches)transitionAlpha=Math.max(0,transitionAlpha-elapsed/0.42);last=now;if(!document.hidden&&!reduced.matches)draw(phase);raf=requestAnimationFrame(frame)}
+  function setMode(next){const normalized=next==='thinking'||next==='typing'?next:'waiting';if(normalized!==mode&&!reduced.matches&&transitionCtx&&canvas.width){transitionCanvas.width=canvas.width;transitionCanvas.height=canvas.height;transitionCtx.clearRect(0,0,canvas.width,canvas.height);transitionCtx.drawImage(canvas,0,0);transitionAlpha=1}mode=normalized;busy=mode==='thinking'}
+  raf=requestAnimationFrame(frame);return {setBusy(v){setMode(v?'thinking':'waiting')},setState:setMode,destroy(){dead=true;cancelAnimationFrame(raf);resize.disconnect();reduced.removeEventListener('change',onReduced)},get phase(){return phase}};
 }
