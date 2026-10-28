@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from uuid import uuid4
 from typing import Literal
 
@@ -24,7 +25,9 @@ from ..services.ai.transfer_manager import (
 )
 from ..services.ai.collection_manager import CollectionError, refresh_collection, submit_collection
 from ..services.ai.calendar_tools import update_chat_calendar_task
+from ..services.ai.calendar_mutation import confirm_calendar_task, ManipulateCalendarArguments
 from ..services.ai.shop_tools import update_chat_shop_task
+from ..services.ai.scheduled_task_tools import update_chat_scheduled_task
 from ..services.ai.card_subscription_tools import (
     CardTaskError, dismiss_chat_card_task, link_chat_card_operation, update_chat_subscription_task,
 )
@@ -82,6 +85,15 @@ class TaskFormRequest(BaseModel):
     clear_card: bool = False
     payer_account_id: str = Field(default="", max_length=64)
     note: str = Field(default="", max_length=256)
+    execution_mode: Literal["instant", "scheduled"] | None = None
+    scheduled_at: datetime | None = None
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def schedule_has_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("定时执行时间须包含时区")
+        return value
 
 
 class TaskCardAction(BaseModel):
@@ -108,6 +120,11 @@ class SubscriptionTaskSelect(BaseModel):
     subscription_id: str = Field(min_length=1, max_length=40)
 
 
+class ScheduledCardLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: str = Field(min_length=1, max_length=40)
+
+
 class ShopTaskLink(BaseModel):
     model_config = ConfigDict(extra="forbid")
     shop: Literal["flower", "cake"]
@@ -117,6 +134,20 @@ class ShopTaskLink(BaseModel):
 class CalendarTaskLink(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str = Field(min_length=1, max_length=40)
+
+
+class CalendarTaskConfirm(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    changes: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator('changes')
+    @classmethod
+    def valid_changes(cls, value):
+        allowed = {'title', 'start_date', 'start_time', 'end_date', 'end_time', 'location', 'description'}
+        if set(value) - allowed:
+            raise ValueError('包含不支持的日程字段')
+        ManipulateCalendarArguments(action='add', **value)
+        return value
 
 
 class CardTaskLink(BaseModel):
@@ -154,6 +185,9 @@ async def _prepare(
         owned=await cards(db,user_id,conversation['session_id'])
         if request.wealth_task_id not in {c['task_id'] for c in owned}:
             raise bank_conversations.ConversationError('理财补充对象不属于此对话',404)
+    # 已开始的自定义定时任务首条消息所在对话，可支用该任务锁定的资金。
+    from ..services.ai.scheduled_funding import bind_dispatch_session
+    await bind_dispatch_session(db, user_id, request.request_id, conversation["session_id"])
     return request.model_copy(update={"session_id": conversation["session_id"],
                                       "request_id": request.request_id or uuid4().hex}), history, full_history
 
@@ -170,6 +204,9 @@ async def _finish(request: ChatRequest, user_id: str, db: AsyncSession, reply: d
     wealth_cards = await cards(db, user_id, request.session_id)
     if wealth_cards:
         reply = {**reply, "wealth_cards": wealth_cards}
+    from ..services.bank import nova_bill_results
+    reply = {**reply, "bill_result_cards": await nova_bill_results.save(
+        db, user_id, request.session_id, request.request_id, reply)}
     await bank_conversations.append_turn(db, user_id, request.session_id,
                                          request.request_id, request.message, reply["reply"])
     return {**reply, "session_id": request.session_id}
@@ -188,7 +225,7 @@ async def task_session(session_id: str, current_user: dict = Depends(get_current
         await bank_conversations.get(db, current_user["user_id"], session_id)
         if await db.get(NovaSessionORM, session_id) is None:
             return {"session_id": session_id, "session_version": 0, "focus_task_id": None,
-                    "tasks": [], "collection_cards": [], "card_operations": [], "subscription_tasks": [], "calendar_tasks": [], "shop_tasks": []}
+                    "tasks": [], "collection_cards": [], "card_operations": [], "subscription_tasks": [], "calendar_tasks": [], "shop_tasks": [], "payment_request_tasks": [], "scheduled_tasks": []}
         return await get_session(db, current_user["user_id"], session_id)
     except (ManagerError, bank_conversations.ConversationError) as error:
         raise _transfer_error(error) from error
@@ -300,6 +337,19 @@ async def dismiss_calendar_task(session_id: str, entry_id: str,
         await bank_conversations.get(db, current_user["user_id"], session_id)
         return {"calendar_tasks": await update_chat_calendar_task(
             db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, close=True)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post('/task-sessions/{session_id}/calendar-tasks/{entry_id}/confirm')
+async def confirm_calendar_mutation(session_id: str, entry_id: str, request: CalendarTaskConfirm,
+                                    current_user: dict = Depends(get_current_user),
+                                    db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user['user_id'], session_id)
+        return {'calendar_tasks': await confirm_calendar_task(db, user_id=current_user['user_id'],
+                session_id=session_id, entry_id=entry_id, changes=request.changes)}
     except (CardTaskError, bank_conversations.ConversationError) as error:
         await db.rollback()
         raise _transfer_error(error) from error
@@ -431,6 +481,33 @@ async def presentation_release(session_id: str, request: PresentationAction,
         raise HTTPException(409, detail={'message': '当前任务无法安全接管或结束，请先核对原卡片状态。'}) from error
 
 
+@router.post("/task-sessions/{session_id}/scheduled-tasks/{entry_id}/task")
+async def link_scheduled_card(session_id: str, entry_id: str, request: ScheduledCardLink,
+                              current_user: dict = Depends(get_current_user),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    """本人在聊天定时任务表单中保存任务后，挂到对应任务卡。"""
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"scheduled_tasks": await update_chat_scheduled_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, task_id=request.task_id)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/scheduled-tasks/{entry_id}/dismiss")
+async def dismiss_scheduled_card(session_id: str, entry_id: str,
+                                 current_user: dict = Depends(get_current_user),
+                                 db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"scheduled_tasks": await update_chat_scheduled_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, close=True)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
 @router.get('/task-flow/{session_id}')
 async def task_flow_state(session_id: str, current_user: dict = Depends(get_current_user),
                           db: AsyncSession = Depends(get_db)):
@@ -472,7 +549,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                db: AsyncSession = Depends(get_db)) -> dict:
     try:
         request, history, full_history = await _prepare(request, current_user["user_id"], db)
-        with debug_trace.capture(current_user['user_id'], request.request_id, request.debug):
+        with debug_trace.capture(current_user['user_id'], request.request_id, request.debug, request.session_id):
             debug_trace.record('user_request', {'message': request.message, 'page_context': request.page_context.model_dump(), 'history': history})
             reply = await nova.chat(bank_conversations.redact(request.message), history,
                                 context=ToolContext(
@@ -535,7 +612,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
 
     async def run() -> None:
         try:
-            with debug_trace.capture(current_user['user_id'], request.request_id, request.debug):
+            with debug_trace.capture(current_user['user_id'], request.request_id, request.debug, request.session_id):
                 debug_trace.record('user_request', {'message': request.message, 'page_context': request.page_context.model_dump(), 'history': history})
                 result = await nova.chat(bank_conversations.redact(request.message), history, context=context, on_event=queue.put)
                 result = await _finish(request, current_user["user_id"], db, result)
@@ -576,6 +653,27 @@ async def download_debug(request_id: str, current_user: dict = Depends(get_curre
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
+@router.get('/debug/{request_id}/view')
+async def view_debug(request_id: str, current_user: dict = Depends(get_current_user)) -> Response:
+    try:
+        content = debug_trace.read(current_user['user_id'], request_id)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(404, detail={'code': 'DEBUG_TRACE_NOT_FOUND', 'message': '调试记录不存在'}) from None
+    return Response(content, media_type='application/json', headers={
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.get('/debug/conversations/{session_id}')
+async def list_debug_for_conversation(session_id: str,
+                                      current_user: dict = Depends(get_current_user),
+                                      db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user['user_id'], session_id)
+    except bank_conversations.ConversationError as error:
+        raise _transfer_error(error) from error
+    return {'traces': debug_trace.list_recent(current_user['user_id'], session_id)}
+
+
 class WealthCardState(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     version: int = Field(ge=1)
@@ -611,13 +709,19 @@ async def execution_advance(session_id:str,request:ExecutionAction,current_user:
         context=ToolContext(current_user['user_id'],db,PageContext(),session_id=session_id,bank_api=get_bank_api())
         row=await queue.load(context)
         if not row or row.version!=request.version:raise bank_conversations.ConversationError('队列已更新，请刷新进度。',409)
-        with debug_trace.capture(current_user['user_id'], request.debug_request_id or uuid4().hex, request.debug):
+        with debug_trace.capture(current_user['user_id'], request.debug_request_id or uuid4().hex,
+                                 request.debug, session_id):
             debug_trace.record('queue_advance', {'session_id': session_id, 'version': request.version, 'queue': queue.public(row)})
             reply=await queue.advance(context)
             reply.pop('_execution_grounded',None)
             from ..services.ai.wealth_agent import cards
             reply['wealth_cards']=await cards(db,current_user['user_id'],session_id)
             if await db.get(NovaSessionORM,session_id):reply.update(await get_session(db,current_user['user_id'],session_id))
+            from ..services.bank import nova_bill_results
+            root_request = (reply.get('execution_queue') or {}).get('request_id')
+            if root_request:
+                reply['bill_result_cards'] = await nova_bill_results.save(db,current_user['user_id'],session_id,root_request,reply)
+                await db.commit()
             debug_trace.record('final_response',reply)
             return reply
     except bank_conversations.ConversationError as error:raise _transfer_error(error) from error
@@ -665,6 +769,9 @@ class WealthViewContext(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     version: int = Field(ge=1)
     selection_kind: Literal['positions','products'] | None = None
+    workflow: Literal['planning','target'] | None = None
+    workflow_request_id: str | None = Field(default=None,max_length=128)
+    risk_answers: dict[str,int] = Field(default_factory=dict,max_length=9)
     visible_products: list[WealthViewProduct] = Field(default_factory=list,max_length=60)
     selected_products: list[WealthViewProduct] = Field(default_factory=list,max_length=160)
     cash_field: Literal['reserve','investment','total'] | None = None
@@ -678,6 +785,16 @@ class WealthViewContext(BaseModel):
         import re
         if any(len(k)>120 or not re.fullmatch(r'(?:\d{1,12}(?:\.\d{0,2})?)?',v) for k,v in value.items()):
             raise ValueError('金额输入格式不合法')
+        return value
+
+    @field_validator('risk_answers')
+    @classmethod
+    def valid_risk_answers(cls,value):
+        from ..domain.wealth_risk import QUESTIONS
+        ids={question[0] for question in QUESTIONS}
+        if any(key not in ids or type(answer) is not int or not 0<=answer<=3
+               for key,answer in value.items()):
+            raise ValueError('风险问卷答案不合法')
         return value
 
 

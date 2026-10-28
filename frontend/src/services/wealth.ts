@@ -2,6 +2,7 @@ import { apiClient } from './api';
 
 export type { PortfolioPlan, PortfolioSnapshot, PortfolioSelection } from '../types/wealthPortfolio';
 import type { PortfolioPlan, PortfolioSelection, PortfolioCandidateGroup } from '../types/wealthPortfolio';
+import { formatFen } from '../utils/money';
 export type CandidateGroup = PortfolioCandidateGroup;
 export type ProductCandidate = CandidateGroup['items'][number];
 export type CandidateShare = ProductCandidate['share_classes'][number];
@@ -110,7 +111,7 @@ export interface WealthTask {
   notes: {action: string; reason: string; occurred_at: string}[];
   nodes: {node_id: string; kind: string; status: string; depends_on: string[]; operation_id?: string | null; command?: Command | null}[];
 }
-export const money = (fen: number | null | undefined) => fen == null ? '未知' : `¥${(fen / 100).toFixed(2)}`;
+export const money = (fen: number | null | undefined) => fen == null ? '未知' : formatFen(fen);
 export const get = <T,>(path: string) => apiClient.get<T>(`/wealth${path}`).then(r => r.data);
 export const post = <T,>(path: string, body: unknown, novaTask?:string) => apiClient.post<T>(`/wealth${path}`, body, novaTask?{headers:{'X-Nova-Wealth-Task':novaTask}}:undefined).then(r => r.data);
 export const put = <T,>(path: string, body: unknown) => apiClient.put<T>(`/wealth${path}`, body).then(r => r.data);

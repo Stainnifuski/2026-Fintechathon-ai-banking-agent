@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { type CSSProperties } from 'react';
 import type { ChatMessage, ConfirmationData } from '@/types';
 
@@ -12,18 +13,6 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogPro
   const confirmData = message.actionRequired?.data as ConfirmationData | undefined;
   const details = confirmData?.details;
 
-  const overlayStyle: CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  };
 
   const dialogStyle: CSSProperties = {
     backgroundColor: '#fff',
@@ -98,7 +87,7 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogPro
   };
 
   return (
-    <div style={overlayStyle}>
+    <Modal role="dialog" aria-modal="true">
       <div style={dialogStyle}>
         <div style={titleStyle}>
           <span>⚠️</span>
@@ -141,6 +130,6 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogPro
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

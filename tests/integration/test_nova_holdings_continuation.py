@@ -85,11 +85,11 @@ async def test_serial_holdings_then_redemption_waits_in_same_task_when_no_select
             if '查看' in message:
                 row=await db.get(WealthConversationORM,'NW-holdings')
                 row.data={**row.data,'request_id':child.request_id};await db.commit()
-                return {'reply':'持仓已展示','tool_calls':[{'name':'manage_wealth_request','result':{'reply':'持仓已展示'}}],
+                return {'reply':'持仓已展示','tool_calls':[{'name':'manage_wealth_positions','result':{'reply':'持仓已展示'}}],
                     'wealth_cards':await agent.cards(db,'U1',ctx.session_id)}
             assert child.wealth_task_id=='NW-holdings'
             result=await agent.manage(agent.EmptyArguments(),child)
-            return {**result,'tool_calls':[{'name':'manage_wealth_request','result':{'reply':result['reply']}}]}
+            return {**result,'tool_calls':[{'name':'manage_wealth_positions','result':{'reply':result['reply']}}]}
         monkeypatch.setattr(nova,'chat',run)
         plan={'execution_mode':'sequential','goals':[
             {'goal_id':'positions','objective':'持仓','source_text':'先查看持仓','completion_condition':'查询返回','completion':'result'},

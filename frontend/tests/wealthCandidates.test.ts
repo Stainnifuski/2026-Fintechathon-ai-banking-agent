@@ -1,9 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import recording from '../../tests/fixtures/wealth_portfolio_contract_v1/f09.json' with {type:'json'};
-import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup} from '../src/services/wealthCandidates.ts';
+import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup,actionCandidateGroups} from '../src/services/wealthCandidates.ts';
 import {emptyProductSelection,toggleProduct,selectionForScope} from '../src/components/Wealth/productSelection.ts';
 import type {Product} from '../src/services/wealth';
+import type {ActionResult} from '../src/services/wealthActions.ts';
+
+test('successful planning and recommendation actions expose their actual candidate groups',()=>{
+ const result=(action:ActionResult['action'],data:unknown,status:ActionResult['status']='ok')=>({action,data,status} as ActionResult);
+ const planning=actionCandidateGroups(result('plan_portfolio',{candidate_groups:recording.groups}));
+ assert.equal(planning.length,3);
+ assert.ok(planning.flatMap(g=>g.items).length>0);
+ for(const group of recording.groups){
+  const recommended=actionCandidateGroups(result('recommend_products',group));
+  assert.equal(recommended.length,1);
+  assert.equal(recommended[0].items[0].name,group.items[0].name);
+ }
+ assert.deepEqual(actionCandidateGroups(result('recommend_products',recording.groups[0],'blocked')),[]);
+ assert.deepEqual(actionCandidateGroups(result('list_positions',{})),[]);
+});
 
 test('shared F09 groups and missing business states are consumable without fabricating metrics',()=>{
   for(const raw of [...recording.groups,recording.risk_group,recording.unavailable_group])assert.equal(readCandidateGroup(raw).status,raw.status);

@@ -131,11 +131,12 @@ async def confirm(
     request: ConfirmTaskRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    bank: BankApi = Depends(get_bank_api),
 ) -> TaskSnapshot:
     try:
         return TaskSnapshot(
             **await confirm_task(
-                db, task_id=task_id, user_id=current_user["user_id"], **request.model_dump()
+                db, task_id=task_id, user_id=current_user["user_id"], bank=bank, **request.model_dump()
             )
         )
     except (TaskError, AuthorizationError) as error:

@@ -47,7 +47,7 @@
 .third-party .order-status.payment_closed { background: #f1f3f6; color: #596577; }
 .third-party .order-status.refunded { background: #eae5f8; color: #68439a; }
 .third-party .order-status.partially_refunded { background: #f2edf9; color: #735593; }
-.third-party .flower-modal { position: fixed; inset: 0; z-index: 1100; padding: 18px; display: grid; place-items: center; background: #15233baa; }
+.third-party .flower-modal { position: fixed; inset: 0; z-index: 1100; padding: 18px; display: grid; place-items: center; background: transparent; }
 .third-party .flower-modal > section { width: min(480px, 100%); max-height: calc(100dvh - 36px); overflow: auto; }
 .third-party .flower-modal h2 { margin: 8px 0 0; overflow-wrap: anywhere; }
 .third-party .flower-modal dl { display: grid; gap: 10px; margin: 18px 0; font-size: 14px; }

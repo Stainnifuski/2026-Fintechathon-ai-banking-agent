@@ -1,0 +1,42 @@
+# Nova 智能体运行逻辑重构：第一阶段
+
+## 1. 范围与任务定义
+
+第一阶段向重构后的 Agent 提供所有 read 类型业务工具，以及转账业务的 execute 工具。其他 execute 工具暂时不向 Agent 提供，也不纳入本阶段的执行任务管理。
+
+- 每调用一次业务只读工具，记录一个 read task。`describe_bank_capabilities` 和查看任务、动态提供工具等 Agent 内部调度工具不计为 read task。
+- 每张转账卡记录一个 execute task。同一轮对话产生多张转账卡时，分别记录多个 execute task。
+- execute task 的“完成”用于区分它是否仍可被用户调整或修改：一旦不可再调整，就记为完成。银行返回成功、失败或取消，以及未提交草稿被撤销，都属于完成；生成或填好仍可编辑的草稿、等待用户补充，属于未完成。
+- 每个 task 记录 ID、所属类型、执行状态和具体描述。转账 task 的描述应包含已填写及待填写字段，例如收款人姓名、银行卡、金额等。
+
+## 2. 会话状态与 target execute task
+
+每个 Nova 对话窗口维护一份独立、可持久化的任务状态。存储格式由实现时选择，不强制使用 JSON 文件；状态至少记录已完成和未完成的 execute task，以及当前的 target execute task。
+
+target execute task 指最近一次交互拉起、且仍未完成的 execute task。若该次交互拉起多张转账卡，这些卡对应的 task 都是 target。只有查询、没有新建 execute task 的轮次，不改变已有 target；若原 target 全部完成，且新一轮没有产生未完成的 execute task，则 target 为空。
+
+## 3. 每轮上下文
+
+每次用户发起对话，重新构建 Agent 上下文，初始结构为：
+
+`System Prompt + System Status + 用户本轮消息`
+
+第一版 System Status 默认包含当前会话最近 5 轮交互内容，供 Agent 判断本轮是否依赖已有上下文。非独立请求需要进一步查看当前会话所有未完成的 execute task 及 target execute task，并把任务详情注入后续上下文。
+
+## 4. Agent 内部调度工具
+
+新增一类不与银行交互的调度工具：
+
+1. 查看当前会话所有未完成的 execute task，以及当前的 target execute task。
+2. 动态提供工具：接收多个工具名称，将对应工具加入 Agent 后续 LLM 调用可选的工具集合。
+3. `llm_finish_tool`：每轮 Agent 处理结束时调用，依据银行及任务服务的实际状态更新持久化记录并完成收尾，不采信模型自行宣称的完成状态。成功、工具失败、等待用户补充等结束情形都要调用，以记录该轮结束时的实际状态；仍可编辑或仍需补充的 task 保持未完成。
+
+## 5. System Prompt 指导的运行流程
+
+1. 说明 Agent 是银行智能体。
+2. 调用 `describe_bank_capabilities` 查看当前业务能力。
+3. 判断本轮用户消息是独立请求，还是依赖先前交互的非独立请求。涉及已有 task 的指代、修改或删除等，属于非独立请求；独立请求直接进入第 5 步。
+4. 对非独立请求，调用调度工具取得所有未完成的 execute task 及 target execute task，并将其详情加入上下文。模糊指代默认关联 target；目标仍无法确定时向用户询问。
+5. 根据能力目录和用户目标选择所需工具，调用动态工具提供器，将这些工具加入后续 LLM 调用的可选工具集合。
+6. 生成工具使用计划并按计划执行；执行过程中发现计划需要调整时，重新生成计划，再继续执行。
+7. 本轮处理结束时调用 `llm_finish_tool`，记录最终任务状态并完成收尾。

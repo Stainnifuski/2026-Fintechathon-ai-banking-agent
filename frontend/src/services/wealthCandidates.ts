@@ -1,4 +1,13 @@
 import type {CandidateGroup,Product} from './wealth';
+import type {PortfolioPlan} from './wealth';
+import type {ActionResult} from './wealthActions';
+
+export function actionCandidateGroups(result:ActionResult|undefined):CandidateGroup[]{
+  if(result?.status!=='ok')return [];
+  if(result.action==='plan_portfolio')return (result.data as PortfolioPlan).candidate_groups;
+  if(result.action==='recommend_products')return [result.data as CandidateGroup];
+  return [];
+}
 
 // Consumer checks for fields read by ProductPicker. A remains responsible for
 // model, risk eligibility and canonical DTO validation; this creates no advice.

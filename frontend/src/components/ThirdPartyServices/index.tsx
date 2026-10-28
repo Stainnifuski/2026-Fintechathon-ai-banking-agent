@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { beijingTime } from '../../utils/time';
 import { useCallback, useEffect, useState } from 'react';
 import * as flowerShop from '../../services/flowerShop';
@@ -5,6 +6,7 @@ import * as cakeShop from '../../services/cakeShop';
 import Calendar from '../Calendar';
 import type { NovaPageContext } from '../../services/nova';
 import './styles.css';
+import { formatYuan } from '../../utils/money';
 
 type ServiceTab = 'calendar' | 'flower' | 'cake';
 
@@ -162,7 +164,7 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
               <div className="flower-product-body">
                 <h2>{product.name}</h2>
                 <p>{product.description}</p>
-                <strong>¥{product.price.toFixed(2)}</strong>
+                <strong>{formatYuan(product.price)}</strong>
                 <label>数量
                   <select value={quantity} onChange={event => setQuantities(current => ({
                     ...current,
@@ -191,7 +193,7 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
                 <small>{beijingTime(order.created_at)}</small>
               </div>
               <div className="order-summary">
-                <strong>¥{order.total.toFixed(2)}</strong>
+                <strong>{formatYuan(order.total)}</strong>
                 <button className="secondary" type="button" aria-pressed={selected?.type === 'order' && selected.id === order.order_id} onClick={() => setSelected(current => current?.type === 'order' && current.id === order.order_id ? null : { type: 'order', id: order.order_id })}>{selected?.type === 'order' && selected.id === order.order_id ? '已选中 · 可问 NOVA' : '选择订单问 NOVA'}</button>
                 <span className={`order-status ${order.status.toLowerCase()}`}>
                   {statusText[order.status]}
@@ -203,14 +205,14 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
           </ul>}
       </section>
 
-    {pendingProduct && <div className="flower-modal" role="dialog" aria-modal="true" aria-label={`确认${category}订单`}>
+    {pendingProduct && <Modal scope="third-party" className="flower-modal" role="dialog" aria-modal="true" aria-label={`确认${category}订单`}>
       <section className="card">
         <p className="eyebrow">订单确认</p>
         <h2>{pendingProduct.name}</h2>
         <dl>
-          <div><dt>单价</dt><dd>¥{pendingProduct.price.toFixed(2)}</dd></div>
+          <div><dt>单价</dt><dd>{formatYuan(pendingProduct.price)}</dd></div>
           <div><dt>数量</dt><dd>{quantities[pendingProduct.product_id] || 1}</dd></div>
-          <div><dt>订单总额</dt><dd><strong>¥{(pendingProduct.price * (quantities[pendingProduct.product_id] || 1)).toFixed(2)}</strong></dd></div>
+          <div><dt>订单总额</dt><dd><strong>{formatYuan((pendingProduct.price * (quantities[pendingProduct.product_id] || 1)))}</strong></dd></div>
         </dl>
         <p className="hint">提交订单仅生成银行付款申请，不代表您已同意扣款。请随后返回银行核对收款人、金额和风险等级。</p>
         <div className="confirm">
@@ -218,6 +220,6 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
           <button disabled={isSubmitting} onClick={submitOrder}>{isSubmitting ? '正在提交…' : '提交订单'}</button>
         </div>
       </section>
-    </div>}
+    </Modal>}
   </section>;
 }

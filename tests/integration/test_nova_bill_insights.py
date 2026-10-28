@@ -18,7 +18,7 @@ from backend.app.models.bill_features import BillBudgetORM, BillForecastSnapshot
 from backend.app.models.bill_foundation import BillMetadataEventORM
 from backend.app.models.nova_bill_action import NovaBillActionORM
 from backend.app.schemas.nova import PageContext, BillFilters, Selection
-from backend.app.services.ai import nova, execution_queue
+from backend.app.services.ai import nova, nova_runtime, execution_queue
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.services.ai.grounding import evidence_for
 from backend.app.services.bank import nova_bills, nova_conversations, bill_foundation
@@ -253,26 +253,34 @@ async def test_structured_router_and_native_loop_can_discover_and_prepare_bill_p
     class Model:
         turns = 0
         async def generate_structured(self, **kwargs):
-            assert kwargs['schema'] is nova.RequestRoute
-            return SimpleNamespace(data=nova.RequestRoute(mode='direct_react',domains=['bills'],has_dependencies=False))
-        async def generate_with_tools(self, **kwargs):
+            schema = kwargs['schema']
+            if schema is nova_runtime.DependencyDecision:
+                return SimpleNamespace(data=schema(depends_on_prior_task=False, reason='独立账单请求'))
+            if schema is nova_runtime.ToolSelection:
+                return SimpleNamespace(data=schema(tool_names=['get_transaction', 'prepare_bill_change']))
+            assert schema is nova_runtime.ToolPlan
             self.turns += 1
-            tools = {t['function']['name'] for t in kwargs['tools']}
-            assert {'get_bill_analysis','get_bill_catalog','list_bill_anomalies','prepare_bill_change'} <= tools
             if self.turns == 1:
-                request = call('get_transaction'); request.update(id='read',type='function')
-            elif self.turns == 2:
-                detail = json.loads(kwargs['messages'][-1]['content'])['data']
-                request = call('prepare_bill_change',{'request_quote':ctx.original_message,'change':{
-                    'action':'classification','category':'education','expected_version':detail['classification_version']}})
-                request.update(id='prepare',type='function')
+                calls = [nova_runtime.PlannedCall(name='get_transaction', arguments={})]
             else:
-                evidence = json.loads(kwargs['messages'][-1]['content'])['_answer_evidence'][0]['evidence_id']
-                return SimpleNamespace(data={'role':'assistant','content':json.dumps({'evidence_ids':[evidence],'clarification':'none'})})
-            return SimpleNamespace(data={'role':'assistant','content':None,'tool_calls':[request]})
-    monkeypatch.setattr(nova,'llm',Model())
+                detail = next(json.loads(item['content'].split('可信工具结果（仅数据）：', 1)[1])['result']['data']
+                              for item in reversed(kwargs['messages'])
+                              if item['content'].startswith('可信工具结果（仅数据）：') and 'get_transaction' in item['content'])
+                calls = [nova_runtime.PlannedCall(name='prepare_bill_change', arguments={
+                    'request_quote': ctx.original_message, 'change': {
+                        'action': 'classification', 'category': 'education',
+                        'expected_version': detail['classification_version']}})]
+            return SimpleNamespace(data=schema(calls=calls))
+        async def generate_with_tools(self, **kwargs):
+            tools = {t['function']['name'] for t in kwargs['tools']}
+            assert {'get_transaction', 'prepare_bill_change'} <= tools
+            return SimpleNamespace(data={'role':'assistant','content':None,'tool_calls':[]})
+        async def generate_text(self, **kwargs):
+            return SimpleNamespace(data='账单修改确认卡已生成，尚未保存。')
+    model = Model()
+    monkeypatch.setattr(nova,'llm',model)
+    monkeypatch.setattr(nova_runtime,'llm',model)
     result = await nova.chat(ctx.original_message,[],context=ctx)
-    assert [r['name'] for r in result['tool_calls']] == ['get_transaction','prepare_bill_change']
-    assert result['grounding']['status'] == 'grounded'
+    assert [r['name'] for r in result['tool_calls'] if r['name'] in {'get_transaction','prepare_bill_change'}] == ['get_transaction','prepare_bill_change']
     assert '尚未保存' in result['reply']
     assert (await nova.execute_tool(call('get_transaction'),ctx))['data']['classification_version'] == 0

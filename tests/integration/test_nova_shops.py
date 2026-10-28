@@ -16,6 +16,7 @@ from backend.app.models.cake_order import CakeOrderORM
 from backend.app.services.flower_shop import order_service as flowers, catalog as flower_catalog
 from backend.app.services.cake_shop import order_service as cakes, catalog as cake_catalog
 from backend.app.services.ai import nova
+from backend.app.services.ai import nova_runtime
 from backend.app.services.ai.llm import LLMService
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.schemas.nova import PageContext, ShopContext, ShopSelection
@@ -152,25 +153,28 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
         assert calendar['tool_calls'][0]['name'] == 'list_calendar_events'
         assert not (await nova.chat('帮我购买这款蛋糕', [], context=ctx))['tool_calls']
     seen = []
-    def handler(request):
-        body = json.loads(request.content)
-        if body.get('response_format'):
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
-                'content': json.dumps({'mode': 'direct_react', 'domains': ['shops'],
-                                      'has_dependencies': False})}}]})
-        seen.append(body)
-        if len(seen) == 1:
-            assert any(created['order_id'] in (item.get('content') or '') for item in body['messages'])
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {'content': None,
-                'tool_calls': [{'id': 'shop', 'type': 'function', 'function': {'name': 'get_shop_order', 'arguments': '{}'}}]}}]})
-        tool = body['messages'][-1]
-        assert tool['tool_call_id'] == 'shop' and json.loads(tool['content'])['data']['status'] == 'PENDING_PAYMENT'
-        assert 'customer_user_id' not in tool['content']
-        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '模拟蛋糕店订单等待付款。'}}]})
+    class ReadModel:
+        async def generate_structured(self, **kwargs):
+            from types import SimpleNamespace
+            schema = kwargs['schema']
+            seen.append(schema)
+            if schema is nova_runtime.DependencyDecision:
+                assert created['order_id'] in kwargs['messages'][1]['content']
+                return SimpleNamespace(data=schema(depends_on_prior_task=False, reason='selected order'))
+            if schema is nova_runtime.ToolSelection:
+                return SimpleNamespace(data=schema(tool_names=['get_shop_order']))
+            return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
+                name='get_shop_order', arguments={})]))
+        async def generate_text(self, **kwargs):
+            from types import SimpleNamespace
+            reply = '该订单正在等待付款。'
+            if kwargs.get('on_delta'):
+                await kwargs['on_delta'](reply)
+            return SimpleNamespace(data=reply)
     monkeypatch.setenv('LLM_MODE', 'model')
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
-    model = LLMService(httpx.MockTransport(handler))
-    monkeypatch.setattr(nova, 'llm', model)
+    model = ReadModel()
+    monkeypatch.setattr(nova_runtime, 'llm', model)
     app = FastAPI()
     app.include_router(router)
     async def get_session():
@@ -183,12 +187,14 @@ async def test_offline_context_and_native_authenticated_tool_loop(store, monkeyp
             shop = {'shop': 'cake', 'selected': {'type': 'order', 'id': created['order_id']}}
             result = await client.post('/api/v1/nova/chat', json={'message': '这个订单付款了吗？', 'page_context': {'page': 'thirdParty', 'shop': shop}})
             assert result.status_code == 200 and '等待付款' in result.json()['reply']
-            assert result.json()['grounding']['status'] == 'grounded'
+            assert seen == [nova_runtime.DependencyDecision, nova_runtime.ToolSelection,
+                            nova_runtime.ToolPlan]
+            assert 'grounding' not in result.json()
             for bad in ({'shop': 'other'}, {'shop': 'cake', 'user_id': 'U2'}, {'shop': 'cake', 'selected': {'type': 'order', 'id': 'x', 'quantity': 2}}):
                 assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'thirdParty', 'shop': bad}})).status_code == 422
             assert (await client.post('/api/v1/nova/chat', json={'message': '查询', 'page_context': {'page': 'home', 'shop': shop}})).status_code == 422
     finally:
-        await model.aclose()
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -253,4 +259,28 @@ async def test_purchase_orders_when_complete_otherwise_prefilled_form_and_never_
             assert (await client.post(f"{base}/{tasks[0]['entry_id']}/dismiss")).status_code == 409
             assert (await client.post(f"{base}/{tasks[2]['entry_id']}/dismiss")).status_code == 200
     assert '店铺业务 Skill' in nova.SYSTEM_PROMPT
-    assert not [name for name in nova.TOOL_REGISTRY if any(word in name for word in ('pay', 'accept', 'confirm'))]
+    assert not [name for name in nova.TOOL_REGISTRY
+                if name != 'manage_payment_requests' and any(word in name for word in ('pay', 'accept', 'confirm'))]
+
+
+@pytest.mark.asyncio
+async def test_flower_purchase_tool_creates_pending_order_card_without_payment(store):
+    from backend.app.services.ai.transfer_manager import get_session
+    from backend.app.services.bank import nova_conversations
+
+    async with store() as db:
+        session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+        before = (await db.get(AccountORM, 'A1')).balance_fen
+        tool_context = replace(context(db, 'flower'), original_message='买两束经典玫瑰',
+                               session_id=session_id, request_id='flower-order-1')
+        result = await nova.execute_tool(call('prepare_shop_purchase', {
+            'shop': 'flower', 'product_id': 'ROSE_CLASSIC', 'quantity': 2, 'quantity_quote': '两束'}), tool_context)
+        assert result['data']['created']
+        assert result['data']['order']['status'] == 'PENDING_PAYMENT'
+        assert result['data']['order']['total_fen'] == 19800
+        tasks = (await get_session(db, 'U1', session_id))['shop_tasks']
+        assert len(tasks) == 1 and tasks[0]['order']['product_id'] == 'ROSE_CLASSIC'
+        records = await nova_runtime._shop_records(tool_context)
+        assert records[0]['status'] == 'PENDING_PAYMENT' and not records[0]['completed']
+        assert await db.scalar(select(func.count()).select_from(PaymentRequestORM)) == 1
+        assert (await db.get(AccountORM, 'A1', populate_existing=True)).balance_fen == before

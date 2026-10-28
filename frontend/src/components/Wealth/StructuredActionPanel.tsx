@@ -1,7 +1,7 @@
 import AgentStepCard,{WealthStepContext,useStepInstruction,useStepReady} from './AgentStepCard';
 import type {NovaWealthView,NovaWealthCommand} from '../../services/nova';
 import {ManualDraftStore} from '../../services/wealthManualDraft';
-import {toggleProduct,changeShare,emptyProductSelection} from './productSelection';
+import {toggleProduct,changeShare,emptyProductSelection,groupMessage} from './productSelection';
 import {wealthFeedback,wealthRequestFailure} from '../../utils/wealthFeedback';
 import {useEffect,useState,useRef,useCallback,useMemo,useContext} from 'react';
 import * as w from '../../services/wealth';
@@ -28,8 +28,9 @@ import {WealthActionSession} from '../../services/wealthActionSession';
 import type {WealthReturns} from '../../services/wealthReturns';
 import {beijingTime} from '../../utils/time';
 import ProductPicker from './ProductPicker';
-import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup} from '../../services/wealthCandidates';
+import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup,actionCandidateGroups} from '../../services/wealthCandidates';
 import {readPortfolioPlan,planProductSelection} from '../../services/wealthPortfolioReview';
+import {agentCommandKey} from './stepFlow';
 import StructuredPortfolioReview from './StructuredPortfolioReview';
 import './structuredActions.css';
 import {manualDrafts,draftScope} from '../../services/wealthManualDraft';
@@ -37,11 +38,12 @@ import {useManualDraft} from './useManualDraft';
 type ResultSlot='planning'|'positions'|'returns'|'product'|'redemption'|'comparison';
 const resultSlot=(action:ActionName):ResultSlot=>action==='list_positions'?'positions':action==='show_wealth_returns'?'returns':action==='show_product_detail'?'product':action==='preview_redemption'?'redemption':action==='compare_products'?'comparison':'planning';
 const resultTitles:Record<ResultSlot,string>={planning:'规划与推荐结果',positions:'持仓查询结果',returns:'收益查询结果',product:'产品资料查询结果',redemption:'赎回核对结果',comparison:'产品比较结果'};
+const planningBucketNames:Record<string,string>={cash_management:'活钱',stable:'稳健',growth:'进取'};
 interface Page {rows:w.PositionRow[];page:number;pages:number;total:number;object_type:'positions';table_data:w.PositionTableData;snapshot_id:string}
 interface Converted {preview:w.Preview;resolved_units:string;holding_ratio:string;estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;notice:string}
-export default function StructuredActionPanel({userId,revision,onActivity,agentCommand,agentContext,agentTaskId,agentSelection,onView,onPrepared}:{userId:string;revision:number;onActivity:()=>void;agentCommand?:NovaWealthCommand;agentContext?:string;agentTaskId?:string;agentSelection?:NovaWealthView['selected_products'];onView?:(view:NovaWealthView)=>void;onPrepared?:(id:string)=>Promise<void>}){
+export default function StructuredActionPanel({userId,revision,onActivity,agentCommand,agentContext,agentTaskId,agentRequestId,agentSelection,agentWorkflow,onView,onPrepared}:{userId:string;revision:number;onActivity:()=>void;agentCommand?:NovaWealthCommand;agentContext?:string;agentTaskId?:string;agentRequestId?:string;agentSelection?:NovaWealthView['selected_products'];agentWorkflow?:'planning'|'target';onView?:(view:Partial<NovaWealthView>)=>void;onPrepared?:(id:string)=>Promise<void>}){
   const [draftStore]=useState(()=>agentCommand?new ManualDraftStore():manualDrafts);
-  const commandApplied=useRef(false);
+  const commandApplied=useRef<string|null>(null);
   const [facts,setFacts]=useState<{owner:string;assets:w.Assets;products:w.Product[];tasks:w.WealthTask[];accountId:string}|null>(null);
   const ready=facts?.owner===userId?facts:null;
   const contextId=ready?.assets.context_id??'legacy-v1';
@@ -89,6 +91,9 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
   const [workflow,setWorkflow]=shared('workflow');
   const [nameQuery,setNameQuery]=useState('');
   const [positionState,setPositionState]=shared('positionTable');
+  useEffect(()=>{const result=results.positions;if(!onView||result?.status!=='ok'||result.action!=='list_positions')return;
+    const page=result.data as Page;onView(holdingsSelection(page.table_data.rows as w.PositionRow[],positionState.selected));
+  },[results.positions,positionState.selected,onView]);
   const returnsRef=useRef<HTMLFieldSetElement>(null);
   const [inputMode]=shared('inputMode');const [value,setValue]=shared('value');const [,setTarget]=shared('target');
   const [confirm,setConfirm]=useState<Converted|null>(null);
@@ -171,12 +176,14 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
     }catch(reason){const message=wealthRequestFailure(reason);if(scope.current===(ready.assets.context_id??'legacy-v1'))fail(slot,message);if(throwOnError)throw new Error(message);}finally{if(requestNumber===latestRequest.current)setPending(null);}
   },[ready,reading,workflow]);
   useEffect(()=>{
-    if(!agentCommand||!ready||reading||commandApplied.current)return;
-    commandApplied.current=true;
+    if(!agentCommand||!ready||reading)return;
+    const commandKey=agentCommandKey(agentTaskId,agentRequestId);
+    if(commandApplied.current===commandKey)return;
+    commandApplied.current=commandKey;
     const cmd=agentCommand;
     const apply=async()=>{
       if(cmd.cash_field&&cmd.cash_yuan)setCashDraft({field:cmd.cash_field==='invest'?'investment':cmd.cash_field,text:cmd.cash_yuan});
-      if(cmd.kind==='planning'){
+      if(cmd.kind==='planning'||(['recommend','purchase'].includes(cmd.kind)&&agentWorkflow==='planning')){
         setWorkflow('planning');const response=await run('plan_portfolio',{});
         const planningRefs=agentSelection??cmd.products;
         if(response?.status==='ok'&&planningRefs.length){
@@ -197,7 +204,7 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
       }
       if(cmd.kind==='recommend'||cmd.kind==='purchase'){
         setWorkflow('target');setCandidateGroups([]);setCandidateSelection(emptyProductSelection(contextId));
-        setMode(cmd.products.length?'name':'category');if(cmd.category)setCategory(cmd.category);
+        setMode(cmd.products.length?'name':'category');setCategory(cmd.category??'');
         const groups:w.CandidateGroup[]=[];
         if(!cmd.products.length&&cmd.category){const response=await run('recommend_products',{filter:{mode:'category',category:cmd.category}});if(response?.status==='ok')groups.push(readCandidateGroup(response.data));}
         const requested=agentSelection??cmd.products;
@@ -231,7 +238,7 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
       if(cmd.kind==='compare'){setCompareView(true);}
     };
     void apply().catch(e=>setError(wealthRequestFailure(e)));
-  },[ready,reading,agentCommand,run,contextId]);
+  },[ready,reading,agentCommand,agentTaskId,agentRequestId,agentWorkflow,run,contextId]);
   const loadDetail=useCallback<ProductDetailLoader>(async(id,period,version)=>{
     const response=await run('show_product_detail',{product_id:id,product_version:version,period},version?{object_type:'products',ids:[`${id}:${version}`]}:undefined);
     if(response?.status!=='ok')throw new Error(response?.message??'详情查询失败');
@@ -247,6 +254,7 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
   const recommend=(filter:Record<string,string>)=>void run('recommend_products',{filter});
   const changeWorkflow=(next:'planning'|'target')=>{
     if(workflow===next)return;
+    if(agentCommand)onView?.({workflow:next,workflow_request_id:agentRequestId,completed_stages:[],visible_products:[],selected_products:[]});
     setWorkflow(next);setPortfolio(null);setPlanningBaseline(null);setSelectionAttempted(false);setRatios(null);setCandidateGroups([]);
     setCandidateSelection({scopeKey:contextId,items:[],preferredShares:{}});setReviewing(false);
     setResults(current=>{const next={...current};delete next.planning;return next;});
@@ -292,8 +300,10 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
     const compared=result?.status==='ok'&&result.action==='compare_products'?result.data as w.Product[]:null;
     const converted=result?.status==='ok'&&result.action==='preview_redemption'?result.data as Converted:null;
     const detail=result?.status==='ok'&&result.action==='show_product_detail'?result.data as ProductDetailData:null;
+    const displayedCandidates=actionCandidateGroups(result);
 
     return <section className="action-result" aria-label={resultTitles[slot]} aria-live="polite" aria-busy={pending===slot}><h3>{resultTitles[slot]}</h3>{pending===slot&&<p role="status">正在查询 / 核对…</p>}{actionError&&<p role="alert" className="action-error">{wealthFeedback(actionError)}</p>}{result&&<><p className="action-result-message">{wealthFeedback(result.message)}</p>{(pending===slot||actionErrors[slot])&&<p className="consumer-note">下方保留上次结果，请以本次完成后的反馈为准。</p>}{result.status==='blocked'&&<p className="consumer-note">本次操作未执行；可继续查询本人持仓与收益，操作限制见上述原因。</p>}
+      {displayedCandidates.length>0&&<div className="candidate-summary" aria-label={result?.action==='plan_portfolio'?'本次理财规划的具体产品候选':'本次目标产品推荐的具体产品候选'}><h4>具体产品候选</h4><p className="consumer-note">以下产品来自本次资格核对，尚未选定或购买；可在下方候选步骤查看详情并选择。</p>{displayedCandidates.map((group,index)=><div key={`${group.bucket??'general'}-${index}`}><strong>{planningBucketNames[group.bucket??'']??'产品'}候选</strong>{group.items.length?<ul>{group.items.map(candidate=><li key={candidate.family_id}>{candidate.name} · {candidate.share_classes.map(share=>`${share.product_id}${share.share_class?`（${share.share_class}类）`:''}`).join('、')}</li>)}</ul>:<p className="consumer-note">{groupMessage(group)??'当前没有符合条件的可选产品。'}</p>}</div>)}</div>}
       {result.required_fields.map(field=><div key={field.field}><p>{field.reason}</p>{field.options&&field.options.length>0&&<label>补充选择<select defaultValue="" onChange={e=>{if(field.field==='redemption.position_key'){setPositionState(current=>({...current,selected:[e.target.value]}));}else if(field.field==='product_id'){setTarget(e.target.value);}}}><option value="">请选择</option>{field.options.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select></label>}</div>)}
       {page&&page.table_data.object_type==='positions'&&<PositionTable data={{...page.table_data,scope_key:JSON.stringify([userId,contextId,page.table_data.scope_key])}} control={{state:positionState,onChange:next=>{setPositionState(next);if(onView)onView(holdingsSelection(page.table_data.rows as w.PositionRow[],next.selected));}}} loadDetail={loadDetail} blockedAccounts={blockedAccounts} onRedeem={selectRedeem} onReturns={openReturns}/>}
       {converted&&<><p>赎回{converted.resolved_units}份 · 比例{(Number(converted.holding_ratio)*100).toFixed(4)}% · 市值{w.money(converted.estimated_market_value_fen)}</p><p>预计费用{w.money(converted.estimated_fee_fen)} · 预计到账{w.money(converted.estimated_net_cash_fen)}</p><p>{converted.notice}</p><button onClick={()=>setConfirm(converted)}>继续本人确认与验证</button></>}
@@ -302,14 +312,14 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
     </>}</section>;
   };
   return <section aria-label="统一手动操作" className={`structured-actions ${agentCommand?'nova-wealth-actions':''}`}><h2>{agentCommand?'理财任务':'直接选择要做的事'}</h2><p>这里使用登录账户的模拟银行资料。按钮直接传递操作参数，不需要输入聊天指令。</p><p className="consumer-note">输入修改后系统会在继续时自动核对最新产品、金额和资金；交易仍由本人确认和验证。已受理交易按原号查询。</p>
-    {!ready&&<p>正在读取本人资料…</p>}{error&&<p role="alert">{wealthFeedback(error)}</p>}{activityNotice&&<p role="status" className="consumer-warning">{activityNotice}</p>}{agentCommand?.kind==='assets'&&ready&&<section aria-label="本人理财资产"><p>当前可用现金 {w.money(availableCash)} · 持仓市值 {w.money(currentHoldings)} · 应收 {w.money(ready.assets.receivable_fen)}</p><p>总资产 {w.money(ready.assets.asset_summary?.total_assets_fen)}</p></section>}{reading&&ready&&<p role="status">正在刷新账户及人工控制状态…</p>}{blockedAccounts.length>0&&<p className="consumer-warning">账户 {Array.from(new Set(blockedAccounts)).join('、')} 存在人工接管或暂停任务。资料可继续查询；相关交易仍受银行权限检查。</p>}
+    {!ready&&<p>正在读取本人资料…</p>}{error&&<p role="alert">{wealthFeedback(error)}</p>}{activityNotice&&<p role="status" className="consumer-warning">{activityNotice}</p>}{agentCommand?.kind==='assets'&&ready&&<section aria-label="本人理财资产"><p>当前可用现金 {w.money(availableCash)} · 持仓市值 {w.money(currentHoldings)}{ready.assets.receivable_fen>0&&<> · 历史赎回应收 {w.money(ready.assets.receivable_fen)}</>}</p><p>总资产 {w.money(ready.assets.asset_summary?.total_assets_fen)}</p></section>}{reading&&ready&&<p role="status">正在刷新账户及人工控制状态…</p>}{blockedAccounts.length>0&&<p className="consumer-warning">账户 {Array.from(new Set(blockedAccounts)).join('、')} 存在人工接管或暂停任务。资料可继续查询；相关交易仍受银行权限检查。</p>}
     <fieldset hidden={!!agentCommand&&!['planning','recommend','purchase'].includes(agentCommand.kind)} disabled={busy||!ready}><legend>规划与推荐</legend>
-      <AgentStepCard stage="match" onAdvance={()=>{if(executionActive||busy)return;if(workflow==='planning')void run('plan_portfolio',{});else recommend(mode==='name'?{mode:'name',name_query:nameQuery.trim()}:{mode:'category',category});}} title={workflow==='planning'?'规划设置':'产品匹配'}><label>办理方式<select disabled={executionActive} value={workflow} onChange={e=>changeWorkflow(e.target.value as 'planning'|'target')}><option value="planning">理财规划</option><option value="target">目标产品推荐</option></select></label>
+      <AgentStepCard stage="match" onAdvance={()=>{if(executionActive||busy)return;if(workflow==='planning')void run('plan_portfolio',{});else if(mode==='name'?nameQuery.trim():category)recommend(mode==='name'?{mode:'name',name_query:nameQuery.trim()}:{mode:'category',category});}} title={workflow==='planning'?'规划设置':'产品匹配'}><label>办理方式<select disabled={executionActive} value={workflow} onChange={e=>changeWorkflow(e.target.value as 'planning'|'target')}><option value="planning">理财规划</option><option value="target">目标产品推荐</option></select></label>
       {workflow==='planning'?<><p>根据本人授权资产和正式风险评估，使用资产配置模型生成整体方案及配置比例。</p><button disabled={executionActive} onClick={()=>void run('plan_portfolio',{})}>生成理财规划</button></>:<>
         <p>请选择希望购买的产品类别，或填写产品名称、代码进行匹配。</p>
         <label>匹配方式<select value={mode==='name'?'name':'category'} onChange={e=>setMode(e.target.value)}><option value="category">按类别</option><option value="name">按产品名称或代码</option></select></label>
-        {mode==='name'?<label>产品名称或代码<input aria-label="推荐产品名称或代码" value={nameQuery} onChange={e=>setNameQuery(e.target.value)}/></label>:<label>产品类别<select value={category} onChange={e=>setCategory(e.target.value)}><option value="quick_redeem">可快速赎回</option><option value="bank_wealth">银行理财</option><option value="bond_fund">债券基金</option><option value="mixed_fund">混合基金</option><option value="equity_fund">权益基金</option></select></label>}
-        <button disabled={mode==='name'&&!nameQuery.trim()} onClick={()=>recommend(mode==='name'?{mode:'name',name_query:nameQuery.trim()}:{mode:'category',category})}>匹配产品</button>
+        {mode==='name'?<label>产品名称或代码<input aria-label="推荐产品名称或代码" value={nameQuery} onChange={e=>setNameQuery(e.target.value)}/></label>:<label>产品类别<select value={category} onChange={e=>setCategory(e.target.value)}>{agentCommand&&!category&&<option value="" disabled>请选择产品类别</option>}<option value="quick_redeem">可快速赎回</option><option value="bank_wealth">银行理财</option><option value="bond_fund">债券基金</option><option value="mixed_fund">混合基金</option><option value="equity_fund">权益基金</option></select></label>}
+        <button disabled={mode==='name'?!nameQuery.trim():!category} onClick={()=>recommend(mode==='name'?{mode:'name',name_query:nameQuery.trim()}:{mode:'category',category})}>匹配产品</button>
       </>}
       </AgentStepCard>{pending==='planning'&&<p role="status">{workflow==='planning'?'正在计算整体配置…':'正在匹配产品…'}，请等待当前请求完成。</p>}{renderResult('planning')}
       {candidateGroups.length>0&&ready&&<><ProductPicker requiredBuckets={workflow==='planning'?poolHint.required:undefined} selectionLocked={executionActive} allowEmptySelection={workflow==='planning'&&!!planningBaseline&&poolHint.required.length===0} selectionDescription={workflow==='planning'?poolHint.description:undefined} planningRefresh={workflow==='planning'} continueDisabled={workflow==='planning'&&(!cashBudget||!planningBaseline)} beforeContinue={<PlanningCashInput disabled={executionActive} holdings={currentHoldings} available={availableCash} draft={cashDraft} onChange={next=>{setCashDraft(next);setReviewing(false);setActionErrors(current=>({...current,planning:''}));}}/>} showBuckets={workflow==='planning'} groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={next=>{setCandidateSelection(next);setReviewing(false);setActionErrors(current=>({...current,planning:''}));}} busy={busy}

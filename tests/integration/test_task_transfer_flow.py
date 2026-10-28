@@ -33,7 +33,9 @@ from backend.app.services.orchestration import (
     cancel_task,
     confirm_task,
     create_transfer_task,
+    modify_task,
     reconcile_task,
+    task_snapshot,
     verify_task,
 )
 from backend.app.services.orchestration.scheduler import execute_due_scheduled_transfers
@@ -96,6 +98,24 @@ class InProcessBankApi:
 
     async def release_payment_request(self, **kwargs) -> None:
         await release_payment_request_payment(self.db, **kwargs)
+
+    async def place_scheduled_hold(self, *, hold_id: str, **kwargs) -> dict:
+        from backend.app.services.bank.scheduled_holds import place_hold
+        try:
+            return await place_hold(self.db, hold_id=hold_id, **kwargs)
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
+
+    async def link_scheduled_hold(self, **kwargs) -> None:
+        from backend.app.services.bank.scheduled_holds import link_hold
+        try:
+            await link_hold(self.db, **kwargs)
+        except BankError as error:
+            raise BankApiError(error.message, error.code, error.status_code) from error
+
+    async def release_scheduled_holds(self, **kwargs) -> list[dict]:
+        from backend.app.services.bank.scheduled_holds import release_holds
+        return await release_holds(self.db, **kwargs)
 
 
 @pytest_asyncio.fixture
@@ -394,12 +414,15 @@ async def test_scheduled_transfer_waits_then_executes_once(db) -> None:
         request_id="request-confirm-scheduled",
         state_version=task["state_version"],
         plan_version=task["plan_version"],
+        bank=bank,
     )
 
     assert waiting["phase"] == "WAITING_EXECUTION"
     assert waiting["allowed_actions"] == ["modify", "cancel"]
     assert waiting["scheduled_at"] == execute_at.isoformat()
     assert (await db.get(AccountORM, "A1")).balance == 5000.0
+    from backend.app.services.bank.available_funds import held_cash
+    assert await held_cash(db, "A1") == 12500
 
     early_count = await execute_due_scheduled_transfers(
         db, bank, now=execute_at - timedelta(seconds=1)
@@ -413,6 +436,7 @@ async def test_scheduled_transfer_waits_then_executes_once(db) -> None:
     assert due_count == 1
     assert (await db.get(AccountORM, "A1")).balance == 4875.0
     assert (await db.get(AccountORM, "A2")).balance == 1125.0
+    assert await held_cash(db, "A1") == 0
 
     duplicate_count = await execute_due_scheduled_transfers(
         db, bank, now=execute_at + timedelta(minutes=1)
@@ -443,6 +467,7 @@ async def test_cancelled_scheduled_transfer_never_executes(db) -> None:
         request_id="request-confirm-scheduled-cancel",
         state_version=task["state_version"],
         plan_version=task["plan_version"],
+        bank=bank,
     )
     cancelled = await cancel_task(
         db,
@@ -461,3 +486,58 @@ async def test_cancelled_scheduled_transfer_never_executes(db) -> None:
     assert executed == 0
     assert (await db.get(AccountORM, "A1")).balance == 5000.0
     assert (await db.get(AccountORM, "A2")).balance == 1000.0
+    from backend.app.services.bank.available_funds import held_cash
+    assert await held_cash(db, "A1") == 0
+
+
+
+@pytest.mark.asyncio
+async def test_scheduled_transfer_locks_cash_and_fails_when_free_cash_is_short(db) -> None:
+    """设定定时转账即锁定活期资金：可自由支配余额不足则设定失败；锁定资金不能被其他付款花掉。"""
+    from backend.app.services.bank.available_funds import available_cash, held_cash
+    bank = InProcessBankApi(db)
+    execute_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    (await db.get(AccountORM, "A1")).balance_fen = 150000
+    await db.commit()
+
+    async def scheduled(suffix: str, amount: float):
+        task = await create_transfer_task(db, bank, user_id="U1", request_id=f"lock-create-{suffix}",
+                                          operation_id=f"lock-operation-{suffix}", from_account="A1",
+                                          to_account="A2", amount=amount, scheduled_at=execute_at)
+        return task, await confirm_task(db, task_id=task["task_id"], user_id="U1", request_id=f"lock-confirm-{suffix}",
+                                        state_version=task["state_version"], plan_version=task["plan_version"], bank=bank)
+
+    first, waiting = await scheduled("first", 800.0)
+    assert waiting["phase"] == "WAITING_EXECUTION"
+    assert await held_cash(db, "A1") == 80000
+    assert await available_cash(db, "A1", (await db.get(AccountORM, "A1")).balance_fen) == 70000
+
+    second = await create_transfer_task(db, bank, user_id="U1", request_id="lock-create-second",
+                                        operation_id="lock-operation-second", from_account="A1",
+                                        to_account="A2", amount=800.0, scheduled_at=execute_at)
+    with pytest.raises(TaskError) as error:
+        await confirm_task(db, task_id=second["task_id"], user_id="U1", request_id="lock-confirm-second",
+                           state_version=second["state_version"], plan_version=second["plan_version"], bank=bank)
+    assert error.value.code == "INSUFFICIENT_FUNDS"
+    await db.rollback()
+    assert (await task_snapshot(db, second["task_id"], "U1"))["phase"] == "WAITING_CONFIRMATION"
+    assert await held_cash(db, "A1") == 80000
+
+    # An immediate transfer may only spend free cash, never the locked 800.
+    spend, _ = await _ready_task(db, "spend-locked", amount=750.0)
+    result = await accept_task(db, bank, task_id=spend["task_id"], user_id="U1",
+                               request_id="lock-accept-spend", state_version=spend["state_version"])
+    assert result["outcome"] == "FAILED"
+    assert (await db.get(AccountORM, "A1", populate_existing=True)).balance_fen == 150000
+
+    # Changing the scheduled amount returns the old lock; re-confirming locks the new amount.
+    modified = await modify_task(db, bank, task_id=first["task_id"], user_id="U1", request_id="lock-modify",
+                                 state_version=waiting["state_version"], operation_id="lock-operation-first-v2",
+                                 from_account="A1", to_account="A2", amount=500.0, note=None)
+    assert await held_cash(db, "A1") == 0
+    await confirm_task(db, task_id=first["task_id"], user_id="U1", request_id="lock-confirm-first-v2",
+                       state_version=modified["state_version"], plan_version=modified["plan_version"], bank=bank)
+    assert await held_cash(db, "A1") == 50000
+    assert await execute_due_scheduled_transfers(db, bank, now=execute_at + timedelta(seconds=1)) == 1
+    assert (await db.get(AccountORM, "A1", populate_existing=True)).balance_fen == 100000
+    assert await held_cash(db, "A1") == 0

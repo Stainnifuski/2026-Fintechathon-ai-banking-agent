@@ -9,3 +9,6 @@ config/wealth/portfolio_public_evidence/** -whitespace
 
 # The shared Bash launcher must remain executable text on Windows and Unix.
 scripts/start_bank.sh text eol=lf
+
+# Skill 文件的 SHA-256 记录在 backend/app/security/skill_hashes.json（按 LF 计算），任何系统上都必须保持 LF，否则后端拒绝启动。
+backend/app/skills/**/SKILL.md text eol=lf

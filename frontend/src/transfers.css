@@ -80,3 +80,65 @@
  .transfers-page .transfer-dialogue .row > input {flex-basis:100%}
  .transfers-page .recipient-history-entry > .recipient-entry,.transfers-page .recipient-manage > span {flex-basis:100%}
 }
+
+/* ---------- 新建转账 / 发起收款：两列表单，分段选择，卡片内提示 ---------- */
+.transfers-page .transfer-form {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 18px;align-items:start}
+.transfers-page .transfer-form .span-2 {grid-column:1/-1}
+.transfers-page .transfer-form > p {margin:0}
+.transfers-page .transfer-field {display:grid;gap:8px;min-width:0}
+.transfers-page .transfer-field-head {display:flex;align-items:center;justify-content:space-between;gap:12px;color:#475467;font-size:13px}
+.transfers-page .transfer-field-label {color:#475467;font-size:13px;line-height:1.7}
+.transfers-page .transfer-segmented {display:inline-flex;gap:2px;padding:3px;border:1px solid #dcdfe6;border-radius:999px;background:#fff}
+.transfers-page .transfer-segmented button {min-height:32px;padding:6px 16px;border:0;background:transparent;color:#475467;font-size:13px}
+.transfers-page .transfer-segmented button[aria-pressed=true] {background:#171b30;color:#fff}
+.transfers-page .transfer-schedule {display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.transfers-page .transfer-schedule input {flex:0 1 240px}
+.transfers-page .transfer-submit {display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.transfers-page .transfer-text-actions button {width:auto;min-width:0;height:auto;padding:6px 12px;font-size:13px;background:transparent;border-color:transparent;color:#087785}
+.transfers-page .transfer-text-actions button[aria-expanded=true] {background:#e6f3f4;color:#087785;border-color:#d4e8ea}
+.transfers-page .payer-list {display:grid;gap:4px;max-height:220px;overflow:auto;padding:6px;border:1px solid #e1e6ed;border-radius:12px}
+.transfers-page .payer-option {display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;color:#171b30}
+.transfers-page .payer-option:hover {background:#f6f8fb}
+.transfers-page .payer-option span {display:grid;gap:2px;min-width:0}
+.transfers-page .payer-option strong {font-size:14px;line-height:1.5}
+.transfers-page .payer-option small {font-size:12px}
+.transfers-page .transfer-request-create .add-contact-details {margin:2px 0 0}
+.transfers-page .transfer-form > .transfer-wide-button {justify-self:stretch;min-height:42px;font-size:14px}
+
+/* ---------- 最近流水：独占一行的表格，每页 5 笔 ---------- */
+.transfers-page .transfer-dialogue {order:5}
+.transfers-page .transfer-ledger {margin-top:0}
+.transfers-page .transfer-ledger .transfer-heading {display:flex;align-items:baseline;justify-content:space-between}
+.transfers-page .ledger-table-wrap {overflow-x:auto;margin:0 -4px}
+.transfers-page .ledger-table {width:100%;border-collapse:collapse;font-size:14px}
+.transfers-page .ledger-table th {text-align:left;font-weight:500;font-size:12px;color:#667085;padding:0 8px 10px;border-bottom:1px solid #edf0f4;white-space:nowrap}
+.transfers-page .ledger-table td {padding:14px 8px;border-bottom:1px solid #edf0f4;vertical-align:middle;line-height:1.5}
+.transfers-page .ledger-table tr:last-child td {border-bottom:0}
+.transfers-page .ledger-table .r {text-align:right;white-space:nowrap}
+.transfers-page .ledger-time {font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:13px;white-space:nowrap;color:#34394b}
+.transfers-page .ledger-table td small {font-size:12px}
+.transfers-page .ledger-amount {font-variant-numeric:tabular-nums;font-family:ui-monospace,"Cascadia Mono",Consolas,monospace}
+.transfers-page .ledger-amount.out {color:#171b30}
+.transfers-page .ledger-amount.in {color:#087443}
+.transfers-page .ledger-amount.pending {color:#98a2b3}
+.transfers-page .ledger-status {display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.transfers-page .ledger-status-ok {background:#e7f5ec;color:#087443}
+.transfers-page .ledger-status-warn {background:#fdf3df;color:#8a5a00}
+.transfers-page .ledger-status-danger {background:#fdeceb;color:#b42318}
+.transfers-page .ledger-status-plain {background:#f2f4f7;color:#667085}
+.transfers-page .ledger-pager {display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:14px;font-size:13px;color:#667085}
+@container transfers-page (max-width:620px) {
+ .transfers-page .transfer-form {grid-template-columns:minmax(0,1fr)}
+}
+
+/* ---------- 两列各自往下排：卡片高度不同也不会留空白 ---------- */
+.transfers-page > .transfer-board {display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start;margin-bottom:20px}
+.transfers-page .transfer-col {display:contents}
+.transfers-page .transfer-accounts {order:1}
+.transfers-page .transfer-compose {order:2}
+.transfers-page .transfer-request-create {order:3}
+.transfers-page .transfer-request-list {order:4}
+@container transfers-page (min-width:900px) {
+ .transfers-page > .transfer-board {grid-template-columns:repeat(2,minmax(0,1fr))}
+ .transfers-page .transfer-col {display:grid;gap:20px;align-content:start;min-width:0}
+}

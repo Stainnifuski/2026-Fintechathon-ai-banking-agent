@@ -267,3 +267,55 @@ async def release_payment_request(
     except BankError as error:
         await db.rollback()
         _raise_bank_error(error)
+
+
+class ScheduledHoldPlace(BaseModel):
+    subject_user_id: str
+    account_id: str = Field(min_length=1, max_length=32)
+    amount_fen: int = Field(gt=0, strict=True)
+    purpose: str = Field(min_length=1, max_length=24)
+    reference_id: str = Field(min_length=1, max_length=64)
+    link_keys: list[str] = Field(default_factory=list, max_length=8)
+
+
+class ScheduledHoldLink(BaseModel):
+    subject_user_id: str
+    link_key: str = Field(min_length=1, max_length=96)
+
+
+class ScheduledHoldRelease(BaseModel):
+    subject_user_id: str
+    purpose: str = Field(min_length=1, max_length=24)
+    reference_id: str = Field(min_length=1, max_length=64)
+    keep_hold_id: str | None = Field(default=None, max_length=64)
+
+
+@router.put("/scheduled-holds/{hold_id}", dependencies=[Depends(require_internal_token)])
+async def place_scheduled_hold(hold_id: str, request: ScheduledHoldPlace, db: AsyncSession = Depends(get_db)) -> dict:
+    """为定时任务锁定活期资金；可自由支配余额不足时拒绝。"""
+    from ..services.bank.scheduled_holds import place_hold
+    try:
+        return await place_hold(db, hold_id=hold_id, **request.model_dump())
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)
+
+
+@router.post("/scheduled-holds/{hold_id}/links", status_code=204, dependencies=[Depends(require_internal_token)])
+async def link_scheduled_hold(hold_id: str, request: ScheduledHoldLink, db: AsyncSession = Depends(get_db)) -> None:
+    from ..services.bank.scheduled_holds import link_hold
+    try:
+        await link_hold(db, hold_id=hold_id, **request.model_dump())
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)
+
+
+@router.post("/scheduled-holds/release", dependencies=[Depends(require_internal_token)])
+async def release_scheduled_holds(request: ScheduledHoldRelease, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    from ..services.bank.scheduled_holds import release_holds
+    try:
+        return await release_holds(db, **request.model_dump())
+    except BankError as error:
+        await db.rollback()
+        _raise_bank_error(error)

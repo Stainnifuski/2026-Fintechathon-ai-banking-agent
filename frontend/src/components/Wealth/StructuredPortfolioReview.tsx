@@ -32,7 +32,7 @@ export default function StructuredPortfolioReview({plan:initialPlan,onPrepare,on
     finally{continuing.current=false;setBusy(false);onActivity();}
   };
   useStepInstruction('allocation',()=>{if(!busy&&!missing&&snapshot?.valuation_complete&&!prepared)void prepare();});
-  const completed=()=>{if(prepared?.stage==='SELL'){void continuePurchase();return;}setNotice('本次规划交易已完成，资金与持仓以银行结果为准。');onFlowActive(false);onActivity();};
+  const completed=()=>{if(prepared?.stage==='SELL'){void continuePurchase();return;}setNotice('本次规划交易已完成，资金与持仓以银行结果为准。');steps?.complete('trade');onFlowActive(false);onActivity();};
   return <section aria-label="模型理财规划">
     {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
     {!snapshot?<><p role="status">正在读取规划资产资料…</p>{error&&<button onClick={()=>setReload(n=>n+1)}>重试读取</button>}</>:<>

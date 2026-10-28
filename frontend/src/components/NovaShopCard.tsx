@@ -5,6 +5,7 @@ import * as cakeShop from '../services/cakeShop';
 import * as flowerShop from '../services/flowerShop';
 import { dismissNovaShopTask, linkNovaShopTask, type NovaChatShopTask } from '../services/nova';
 import { SecondFactor } from './SecondFactor';
+import { formatFen } from '../utils/money';
 
 type ShopKey = 'flower' | 'cake';
 type Product = { product_id: string; name: string; description: string; price_fen: number };
@@ -15,7 +16,7 @@ const ORDER_STATUS: Record<string, string> = {
   REFUNDED: '已退款', PARTIALLY_REFUNDED: '部分退款',
 };
 const RISK: Record<string, string> = { green: '低风险', yellow: '需本人确认', red: '需确认 + 验证码' };
-const yuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`;
+const yuan = (fen: number) => formatFen(fen);
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const errorText = (err: unknown) => {
   const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;

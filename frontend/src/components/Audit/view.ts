@@ -1,4 +1,5 @@
 import type { AuditEvent } from '../../services/audit';
+import { formatFen } from '../../utils/money';
 
 export const domains: Record<string, string> = {
   transfer: '转账', payments: '付款与退款', wealth: '理财', cards: '卡片', subscriptions: '订阅',
@@ -51,7 +52,7 @@ export function evidenceSummary(event: AuditEvent): string[] {
   const result = (facts.result || {}) as Record<string, unknown>;
   const values = { ...params, ...result, ...facts };
   const notes: string[] = [];
-  if (typeof values.amount_fen === 'number') notes.push(`金额 ¥${(values.amount_fen / 100).toFixed(2)}`);
+  if (typeof values.amount_fen === 'number') notes.push(`金额 ${formatFen(values.amount_fen)}`);
   if (values.currency) notes.push(`币种 ${values.currency}`);
   if (values.rule_id) notes.push(`依据 ${values.rule_id}`);
   if (values.mfa_method) notes.push(`验证方式 ${values.mfa_method === 'sms' ? '短信' : values.mfa_method === 'totp' ? '验证器' : values.mfa_method}`);

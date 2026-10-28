@@ -142,6 +142,16 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 }
 
 .nova-messages { display: flex; flex-direction: column; gap: 12px;  }
+/* Transparent rails keep the page gradient visible beneath the glass-like thumb. */
+* { scrollbar-width:thin; scrollbar-color:rgba(119,104,160,.38) transparent; }
+@supports selector(::-webkit-scrollbar) {
+ * { scrollbar-width:auto; scrollbar-color:auto; }
+ ::-webkit-scrollbar { width:10px; height:10px; }
+ ::-webkit-scrollbar-track,::-webkit-scrollbar-corner { background:transparent; }
+ ::-webkit-scrollbar-thumb { border:3px solid transparent; border-radius:999px; background:linear-gradient(135deg,rgba(179,169,205,.48),rgba(111,100,151,.36)); background-clip:padding-box; }
+ ::-webkit-scrollbar-thumb:hover { background-color:rgba(119,104,160,.22); }
+}
+@media(forced-colors:active){*{scrollbar-color:auto}}
 .nova-turn-entry { display: grid; gap: 10px; min-width: 0; }
 .nova-task-anchor { min-width: 0; scroll-margin-top: 12px; }
 .nova-pinned-stack { position: sticky; top: 0; z-index: 8; height: 0; }
@@ -176,6 +186,11 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .nova-transfer-verify { display: grid; gap: 8px; }
 .nova-transfer-verify input { width: 100%; }
 .nova-collection-form { display: grid; gap: 10px; }
+.nova-card-current { display: flex; flex-wrap: wrap; gap: 4px 12px; color: #526174; font-size: 12px; }
+.nova-card-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; border-top: 1px solid #e5e9f2; border-bottom: 1px solid #e5e9f2; }
+.nova-card-actions button { min-height: 32px; padding: 5px 10px; border-radius: 999px; font-size: 12px; }
+.nova-card-actions button[aria-pressed="true"] { background: #2459cd; border-color: #2459cd; color: #fff; }
+.nova-card-actions button.card-danger:not([aria-pressed="true"]) { color: #b42318; border-color: #efccc9; }
 .nova-collection-form > label { display: grid; gap: 5px; font-size: 13px; }
 .nova-collection-form input:not([type="checkbox"]), .nova-collection-form select { width: 100%; }
 .nova-collection-form fieldset { display: grid; gap: 6px; min-width: 0; border: 1px solid #d9e2ff; border-radius: 8px; }
@@ -325,3 +340,7 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 /* 新版本部署提示：固定在顶部，不遮挡安全区。 */
 .app-update-banner { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 50%; z-index: 1000; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; max-width: calc(100% - 32px); padding: 10px 16px; border: 1px solid #c7d4ff; border-radius: 10px; background: #f3f6ff; color: #1f2a44; box-shadow: 0 6px 20px rgba(31, 42, 68, 0.12); font-size: 14px; }
 .app-update-banner button { padding: 6px 12px; }
+
+/* 侧栏导航线条图标：颜色继承外层（彩色方块里为白色），尺寸不随按钮字号变化 */
+.bank-sidebar .nav-icon {width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block}
+.sidebar-audit-button .nav-icon {width:18px;height:18px}

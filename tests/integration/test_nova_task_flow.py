@@ -20,8 +20,6 @@ async def test_auto_focus_without_supplement_button_and_child_step(store):
         await seed(db)
         ctx=await flow.focus(context(db))
         assert ctx.wealth_task_id=='NW-holdings' and ctx.wealth_stage=='redemption_input'
-        assert not await flow.guard_tool(ctx,'manage_wealth_request')
-        assert not await flow.guard_tool(ctx,'get_current_time')
         assert not await flow.public(ctx)
 
 
@@ -33,8 +31,7 @@ async def test_proposal_cancel_and_replacement_preserve_original_until_confirmat
         proposal=await flow.propose(ctx,'理财规划')
         token=proposal['task_switch']['token']
         assert not (await db.get(WealthConversationORM,'NW-holdings')).data.get('closed')
-        _,waiting=await flow.decide(ctx)
-        assert waiting['task_switch']['token']==token
+        assert (await flow.public(ctx))['token']==token
         _,cancelled=await flow.decide(replace(ctx,task_switch_token=token,accept_task_switch=False))
         assert '保留' in cancelled['reply'] and not await flow.public(ctx)
         p=await flow.propose(ctx,'理财规划')
@@ -105,26 +102,26 @@ async def test_switch_draft_transfer_refreshes_version_before_target(store):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('action',['switch','read','continue'])
-async def test_router_distinguishes_switch_read_and_continuation(store,monkeypatch,action):
+@pytest.mark.parametrize('action',['new','read','continue'])
+async def test_router_distinguishes_new_read_and_continuation(store,monkeypatch,action):
     async with store() as db:
         await seed(db)
         ctx=await flow.focus(context(db))
         monkeypatch.setattr(nova,'get_mode',lambda:'model')
         monkeypatch.setattr(nova,'route_request',AsyncMock(return_value=nova.RequestRoute(
             mode='direct_react',domains=['wealth' if action!='read' else 'time'],has_dependencies=False,
-            task_action=action,target_label='理财规划' if action=='switch' else None)))
+            task_action=action,target_label='理财规划' if action=='new' else None)))
         tool=AsyncMock(return_value={'reply':'原任务补充','wealth_cards':[]})
         monkeypatch.setattr(nova,'execute_tool',tool)
         monkeypatch.setattr(nova.llm,'generate_with_tools',AsyncMock(return_value=SimpleNamespace(data={
             'role':'assistant','content':None,'tool_calls':[{'id':'call-one','type':'function','function':{
-                'name':'manage_wealth_request','arguments':'{}'}}]})))
+                'name':'plan_wealth','arguments':'{}'}}]})))
         # For read, return final structured response so no mutation can run.
         if action=='read':
             nova.llm.generate_with_tools.return_value=SimpleNamespace(data={'role':'assistant','content':'{}','tool_calls':[]})
-        result=await nova._chat('转向规划' if action=='switch' else '补充',[],context=ctx)
-        if action=='switch':
-            assert result['task_switch']['target_label']=='理财规划' and tool.await_count==0
+        result=await nova._chat('另做规划' if action=='new' else '补充',[],context=ctx)
+        if action=='new':
+            assert tool.await_count==1 and tool.await_args.args[1].wealth_task_id is None
         elif action=='continue':assert tool.await_count==1
         else:assert tool.await_count==0 and not await flow.public(ctx)
         assert not (await db.get(WealthConversationORM,'NW-holdings')).data.get('closed')
@@ -179,19 +176,18 @@ async def test_expired_switch_does_not_trap_conversation(store,monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_multiple_legacy_tasks_require_disambiguation_instead_of_guessing(store):
+async def test_multiple_legacy_tasks_can_still_select_explicit_focus(store):
     async with store() as db:
         await seed(db)
         db.add(WealthConversationORM(session_id='NW-other',user_id='U1',version=1,data={
             'nova_session_id':'NOVA-test-session','command':{'kind':'planning'},'closed':False}))
         await db.commit();ctx=context(db)
         assert (await flow.active(ctx))['type']=='ambiguous'
-        assert (await flow.guard_tool(ctx,'manage_wealth_request'))['error']=='TASK_CONTEXT_AMBIGUOUS'
         assert (await flow.active(replace(ctx,wealth_task_id='NW-holdings')))['id']=='NW-holdings'
 
 
 @pytest.mark.asyncio
-async def test_transfer_submodel_new_intent_requires_switch_before_writes(store):
+async def test_transfer_submodel_new_intent_keeps_existing_draft(store):
     from tests.integration.test_nova_wealth import conversation
     from backend.app.services.ai.transfer_manager import process_message
     from backend.app.services.ai.nlu import TransferTurnExtraction,TransferTaskExtraction
@@ -206,9 +202,10 @@ async def test_transfer_submodel_new_intent_requires_switch_before_writes(store)
             TransferTaskExtraction(intent='transfer',task_action='create',recipient='王五',amount_text='200元')])))
         result=await process_message(db,None,nlu,user_id='U1',message=ctx.original_message,request_id=ctx.request_id,
             session_id=ctx.session_id,session_version=1,focus_task_id='one',context=ctx)
-        assert result['task_switch']['target_label']=='新的转账'
+        assert not result.get('task_switch')
         row=await db.get(NovaSessionORM,ctx.session_id)
-        assert row.version==1 and len(row.state['tasks'])==1
+        assert row.version==2 and len(row.state['tasks'])==2
+        assert row.state['tasks'][0]['status']=='COLLECTING'
 
 
 @pytest.mark.asyncio
@@ -227,8 +224,6 @@ async def test_replacing_card_preview_invalidates_previous_and_keeps_manual_conf
         assert (await db.get(CardOperationORM,'original')).status=='CANCELLED'
         updated=await db.get(CardOperationORM,'updated')
         assert updated.status=='AWAITING_CONFIRMATION' and updated.confirmed_at is None
-        updated.status='AWAITING_MFA';await db.commit()
-        assert (await flow.guard_tool(ctx,'preview_card_operation'))['error']=='TASK_WRITE_BLOCKED'
 
 
 @pytest.mark.asyncio

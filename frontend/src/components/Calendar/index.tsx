@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as calendar from '../../services/calendar';
 import type { NovaPageContext } from '../../services/nova';
@@ -203,7 +204,7 @@ export default function Calendar({ revision, onContextChange }: { revision: numb
           </li>)}</ul>}
       </aside>
     </div>
-    {open && <div className="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-form-title">
+    {open && <Modal scope="third-party" className="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-form-title">
       <section className="card"><div className="calendar-toolbar"><h2 id="calendar-form-title">添加事件</h2><button className="secondary" disabled={busy} onClick={() => setOpen(false)} aria-label="关闭添加事件">×</button></div>
         <form onSubmit={save}>
           <label>事件名称<input autoFocus required maxLength={200} value={title} placeholder="例如：生日、取蛋糕、朋友聚餐" onChange={e => setTitle(e.target.value)} /></label>
@@ -217,7 +218,7 @@ export default function Calendar({ revision, onContextChange }: { revision: numb
           <div className="calendar-actions"><button type="button" className="secondary" disabled={busy} onClick={() => setOpen(false)}>取消</button><button disabled={busy} type="submit">{busy ? '正在保存…' : '保存事件'}</button></div>
         </form>
       </section>
-    </div>}
-    {deleting && <div className="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-delete-title"><section className="card"><h2 id="calendar-delete-title">删除{deleting.recurring ? '整个重复日程' : '事件'}？</h2><p>{deleting.title}</p>{deleting.recurring && <p className="hint">此操作会删除该日程的所有日期安排。</p>}<div className="calendar-actions"><button className="secondary" disabled={busy} onClick={() => setDeleting(null)}>取消</button><button disabled={busy} onClick={remove}>{busy ? '正在删除…' : '确认删除'}</button></div></section></div>}
+    </Modal>}
+    {deleting && <Modal scope="third-party" className="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-delete-title"><section className="card"><h2 id="calendar-delete-title">删除{deleting.recurring ? '整个重复日程' : '事件'}？</h2><p>{deleting.title}</p>{deleting.recurring && <p className="hint">此操作会删除该日程的所有日期安排。</p>}<div className="calendar-actions"><button className="secondary" disabled={busy} onClick={() => setDeleting(null)}>取消</button><button disabled={busy} onClick={remove}>{busy ? '正在删除…' : '确认删除'}</button></div></section></Modal>}
   </section>;
 }

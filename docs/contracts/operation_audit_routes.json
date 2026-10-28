@@ -457,6 +457,24 @@
   },
   {
     "method": "POST",
+    "path": "/api/v1/internal/bank/scheduled-holds/release",
+    "domain": "bank",
+    "action": "release_scheduled_holds"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/internal/bank/scheduled-holds/{hold_id}",
+    "domain": "bank",
+    "action": "place_scheduled_hold"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/scheduled-holds/{hold_id}/links",
+    "domain": "bank",
+    "action": "link_scheduled_hold"
+  },
+  {
+    "method": "POST",
     "path": "/api/v1/internal/bank/sms/verify",
     "domain": "bank",
     "action": "verify_sms"
@@ -709,9 +727,27 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/nova/conversations/{session_id}/bill-results",
+    "domain": "assistant",
+    "action": "result_cards"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/debug/conversations/{session_id}",
+    "domain": "assistant",
+    "action": "list_debug_for_conversation"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/nova/debug/{request_id}",
     "domain": "assistant",
     "action": "download_debug"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nova/debug/{request_id}/view",
+    "domain": "assistant",
+    "action": "view_debug"
   },
   {
     "method": "GET",
@@ -733,6 +769,36 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/nova/presentation/{session_id}",
+    "domain": "assistant",
+    "action": "presentation_state"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/candidate",
+    "domain": "assistant",
+    "action": "manual_candidate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/draft",
+    "domain": "assistant",
+    "action": "presentation_draft"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/position",
+    "domain": "assistant",
+    "action": "presentation_position"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/presentation/{session_id}/release",
+    "domain": "assistant",
+    "action": "presentation_release"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/nova/task-flow/{session_id}",
     "domain": "assistant",
     "action": "task_flow_state"
@@ -742,6 +808,12 @@
     "path": "/api/v1/nova/task-sessions/{session_id}",
     "domain": "assistant",
     "action": "task_session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{entry_id}/confirm",
+    "domain": "assistant",
+    "action": "confirm_calendar_mutation"
   },
   {
     "method": "POST",
@@ -778,6 +850,18 @@
     "path": "/api/v1/nova/task-sessions/{session_id}/collections/{collection_id}/send",
     "domain": "assistant",
     "action": "send_collection_card"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/scheduled-tasks/{entry_id}/dismiss",
+    "domain": "assistant",
+    "action": "dismiss_scheduled_card"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/scheduled-tasks/{entry_id}/task",
+    "domain": "assistant",
+    "action": "link_scheduled_card"
   },
   {
     "method": "POST",
@@ -889,6 +973,36 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/scheduled-tasks",
+    "domain": "assistant",
+    "action": "list_scheduled_tasks"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks",
+    "domain": "assistant",
+    "action": "create_custom_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks/{task_id}/cancel",
+    "domain": "assistant",
+    "action": "cancel_custom_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks/{task_id}/finish",
+    "domain": "assistant",
+    "action": "finish_custom_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks/{task_id}/start",
+    "domain": "assistant",
+    "action": "start_custom_task"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/subscriptions",
     "domain": "subscriptions",
     "action": "list_user_subscriptions"
@@ -904,6 +1018,12 @@
     "path": "/api/v1/subscriptions/{subscription_id}/cancel-preview",
     "domain": "subscriptions",
     "action": "preview_cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/subscriptions/{subscription_id}/restore-test",
+    "domain": "subscriptions",
+    "action": "restore_user_subscription_for_testing"
   },
   {
     "method": "POST",

@@ -150,5 +150,11 @@ async def remove(db: AsyncSession,user_id: str,session_id: str):
     from ...models.nova_bill_action import NovaBillActionORM
     await db.execute(delete(NovaBillActionORM).where(NovaBillActionORM.session_id==session_id,
         NovaBillActionORM.user_id==user_id))
+    from ...models.nova_bill_result import NovaBillResultORM
+    await db.execute(delete(NovaBillResultORM).where(NovaBillResultORM.session_id==session_id,
+        NovaBillResultORM.user_id==user_id))
+    from ...models.nova_agent_runtime import NovaAgentRuntimeORM
+    await db.execute(delete(NovaAgentRuntimeORM).where(NovaAgentRuntimeORM.conversation_id==session_id,
+        NovaAgentRuntimeORM.user_id==user_id))
     await db.delete(row)
     await db.commit()

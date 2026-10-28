@@ -181,6 +181,58 @@ async def test_simulated_charge_updates_balance_history_and_next_date(subscripti
 
 
 @pytest.mark.asyncio
+async def test_scheduler_charges_only_due_cycle_once(subscription_store) -> None:
+    from backend.app.services.orchestration.scheduler import execute_due_subscription_charges
+
+    before = datetime(2026, 10, 11, 23, 59, tzinfo=timezone.utc)
+    due = datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc)
+    async with subscription_store() as session:
+        assert await execute_due_subscription_charges(session, now=before) == 0
+    async with subscription_store() as session:
+        assert await execute_due_subscription_charges(session, now=due) == 1
+        assert await execute_due_subscription_charges(session, now=due) == 0
+        account = await session.get(AccountORM, "A1", populate_existing=True)
+        subscription = await session.get(SubscriptionORM, "SUB1", populate_existing=True)
+        transactions = (await session.scalars(select(TransactionORM))).all()
+        assert account.balance == 85
+        assert subscription.state_version == 2
+        assert subscription.next_charge_at.date().isoformat() == "2026-11-12"
+        assert len(transactions) == 1
+        assert transactions[0].operation_id.startswith("subscription-renewal-")
+
+
+@pytest.mark.asyncio
+async def test_automatic_charge_rechecks_due_time_under_lock(subscription_store) -> None:
+    with pytest.raises(BankError) as error:
+        await subscription_service.simulate_subscription_charge(
+            subscription_id="SUB1", user_id="U1", state_version=1,
+            idempotency_key="premature-renewal", due_only=True,
+            execution_time=datetime(2026, 10, 11, tzinfo=timezone.utc))
+    assert error.value.code == "SUBSCRIPTION_NOT_DUE"
+    async with subscription_store() as session:
+        assert (await session.get(AccountORM, "A1")).balance == 100
+        assert (await session.scalars(select(TransactionORM))).all() == []
+
+
+@pytest.mark.asyncio
+async def test_due_charge_waits_for_funds_then_retries_same_cycle(subscription_store) -> None:
+    from backend.app.services.orchestration.scheduler import execute_due_subscription_charges
+
+    due = datetime(2026, 10, 12, tzinfo=timezone.utc)
+    async with subscription_store() as session:
+        account = await session.get(AccountORM, "A1")
+        account.balance = 10
+        await session.commit()
+        assert await execute_due_subscription_charges(session, now=due) == 0
+        assert (await session.get(SubscriptionORM, "SUB1", populate_existing=True)).state_version == 1
+        account = await session.get(AccountORM, "A1", populate_existing=True)
+        account.balance = 100
+        await session.commit()
+        assert await execute_due_subscription_charges(session, now=due) == 1
+        assert (await session.get(AccountORM, "A1", populate_existing=True)).balance == 85
+
+
+@pytest.mark.asyncio
 async def test_cancelled_subscription_cannot_be_charged(subscription_store) -> None:
     preview = await subscription_service.preview_subscription_cancellation(subscription_id="SUB1", user_id="U1")
     await subscription_service.cancel_subscription(

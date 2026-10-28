@@ -29,4 +29,19 @@
 .agent-panel .wealth-step-card[role=dialog]>button:last-of-type{float:right;background:#6d3aa6;color:white}
 .agent-panel .wealth-step-card[role=dialog]::after{content:'';display:block;clear:both}
 .nova-message .nova-markdown p,.nova-message .nova-markdown li{line-height:1.75}
+.nova-task-workbench:empty,.nova-task-anchor.is-detached{display:none}
+.nova-conversation-layout{min-width:0}
+.nova-task-workbench{min-width:0}
+@media(min-width:1101px){
+ .home-workspace.nova-expanded .agent-panel .agent-body{padding:24px}
+ .home-workspace.nova-expanded .nova-conversation-layout{display:grid;grid-template-columns:minmax(0,0fr) minmax(0,1fr);gap:0;padding-right:0;align-items:start;transition:grid-template-columns 380ms cubic-bezier(.333333,1,.666667,1),padding-right 380ms cubic-bezier(.333333,1,.666667,1),gap 380ms cubic-bezier(.333333,1,.666667,1)}
+ .home-workspace.nova-expanded .nova-conversation-layout>.nova-messages{width:100%;max-width:780px;min-width:0;justify-self:center;grid-column:2}
+ .home-workspace.nova-expanded .nova-task-workbench{display:block;grid-column:1;grid-row:1;min-width:0;position:sticky;top:0;max-height:var(--nova-body-height,65dvh);overflow:auto;overscroll-behavior:contain;direction:rtl;margin-left:-24px;padding-left:16px;padding-right:8px;scrollbar-gutter:stable}
+ .home-workspace.nova-expanded .nova-task-workbench>.nova-task-host{direction:ltr}
+ .home-workspace.nova-expanded .nova-conversation-layout.has-open-tasks{grid-template-columns:minmax(0,1.8fr) minmax(0,1.4fr);padding-right:12%;gap:24px}
+ .nova-task-workbench>.nova-task-host:first-child>.nova-task-surface{margin-top:0}
+ .home-workspace.nova-expanded .nova-task-workbench>.nova-task-host{min-width:0}
+ .home-workspace.nova-expanded .nova-task-workbench .nova-task-surface{overflow-wrap:anywhere}
+}
+@media(prefers-reduced-motion:reduce){.home-workspace.nova-expanded .nova-conversation-layout{transition:none}}
 @media(max-width:540px){.nova-task-surface{padding:15px}.nova-task-header h3{font-size:16px}.nova-confirm-overlay{padding:12px}.nova-confirm-overlay>section{padding:20px}.nova-title-row{flex-wrap:wrap}}

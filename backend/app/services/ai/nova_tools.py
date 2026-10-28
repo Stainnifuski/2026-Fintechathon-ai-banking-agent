@@ -318,6 +318,8 @@ def business_tools() -> dict:
     tools.update(calendar_tools())
     tools.update(shop_tools())
     tools.update(card_subscription_tools())
+    from .scheduled_task_tools import scheduled_task_tools
+    tools.update(scheduled_task_tools())
     from .bill_tools import bill_tools
     tools.update(bill_tools())
     return tools

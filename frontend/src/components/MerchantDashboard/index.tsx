@@ -1,9 +1,11 @@
+import Modal from '../Modal';
 import { beijingTime } from '../../utils/time';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Account, Transaction, User } from '../../services/bank';
 import * as flowerShop from '../../services/flowerShop';
 import * as cakeShop from '../../services/cakeShop';
 import './styles.css';
+import { formatYuan } from '../../utils/money';
 
 interface Props {
   user: User;
@@ -74,7 +76,7 @@ export default function MerchantDashboard({
       const updated = await shop.refundOrder(pendingRefund,fen,refundOperation);
       setOrders(items => items.map(item => item.order_id === updated.order_id ? updated : item));
       setPendingRefund(null);
-      setNotice(`订单 ${updated.order_id} 已退款 ¥${(fen/100).toFixed(2)}，累计已退 ¥${(updated.refunded_fen/100).toFixed(2)}。`);
+      setNotice(`订单 ${updated.order_id} 已退款 ${formatYuan((fen/100))}，累计已退 ${formatYuan((updated.refunded_fen/100))}。`);
       await onRefresh();
     } catch (error) {
       setNotice(errorMessage(error));
@@ -105,11 +107,11 @@ export default function MerchantDashboard({
     <section className="merchant-summary">
       <article className="merchant-balance">
         <span>商户账户余额</span>
-        <strong>¥{account?.balance.toFixed(2) ?? '0.00'}</strong>
-        <small>{account?.card_number ?? '账户加载中'} · 可用 ¥{((account?.available_fen ?? 0) / 100).toFixed(2)}</small>
+        <strong>{formatYuan(account?.balance ?? 0)}</strong>
+        <small>{account?.card_number ?? '账户加载中'} · 可用 {formatYuan(((account?.available_fen ?? 0) / 100))}</small>
       </article>
-      <article><span>当前已收款订单</span><strong>¥{totals.paid.toFixed(2)}</strong><small>不含已退款订单</small></article>
-      <article><span>累计退款</span><strong>¥{totals.refunded.toFixed(2)}</strong><small>原路退回顾客付款账户</small></article>
+      <article><span>当前已收款订单</span><strong>{formatYuan(totals.paid)}</strong><small>不含已退款订单</small></article>
+      <article><span>累计退款</span><strong>{formatYuan(totals.refunded)}</strong><small>原路退回顾客付款账户</small></article>
       <article><span>待付款订单</span><strong>{totals.pending}</strong><small>等待顾客在银行确认</small></article>
     </section>
 
@@ -124,9 +126,9 @@ export default function MerchantDashboard({
               <small>{beijingTime(order.created_at)}</small>
             </div>
             <div className="merchant-order-action">
-              <strong>¥{order.total.toFixed(2)}</strong>
+              <strong>{formatYuan(order.total)}</strong>
               <span className={`merchant-status ${order.status.toLowerCase()}`}>{orderStatus[order.status]}</span>
-              {['COMPLETED','PARTIALLY_REFUNDED'].includes(order.status) && <><small>已退 ¥{((order.refunded_fen||0)/100).toFixed(2)} · 剩余可退 ¥{((order.remaining_refundable_fen||0)/100).toFixed(2)}</small><button className="secondary" disabled={busy} onClick={() => {setPendingRefund(order);setRefundAmount(String(order.remaining_refundable_fen/100));setRefundOperation(crypto.randomUUID());}}>退款…</button></>}
+              {['COMPLETED','PARTIALLY_REFUNDED'].includes(order.status) && <><small>已退 {formatYuan(((order.refunded_fen||0)/100))} · 剩余可退 {formatYuan(((order.remaining_refundable_fen||0)/100))}</small><button className="secondary" disabled={busy} onClick={() => {setPendingRefund(order);setRefundAmount(String(order.remaining_refundable_fen/100));setRefundOperation(crypto.randomUUID());}}>退款…</button></>}
             </div>
           </li>)}
         </ul>}
@@ -140,22 +142,22 @@ export default function MerchantDashboard({
             const label = transaction.type === 'merchant_sale' ? '订单收款' : outgoing ? '订单退款' : transaction.type;
             return <li key={transaction.tx_id}>
               <div><strong>{label} · {transaction.counterparty}</strong><small>{transaction.note || '无备注'}</small><small>{beijingTime(transaction.timestamp)}</small></div>
-              <strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}¥{transaction.amount.toFixed(2)}</strong>
+              <strong className={outgoing ? 'out' : 'in'}>{outgoing ? '-' : '+'}{formatYuan(transaction.amount)}</strong>
             </li>;
           })}
         </ul>}
       </div>
     </section>
 
-    {pendingRefund && <div className="merchant-modal" role="dialog" aria-modal="true" aria-label="确认退款">
+    {pendingRefund && <Modal scope="merchant-dashboard" className="merchant-modal" role="dialog" aria-modal="true" aria-label="确认退款">
       <section className="card">
         <p className="merchant-kicker">退款确认</p>
         <h2>向 {pendingRefund.payment_request?.payer_name || '顾客'} 退款？</h2>
         <p>订单：{pendingRefund.product_name} × {pendingRefund.quantity}</p>
-        <p>原付款 ¥{pendingRefund.total.toFixed(2)} · 已退 ¥{(pendingRefund.refunded_fen/100).toFixed(2)} · 剩余可退 ¥{(pendingRefund.remaining_refundable_fen/100).toFixed(2)}</p><label>本次退款金额（元）<input aria-label="本次退款金额" disabled={busy} type="number" min="0.01" step="0.01" max={pendingRefund.remaining_refundable_fen/100} value={refundAmount} onChange={e=>{setRefundAmount(e.target.value);setRefundOperation(crypto.randomUUID());}} /></label>
+        <p>原付款 {formatYuan(pendingRefund.total)} · 已退 {formatYuan((pendingRefund.refunded_fen/100))} · 剩余可退 {formatYuan((pendingRefund.remaining_refundable_fen/100))}</p><label>本次退款金额（元）<input aria-label="本次退款金额" disabled={busy} type="number" min="0.01" step="0.01" max={pendingRefund.remaining_refundable_fen/100} value={refundAmount} onChange={e=>{setRefundAmount(e.target.value);setRefundOperation(crypto.randomUUID());}} /></label>
         <p className="hint">确认后银行将从商户账户原路退回顾客付款账户，并生成双方退款流水。支持多次部分退款，累计不超过原付款。按原操作重试不会重复记账。</p>
         <div className="confirm"><button className="secondary" disabled={busy} onClick={() => setPendingRefund(null)}>返回</button><button disabled={busy} onClick={confirmRefund}>{busy ? '退款处理中…' : '确认退款'}</button></div>
       </section>
-    </div>}
+    </Modal>}
   </main>;
 }

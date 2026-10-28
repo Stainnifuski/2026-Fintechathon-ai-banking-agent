@@ -36,7 +36,8 @@ from .routers.cake_shop import router as cake_shop_router
 from .routers.calendar import router as calendar_router
 from .routers.audit import router as audit_router
 from .routers.voice import router as voice_router
-from .services.orchestration.scheduler import scheduled_transfer_loop
+from .routers.scheduled_tasks import router as scheduled_tasks_router
+from .services.orchestration.scheduler import scheduled_transfer_loop, subscription_charge_loop
 from .services.orchestration.wealth_task_worker import loop as wealth_task_loop
 from .services.ai.llm import get_mode, get_settings, llm
 
@@ -101,6 +102,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning('Portfolio material unavailable: %s',type(error).__name__)
         workers.append(asyncio.create_task(
             scheduled_transfer_loop(AsyncSessionLocal, get_bank_api()), name="scheduled-transfer-loop"))
+        workers.append(asyncio.create_task(
+            subscription_charge_loop(AsyncSessionLocal), name="subscription-charge-loop"))
         workers.append(asyncio.create_task(wealth_task_loop(AsyncSessionLocal), name="wealth-dag-loop"))
         from .services.audit.writer import recovery_loop
         workers.append(asyncio.create_task(recovery_loop(AsyncSessionLocal), name="audit-recovery-loop"))
@@ -128,6 +131,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(wealth_tasks_router)
+app.include_router(scheduled_tasks_router)
 from .routers.bill_foundations import router as bill_foundations_router
 app.include_router(bill_foundations_router)
 from .routers.bill_features import router as bill_features_router

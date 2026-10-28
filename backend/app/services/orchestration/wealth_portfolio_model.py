@@ -1,5 +1,4 @@
 """01正式计算provider，独立调用，不注册中央应用、不写数据库。"""
-import secrets
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from decimal import Decimal,localcontext
@@ -258,11 +257,11 @@ class PortfolioModelProvider:
             if actual<lo-1e-10 or actual>hi+1e-10:raise ModelError('ROUNDED_TARGET_OUTSIDE_INTERVAL')
             buckets.append(BucketTarget(bucket=b,min_ratio=ratios[i] if planning_cash is not None else str(max(0.,min(lo,actual))),target_ratio=ratios[i],max_ratio=ratios[i] if planning_cash is not None else str(min(1.,max(hi,actual))),target_fen=model['amounts_fen'][i],current_fen=round(h[i]*T) if h else None,reason='固定政策、偏好参考与当前持仓的凸投影；区间属于同一目标损失预算。'))
         group_results=[]
-        # 当前事实上的确定性板块选品；不借会话多次读取混合版本。
+        # 同一事实快照下使用正式类别／代码顺序，保证不同入口生成相同候选。
         for bucket in BUCKETS:
             r=pipeline(index,CandidateFilter(mode='general',bucket=bucket),facts,user_id,now,
                        checked_decisions={d.product_id:d for d in eligible.decisions});pool=r.family_candidates
-            ids=secrets.SystemRandom().sample([f.family_id for f in pool],min(3,len(pool))) if pool else []
+            ids=self.candidates.selector.select(pool,set(),3)
             # CandidateGroup consumes these explanations, not the complete
             # per-product decision dump. Avoid allocating the whole directory
             # three more times; eligibility and all exclusions stay unchanged.
@@ -271,8 +270,8 @@ class PortfolioModelProvider:
                  'items':[f.model_dump(mode='json') for f in pool if f.family_id in ids]}
             group=adapt_candidate_group(raw,index,CandidateFilter(mode='general',bucket=bucket))
             for card in group.items:
-                card.reason=card.reason.split('类别／代码展示顺序')[0]+'本组随机展示，不代表收益或质量排名。'
-                card.reason_codes=['QUALIFIED_SHARE','RANDOM_PLANNING_DISPLAY']
+                card.reason=card.reason.split('类别／代码展示顺序')[0]+'类别／代码展示顺序不代表收益或质量排名。'
+                card.reason_codes=['QUALIFIED_SHARE','DETERMINISTIC_CATEGORY_CODE_ORDER']
             group_results.append(group)
         plan=None
         if not product_missing and cash_target is not None:

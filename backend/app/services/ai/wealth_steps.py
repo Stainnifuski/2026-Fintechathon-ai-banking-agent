@@ -15,6 +15,16 @@ def sequence(kind):
     return ['match','candidates','selected','amounts','purchase_review','trade']
 
 
+def effective_kind(data):
+    """Use the user's explicit card workflow while it belongs to this request."""
+    kind=data['command']['kind']
+    view=data.get('view_context') or {}
+    if (kind in {'recommend','purchase'} and view.get('workflow')=='planning'
+            and view.get('workflow_request_id')==data.get('request_id')):
+        return 'planning'
+    return kind
+
+
 def parameter_stage(prior,command,fallback=None):
     """Dependencies come from actual changed parameters, not a model's stage claim."""
     old=prior.get('command') or {};view=prior.get('view_context') or {}
@@ -50,7 +60,7 @@ def affected(kind, stage):
 
 def reset_data(data, stage, command=None):
     result=deepcopy(data)
-    kind=data['command']['kind']
+    kind=effective_kind(data)
     invalid=affected(kind,stage)
     view=result.setdefault('view_context',{})
     view['completed_stages']=[s for s in view.get('completed_stages',[]) if s not in invalid]
