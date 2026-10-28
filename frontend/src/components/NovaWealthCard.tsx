@@ -81,9 +81,10 @@ export default function NovaWealthCard({card,userId,disabled,onUpdated,onActivit
  };
  const activity=()=>{setRevision(n=>n+1);onActivity();};
  const restoredCashField=card.view_context?.cash_field;
- const command={...card.command,cash_field:restoredCashField==='investment'?'invest' as const:restoredCashField??card.command.cash_field,
+ const products=card.command.products??[];
+ const command={...card.command,products,cash_field:restoredCashField==='investment'?'invest' as const:restoredCashField??card.command.cash_field,
   cash_yuan:card.view_context?.cash_yuan??card.command.cash_yuan,
-  amounts_yuan:card.command.products.map((p,i)=>card.view_context?.amounts_yuan?.[p.product_id]??card.command.amounts_yuan[i]??null)};
+  amounts_yuan:products.map((p,i)=>card.view_context?.amounts_yuan?.[p.product_id]??card.command.amounts_yuan?.[i]??null)};
  return <WealthStepContext.Provider value={{taskId:card.task_id,focusedStage,instruction:card.instruction?.id===restoredInstruction.current?undefined:card.instruction,focus:onFocus,draft:saveDraft,completed,active,register,complete,backtrack,reopenedStage:card.reopen_stage}}><section ref={root} id={`nova-wealth-${card.task_id}`} className="nova-wealth-card wealth-page" aria-label={taskTitle}>
   <div className="nova-wealth-task-head"><div><h3>{taskTitle}</h3><small>{card.paused?'已暂停':card.closed?'草稿已放弃':readOnly?'比赛模拟 · 查询结果':'比赛模拟 · 待本人核对'}</small></div><button className="secondary" onClick={()=>setExpanded(v=>!v)}>{expanded?'折叠':'展开'}</button>{!card.closed&&!card.execution_plan_id&&<button className="nova-card-remove" aria-label="移除理财草稿" disabled={disabled} onClick={async()=>{if(await confirm('移除理财草稿？','移除这个未提交的理财草稿，不会删除已有成交。','确认移除'))void updateNovaWealthCard(current.current,{closed:true}).then(onUpdated).catch(e=>setError(wealthRequestFailure(e)));}}>×</button>}</div>
   {!card.closed&&card.execution_plan_id&&<button className="secondary" disabled={disabled} onClick={()=>void updateNovaWealthCard(current.current,{reset_draft:true}).then(onUpdated).catch(e=>setError(wealthRequestFailure(e)))}>修改未提交方案（旧确认失效）</button>}

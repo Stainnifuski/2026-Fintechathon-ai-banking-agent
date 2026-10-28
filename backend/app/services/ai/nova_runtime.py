@@ -201,16 +201,23 @@ async def _payment_request_records(context: ToolContext) -> list[dict]:
 
 async def _wealth_records(context: ToolContext) -> list[dict]:
     from .wealth_agent import cards
+    from .execution_queue import wealth_state
     current = await cards(context.db, context.user_id, context.session_id)
     active_kinds = {'planning', 'recommend', 'purchase', 'positions', 'redeem', 'assessment', 'clarify'}
-    return [{'id': card['task_id'], 'type': 'wealth',
-             'status': 'PAUSED' if card.get('paused') else 'OPEN',
-             'completed': bool(card.get('closed')),
-             'description': {'kind': (card.get('command') or {}).get('kind'),
-                             'stage': (card.get('view_context') or {}).get('stage'),
-                             'paused': bool(card.get('paused'))}}
-            for card in current if not card.get('parent_task_id') and
-            (card.get('command') or {}).get('kind') in active_kinds]
+    records = []
+    for card in current:
+        if card.get('parent_task_id') or (card.get('command') or {}).get('kind') not in active_kinds:
+            continue
+        completed = bool(card.get('closed'))
+        if not completed and (card.get('execution_plan_id') or card['command']['kind']=='assessment'):
+            completed = await wealth_state(context, card['task_id'], 'settled') == 'completed'
+        records.append({'id': card['task_id'], 'type': 'wealth',
+                        'status': 'PAUSED' if card.get('paused') else 'COMPLETED' if completed else 'OPEN',
+                        'completed': completed,
+                        'description': {'kind': card['command']['kind'],
+                                        'stage': (card.get('view_context') or {}).get('stage'),
+                                        'paused': bool(card.get('paused'))}})
+    return records
 
 
 async def _load(context: ToolContext) -> tuple[NovaAgentRuntimeORM | None, dict]:

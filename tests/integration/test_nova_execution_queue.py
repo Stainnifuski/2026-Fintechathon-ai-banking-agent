@@ -152,6 +152,33 @@ async def test_queue_rejects_parallel_new_goal_and_terminal_does_not_need_consen
 
 
 @pytest.mark.asyncio
+async def test_settled_last_goal_allows_new_queue_without_manual_poll(store,monkeypatch):
+    async with store() as db:
+        ctx=await setup(db,'查看我的持仓，然后申购B017，100元')
+        async def run(message,history,**kwargs):
+            return await fake_buy(kwargs['context']) if '申购' in message else read_reply()
+        execute=AsyncMock(side_effect=run)
+        monkeypatch.setattr(nova,'chat',execute)
+        first=[{'goal_id':'read','objective':'持仓','source_text':'查看我的持仓',
+                'depends_on':[],'completion_condition':'查询完成','completion':'result'},
+               {'goal_id':'buy','objective':'申购','source_text':'申购B017，100元',
+                'depends_on':['read'],'completion_condition':'成交','completion':'settled'}]
+        result=await queue.start(ctx,{'execution_mode':'sequential','goals':first})
+        assert result['execution_queue']['status']=='waiting'
+        bank_plan=await db.get(WealthPlanORM,'plan-one')
+        bank_plan.status='COMPLETED'
+        await db.commit()
+        next_ctx=replace(ctx,request_id='new-planning-request',original_message='查看我的持仓，然后查看可用现金')
+        second={'execution_mode':'sequential','goals':[{'goal_id':'read','objective':'持仓',
+            'source_text':'查看我的持仓','depends_on':[],'completion_condition':'查询完成','completion':'result'},
+            {'goal_id':'cash','objective':'现金','source_text':'查看可用现金',
+             'depends_on':['read'],'completion_condition':'查询完成','completion':'result'}]}
+        result=await queue.start(next_ctx,second)
+        assert result['execution_queue']['status']=='completed'
+        assert execute.await_count==4
+
+
+@pytest.mark.asyncio
 async def test_real_purchase_confirmation_mfa_settlement_then_cross_scenario_read(store,http_store,monkeypatch):
     from tests.integration.test_wealth_target_purchase import selected,confirm_verify
     payload=await selected(store,monkeypatch)

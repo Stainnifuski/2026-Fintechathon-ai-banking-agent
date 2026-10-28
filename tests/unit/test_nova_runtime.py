@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from backend.app.models import Base
 from backend.app.models.nova_conversation import NovaConversationORM
 from backend.app.models.nova_task import NovaSessionORM
-from backend.app.models.wealth import WealthConversationORM
-from backend.app.services.ai import nova_runtime
+from backend.app.models.wealth import WealthConversationORM, WealthPlanORM
+from backend.app.services.ai import nova_runtime, task_flow
 from backend.app.services.ai import nova
 from backend.app.services.ai import debug_trace
 from backend.app.services.ai.nova_tools import ToolContext
@@ -90,6 +90,29 @@ async def test_wealth_tool_is_selected_and_registered_as_pending_card(context, m
     await nova_runtime.chat('继续这个理财规划', [], model=followup,
                             context=replace(context, request_id='r2', original_message='继续这个理财规划'))
     assert observed == ['NW-TEST-WEALTH']
+
+
+@pytest.mark.asyncio
+async def test_settled_planning_card_does_not_block_new_planning(context):
+    context.db.add_all([
+        WealthPlanORM(plan_id='completed-planning-plan', user_id='u1', version=1,
+                      status='COMPLETED', data={'stage':'BUY','items':[]}),
+        WealthConversationORM(session_id='NW-old-planning', user_id='u1', version=1,
+                              data={'nova_session_id':'test-session','command':{'kind':'planning'},
+                                    'execution_plan_id':'completed-planning-plan','closed':False}),
+    ])
+    await context.db.commit()
+    assert (await nova_runtime.inspect_active_tasks(context))['unfinished_execute_tasks'] == []
+    assert await task_flow.active(context) is None
+    cleared = await task_flow.focus(replace(context, wealth_task_id='NW-old-planning', wealth_stage='trade'))
+    assert cleared.wealth_task_id is None and cleared.wealth_stage is None
+    context.db.add(WealthConversationORM(session_id='NW-new-planning', user_id='u1', version=1,
+                                        data={'nova_session_id':'test-session','command':{'kind':'planning'},
+                                              'closed':False}))
+    await context.db.commit()
+    active = await nova_runtime.inspect_active_tasks(context)
+    assert [task['id'] for task in active['unfinished_execute_tasks']] == ['NW-new-planning']
+    assert (await task_flow.active(context))['id'] == 'NW-new-planning'
 
 
 @pytest.mark.asyncio

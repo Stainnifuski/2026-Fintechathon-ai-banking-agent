@@ -1,6 +1,7 @@
 """NOVA bridge isolation, replay, ownership and formal trade guard regressions."""
 from types import SimpleNamespace
 from dataclasses import replace
+from datetime import datetime,timedelta,timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,20 +13,71 @@ from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.schemas.nova import PageContext
 from backend.app.routers.nova import WealthCardState
 from backend.app.models.nova_conversation import NovaConversationORM
-from backend.app.models.wealth import WealthConversationORM, WealthOrderORM, WealthCashHoldORM, WealthPlanORM
+from backend.app.models.wealth import WealthConversationORM, WealthOrderORM, WealthCashHoldORM, WealthPlanORM, WealthAssessmentORM
 from backend.app.integrations.wealth_authorization import WealthPolicyError
 from tests.integration.test_wealth_bank import store, http_store
 from tests.integration.test_wealth_target_purchase import selected, confirm_verify
 
 
-async def conversation(db):
+def add_assessment(db):
+    now=datetime.now(timezone.utc)
+    db.add(WealthAssessmentORM(assessment_id='WA-test-current',user_id='U1',profile_version=1,
+        questionnaire_version='test',score_version='test',answers={},
+        result={'capacity_level':3,'purchase_allowed':True},created_at=now,
+        expires_at=now+timedelta(days=1),confirmed_at=now))
+
+
+async def conversation(db, assessed=True):
     db.add(NovaConversationORM(conversation_id='NOVA-test-session',user_id='U1',title_ciphertext='unused'))
+    if assessed:add_assessment(db)
     await db.commit()
 
 
 def context(db, request='request-wealth-one'):
     return ToolContext('U1',db,PageContext(page='wealth'),original_message='推荐债券基金',
                        request_id=request,session_id='NOVA-test-session')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('assessment_state',['missing','unconfirmed','expired'])
+async def test_missing_assessment_uses_gate_prompt_and_opens_assessment_first(store,monkeypatch,assessment_state):
+    calls=[]
+    async def model(**kwargs):
+        calls.append(kwargs)
+        if kwargs['schema'] is agent.AssessmentGateIntent:
+            return SimpleNamespace(data=agent.AssessmentGateIntent(kind='planning'))
+        return SimpleNamespace(data=agent.IntentBatch(intents=[agent.WealthIntent(kind='planning')]))
+    monkeypatch.setattr(agent.llm,'generate_structured',model)
+    monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(assets=AsyncMock(return_value={'context_id':'test'})))
+    async with store() as db:
+        await conversation(db,assessed=False)
+        if assessment_state!='missing':
+            now=datetime.now(timezone.utc)
+            db.add(WealthAssessmentORM(assessment_id='WA-incomplete',user_id='U1',profile_version=1,
+                questionnaire_version='test',score_version='test',answers={},
+                result={'capacity_level':3,'purchase_allowed':True},created_at=now-timedelta(days=2),
+                expires_at=now-timedelta(days=1) if assessment_state=='expired' else now+timedelta(days=1),
+                confirmed_at=now-timedelta(days=2) if assessment_state=='expired' else None))
+            await db.commit()
+        ctx=replace(context(db),original_message='我要理财')
+        first=await agent.manage(agent.EmptyArguments(),ctx)
+        assert '先完成并本人确认风险评估' in first['reply']
+        assert first['wealth_cards'][0]['command']['kind']=='planning'
+        assert first['wealth_cards'][0]['command']['products']==[]
+        assert first['wealth_cards'][0]['assessment_pending']
+        assert calls[0]['schema'] is agent.AssessmentGateIntent
+        assert '当前本人尚无已确认且有效的风险评估' in calls[0]['messages'][0]['content']
+        assert await db.scalar(select(func.count()).select_from(WealthOrderORM))==0
+        repeated=await agent.manage(agent.EmptyArguments(),ctx)
+        assert repeated['wealth_cards']==first['wealth_cards'] and len(calls)==1
+        now=datetime.now(timezone.utc)
+        db.add(WealthAssessmentORM(assessment_id='WA-after-gate',user_id='U1',profile_version=1,
+            questionnaire_version='test',score_version='test',answers={},
+            result={'capacity_level':3,'purchase_allowed':True},created_at=now,
+            expires_at=now+timedelta(days=1),confirmed_at=now))
+        await db.commit()
+        await agent.manage(agent.EmptyArguments(),replace(ctx,request_id='request-after-assessment'))
+        assert calls[-1]['schema'] is agent.IntentBatch
 
 
 @pytest.mark.asyncio

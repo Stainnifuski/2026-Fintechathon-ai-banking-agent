@@ -137,6 +137,20 @@ def test_provider_plan_contract_and_cash_not_payable(level):
     if level==4:assert r.metadata['model']['continuous_solution']==pytest.approx([.2,.38,.42])
 
 
+def test_same_planning_facts_have_same_candidate_content_across_entries():
+    provider,_,_,_=model_fixture()
+    plans=[run(provider.plan('fixture-user')).plan for _ in range(4)]
+    def visible_content(plan):
+        return [(group.bucket,[(item.family_id,item.name,item.reason,
+                    [share.product_id for share in item.share_classes]) for item in group.items])
+                for group in plan.candidate_groups]
+    assert all(visible_content(plan)==visible_content(plans[0]) for plan in plans[1:])
+    assert all([(bucket.bucket,bucket.target_fen) for bucket in plan.buckets]
+               ==[(bucket.bucket,bucket.target_fen) for bucket in plans[0].buckets] for plan in plans[1:])
+    assert all('RANDOM_PLANNING_DISPLAY' not in item.reason_codes
+               for plan in plans for group in plan.candidate_groups for item in group.items)
+
+
 def test_risk_gate_not_replaced_by_DPP_manual_or_old_cursor():
     provider,data,facts,_=model_fixture(2);data.products[2].fields['formal_risk'].value=4;facts.offers['Q01A'].risk_level=4
     with pytest.raises(ModelError,match='NEW_SELECTION_INELIGIBLE'):run(provider.plan('fixture-user',selected=[share('Q01A','0')]))

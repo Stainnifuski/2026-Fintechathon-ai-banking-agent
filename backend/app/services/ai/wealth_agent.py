@@ -74,6 +74,12 @@ class IntentBatch(EmptyArguments):
     intents: list[WealthIntent] = Field(min_length=1, max_length=4)
 
 
+class AssessmentGateIntent(EmptyArguments):
+    kind: Literal['assets','positions','returns','detail','compare','assessment',
+                  'recommend','planning','purchase','redeem'] = Field(
+        description='用户希望在完成本人风险评估后办理的理财类型；笼统的理财规划需求归为planning。')
+
+
 def reject(message, code='WEALTH_AGENT_CONFLICT', status=409):
     raise WealthPolicyError(message, code, status)
 
@@ -237,6 +243,47 @@ async def manage(arguments, context):
         if replay.digest!=request_digest:
             reject('请求编号不能用于不同的理财需求','IDEMPOTENCY_CONFLICT')
         return {'reply':replay.response.get('reply') or '已恢复本次理财任务，请核对卡片。', 'wealth_cards':current}
+    from ...integrations.wealth_authorization import latest_assessment, aware
+    assessment=await latest_assessment(db,user)
+    if not assessment or not assessment.confirmed_at or aware(assessment.expires_at)<=utc_now():
+        gated=await llm.generate_structured(messages=[
+            {'role':'system','content':
+                '你是理财风险评估前的需求识别助手。当前本人尚无已确认且有效的风险评估。'
+                '只识别用户在完成评估后想办理的理财类型，输出AssessmentGateIntent结构。'
+                '笼统地表示想理财、做配置或规划时选择planning；明确要求风险评估时选择assessment。'
+                '不要抽取金额、产品或交易参数，不要生成规划、推荐、申赎或声称已办理。'
+                '用户须先在表单由本人回答并确认评估，然后才能在原卡继续相应操作。'},
+            {'role':'user','content':json.dumps({'message':redact(context.original_message),
+                'focused_card':{'task_id':context.wealth_task_id,'stage':context.wealth_stage},
+                'pending_tasks':[{'task_id':c['task_id'],'kind':c.get('command',{}).get('kind')}
+                                 for c in current if c.get('assessment_pending') and not c.get('closed')]},ensure_ascii=False)}
+        ],schema=AssessmentGateIntent,max_tokens=200)
+        facts=await HttpWealthBankApi().assets(user)
+        if not facts.get('context_id'):
+            reject('理财账户范围暂不可用，请重试','STALE_CONTEXT')
+        await db.rollback()
+        await lock_profile(db,user)
+        await owner(db,user,session)
+        repeated=await db.get(WealthChatRequestORM,request_key,populate_existing=True)
+        if repeated:
+            if repeated.digest!=request_digest:reject('请求编号不能用于不同的理财需求','IDEMPOTENCY_CONFLICT')
+            await db.rollback()
+            return {'reply':repeated.response['reply'],'wealth_cards':await cards(db,user,session)}
+        kind=gated.data.kind
+        existing=next((c for c in current if c.get('assessment_pending') and not c.get('closed')
+                       and not c.get('execution_plan_id') and c.get('command',{}).get('kind')==kind),None)
+        if not existing:
+            task_id='NW'+hashlib.sha256(f'{user}:{session}:{context.request_id}:assessment'.encode()).hexdigest()[:40]
+            command=WealthIntent(kind=kind).model_dump(mode='json')
+            command['products']=[]
+            db.add(WealthConversationORM(session_id=task_id,user_id=user,version=1,data={
+                'nova_session_id':session,'request_id':context.request_id,'context_id':facts['context_id'],
+                'command':command,'assessment_pending':True,'closed':False}))
+        reply='请先完成并本人确认风险评估。已打开评估表单；确认有效后可在原卡继续理财操作。'
+        db.add(WealthChatRequestORM(request_key=request_key,user_id=user,digest=request_digest,status='COMPLETED',
+            response={'session_id':session,'reply':reply},started_at=utc_now()))
+        await db.commit()
+        return {'reply':reply,'wealth_cards':await cards(db,user,session)}
     result = await llm.generate_structured(messages=[
         {'role':'system','content':load_skill('wealth') + '\n金额和份额只能来自本轮原文。'
          'cash_yuan提供cash_quote；amounts_yuan逐项提供amount_quotes；redemption_value提供redemption_quote。'
