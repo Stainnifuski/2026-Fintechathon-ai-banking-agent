@@ -415,7 +415,12 @@ async def submit_transfer(
         from .available_funds import available_cash
         from .wealth_reconciliation import require_reconciled
         await require_reconciled(db, sender.account_id)
-        if await available_cash(db, sender.account_id, balance_fen) < command.amount_fen:
+        # 定时任务锁定的资金只能由关联到该锁定的付款使用。
+        from .scheduled_holds import draw, drawable_hold
+        funding_hold = await drawable_hold(db, account_id=sender.account_id, operation_id=command.operation_id,
+                                           payment_request_id=payment_request.payment_request_id if payment_request else None)
+        drawable_fen = min(command.amount_fen, funding_hold.amount_fen - funding_hold.used_fen) if funding_hold else 0
+        if await available_cash(db, sender.account_id, balance_fen) + drawable_fen < command.amount_fen:
             error = ("INSUFFICIENT_FUNDS", "余额不足")
         elif daily_used_fen + command.amount_fen > limit_fen:
             error = ("DAILY_LIMIT_EXCEEDED", "超过付款账户日转账限额")
@@ -448,6 +453,8 @@ async def submit_transfer(
         credit_tx_id = f"TX{uuid4().hex[:18].upper()}"
         sender.balance_fen = balance_fen - command.amount_fen
         sender.daily_transfer_used_fen = daily_used_fen + command.amount_fen
+        if funding_hold is not None:
+            draw(funding_hold, command.amount_fen)
         receiver.balance_fen = receiver_balance_fen + command.amount_fen
         bank_operation.bank_tx_id = bank_tx_id
         if payment_request is not None:

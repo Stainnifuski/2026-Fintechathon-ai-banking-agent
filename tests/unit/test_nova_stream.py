@@ -193,7 +193,7 @@ async def test_stream_endpoint_auth_validation_and_events(monkeypatch):
         assert events[-1].pop('session_id').startswith('NOVA-')
         assert events == [
             {'type': 'tool', 'name': 'list_cards'}, {'type': 'delta', 'text': '你有'}, {'type': 'delta', 'text': '两张卡'},
-            {'type': 'done', 'reply': '你有两张卡', 'mode': 'model', 'tool_calls': []}]
+            {'type': 'done', 'reply': '你有两张卡', 'mode': 'model', 'tool_calls': [], 'bill_result_cards': []}]
 
 
 @pytest.mark.asyncio

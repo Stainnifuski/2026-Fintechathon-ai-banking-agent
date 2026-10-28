@@ -144,7 +144,7 @@ async def inventory(ctx):
         if kind not in task_flow.TITLES:
             continue
         finished = bool(value.get('closed'))
-        if value.get('execution_plan_id'):
+        if value.get('execution_plan_id') or kind=='assessment':
             from .execution_queue import wealth_state
             finished = finished or await wealth_state(ctx, row.session_id, 'settled') == 'completed'
         key = 'wealth:' + row.session_id

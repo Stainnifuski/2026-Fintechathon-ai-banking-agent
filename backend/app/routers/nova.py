@@ -27,6 +27,7 @@ from ..services.ai.collection_manager import CollectionError, refresh_collection
 from ..services.ai.calendar_tools import update_chat_calendar_task
 from ..services.ai.calendar_mutation import confirm_calendar_task, ManipulateCalendarArguments
 from ..services.ai.shop_tools import update_chat_shop_task
+from ..services.ai.scheduled_task_tools import update_chat_scheduled_task
 from ..services.ai.card_subscription_tools import (
     CardTaskError, dismiss_chat_card_task, link_chat_card_operation, update_chat_subscription_task,
 )
@@ -119,6 +120,11 @@ class SubscriptionTaskSelect(BaseModel):
     subscription_id: str = Field(min_length=1, max_length=40)
 
 
+class ScheduledCardLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: str = Field(min_length=1, max_length=40)
+
+
 class ShopTaskLink(BaseModel):
     model_config = ConfigDict(extra="forbid")
     shop: Literal["flower", "cake"]
@@ -179,6 +185,9 @@ async def _prepare(
         owned=await cards(db,user_id,conversation['session_id'])
         if request.wealth_task_id not in {c['task_id'] for c in owned}:
             raise bank_conversations.ConversationError('理财补充对象不属于此对话',404)
+    # 已开始的自定义定时任务首条消息所在对话，可支用该任务锁定的资金。
+    from ..services.ai.scheduled_funding import bind_dispatch_session
+    await bind_dispatch_session(db, user_id, request.request_id, conversation["session_id"])
     return request.model_copy(update={"session_id": conversation["session_id"],
                                       "request_id": request.request_id or uuid4().hex}), history, full_history
 
@@ -216,7 +225,7 @@ async def task_session(session_id: str, current_user: dict = Depends(get_current
         await bank_conversations.get(db, current_user["user_id"], session_id)
         if await db.get(NovaSessionORM, session_id) is None:
             return {"session_id": session_id, "session_version": 0, "focus_task_id": None,
-                    "tasks": [], "collection_cards": [], "card_operations": [], "subscription_tasks": [], "calendar_tasks": [], "shop_tasks": [], "payment_request_tasks": []}
+                    "tasks": [], "collection_cards": [], "card_operations": [], "subscription_tasks": [], "calendar_tasks": [], "shop_tasks": [], "payment_request_tasks": [], "scheduled_tasks": []}
         return await get_session(db, current_user["user_id"], session_id)
     except (ManagerError, bank_conversations.ConversationError) as error:
         raise _transfer_error(error) from error
@@ -470,6 +479,33 @@ async def presentation_release(session_id: str, request: PresentationAction,
         if isinstance(error, bank_conversations.ConversationError):
             raise _transfer_error(error) from error
         raise HTTPException(409, detail={'message': '当前任务无法安全接管或结束，请先核对原卡片状态。'}) from error
+
+
+@router.post("/task-sessions/{session_id}/scheduled-tasks/{entry_id}/task")
+async def link_scheduled_card(session_id: str, entry_id: str, request: ScheduledCardLink,
+                              current_user: dict = Depends(get_current_user),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    """本人在聊天定时任务表单中保存任务后，挂到对应任务卡。"""
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"scheduled_tasks": await update_chat_scheduled_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, task_id=request.task_id)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
+
+
+@router.post("/task-sessions/{session_id}/scheduled-tasks/{entry_id}/dismiss")
+async def dismiss_scheduled_card(session_id: str, entry_id: str,
+                                 current_user: dict = Depends(get_current_user),
+                                 db: AsyncSession = Depends(get_db)) -> dict:
+    try:
+        await bank_conversations.get(db, current_user["user_id"], session_id)
+        return {"scheduled_tasks": await update_chat_scheduled_task(
+            db, user_id=current_user["user_id"], session_id=session_id, entry_id=entry_id, close=True)}
+    except (CardTaskError, bank_conversations.ConversationError) as error:
+        await db.rollback()
+        raise _transfer_error(error) from error
 
 
 @router.get('/task-flow/{session_id}')
@@ -733,6 +769,9 @@ class WealthViewContext(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     version: int = Field(ge=1)
     selection_kind: Literal['positions','products'] | None = None
+    workflow: Literal['planning','target'] | None = None
+    workflow_request_id: str | None = Field(default=None,max_length=128)
+    risk_answers: dict[str,int] = Field(default_factory=dict,max_length=9)
     visible_products: list[WealthViewProduct] = Field(default_factory=list,max_length=60)
     selected_products: list[WealthViewProduct] = Field(default_factory=list,max_length=160)
     cash_field: Literal['reserve','investment','total'] | None = None
@@ -746,6 +785,16 @@ class WealthViewContext(BaseModel):
         import re
         if any(len(k)>120 or not re.fullmatch(r'(?:\d{1,12}(?:\.\d{0,2})?)?',v) for k,v in value.items()):
             raise ValueError('金额输入格式不合法')
+        return value
+
+    @field_validator('risk_answers')
+    @classmethod
+    def valid_risk_answers(cls,value):
+        from ..domain.wealth_risk import QUESTIONS
+        ids={question[0] for question in QUESTIONS}
+        if any(key not in ids or type(answer) is not int or not 0<=answer<=3
+               for key,answer in value.items()):
+            raise ValueError('风险问卷答案不合法')
         return value
 
 

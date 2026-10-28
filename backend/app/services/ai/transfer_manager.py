@@ -19,6 +19,7 @@ from ..bank.transfer_cards import transfer_card_number
 from ..bank.transfer_service import BankError, transfer_directory
 from ..bank.nova_conversations import redact as redact_sensitive
 from ..orchestration import TaskError, create_transfer_task, modify_task, task_snapshot
+from .scheduled_funding import fund_transfer_task
 from ..orchestration import cancel_task
 from .nlu import (
     Extraction, NLUEngine, TransferTaskExtraction, UnderstandingError, amount_fen, NOTE_SEPARATOR, PHONE,
@@ -113,6 +114,7 @@ async def _view(db: AsyncSession, row: NovaSessionORM) -> dict:
     from .card_subscription_tools import chat_card_operations, chat_subscription_tasks
     from .calendar_tools import chat_calendar_tasks
     from .shop_tools import chat_shop_tasks
+    from .scheduled_task_tools import chat_scheduled_tasks
     from .payment_request_tools import chat_payment_request_tasks
     return {"session_id": row.session_id, "session_version": row.version,
             "focus_task_id": state.get("focus_task_id"), "tasks": tasks,
@@ -121,6 +123,7 @@ async def _view(db: AsyncSession, row: NovaSessionORM) -> dict:
             "subscription_tasks": await chat_subscription_tasks(db, row.user_id, state),
             "calendar_tasks": await chat_calendar_tasks(db, row.user_id, state),
             "shop_tasks": await chat_shop_tasks(db, row.user_id, state),
+            "scheduled_tasks": await chat_scheduled_tasks(db, row.user_id, state),
             "payment_request_tasks": await chat_payment_request_tasks(row.user_id, state)}
 
 
@@ -255,6 +258,7 @@ async def change_task_form(db: AsyncSession, bank: BankApi, *, user_id: str, ses
         else:
             planned = await create_transfer_task(db, bank, recipient_card_number=slots.get("card"), **params)
         target["transfer_task_id"] = planned["task_id"]
+        await fund_transfer_task(db, user_id, session_id, planned["task_id"])
         target["status"] = planned["phase"]
     state["focus_task_id"] = chat_task_id
     row.state, row.version = state, session_version + 1
@@ -797,6 +801,7 @@ async def process_message(db: AsyncSession, bank: BankApi, nlu: NLUEngine, *, us
                 snapshot = await create_transfer_task(db, bank,
                                                       recipient_card_number=slots.get("card"), **params)
             target["transfer_task_id"] = snapshot["task_id"]
+            await fund_transfer_task(db, user_id, row.session_id, snapshot["task_id"])
             target["status"] = snapshot["phase"]
             messages.append(f"第{index + 1}笔转账已生成待确认计划，请核对任务卡。")
         else:

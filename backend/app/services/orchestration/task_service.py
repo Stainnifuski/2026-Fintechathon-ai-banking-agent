@@ -5,6 +5,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+import logging
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +56,9 @@ from ...models.workflow import (
     TransferStepORM,
     TransferTaskORM,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class TaskError(Exception):
@@ -257,6 +261,59 @@ async def _require_complete_proposal(db: AsyncSession, task: TransferTaskORM) ->
         raise TaskError("修改仍需补充或选择，请完成修改后使用新卡片", 409, "PROPOSAL_INCOMPLETE")
 
 
+SCHEDULE_HOLD_PURPOSE = "scheduled_transfer"
+
+
+def _schedule_hold_id(operation_id: str) -> str:
+    return "SCH" + hashlib.sha256(operation_id.encode()).hexdigest()[:40]
+
+
+async def _secure_funding(
+    db: AsyncSession, bank: BankApi | None, *, task: TransferTaskORM, plan: TransferPlanORM,
+    operation: TransferOperationORM, user_id: str,
+) -> None:
+    """定时转账在确认时锁定活期资金；运行中的自定义任务发起的转账改用该任务的锁定资金。"""
+    from ...models.scheduled_task import ScheduledTaskFundingORM, ScheduledTaskORM, ScheduledTransferFundingORM
+    custom = None
+    link = await db.get(ScheduledTransferFundingORM, task.task_id)
+    if link is not None:
+        owner = await db.get(ScheduledTaskORM, link.custom_task_id)
+        funding = await db.get(ScheduledTaskFundingORM, link.custom_task_id)
+        if owner is not None and owner.user_id == user_id and owner.status == "STARTED" and funding is not None:
+            custom = funding
+    if custom is None and not plan.params.get("scheduled_at"):
+        return
+    if bank is None:
+        raise TaskError("银行服务不可用，无法锁定资金", 503, "BANK_REQUIRED")
+    operation_key = f"operation:{operation.operation_id}"
+    try:
+        if custom is not None:
+            await bank.link_scheduled_hold(hold_id=custom.hold_id, subject_user_id=user_id, link_key=operation_key)
+            return
+        hold_id = _schedule_hold_id(operation.operation_id)
+        # 修改后重新确认时，旧参数的锁定先退回，再按新金额锁定。
+        await bank.release_scheduled_holds(subject_user_id=user_id, purpose=SCHEDULE_HOLD_PURPOSE,
+                                           reference_id=task.task_id, keep_hold_id=hold_id)
+        await bank.place_scheduled_hold(
+            hold_id=hold_id, subject_user_id=user_id, account_id=operation.from_account,
+            amount_fen=operation.amount_fen, purpose=SCHEDULE_HOLD_PURPOSE, reference_id=task.task_id,
+            link_keys=[operation_key])
+    except BankApiError as error:
+        if error.code == "INSUFFICIENT_FUNDS":
+            raise TaskError("活期账户可自由支配的余额不足，定时转账设定失败；请调整金额或先转入资金。",
+                            409, "INSUFFICIENT_FUNDS") from error
+        raise TaskError(error.message, error.status_code, error.code) from error
+
+
+async def _release_schedule_hold(bank: BankApi | None, task: TransferTaskORM, user_id: str,
+                                 *, scheduled: bool) -> None:
+    """任务结束或参数作废后退回定时转账锁定的剩余资金；已被本次转账使用的部分不退回。"""
+    if bank is None or not scheduled:
+        return
+    await bank.release_scheduled_holds(subject_user_id=user_id, purpose=SCHEDULE_HOLD_PURPOSE,
+                                       reference_id=task.task_id)
+
+
 # 持久化一次转账申请
 @audited("transfer")
 async def create_transfer_task(
@@ -414,6 +471,7 @@ async def confirm_task(
     request_id: str,
     state_version: int,
     plan_version: int,
+    bank: BankApi | None = None,
 ) -> dict:
     task = await _owned_task(db, task_id, user_id)
     duplicate = await _deduplicated_task_id(db, request_id)
@@ -433,6 +491,8 @@ async def confirm_task(
         await check_trade(db, user_id, issued_at=authorization.created_at, authorization=True)
     except SecurityError as error:
         raise TaskError(error.message, error.status_code, error.code) from error
+    # 资金不足时设定失败，不记录同意。
+    await _secure_funding(db, bank, task=task, plan=plan, operation=operation, user_id=user_id)
 
     # 调整授权状态（黄->同意即可生效，红->同意后还要验证）
     record_consent(authorization)
@@ -687,7 +747,7 @@ async def dispatch_task(
             # A deliberate denial before first bank acceptance is definitive;
             # do not create a retry that could debit after the cooldown.
             result = BankOperationResult(operation.operation_id, BankOperationStatus.FAILED, None, error.code)
-            await _merge_bank_result(db, task, operation, outbox, result)
+            await _merge_bank_result(db, task, operation, outbox, result, bank)
             return
         try:
             result = await bank.query_operation(operation.operation_id)
@@ -716,7 +776,7 @@ async def dispatch_task(
             await db.commit()
             return
 
-    await _merge_bank_result(db, task, operation, outbox, result)
+    await _merge_bank_result(db, task, operation, outbox, result, bank)
 
 
 async def _merge_bank_result(
@@ -725,6 +785,7 @@ async def _merge_bank_result(
     operation: TransferOperationORM,
     outbox: OutboxEntryORM,
     result: BankOperationResult,
+    bank: BankApi | None = None,
 ) -> None:
     risk = (
         await db.execute(
@@ -773,6 +834,13 @@ async def _merge_bank_result(
         },
     )
     await db.commit()
+    if task.phase == TaskPhase.FINISHED:
+        try:
+            plan = await _current_plan(db, task)
+            await _release_schedule_hold(bank, task, task.user_id, scheduled=bool(plan.params.get("scheduled_at")))
+        except BankApiError as error:
+            # 结果已落定；锁定资金释放失败只影响可用余额展示，可通过取消/核对重试。
+            logger.warning("scheduled hold release failed task=%s code=%s", task.task_id, error.code)
 
 
 @audited("transfer")
@@ -803,7 +871,7 @@ async def reconcile_task(
         )
     ).scalar_one()
     if result is not None:
-        await _merge_bank_result(db, task, operation, outbox, result)
+        await _merge_bank_result(db, task, operation, outbox, result, bank)
         await _event(
             db,
             task_id=task_id,
@@ -861,6 +929,9 @@ async def cancel_task(
         await bank.release_payment_request(
             operation_id=operation.operation_id, subject_user_id=user_id
         )
+        if operation.status == OperationStatus.CANCELLED:
+            plan = await _current_plan(db, task)
+            await _release_schedule_hold(bank, task, user_id, scheduled=bool(plan.params.get("scheduled_at")))
         return await task_snapshot(db, task_id, user_id)
     await _reserve_version(db, task, state_version)
     operation = await _current_operation(db, task)
@@ -900,6 +971,11 @@ async def cancel_task(
             raise TaskError(
                 "任务已取消，但收款申请释放待重试", 502, error.code
             ) from error
+        try:
+            plan = await _current_plan(db, task)
+            await _release_schedule_hold(bank, task, user_id, scheduled=bool(plan.params.get("scheduled_at")))
+        except BankApiError as error:
+            raise TaskError("任务已取消，但锁定资金退回待重试", 502, error.code) from error
     return await task_snapshot(db, task_id, user_id)
 
 
@@ -1054,6 +1130,10 @@ async def modify_task(
         await db.commit()
     else:
         await db.flush()
+    try:
+        await _release_schedule_hold(bank, task, user_id, scheduled=bool(old_plan.params.get("scheduled_at")))
+    except BankApiError as error:
+        raise TaskError("参数已修改，但原锁定资金退回待重试", 502, error.code) from error
     return await task_snapshot(db, task_id, user_id)
 
 

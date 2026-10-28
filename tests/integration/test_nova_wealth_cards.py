@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from dataclasses import replace
+import json
 from unittest.mock import AsyncMock
 from datetime import datetime,timedelta,timezone
 
@@ -23,6 +24,135 @@ def fake_model(monkeypatch,intent):
 
 
 @pytest.mark.asyncio
+async def test_closed_card_does_not_block_new_wealth_request(store,monkeypatch):
+    fake_model(monkeypatch,agent.WealthIntent(kind='planning',task_id='NW-closed'))
+    async with store() as db:
+        await conversation(db)
+        db.add(WealthConversationORM(session_id='NW-closed',user_id='U1',version=1,data={
+            'nova_session_id':'NOVA-test-session','request_id':'old-request','context_id':'test',
+            'command':{'kind':'recommend','products':[]},'closed':True}))
+        await db.commit()
+        ctx=replace(context(db),wealth_task_id='NW-closed',wealth_stage='match',original_message='我要理财')
+        result=await agent.manage(agent.EmptyArguments(),ctx)
+        cards=result['wealth_cards']
+        assert len(cards)==2
+        assert any(card['task_id']=='NW-closed' and card['closed'] for card in cards)
+        assert any(card['command']['kind']=='planning' and not card['closed'] for card in cards)
+        prompt=json.loads(agent.llm.generate_structured.call_args.kwargs['messages'][1]['content'])
+        assert prompt['focused_card']=={'task_id':None,'stage':None}
+        assert prompt['tasks']==[]
+
+
+@pytest.mark.asyncio
+async def test_broad_wealth_intent_opens_planning_card(store,monkeypatch):
+    fake_model(monkeypatch,agent.WealthIntent(kind='planning'))
+    async with store() as db:
+        await conversation(db)
+        result=await agent.manage(agent.EmptyArguments(),replace(context(db),original_message='想开始做理财'))
+        assert len(result['wealth_cards'])==1
+        assert result['wealth_cards'][0]['command']['kind']=='planning'
+        system=agent.llm.generate_structured.call_args.kwargs['messages'][0]['content']
+        assert '整体理财规划（kind=planning）' in system
+        assert '不因这些字段缺失而输出clarify' in system
+
+
+@pytest.mark.asyncio
+async def test_risk_tool_opens_form_and_accepts_grounded_partial_answer(store,monkeypatch):
+    fake_model(monkeypatch,agent.WealthIntent(kind='assessment'))
+    from backend.app.integrations import wealth_authorization as policy
+    monkeypatch.setattr(policy,'latest_assessment',AsyncMock(return_value=None))
+    async with store() as db:
+        await conversation(db)
+        opened=await agent.manage_risk(agent.WealthRiskArguments(),context(db))
+        card=opened['wealth_cards'][0]
+        assert card['command']['kind']=='assessment' and card['assessment_pending']
+        answer=agent.WealthRiskArguments(action='answer',task_id=card['task_id'],answers={'payment':2},
+            answer_evidence={'payment':agent.RiskAnswerEvidence(
+                question_quote='财务支付能力',option_quote='稳定结余')})
+        continued=await agent.manage_risk(answer,replace(context(db,'risk-answer'),
+            original_message='财务支付能力选稳定结余'))
+        assert continued['wealth_cards'][0]['view_context']['risk_answers']=={'payment':2}
+        with pytest.raises(agent.WealthPolicyError):
+            await agent.manage_risk(answer,replace(context(db,'risk-invalid'),original_message='其他内容'))
+
+
+@pytest.mark.asyncio
+async def test_main_model_planning_arguments_open_card_without_submodel(store,monkeypatch):
+    fake_model(monkeypatch,agent.WealthIntent(kind='clarify'))
+    agent.llm.generate_structured.side_effect=AssertionError('理财工具不应调用子模型')
+    async with store() as db:
+        await conversation(db)
+        result=await agent.manage(agent.WealthPlanningArguments(kind='planning'),
+            replace(context(db),original_message='想做理财规划'))
+        assert result['wealth_cards'][0]['command']['kind']=='planning'
+        agent.llm.generate_structured.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_completed_risk_tool_shows_level_then_opens_reassessment(store,monkeypatch):
+    fake_model(monkeypatch,agent.WealthIntent(kind='assessment'))
+    from backend.app.integrations import wealth_authorization as policy
+    valid=SimpleNamespace(confirmed_at=datetime.now(timezone.utc),
+        expires_at=datetime.now(timezone.utc)+timedelta(days=20),result={'capacity_level':3})
+    monkeypatch.setattr(policy,'latest_assessment',AsyncMock(return_value=valid))
+    async with store() as db:
+        await conversation(db)
+        opened=await agent.manage_risk(agent.WealthRiskArguments(),context(db))
+        card=opened['wealth_cards'][0]
+        assert 'R3' in opened['reply'] and card['command']['kind']=='assessment'
+        assert not card['reassess_open'] and not card['assessment_pending']
+        changed=await agent.manage_risk(agent.WealthRiskArguments(action='reassess',task_id=card['task_id']),
+            replace(context(db,'risk-reassess'),original_message='重新评估风险'))
+        assert changed['wealth_cards'][0]['reassess_open']
+        assert changed['wealth_cards'][0]['assessment_pending']
+        from backend.app.services.ai.execution_queue import wealth_state
+        assert await wealth_state(context(db),card['task_id'],'settled')=='waiting'
+        valid.confirmed_at=datetime.now(timezone.utc)+timedelta(seconds=5)
+        assert await wealth_state(context(db),card['task_id'],'settled')=='completed'
+
+
+@pytest.mark.asyncio
+async def test_risk_answers_can_be_submitted_and_confirmed_from_explicit_chat(store,monkeypatch):
+    fake_model(monkeypatch,agent.WealthIntent(kind='assessment'))
+    from backend.app.domain.wealth_risk import QUESTIONS
+    answers={key:2 for key,_,_ in QUESTIONS}
+    clauses=[f'{title}：{options[2]}' for _,title,options in QUESTIONS]
+    message='；'.join(clauses)+'；我是成年人，具有完全民事行为能力。'
+    evidence={key:agent.RiskAnswerEvidence(question_quote=title,option_quote=options[2])
+              for key,title,options in QUESTIONS}
+    async with store() as db:
+        await conversation(db)
+        submitted=await agent.manage_risk(agent.WealthRiskArguments(action='submit',answers=answers,
+            answer_evidence=evidence,adult_quote='我是成年人，具有完全民事行为能力'),
+            replace(context(db,'risk-submit'),original_message=message))
+        assert '请由本人确认' in submitted['reply']
+        assert submitted['wealth_cards'][0]['assessment_pending']
+        confirmed=await agent.manage_risk(agent.WealthRiskArguments(action='confirm',
+            task_id=submitted['wealth_cards'][0]['task_id'],confirm_quote='确认本次风险评估结果'),
+            replace(context(db,'risk-confirm'),original_message='确认本次风险评估结果'))
+        assert '已确认风险评估等级' in confirmed['reply']
+        assert not confirmed['wealth_cards'][0]['assessment_pending']
+
+
+@pytest.mark.asyncio
+async def test_main_model_can_advance_existing_form_with_grounded_free_phrase(store,monkeypatch):
+    fake_model(monkeypatch,agent.WealthIntent(kind='planning'))
+    agent.llm.generate_structured.side_effect=AssertionError('理财子模型不得运行')
+    async with store() as db:
+        await conversation(db)
+        db.add(WealthConversationORM(session_id='NW-advance',user_id='U1',version=1,data={
+            'nova_session_id':'NOVA-test-session','request_id':'old','context_id':'test',
+            'command':{'kind':'planning','products':[]},'closed':False}))
+        await db.commit()
+        args=agent.WealthPlanningArguments(kind='planning',task_id='NW-advance',
+            advance='continue',advance_quote='接着核对')
+        result=await agent.manage(args,replace(context(db,'new-advance'),
+            wealth_task_id='NW-advance',wealth_stage='selected',original_message='我们接着核对选择'))
+        assert result['wealth_cards'][0]['instruction']['stage']=='selected'
+        assert result['wealth_cards'][0]['instruction']['action']=='continue'
+
+
+@pytest.mark.asyncio
 async def test_assets_and_valid_assessment_are_text_without_card(store,monkeypatch):
     fake_model(monkeypatch,agent.WealthIntent(kind='assets'))
     async with store() as db:
@@ -40,7 +170,7 @@ async def test_assets_and_valid_assessment_are_text_without_card(store,monkeypat
 @pytest.mark.asyncio
 @pytest.mark.parametrize('model_action',['confirm','continue','prepare'])
 async def test_natural_next_keeps_draft_but_cannot_confirm(store,monkeypatch,model_action):
-    fake_model(monkeypatch,agent.WealthIntent(kind='purchase',advance='prepare'))
+    fake_model(monkeypatch,agent.WealthIntent(kind='purchase',advance='prepare',advance_quote='下一步'))
     async with store() as db:
         await conversation(db)
         db.add(WealthConversationORM(session_id='NW-focused',user_id='U1',version=1,data={

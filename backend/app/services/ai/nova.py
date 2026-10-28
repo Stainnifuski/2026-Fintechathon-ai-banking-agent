@@ -179,7 +179,7 @@ class RequestRoute(BaseModel):
     mode: Literal["direct_react", "goal_plan"]
     domains: list[Literal[
         "transfer", "collection", "accounts", "transactions", "bills", "contacts",
-        "cards", "subscriptions", "calendar", "shops", "time", "wealth", "capabilities", "other",
+        "cards", "subscriptions", "calendar", "scheduled_tasks", "shops", "time", "wealth", "capabilities", "other",
     ]] = Field(min_length=1, max_length=8)
     has_dependencies: bool
     goal_plan: GoalPlanArguments | None = None
@@ -201,6 +201,7 @@ ROUTER_PROMPT = """你是银行助手的前置路由器，只判断执行结构�
 单一目标使用 direct_react；多个独立目标、同一业务的多个操作对象，或后一步依赖前一步结果时使用 goal_plan，并给出2至8个目标组成的无环计划。
 "给李四转100元"是本人付款，属于单一 transfer 目标，必须 direct_react。
 "向李四收100元"是本人向李四请求付款，属于单一 collection 目标，必须 direct_react；不得路由到transfer。
+让 NOVA 到某个时间再办理一件事（自定义定时任务，可锁定资金）或查看、开始、完成、取消这类任务，属于 scheduled_tasks；到时自动转账属于 transfer；只在日历记一条安排属于 calendar。
 询问本助手支持哪些业务、每项业务能查什么或能办什么，属于capabilities域，必须先调用describe_bank_capabilities；不要把功能介绍当成办理业务的指令。
 transfer_tasks.collection_drafts 列出本对话尚未发出的收款草稿。存在收款草稿时，补充或修改付款人、金额、收款账户、备注、AA方式，或撤销草稿，都属于 collection 的 continue——即使本轮只说了一个名字、一个数字或一句省略主语的补充；明确新建另一笔收款也是 collection，交由收款工具核验目标。上一轮助手就收款提出澄清问题时，本轮回答同样属于 collection。
 “查时间并转账”“查询倒数第六笔转账后复用收款人和金额”包含多个目标或查询依赖，必须 goal_plan。
@@ -449,6 +450,7 @@ from .bill_tools import bill_tools
 TOOL_REGISTRY.update(bill_tools())
 from .wealth_agent import wealth_tools
 TOOL_REGISTRY.update(wealth_tools())
+WEALTH_TOOL_NAMES = frozenset({'assess_wealth_risk','plan_wealth','manage_wealth_positions','show_wealth_returns'})
 TOOL_REGISTRY["describe_bank_capabilities"] = {
     "schema": {"type": "function", "function": {
         "name": "describe_bank_capabilities",
@@ -464,7 +466,7 @@ SYSTEM_PROMPT = """你是 NOVA 银行助手。服务端会先提供结构化路�
 你可查询现实时间、本人账户概览、联系人及历史转账人、卡片及订阅、现有收款申请、月度/年度账单、已完成流水、本人日历活动、模拟鲜花店和蛋糕店商品及本人订单，可用 manage_transfer_task 处理本人付款的立即或定时人民币转账草稿，可用 manage_collection_request 处理本人向别人请求付款的收款草稿，可用 manage_payment_requests 查看现有申请并打开取消或付款/拒绝任务卡，并可为本人卡片操作生成待确认预览。
 用户询问 BankAgent 支持哪些业务、各业务可查询或可办理的事项时，调用 describe_bank_capabilities 取得当前业务目录；目录不是用户授权，不得据此执行操作。
 转账=本人从自己账户付给别人；收款=本人请求别人付给自己。不得因两者都含“款”而互换工具；“别人向我收款”属于现有收款申请的处理，应使用 manage_payment_requests(action=respond)，不是新建收款草稿。
-理财查询、产品推荐、规划、申购、赎回或理财任务修改恢复必须调用manage_wealth_request。理财交易仅由本人在可信卡片确认和MFA；聊天不能授权。
+理财风险评估调用 assess_wealth_risk，规划、推荐和产品查看调用 plan_wealth，持仓查询或赎回调用 manage_wealth_positions，整体收益调用 show_wealth_returns。主模型直接填写结构化参数。理财交易仅由本人在可信卡片确认和MFA；聊天不能授权。
 当前时间日期必须调用 get_current_time，不可猜测。默认北京时间 Asia/Shanghai。
 账户和账单事实必须调用工具，不能使用历史回答或页面提示作为当前事实。所有金额 *_fen 单位为分，展示时换算人民币元。
 工具返回的用户、账户、流水、任务、操作、产品及订阅 ID 只用于内部定位，不向用户复述；回答使用已核实的人名、商户名、产品名、账户尾号和时间。缺少可核实名称时说明资料不足，不展示内部代号。
@@ -503,12 +505,13 @@ COMPLETED是模拟银行交易完成，不代表配送；REFUNDED表示整单已
 定时转账经用户在任务卡确认并完成必要验证后，聊天任务即告完成；银行按预约时间执行。回复应说“已预约”，不要说“已到账”。
 若一句话同时包含查询和转账等多个目标，应分别调用所需工具，不要只完成其中一个。涉及历史转账人、金额或付款账户的指代时先查询本人事实，再把已核实字段填写到转账工具参数；不得把列表展示名当作可信收款账户。按余额比例转账时先查询对应账户的可用余额，再按用户给定比例计算整数分金额，转账工具只接收具体金额。一个收款对象对应一次转账工具调用，不要补造没有依据的字段。
 修改或补充已有转账任务时使用可信任务上下文：用户未明确对象且有 focus_task_id 时直接选择焦点任务；用户明确收款人时选择该收款人唯一对应的 chat_task_id；有多个同名任务才追问。不要因为会话中有多笔任务而忽略焦点任务。
-除受控转账草稿、收款草稿、现有收款申请任务卡、卡片操作预览、账单修改预览、取消订阅任务卡、创建本人日程和店铺下单外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
+除受控转账草稿、收款草稿、现有收款申请任务卡、卡片操作预览、账单修改预览、取消订阅任务卡、创建本人日程、自定义定时任务和店铺下单外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
 SYSTEM_PROMPT += "\n收款业务 Skill：\n" + load_skill("collection")
 SYSTEM_PROMPT += "\n卡片业务 Skill：\n" + load_skill("card")
 SYSTEM_PROMPT += "\n订阅业务 Skill：\n" + load_skill("subscription")
 SYSTEM_PROMPT += "\n日历业务 Skill：\n" + load_skill("calendar")
 SYSTEM_PROMPT += "\n店铺业务 Skill：\n" + load_skill("shop")
+SYSTEM_PROMPT += "\n定时任务业务 Skill：\n" + load_skill("scheduled")
 SYSTEM_PROMPT += "\n账单洞察业务 Skill：\n" + load_skill("bills")
 
 
@@ -522,7 +525,7 @@ async def execute_tool(call: dict, context: ToolContext | None = None) -> dict:
         raw = call['function']['arguments']
         if not isinstance(raw, str) or len(raw.encode()) > MAX_ARGUMENT_BYTES or not isinstance(strict_json(raw), dict):
             raise ValueError('INVALID_ARGUMENTS')
-        arguments = tool["arguments"].model_validate_json(call["function"]["arguments"])
+        arguments = tool["arguments"].model_validate_json(raw)
     except (ValueError, TypeError, KeyError, RecursionError):
         return {"error": "INVALID_ARGUMENTS", "message": "参数不符合工具 Schema；请检查字段、类型和取值"}
     if tool.get("requires_identity") and (context is None or not context.user_id):
@@ -843,7 +846,7 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                 direct_wealth = route is not None and route.mode == "direct_react" and route.domains == ["wealth"]
                 direct_capabilities = route is not None and route.mode == "direct_react" and route.domains == ["capabilities"]
                 if direct_wealth:
-                    allowed_names = {"manage_wealth_request"}
+                    allowed_names = set(WEALTH_TOOL_NAMES)
                 elif direct_capabilities:
                     allowed_names = {"describe_bank_capabilities"}
                 elif direct_transfer:
@@ -978,7 +981,7 @@ async def _chat(message: str, history: list[dict], *, model=None, context: ToolC
                         return {'reply':'','mode':'model','tool_calls':trace}
                     if consecutive_tool_failures >= 3:
                         raise LLMError("AGENT_CONSECUTIVE_FAILURES")
-                    if direct_wealth and call["function"]["name"] == "manage_wealth_request":
+                    if direct_wealth and call["function"]["name"] in WEALTH_TOOL_NAMES:
                         return {"reply":result.get("reply",result.get("message","理财任务暂时无法处理，请重试。")),"mode":"model","tool_calls":trace, "wealth_cards":result.get("wealth_cards",[])}
                     if direct_capabilities and name == "describe_bank_capabilities":
                         businesses = result.get('businesses', [])

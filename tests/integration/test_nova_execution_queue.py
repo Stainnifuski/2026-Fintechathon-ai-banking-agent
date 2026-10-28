@@ -34,7 +34,7 @@ async def fake_buy(context,kind='purchase',status='AWAITING_CONFIRMATION'):
           'closed':False,'execution_plan_id':'plan-one'}
     db.add(WealthConversationORM(session_id='NW-first',user_id='U1',version=1,data=data))
     await db.commit()
-    return {'reply':'请在卡片确认与MFA','mode':'model','tool_calls':[{'name':'manage_wealth_request','result':{'reply':'请核对'}}],
+    return {'reply':'请在卡片确认与MFA','mode':'model','tool_calls':[{'name':'plan_wealth','result':{'reply':'请核对'}}],
             'wealth_cards':[{'task_id':'NW-first',**data}]}
 
 
@@ -48,7 +48,7 @@ async def test_wealth_serial_only_advances_after_bank_completion_and_is_replay_s
         ctx=await setup(db,'申购B017，100元，然后查看我的持仓')
         async def run(message,history,**kwargs):
             if '申购' in message:return await fake_buy(kwargs['context'])
-            return read_reply('manage_wealth_request')
+            return read_reply('plan_wealth')
         execute=AsyncMock(side_effect=run);monkeypatch.setattr(nova,'chat',execute)
         result=await queue.start(ctx,plan())
         assert result['execution_queue']['status']=='waiting' and execute.await_count==1
@@ -152,6 +152,33 @@ async def test_queue_rejects_parallel_new_goal_and_terminal_does_not_need_consen
 
 
 @pytest.mark.asyncio
+async def test_settled_last_goal_allows_new_queue_without_manual_poll(store,monkeypatch):
+    async with store() as db:
+        ctx=await setup(db,'查看我的持仓，然后申购B017，100元')
+        async def run(message,history,**kwargs):
+            return await fake_buy(kwargs['context']) if '申购' in message else read_reply()
+        execute=AsyncMock(side_effect=run)
+        monkeypatch.setattr(nova,'chat',execute)
+        first=[{'goal_id':'read','objective':'持仓','source_text':'查看我的持仓',
+                'depends_on':[],'completion_condition':'查询完成','completion':'result'},
+               {'goal_id':'buy','objective':'申购','source_text':'申购B017，100元',
+                'depends_on':['read'],'completion_condition':'成交','completion':'settled'}]
+        result=await queue.start(ctx,{'execution_mode':'sequential','goals':first})
+        assert result['execution_queue']['status']=='waiting'
+        bank_plan=await db.get(WealthPlanORM,'plan-one')
+        bank_plan.status='COMPLETED'
+        await db.commit()
+        next_ctx=replace(ctx,request_id='new-planning-request',original_message='查看我的持仓，然后查看可用现金')
+        second={'execution_mode':'sequential','goals':[{'goal_id':'read','objective':'持仓',
+            'source_text':'查看我的持仓','depends_on':[],'completion_condition':'查询完成','completion':'result'},
+            {'goal_id':'cash','objective':'现金','source_text':'查看可用现金',
+             'depends_on':['read'],'completion_condition':'查询完成','completion':'result'}]}
+        result=await queue.start(next_ctx,second)
+        assert result['execution_queue']['status']=='completed'
+        assert execute.await_count==4
+
+
+@pytest.mark.asyncio
 async def test_real_purchase_confirmation_mfa_settlement_then_cross_scenario_read(store,http_store,monkeypatch):
     from tests.integration.test_wealth_target_purchase import selected,confirm_verify
     payload=await selected(store,monkeypatch)
@@ -169,7 +196,7 @@ async def test_real_purchase_confirmation_mfa_settlement_then_cross_scenario_rea
                 'context_id':payload['context_id'],'command':{'kind':'purchase'},'closed':False,'execution_plan_id':prepared['plan']['plan_id']}
             db.add(WealthConversationORM(session_id='NW-real',user_id='U1',version=1,data=data));await db.commit()
             run.prepared=prepared
-            return {'reply':'需手动确认与MFA','tool_calls':[{'name':'manage_wealth_request','result':{'reply':'需核对'}}],
+            return {'reply':'需手动确认与MFA','tool_calls':[{'name':'plan_wealth','result':{'reply':'需核对'}}],
                     'wealth_cards':[{'task_id':'NW-real',**data}]}
         execute=AsyncMock(side_effect=run);monkeypatch.setattr(nova,'chat',execute)
         result=await queue.start(ctx,plan())
@@ -252,15 +279,15 @@ async def test_followup_router_cannot_recreate_original_queue_from_history(store
         await queue.start(ctx,plan())
         monkeypatch.setattr(nova,'chat',original_chat)
         monkeypatch.setattr(nova,'get_mode',lambda:'model')
-        model=FakeModel(True,['manage_wealth_request'],[
-            nova_runtime.PlannedCall(name='manage_wealth_request',arguments={})])
+        model=FakeModel(True,['plan_wealth'],[
+            nova_runtime.PlannedCall(name='plan_wealth',arguments={})])
         handler=AsyncMock(return_value={'reply':'已补充当前卡片','wealth_cards':[]})
-        monkeypatch.setitem(nova.TOOL_REGISTRY,'manage_wealth_request',{
-            **nova.TOOL_REGISTRY['manage_wealth_request'],'execute':handler})
+        monkeypatch.setitem(nova.TOOL_REGISTRY,'plan_wealth',{
+            **nova.TOOL_REGISTRY['plan_wealth'],'execute':handler})
         result=await nova.chat('金额改成200元',[],model=model,
                                context=replace(ctx,original_message='金额改成200元',request_id='followup-one'))
         assert handler.await_count==1
-        assert any(item['name']=='manage_wealth_request' and item['result']['reply']=='已补充当前卡片'
+        assert any(item['name']=='plan_wealth' and item['result']['reply']=='已补充当前卡片'
                    for item in result['tool_calls'])
         assert handler.await_args.args[1].wealth_task_id=='NW-first'
         data=queue.unpack(await queue.load(ctx));assert len(data['steps'])==2
@@ -272,22 +299,22 @@ async def test_serial_name_normalization_and_clarification_can_be_filled_without
     from backend.app.services.ai import wealth_agent as agent
     async with store() as db:
         ctx=await setup(db,'申购模拟远山·现金快取01，100元')
-        model=AsyncMock(return_value=SimpleNamespace(data=agent.IntentBatch(intents=[agent.WealthIntent(
-            kind='purchase',product_queries=['模拟远山现金快取01'],amounts_yuan=['100'],amount_quotes=['100元'])])))
-        monkeypatch.setattr(agent.llm,'generate_structured',model)
+        from tests.integration.test_nova_wealth import add_assessment
+        add_assessment(db);await db.commit()
         monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(
             assets=AsyncMock(return_value={'context_id':'test'}),call=AsyncMock(return_value=[
                 {'product_id':'B017','version':1,'name':'模拟远山·现金快取01'}])))
-        result=await agent.manage(agent.EmptyArguments(),replace(ctx,execution_step=True))
+        result=await agent.manage(agent.WealthPlanningArguments(
+            kind='purchase',product_queries=['模拟远山现金快取01'],amounts_yuan=['100'],amount_quotes=['100元']),
+            replace(ctx,execution_step=True))
         assert not result.get('error'),result
         card=result['wealth_cards'][0]
         assert card['command']['kind']=='purchase' and card['command']['products'][0]['product_id']=='B017'
         row=await db.get(WealthConversationORM,card['task_id'])
         row.data={**row.data,'command':{**row.data['command'],'kind':'clarify','products':[]},
                   'view_context':{'visible_products':[],'selected_products':[],'completed_stages':[]}};await db.commit()
-        model.return_value=SimpleNamespace(data=agent.IntentBatch(intents=[agent.WealthIntent(kind='purchase',
-            product_queries=['B017'],amounts_yuan=['100'],amount_quotes=['100元'])]))
-        result=await agent.manage(agent.EmptyArguments(),replace(ctx,original_message='产品是B017，100元',
+        result=await agent.manage(agent.WealthPlanningArguments(kind='purchase',
+            product_queries=['B017'],amounts_yuan=['100'],amount_quotes=['100元']),replace(ctx,original_message='产品是B017，100元',
             request_id='clarification-request',serial_focus_only=True,wealth_task_id=card['task_id']))
         assert len(result['wealth_cards'])==1 and result['wealth_cards'][0]['task_id']==card['task_id']
         assert result['wealth_cards'][0]['command']['kind']=='purchase'

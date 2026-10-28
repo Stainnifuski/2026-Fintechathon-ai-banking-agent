@@ -51,7 +51,7 @@ def test_only_bank_package_imports_bank_owned_orms() -> None:
     forbidden_names = {
         "AccountORM", "BankOperationORM", "ContactORM", "PaymentRequestORM", "PaymentRequestBatchORM",
         "PaymentRequestPaymentORM", "SmsChallengeORM", "SubscriptionORM",
-        "TransactionORM", "UserORM",
+        "TransactionORM", "UserORM", "ScheduledCashHoldORM", "ScheduledCashHoldLinkORM",
     }
 
     violations: list[str] = []

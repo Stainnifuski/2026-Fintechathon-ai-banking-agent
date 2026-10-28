@@ -49,7 +49,8 @@ async def active(ctx):
     """Resolve references against owned server records, never a model task id."""
     row,data=await load(ctx)
     from .task_presentation import inventory
-    items = [item for item in await inventory(ctx) if not item['finished'] and not item['released']]
+    inventory_items = await inventory(ctx)
+    items = [item for item in inventory_items if not item['finished'] and not item['released']]
     generic = [item for item in items if item['type'] not in {'wealth', 'transfer'}]
     if generic:
         if len(items) > 1:
@@ -67,7 +68,9 @@ async def active(ctx):
     transfer=ctx.focus_task_id or (saved.get('id') if not ctx.wealth_task_id and saved.get('type')=='transfer' else None)
     cards=(await ctx.db.scalars(select(WealthConversationORM).where(WealthConversationORM.user_id==ctx.user_id,
         WealthConversationORM.session_id.like('NW%')))).all()
+    finished_wealth={item['id'] for item in inventory_items if item['type']=='wealth' and item['finished']}
     cards=[c for c in cards if c.data.get('nova_session_id')==ctx.session_id and not c.data.get('closed')
+           and c.session_id not in finished_wealth
            and 'wealth:'+c.session_id not in data.get('released', {})
            and c.data.get('command',{}).get('kind') in TITLES]
     transfers=await ctx.db.get(NovaSessionORM,ctx.session_id,populate_existing=True)
@@ -94,9 +97,12 @@ async def active(ctx):
         if c and c.data.get('execution_plan_id'):
             from .execution_queue import wealth_state
             if await wealth_state(ctx,wealth,'settled')=='completed':return None
-        if c:return {'type':'wealth','id':wealth,'version':c.version,'label':TITLES[c.data['command']['kind']],
+        if c:
+            from .wealth_steps import effective_kind
+            kind=effective_kind(c.data)
+            return {'type':'wealth','id':wealth,'version':c.version,'label':TITLES[kind],
                      'digest':hashlib.sha256(json.dumps(c.data,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
-                     'kind':c.data['command']['kind']}
+                     'kind':kind}
     if transfer:
         t=next((t for t in tasks if t['chat_task_id']==transfer),None)
         if t:return {'type':'transfer','id':transfer,'version':transfers.version,
@@ -113,10 +119,7 @@ async def focus(ctx):
     if not ctx or not ctx.session_id or ctx.execution_step or ctx.task_switch_approved:return ctx
     current=await active(ctx)
     if not current:
-        _, data = await load(ctx)
-        released = data.get('released', {})
-        return replace(ctx, wealth_task_id=None if 'wealth:'+str(ctx.wealth_task_id) in released else ctx.wealth_task_id,
-                       focus_task_id=None if 'transfer:'+str(ctx.focus_task_id) in released else ctx.focus_task_id)
+        return replace(ctx, wealth_task_id=None, wealth_stage=None, focus_task_id=None)
     if current['type']=='ambiguous':return ctx
     if current.get('entry'):
         if current['type']=='card' and current.get('card_id'):

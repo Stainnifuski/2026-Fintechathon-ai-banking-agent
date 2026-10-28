@@ -9,7 +9,7 @@ from backend.app.services.bank import nova_conversations as conversations
 from backend.app.models.wealth import WealthConversationORM
 from backend.app.models.nova_conversation import NovaConversationORM
 from tests.integration.test_wealth_bank import store
-from tests.integration.test_nova_wealth import context
+from tests.integration.test_nova_wealth import context,add_assessment
 
 
 @pytest.mark.asyncio
@@ -22,6 +22,7 @@ async def test_category_label_and_parallel_wealth_tasks(store,monkeypatch):
         assets=AsyncMock(return_value={'context_id':'test'}),call=catalogue))
     async with store() as db:
         first_session=await conversations.create(db,'U1')
+        add_assessment(db)
         row=await db.get(NovaConversationORM,first_session['session_id'])
         row.title_ciphertext=conversations._encrypt('债券基金选择');await db.commit()
         first=await agent.manage(agent.EmptyArguments(),replace(context(db),session_id=first_session['session_id']))

@@ -889,6 +889,7 @@
 .home-workspace [data-destination="wealth"] {--destination-color:var(--destination-wealth)}
 .home-workspace [data-destination="transfer"] {--destination-color:var(--destination-transfer)}
 .home-workspace [data-destination="subscriptions"] {--destination-color:var(--destination-subscriptions)}
+.home-workspace [data-destination="scheduled"] {--destination-color:var(--destination-insights)}
 .home-workspace [data-destination="services"] {--destination-color:var(--destination-services)}
 .home-workspace .nova-history-toggle {height:40px;padding:10px 14px;border:1px solid var(--navy);border-radius:999px;background:var(--navy);color:#fff;font-size:12px;box-shadow:0 6px 16px #151a2d1f}
 .home-workspace .nova-history-toggle:hover,.home-workspace .nova-history-toggle[aria-expanded="true"] {background:#263458;border-color:#263458;color:#fff}

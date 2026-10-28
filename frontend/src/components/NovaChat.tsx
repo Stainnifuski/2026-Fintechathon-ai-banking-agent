@@ -16,19 +16,21 @@ import NovaCardOperationCard from './NovaCardOperationCard';
 import NovaSubscriptionCancelCard from './NovaSubscriptionCancelCard';
 import NovaCalendarCard from './NovaCalendarCard';
 import NovaShopCard from './NovaShopCard';
+import NovaScheduledTaskCard from './NovaScheduledTaskCard';
 import NovaPaymentRequestCard from './NovaPaymentRequestCard';
 import NovaBillCard from './NovaBillCard';
 import {getNovaBillResults,type NovaBillResult,type BillResultTarget} from '../services/nova';
 import { getNovaBillActions, type NovaBillAction, type NovaPromptRequest } from '../services/nova';
 import * as bank from '../services/bank';
 import { formatYuanText } from '../utils/money';
-import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask, NovaPaymentRequestTask } from '../services/nova';
+import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask, NovaChatScheduledTask, NovaPaymentRequestTask } from '../services/nova';
 
 const NovaBillResults=lazy(()=>import('./NovaBillResults'));
 const NovaWealthCard=lazy(()=>import('./NovaWealthCard'));
 
 type Entry = NovaMessage & { details?: NovaReply; streaming?: boolean; status?: string };
 const TOOL_LABELS: Record<string, string> = {
+  list_scheduled_tasks: '定时任务查询', manage_scheduled_task: '定时任务',
   describe_bank_capabilities: '业务能力介绍',
   list_cards: '卡片列表', get_card: '卡片详情', list_subscriptions: '订阅列表与预计月费', get_subscription: '订阅详情',
   get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表',
@@ -36,7 +38,8 @@ const TOOL_LABELS: Record<string, string> = {
   get_transaction: '流水详情', list_calendar_events: '日程查询', search_calendar_events: '活动搜索', get_calendar_event: '活动详情',
   list_shop_products: '店铺商品', get_shop_product: '商品详情与报价', list_shop_orders: '本人店铺订单', get_shop_order: '订单付款状态',
   preview_card_operation: '卡片操作预览', request_subscription_cancellation: '取消订阅任务卡', manage_subscription_task: '订阅操作任务卡', manipulate_calender_event: '日程操作任务卡', prepare_shop_purchase: '店铺下单', list_card_transactions: '用卡记录', project_cashflow: '只读现金流情景', get_subscription_insights: '订阅扣费核对',
-  manage_transfer_task: '转账任务规划', manage_collection_request: '收款草稿', manage_payment_requests: '现有收款申请', manage_wealth_request:'理财任务',
+  manage_transfer_task: '转账任务规划', manage_collection_request: '收款草稿', manage_payment_requests: '现有收款申请',
+  assess_wealth_risk:'风险评估',plan_wealth:'理财规划与推荐',manage_wealth_positions:'持仓查询与调整',show_wealth_returns:'理财收益',
   get_bill_catalog: '商户、标签与分类规则', list_bill_anomalies: '账单异常核对',
   preview_bill_merchant_change: '商户变更预览', prepare_bill_change: '账单修改确认卡',
   get_budget_status: '预算与预警', list_forecast_reviews: '预测复盘', list_recurring_records: '周期收支',
@@ -296,7 +299,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           void getNovaBillActions(session).then(items => { if (billSession.current === session) setBillActions(items); })
             .catch(() => setError('账单确认卡读取失败，请重新打开对话核对。'));
         }
-        if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,subscription_tasks:previous?.subscription_tasks,calendar_tasks:previous?.calendar_tasks,shop_tasks:previous?.shop_tasks,payment_request_tasks:previous?.payment_request_tasks,focus_task_id:result.focus_task_id}));
+        if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,subscription_tasks:previous?.subscription_tasks,calendar_tasks:previous?.calendar_tasks,shop_tasks:previous?.shop_tasks,scheduled_tasks:previous?.scheduled_tasks,payment_request_tasks:previous?.payment_request_tasks,focus_task_id:result.focus_task_id}));
         if(result.execution_queue?.steps.some(step=>step.review_operation_id))void getNovaTaskSession(session).then(fresh=>{if(queueSession.current===session)setTaskSession(fresh);}).catch(()=>{});
       }catch{if(queueSession.current===session){
         if(debugRequestId)setLastDebugRequest(debugRequestId);
@@ -371,6 +374,12 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     paymentRequestGroups.set(position, [...(paymentRequestGroups.get(position) || []), task]);
   }
 
+  const scheduledGroups = new Map<number, NovaChatScheduledTask[]>();
+  for (const task of taskSession?.scheduled_tasks || []) {
+    let position = messages.findIndex(entry => entry.role === 'assistant' && entry.request_id === task.origin_request_id);
+    if (position < 0) position = messages.length - 1;
+    scheduledGroups.set(position, [...(scheduledGroups.get(position) || []), task]);
+  }
   const shopGroups = new Map<number, NovaChatShopTask[]>();
   for (const task of taskSession?.shop_tasks || []) {
     let position = positionFor('shop:'+task.entry_id,task.origin_request_id);
@@ -441,14 +450,14 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     finally { setLoadingConversation(false); }
   }
 
-  async function send(text: string, candidateId?: string, selectedTaskId?: string, contextOverride?: NovaPageContext) {
+  async function send(text: string, candidateId?: string, selectedTaskId?: string, contextOverride?: NovaPageContext, requestId?: string) {
     const content = text.trim();
     if (!content || busy || queueLock.current || loadingConversation || request.current) return;
     if (uncertainRetry.current?.content !== content) uncertainRetry.current = null;
     const controller = new AbortController();
     request.current = controller;
     const newRequest: NovaTaskRequest = {
-      request_id: crypto.randomUUID(), session_id: activeConversationId || undefined,
+      request_id: requestId??crypto.randomUUID(), session_id: activeConversationId || undefined,
       session_version: taskSession?.session_version || 0,
       focus_task_id: selectedTaskId || focusTaskId,
       candidate_id: candidateId,
@@ -497,16 +506,17 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             subscription_tasks: previous?.session_id === reply.session_id ? previous?.subscription_tasks : undefined,
             calendar_tasks: previous?.session_id === reply.session_id ? previous?.calendar_tasks : undefined,
             shop_tasks: previous?.session_id === reply.session_id ? previous?.shop_tasks : undefined,
+            scheduled_tasks: previous?.session_id === reply.session_id ? previous?.scheduled_tasks : undefined,
             focus_task_id: reply.focus_task_id }));
           setFocusTaskId(undefined);
         }
         const sessionId = taskRequest.session_id;
-        if (sessionId && reply.tool_calls.some(call => ['preview_card_operation', 'request_subscription_cancellation', 'manage_subscription_task', 'manipulate_calender_event', 'prepare_shop_purchase', 'manage_payment_requests'].includes(call.name) && !call.result.error)) {
+        if (sessionId && reply.tool_calls.some(call => ['preview_card_operation', 'request_subscription_cancellation', 'manage_subscription_task', 'manipulate_calender_event', 'prepare_shop_purchase', 'manage_payment_requests', 'manage_scheduled_task'].includes(call.name) && !call.result.error)) {
           // 卡片任务卡状态以服务端授权单为准，随会话一起读取。
           void getNovaTaskSession(sessionId).then(setTaskSession).catch(() => setError('卡片任务卡读取失败，请重新打开对话。'));
         }
-        if(sessionId&&reply.tool_calls.some(call=>['manage_transfer_task','manage_collection_request','manage_wealth_request','preview_card_operation','manage_subscription_task','manipulate_calender_event','prepare_shop_purchase','prepare_bill_change','manage_payment_requests'].includes(call.name)&&!call.result.error)){
-          const domainKeys:Record<string,string>={manage_transfer_task:'transfer',manage_collection_request:'collection',manage_wealth_request:'wealth',preview_card_operation:'card',manage_subscription_task:'subscription',manipulate_calender_event:'calendar',prepare_shop_purchase:'shop',prepare_bill_change:'bill',manage_payment_requests:'payment_request'};
+        if(sessionId&&reply.tool_calls.some(call=>['manage_transfer_task','manage_collection_request','assess_wealth_risk','plan_wealth','manage_wealth_positions','show_wealth_returns','preview_card_operation','manage_subscription_task','manipulate_calender_event','prepare_shop_purchase','prepare_bill_change','manage_payment_requests'].includes(call.name)&&!call.result.error)){
+          const domainKeys:Record<string,string>={manage_transfer_task:'transfer',manage_collection_request:'collection',assess_wealth_risk:'wealth',plan_wealth:'wealth',manage_wealth_positions:'wealth',show_wealth_returns:'wealth',preview_card_operation:'card',manage_subscription_task:'subscription',manipulate_calender_event:'calendar',prepare_shop_purchase:'shop',prepare_bill_change:'bill',manage_payment_requests:'payment_request'};
           void apiClient.get<(TaskMeta&{type:string;request_id?:string})[]>(`/nova/presentation/${sessionId}`).then(({data})=>{if(billSession.current!==sessionId)return;const changed=data.filter(item=>!item.finished&&!item.released&&reply.tool_calls.some(call=>domainKeys[call.name]===item.type));setPlacements(old=>({...old,...Object.fromEntries(changed.map(item=>[item.key,taskRequest.request_id]))}));for(const item of changed)void apiClient.post(`/nova/presentation/${sessionId}/position`,{key:item.key,request_id:taskRequest.request_id,existing:true}).catch(()=>{});});
         }
         void listNovaConversations().then(setConversations).catch(() => {});
@@ -557,7 +567,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     if (!promptRequest || promptRequest.userId !== userId || handledPrompt.current === promptRequest.id
         || !open || busy || loadingConversation || queueBusy || queueLock.current || request.current) return;
     handledPrompt.current = promptRequest.id;
-    void send(promptRequest.text, undefined, undefined, promptRequest.context);
+    void send(promptRequest.text, undefined, undefined, promptRequest.context, promptRequest.id);
     onPromptHandled?.(promptRequest.id);
   }, [promptRequest, userId, open, busy, loadingConversation, queueBusy]);
   if (!open) return null;
@@ -653,6 +663,11 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
               disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, card_operations: tasks } : previous)}
               onActivity={onTransferActivity} /></NovaTaskSlot>)}
+            {scheduledGroups.get(index)?.map(task => <NovaScheduledTaskCard key={'scheduled:'+task.entry_id}
+              task={task} sessionId={taskSession!.session_id} accounts={payerAccounts} disabled={busy || loadingConversation}
+              onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, scheduled_tasks: tasks } : previous)}
+              onStart={started => { if (started.dispatch_request_id) void send(started.description, undefined, undefined, undefined, started.dispatch_request_id); }}
+              onActivity={onTransferActivity} />)}
             {shopGroups.get(index)?.map(task => <NovaTaskSlot key={'shop:'+task.entry_id} meta={metaFor('shop:'+task.entry_id,'店铺订单','thirdParty',task.order?.status==='COMPLETED')}><NovaShopCard key={task.entry_id}
               task={task} sessionId={taskSession!.session_id} accounts={payerAccounts} disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, shop_tasks: tasks } : previous)}

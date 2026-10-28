@@ -115,7 +115,7 @@ async def test_router_distinguishes_new_read_and_continuation(store,monkeypatch,
         monkeypatch.setattr(nova,'execute_tool',tool)
         monkeypatch.setattr(nova.llm,'generate_with_tools',AsyncMock(return_value=SimpleNamespace(data={
             'role':'assistant','content':None,'tool_calls':[{'id':'call-one','type':'function','function':{
-                'name':'manage_wealth_request','arguments':'{}'}}]})))
+                'name':'plan_wealth','arguments':'{}'}}]})))
         # For read, return final structured response so no mutation can run.
         if action=='read':
             nova.llm.generate_with_tools.return_value=SimpleNamespace(data={'role':'assistant','content':'{}','tool_calls':[]})

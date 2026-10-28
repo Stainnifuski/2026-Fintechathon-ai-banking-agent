@@ -29,7 +29,7 @@ def ordinal_number(value: str) -> int:
     return result+part
 
 
-ORDINAL=re.compile(r'第([0-9零〇一二两三四五六七八九十百]+)(?:(?:个|只|支|张|笔|项|条|款|位)|(?=$|[，,。；;：:]))')
+ORDINAL=re.compile(r'第([0-9零〇一二两三四五六七八九十百]+)(?:(?:个|只|支|张|笔|项|题|条|款|位)|(?=$|[，,。；;：:]))')
 
 
 def ordinals(text: str, *,include_negated=False) -> list[int]:

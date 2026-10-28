@@ -43,6 +43,9 @@ class ToolPlan(BaseModel):
     clarification: str | None = Field(default=None, max_length=300)
 
 
+WEALTH_TOOLS = {'assess_wealth_risk','plan_wealth','manage_wealth_positions','show_wealth_returns'}
+
+
 SYSTEM_PROMPT = """## 
 你是Nova银行智能体。
 1. 请先调用 `describe_bank_capabilities` 查看当前业务能力。
@@ -63,7 +66,7 @@ def _phase_tools(registry: dict) -> set[str]:
     return (reads | {"manage_transfer_task", "manage_collection_request",
                      "manage_payment_requests",
                      "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event",
-                     "prepare_shop_purchase", "manage_wealth_request"}) & set(registry)
+                     "prepare_shop_purchase", "manage_scheduled_task", *WEALTH_TOOLS}) & set(registry)
 
 
 def _task_description(task: dict) -> dict:
@@ -201,16 +204,35 @@ async def _payment_request_records(context: ToolContext) -> list[dict]:
 
 async def _wealth_records(context: ToolContext) -> list[dict]:
     from .wealth_agent import cards
+    from .wealth_steps import sequence,effective_kind
+    from .execution_queue import wealth_state
     current = await cards(context.db, context.user_id, context.session_id)
     active_kinds = {'planning', 'recommend', 'purchase', 'positions', 'redeem', 'assessment', 'clarify'}
-    return [{'id': card['task_id'], 'type': 'wealth',
-             'status': 'PAUSED' if card.get('paused') else 'OPEN',
-             'completed': bool(card.get('closed')),
-             'description': {'kind': (card.get('command') or {}).get('kind'),
-                             'stage': (card.get('view_context') or {}).get('stage'),
-                             'paused': bool(card.get('paused'))}}
-            for card in current if not card.get('parent_task_id') and
-            (card.get('command') or {}).get('kind') in active_kinds]
+    records = []
+    for card in current:
+        if card.get('parent_task_id') or (card.get('command') or {}).get('kind') not in active_kinds:
+            continue
+        completed = bool(card.get('closed'))
+        if not completed and (card.get('execution_plan_id') or card['command']['kind']=='assessment'):
+            completed = await wealth_state(context, card['task_id'], 'settled') == 'completed'
+        view=card.get('view_context') or {}
+        completed_stages=view.get('completed_stages',[])
+        stage=next((item for item in sequence(effective_kind(card)) if item not in completed_stages),'trade')
+        records.append({'id': card['task_id'], 'type': 'wealth',
+                        'status': 'PAUSED' if card.get('paused') else 'COMPLETED' if completed else 'OPEN',
+                        'completed': completed,
+                        'description': {'kind': card['command']['kind'],
+                                        'stage': stage,
+                                        'completed_stages': completed_stages,
+                                        'visible_products': view.get('visible_products',[])[:60],
+                                        'selected_products': view.get('selected_products',[])[:160],
+                                        'cash_field': view.get('cash_field'),
+                                        'cash_yuan': view.get('cash_yuan'),
+                                        'amounts_yuan': view.get('amounts_yuan',{}),
+                                        'risk_answered_questions': list((view.get('risk_answers') or {}).keys()),
+                                        'assessment_pending': bool(card.get('assessment_pending')),
+                                        'paused': bool(card.get('paused'))}})
+    return records
 
 
 async def _load(context: ToolContext) -> tuple[NovaAgentRuntimeORM | None, dict]:
@@ -297,9 +319,9 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     reads = list(state.get("read_tasks", []))
     from .nova import TOOL_REGISTRY
     execute_names = {"manage_transfer_task", "manage_collection_request", "prepare_bill_change",
-                     "manage_payment_requests", "manage_wealth_request",
+                     "manage_payment_requests", *WEALTH_TOOLS,
                      "preview_card_operation", "manage_subscription_task", "manipulate_calender_event",
-                     "prepare_shop_purchase"}
+                     "prepare_shop_purchase", "manage_scheduled_task"}
     read_names = _phase_tools(TOOL_REGISTRY) - execute_names
     for item in trace:
         if item.get("name") in read_names:
@@ -389,6 +411,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             subscription_skill_loaded = False
             calendar_skill_loaded = False
             shop_skill_loaded = False
+            scheduled_skill_loaded = False
             wealth_skill_loaded = False
             bills_skill_loaded = False
             calendar_query_skill_loaded = False
@@ -397,7 +420,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             calendar_list_replanned = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
-                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。用户明确要办理转账时选择 manage_transfer_task；收款人、金额等尚未提供也可打开空白转账草稿。理财资产、持仓、收益、产品、推荐、规划、评估及申赎统一使用 manage_wealth_request；工具内部由理财子模型理解原话并更新可信卡片。查看或处理现有收款申请使用 manage_payment_requests；新建、修改或撤销向别人收款的草稿时填写 collection_action 并选择 manage_collection_request，查联系人后本轮仍须调用该办理工具。仅查看或处理已发出的收款申请使用 manage_payment_requests。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。用户要在花店或蛋糕店购买商品时选择 prepare_shop_purchase；商品或数量未确定也可打开订单表单，不要查完商品就结束。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
+                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。用户明确要办理转账时选择 manage_transfer_task；收款人、金额等尚未提供也可打开空白转账草稿。理财风险评估选 assess_wealth_risk；规划、推荐、产品详情或申购选 plan_wealth；持仓查询、调整或赎回选 manage_wealth_positions；整体理财收益选 show_wealth_returns。宽泛但明确的理财请求选 plan_wealth，kind=planning。查看或处理现有收款申请使用 manage_payment_requests；新建、修改或撤销向别人收款的草稿时填写 collection_action 并选择 manage_collection_request，查联系人后本轮仍须调用该办理工具。仅查看或处理已发出的收款申请使用 manage_payment_requests。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。用户要让 NOVA 到某个时间再办理一件事，或要为这类任务锁定、预留资金时选择 manage_scheduled_task；查看定时任务选择 list_scheduled_tasks；只在日历记一条安排才用日历工具，到时自动转账用 manage_transfer_task。用户要在花店或蛋糕店购买商品时选择 prepare_shop_purchase；商品或数量未确定也可打开订单表单，不要查完商品就结束。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
                     schema=ToolSelection, max_tokens=400)).data
                 debug_trace.record("tool_selection", selection.model_dump(mode="json"))
                 invalid = [n for n in selection.tool_names if n not in allowed]
@@ -421,7 +444,7 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if "manage_transfer_task" in selected and not transfer_skill_loaded:
                     messages.append({"role": "system", "content": "转账业务规则：" + load_skill("transfer")})
                     transfer_skill_loaded = True
-                if "manage_wealth_request" in selected and not wealth_skill_loaded:
+                if selected & WEALTH_TOOLS and not wealth_skill_loaded:
                     messages.append({"role": "system", "content": "理财业务规则：" + load_skill("wealth")})
                     wealth_skill_loaded = True
                 if selected & {"get_bill_analysis", "get_bill_catalog", "list_bill_anomalies", "preview_bill_merchant_change", "prepare_bill_change", "get_budget_status", "list_forecast_reviews", "list_recurring_records", "project_cashflow"} and not bills_skill_loaded:
@@ -439,6 +462,9 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if 'prepare_shop_purchase' in selected and not shop_skill_loaded:
                     messages.append({'role': 'system', 'content': '店铺业务规则：' + load_skill('shop')})
                     shop_skill_loaded = True
+                if selected & {'manage_scheduled_task', 'list_scheduled_tasks'} and not scheduled_skill_loaded:
+                    messages.append({'role': 'system', 'content': '定时任务业务规则：' + load_skill('scheduled')})
+                    scheduled_skill_loaded = True
                 if selected & {'search_calendar_events', 'list_calendar_events', 'get_calendar_event'} and not calendar_query_skill_loaded:
                     messages.append({'role': 'system', 'content': '日历信息查询规则：' + load_skill('calendar_query')})
                     calendar_query_skill_loaded = True
@@ -448,8 +474,8 @@ async def chat(message: str, history: list[dict], *, model=None,
                 plan = (await client.generate_structured(messages=[*messages,
                     {"role": "system", "content": "现在规划工具调用。仅使用已动态提供的工具 Schema：" +
                      json.dumps(schemas, ensure_ascii=False) +
-                     "。按依赖顺序列出 calls；用户要办理转账时调用 manage_transfer_task，明确 action。新建转账即使收款人和金额都未知也调用 action=create，省略未知字段以打开空白任务卡；能力目录查询不能替代任务卡。新建向别人收款时调用 manage_collection_request(action=create)，把已知付款人和金额填入参数；缺少字段也要打开可补全的草稿卡。查联系人后仍须继续调用该工具。修改或撤销收款草稿时调用 manage_collection_request 并指定可信卡片 ID。理财需求调用 manage_wealth_request 并传空对象，由理财子模型处理原话，交易仍由本人在卡片确认。查看或处理现有收款申请调用 manage_payment_requests，取消/支付/拒绝只打开待本人操作的卡片。打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。日历添加即使缺少事件名称或具体时间也要调用 manipulate_calender_event(action=add) 打开可补全的任务卡；若先查当前时间，本轮查完后继续规划并调用日历操作工具。花店或蛋糕店购买时先查 list_shop_products，再按可信商品 ID 调用 prepare_shop_purchase；缺商品或数量仍须打开可补全订单表单。日历事件按名称或地点搜索无结果时，使用 list_calendar_events 查看相关日期范围的活动，再根据列表规划下一步。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
-                    schema=ToolPlan, max_tokens=1300)).data
+                     "。按依赖顺序列出 calls；用户要办理转账时调用 manage_transfer_task，明确 action。新建转账即使收款人和金额都未知也调用 action=create，省略未知字段以打开空白任务卡；能力目录查询不能替代任务卡。新建向别人收款时调用 manage_collection_request(action=create)，把已知付款人和金额填入参数；缺少字段也要打开可补全的草稿卡。查联系人后仍须继续调用该工具。修改或撤销收款草稿时调用 manage_collection_request 并指定可信卡片 ID。理财由主模型直接填写工具参数：评估用 assess_wealth_risk，规划或推荐用 plan_wealth，持仓或赎回用 manage_wealth_positions，整体收益用 show_wealth_returns。缺少预算或产品仍打开卡片，交易由本人核对确认。查看或处理现有收款申请调用 manage_payment_requests，取消/支付/拒绝只打开待本人操作的卡片。打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。日历添加即使缺少事件名称或具体时间也要调用 manipulate_calender_event(action=add) 打开可补全的任务卡；若先查当前时间，本轮查完后继续规划并调用日历操作工具。新建自定义定时任务即使缺少日期或时间也调用 manage_scheduled_task(action=create) 打开可补全的表单；要开始、完成或取消已有定时任务时先 list_scheduled_tasks，再用 action=show 打开其卡片。花店或蛋糕店购买时先查 list_shop_products，再按可信商品 ID 调用 prepare_shop_purchase；缺商品或数量仍须打开可补全订单表单。日历事件按名称或地点搜索无结果时，使用 list_calendar_events 查看相关日期范围的活动，再根据列表规划下一步。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
+                    schema=ToolPlan, max_tokens=3000)).data
                 debug_trace.record("tool_plan", plan.model_dump(mode="json"))
                 if plan.clarification and not plan.calls:
                     result["reply"] = plan.clarification
@@ -552,10 +578,10 @@ async def chat(message: str, history: list[dict], *, model=None,
                         continue
                     # An execute tool may depend on a bank read made in this turn.
                     # Replan with that result before opening the task card.
-                    if (selected & {"manage_transfer_task", "manage_collection_request", "manage_payment_requests", "manage_wealth_request", "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event", "prepare_shop_purchase"}
+                    if (selected & ({"manage_transfer_task", "manage_collection_request", "manage_payment_requests", "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event", "prepare_shop_purchase", "manage_scheduled_task"} | WEALTH_TOOLS)
                             and not any(call.name in {"manage_transfer_task", "preview_card_operation", "prepare_bill_change",
                                                        "manage_subscription_task", "manipulate_calender_event",
-                                                       "prepare_shop_purchase", "manage_collection_request", "manage_payment_requests", "manage_wealth_request"}
+                                                       "prepare_shop_purchase", "manage_scheduled_task", "manage_collection_request", "manage_payment_requests", *WEALTH_TOOLS}
                                         for call in calls)
                             ):
                         messages.append({"role": "system", "content": "本轮尚未调用已选的办理工具。若用户要求办理转账，应规划 manage_transfer_task；若要新建向别人收款的草稿，应规划 manage_collection_request(action=create)。新建草稿允许业务字段留空。先前只读结果已经可用，请继续规划。"})
@@ -618,6 +644,13 @@ async def chat(message: str, history: list[dict], *, model=None,
         failure = next((item.get('result', {}).get('message') for item in reversed(trace)
                         if item.get('name') == 'manage_collection_request' and item.get('result', {}).get('error')), None)
         result['reply'] = failure or '收款任务卡尚未生成，请再试一次；目前没有发出收款申请。'
+    called_business = [item for item in trace if item.get('name') in business_tools]
+    if (not result['reply'] and len(called_business) == 1
+            and called_business[0]['name'] in WEALTH_TOOLS
+            and finish['outcome'] != 'tool_failed'):
+        trusted_reply = called_business[0].get('result', {}).get('trusted_reply')
+        if isinstance(trusted_reply, str) and trusted_reply:
+            result['reply'] = trusted_reply
     if not result["reply"]:
         if on_event is not None:
             await on_event({'type': 'status', 'text': '正在整理回复'})

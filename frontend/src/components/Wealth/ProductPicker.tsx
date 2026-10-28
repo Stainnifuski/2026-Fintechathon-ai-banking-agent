@@ -8,6 +8,7 @@ import type { ProductDetailLoader } from './ProductDetail';
 import ProductComparison from './ProductComparison';
 import type { ComparisonLoader } from './ProductComparison';
 import { displayedShare, groupMessage, performanceText, selectionForScope, toggleProduct } from './productSelection';
+import {candidateStage} from './stepFlow';
 import type { ProductSelectionState } from './productSelection';
 import './productPicker.css';
 
@@ -38,7 +39,7 @@ export default function ProductPicker({ groups, scopeKey, selection, onSelection
     {error && <p role="alert">{error}</p>}{busy && <p role="status">正在读取候选…</p>}
     {groups.map((group, index) => {
       const message = groupMessage(group);
-      return <AgentStepCard stage={group.bucket??'candidates'} canContinue={!busy&&!selectionLocked&&(state.items.some(i=>!group.bucket||i.candidate.bucket===group.bucket)||!!group.bucket&&!!requiredBuckets&&!requiredBuckets.includes(group.bucket))} onAdvance={()=>{if(!busy&&!selectionLocked&&group.bucket!=='cash_management')onRefreshGroup(group,state.items.map(item=>item.candidate.family_id));}} title={`${bucketNames[group.bucket||'']||'产品'}候选`} key={`${group.bucket??'general'}-${index}`}><section className="picker-group" key={`${group.bucket ?? 'general'}-${index}`} aria-label={`${bucketNames[group.bucket || ''] || '产品'}候选组`}>
+      return <AgentStepCard stage={candidateStage(showBuckets,group.bucket)} canContinue={!busy&&!selectionLocked&&(state.items.some(i=>!group.bucket||i.candidate.bucket===group.bucket)||!!group.bucket&&!!requiredBuckets&&!requiredBuckets.includes(group.bucket))} onAdvance={()=>{if(!busy&&!selectionLocked&&group.bucket!=='cash_management')onRefreshGroup(group,state.items.map(item=>item.candidate.family_id));}} title={`${bucketNames[group.bucket||'']||'产品'}候选`} key={`${group.bucket??'general'}-${index}`}><section className="picker-group" key={`${group.bucket ?? 'general'}-${index}`} aria-label={`${bucketNames[group.bucket || ''] || '产品'}候选组`}>
         <div className="consumer-card-head"><h3>{bucketNames[group.bucket || ''] || '产品'}候选</h3>{group.bucket!=='cash_management' && (group.next_cursor || planningRefresh && group.items.length>0) && <button className="secondary" disabled={busy||selectionLocked} onClick={() => onRefreshGroup(group, state.items.map(item => item.candidate.family_id))}>换一批{bucketNames[group.bucket || ''] || '产品'}</button>}</div>
         {message ? <p className="consumer-empty">{message}</p> : !group.items.length ? <p>当前没有候选资料。</p> : <div className="picker-cards">{group.items.map(candidate => {
           const share = displayedShare(candidate, state);

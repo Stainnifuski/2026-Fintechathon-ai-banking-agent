@@ -101,6 +101,17 @@ class BankApi(Protocol):
         self, *, operation_id: str, subject_user_id: str
     ) -> None: ...
 
+    async def place_scheduled_hold(
+        self, *, hold_id: str, subject_user_id: str, account_id: str, amount_fen: int,
+        purpose: str, reference_id: str, link_keys: list[str] = (),
+    ) -> dict: ...
+
+    async def link_scheduled_hold(self, *, hold_id: str, subject_user_id: str, link_key: str) -> None: ...
+
+    async def release_scheduled_holds(
+        self, *, subject_user_id: str, purpose: str, reference_id: str, keep_hold_id: str | None = None,
+    ) -> list[dict]: ...
+
 
 class HttpBankApiClient:
     """通过模拟银行内部 API 访问银行能力，不接触银行数据库。"""
@@ -246,6 +257,40 @@ class HttpBankApiClient:
         )
         if response.is_error:
             raise self._error(response)
+
+
+    async def place_scheduled_hold(
+        self, *, hold_id: str, subject_user_id: str, account_id: str, amount_fen: int,
+        purpose: str, reference_id: str, link_keys: list[str] = (),
+    ) -> dict:
+        response = await self._request(
+            "PUT", f"/api/v1/internal/bank/scheduled-holds/{hold_id}",
+            json={"subject_user_id": subject_user_id, "account_id": account_id, "amount_fen": amount_fen,
+                  "purpose": purpose, "reference_id": reference_id, "link_keys": list(link_keys)},
+        )
+        if response.is_error:
+            raise self._error(response)
+        return response.json()
+
+    async def link_scheduled_hold(self, *, hold_id: str, subject_user_id: str, link_key: str) -> None:
+        response = await self._request(
+            "POST", f"/api/v1/internal/bank/scheduled-holds/{hold_id}/links",
+            json={"subject_user_id": subject_user_id, "link_key": link_key},
+        )
+        if response.is_error:
+            raise self._error(response)
+
+    async def release_scheduled_holds(
+        self, *, subject_user_id: str, purpose: str, reference_id: str, keep_hold_id: str | None = None,
+    ) -> list[dict]:
+        response = await self._request(
+            "POST", "/api/v1/internal/bank/scheduled-holds/release",
+            json={"subject_user_id": subject_user_id, "purpose": purpose,
+                  "reference_id": reference_id, "keep_hold_id": keep_hold_id},
+        )
+        if response.is_error:
+            raise self._error(response)
+        return response.json()
 
 
 def get_bank_api() -> BankApi:

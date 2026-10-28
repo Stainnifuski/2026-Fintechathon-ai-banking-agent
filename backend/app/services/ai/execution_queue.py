@@ -111,6 +111,14 @@ async def start(context, plan, *, model=None):
             if data['original']!=context.original_message:
                 raise conversations.ConversationError('请求编号已用于其他办理指令。',409)
             return await advance(context, model=model)
+        # A single waiting goal may have settled since the last queue poll.
+        # Reconcile it before rejecting a new goal; never run pending goals here.
+        if data['status']=='waiting' and all(step['status'] in {'waiting','completed'} for step in data['steps']):
+            waiting=[step for step in data['steps'] if step['status']=='waiting']
+            if all(state=='completed' for state in [await observe(context,step) for step in waiting]):
+                await advance(context,model=model)
+                row=await load(context)
+                data=unpack(row)
         if data['status'] not in TERMINAL:
             return response(row, [], '当前对话已有未结束的办理队列，请先完成当前操作，或停止后续办理。')
     try:
@@ -190,8 +198,12 @@ async def wealth_state(context, key, completion):
     if kind=='assessment':
         from ...integrations.wealth_authorization import latest_assessment,aware
         from ...domain.time import utc_now
+        from datetime import datetime
         a=await latest_assessment(context.db,context.user_id)
-        return 'completed' if a and a.confirmed_at and aware(a.expires_at)>utc_now() else 'waiting'
+        reassess_started=data.get('reassess_started_at')
+        confirmed_after_reassessment=(not reassess_started or bool(a and a.confirmed_at and
+            aware(a.confirmed_at)>=aware(datetime.fromisoformat(reassess_started))))
+        return 'completed' if a and a.confirmed_at and aware(a.expires_at)>utc_now() and confirmed_after_reassessment else 'waiting'
     view=data.get('view_context') or {}
     if completion=='selection' and kind=='recommend':
         return 'completed' if view.get('selected_products') else 'waiting'
