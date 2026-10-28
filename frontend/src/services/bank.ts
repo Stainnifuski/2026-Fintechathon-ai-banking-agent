@@ -23,13 +23,24 @@ export interface SubscriptionChargeResult {
   subscription: Subscription; transaction_id: string; charged_amount: number;
   duplicate: boolean; message: string;
 }
+/** 定时任务锁定的活期资金：remaining 在任务结束前不可被其他付款使用，returned 为结束后退回的部分。 */
+export interface ScheduledLock {
+  account_id:string;amount_fen:number;used_fen:number;remaining_fen:number;returned_fen:number;
+  status:'HELD'|'CONSUMED'|'RELEASED';
+}
 export interface ScheduledTask {
   task_id:string;task_type:'custom'|'transfer';description:string;scheduled_at:string;
-  status:string;completed:boolean;can_start:boolean;dispatch_request_id:string|null;started_at:string|null;
+  status:string;completed:boolean;can_start:boolean;can_finish:boolean;can_cancel:boolean;
+  dispatch_request_id:string|null;started_at:string|null;lock:ScheduledLock|null;
 }
 export const scheduledTasks=()=>apiClient.get<{items:ScheduledTask[];as_of:string}>('/scheduled-tasks').then(r=>r.data.items);
-export const createScheduledTask=(description:string,scheduled_at:string)=>
-  apiClient.post<ScheduledTask>('/scheduled-tasks',{description,scheduled_at}).then(r=>r.data);
+export const createScheduledTask=(description:string,scheduled_at:string,lock?:{amount:string;account_id:string})=>
+  apiClient.post<ScheduledTask>('/scheduled-tasks',{description,scheduled_at,
+    ...(lock?{lock_amount:lock.amount,lock_account_id:lock.account_id}:{})}).then(r=>r.data);
+export const finishScheduledTask=(taskId:string)=>
+  apiClient.post<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(taskId)}/finish`).then(r=>r.data);
+export const cancelScheduledTask=(taskId:string)=>
+  apiClient.post<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(taskId)}/cancel`).then(r=>r.data);
 export const startScheduledTask=(taskId:string)=>
   apiClient.post<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(taskId)}/start`).then(r=>r.data);
 export interface ConfirmationCard {

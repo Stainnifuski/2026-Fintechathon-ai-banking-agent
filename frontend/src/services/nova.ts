@@ -1,6 +1,6 @@
 import { apiClient } from './api';
 import type { BillQuery } from './bills';
-import type { BankCard, CardAction, CardOperation, PaymentRequest, Subscription, TaskSnapshot } from './bank';
+import type { BankCard, CardAction, CardOperation, PaymentRequest, Subscription, TaskSnapshot, ScheduledTask } from './bank';
 import type { CalendarEvent } from './calendar';
 
 export type NovaPageContext = {
@@ -60,6 +60,11 @@ export const decideNovaBillAction = (card: NovaBillAction, decision: 'confirm' |
 export type NovaConversation = { session_id: string; title: string; created_at: string; updated_at: string };
 export type NovaConversationDetail = NovaConversation & { messages: NovaMessage[] };
 /** 聊天中的店铺订单：已下单时含订单（付款由本人在卡片中确认），否则为预填表单。 */
+/** 聊天中的自定义定时任务：已创建时含任务视图，否则为预填表单。 */
+export type NovaChatScheduledTask = {
+  entry_id: string; origin_request_id: string; notice?: string | null; task?: ScheduledTask | null;
+  prefill: { description?: string; run_date?: string; run_time?: string; lock_amount?: string; lock_account_id?: string };
+};
 export type NovaChatShopTask = {
   entry_id: string; origin_request_id: string; shop?: 'flower' | 'cake' | null; shop_name?: string | null;
   prefill: { product_id?: string; quantity?: number }; notice?: string | null;
@@ -90,7 +95,7 @@ export type NovaChatCardTask = {
 export type NovaPaymentRequestTask = {
   entry_id: string; origin_request_id: string; action: 'cancel' | 'respond'; requests: PaymentRequest[];
 };
-export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[]; collection_cards: NovaCollectionCard[]; card_operations?: NovaChatCardTask[]; subscription_tasks?: NovaChatSubscriptionTask[]; calendar_tasks?: NovaChatCalendarTask[]; shop_tasks?: NovaChatShopTask[]; payment_request_tasks?: NovaPaymentRequestTask[] };
+export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[]; collection_cards: NovaCollectionCard[]; card_operations?: NovaChatCardTask[]; subscription_tasks?: NovaChatSubscriptionTask[]; calendar_tasks?: NovaChatCalendarTask[]; shop_tasks?: NovaChatShopTask[]; payment_request_tasks?: NovaPaymentRequestTask[]; scheduled_tasks?: NovaChatScheduledTask[] };
 
 export async function listNovaConversations(): Promise<NovaConversation[]> {
   return apiClient.get<NovaConversation[]>('/bank/nova/conversations').then(response => response.data);
@@ -182,6 +187,13 @@ export const linkNovaShopTask = (sessionId: string, entryId: string, shop: 'flow
 export const dismissNovaShopTask = (sessionId: string, entryId: string) =>
   apiClient.post<{ shop_tasks: NovaChatShopTask[] }>(`/nova/task-sessions/${sessionId}/shop-tasks/${entryId}/dismiss`)
     .then(r => r.data.shop_tasks);
+
+export const linkNovaScheduledTask = (sessionId: string, entryId: string, taskId: string) =>
+  apiClient.post<{ scheduled_tasks: NovaChatScheduledTask[] }>(`/nova/task-sessions/${sessionId}/scheduled-tasks/${entryId}/task`,
+    { task_id: taskId }).then(r => r.data.scheduled_tasks);
+export const dismissNovaScheduledTask = (sessionId: string, entryId: string) =>
+  apiClient.post<{ scheduled_tasks: NovaChatScheduledTask[] }>(`/nova/task-sessions/${sessionId}/scheduled-tasks/${entryId}/dismiss`)
+    .then(r => r.data.scheduled_tasks);
 
 export const sendNovaCollection = (sessionId: string, collectionId: string, payload: {
   session_version: number; payer_user_ids: string[]; receive_account_id: string;

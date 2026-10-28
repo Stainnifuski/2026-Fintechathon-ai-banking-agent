@@ -270,7 +270,7 @@ async def test_scheduled_transfer_does_not_resume_after_cooldown(db, monkeypatch
     draft = await create_transfer_task(db, bank, user_id='U1', request_id='schedule-create',
         operation_id='scheduled-operation', from_account='A1', to_account='A2', amount=100,
         scheduled_at=now + timedelta(minutes=1))
-    ready = await confirm_task(db, task_id=draft['task_id'], user_id='U1', request_id='schedule-confirm',
+    ready = await confirm_task(db, task_id=draft['task_id'], user_id='U1', request_id='schedule-confirm', bank=bank,
         state_version=draft['state_version'], plan_version=draft['plan_version'])
     await lock(db)
     assert await execute_due_scheduled_transfers(db, bank, now=now + timedelta(minutes=2)) == 0

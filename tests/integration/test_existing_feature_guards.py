@@ -27,7 +27,7 @@ async def test_early_http_accept_rejected_and_due_scheduler_still_executes(db):
     due = datetime.now(timezone.utc) + timedelta(days=1)
     task = await create_transfer_task(db, bank, user_id="U1", request_id="guard-create-early",
         operation_id="guard-operation-early", from_account="A1", to_account="A2", amount=100, scheduled_at=due)
-    waiting = await confirm_task(db, task_id=task["task_id"], user_id="U1", request_id="guard-confirm-early",
+    waiting = await confirm_task(db, task_id=task["task_id"], user_id="U1", request_id="guard-confirm-early", bank=bank,
         state_version=task["state_version"], plan_version=task["plan_version"])
     app = FastAPI()
     app.include_router(tasks_router)

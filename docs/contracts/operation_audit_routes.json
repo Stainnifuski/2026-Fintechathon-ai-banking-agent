@@ -457,6 +457,24 @@
   },
   {
     "method": "POST",
+    "path": "/api/v1/internal/bank/scheduled-holds/release",
+    "domain": "bank",
+    "action": "release_scheduled_holds"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/internal/bank/scheduled-holds/{hold_id}",
+    "domain": "bank",
+    "action": "place_scheduled_hold"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/internal/bank/scheduled-holds/{hold_id}/links",
+    "domain": "bank",
+    "action": "link_scheduled_hold"
+  },
+  {
+    "method": "POST",
     "path": "/api/v1/internal/bank/sms/verify",
     "domain": "bank",
     "action": "verify_sms"
@@ -835,6 +853,18 @@
   },
   {
     "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/scheduled-tasks/{entry_id}/dismiss",
+    "domain": "assistant",
+    "action": "dismiss_scheduled_card"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/nova/task-sessions/{session_id}/scheduled-tasks/{entry_id}/task",
+    "domain": "assistant",
+    "action": "link_scheduled_card"
+  },
+  {
+    "method": "POST",
     "path": "/api/v1/nova/task-sessions/{session_id}/shop-tasks/{entry_id}/dismiss",
     "domain": "assistant",
     "action": "dismiss_shop_task"
@@ -952,6 +982,18 @@
     "path": "/api/v1/scheduled-tasks",
     "domain": "assistant",
     "action": "create_custom_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks/{task_id}/cancel",
+    "domain": "assistant",
+    "action": "cancel_custom_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks/{task_id}/finish",
+    "domain": "assistant",
+    "action": "finish_custom_task"
   },
   {
     "method": "POST",

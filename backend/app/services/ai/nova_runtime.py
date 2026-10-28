@@ -66,7 +66,7 @@ def _phase_tools(registry: dict) -> set[str]:
     return (reads | {"manage_transfer_task", "manage_collection_request",
                      "manage_payment_requests",
                      "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event",
-                     "prepare_shop_purchase", *WEALTH_TOOLS}) & set(registry)
+                     "prepare_shop_purchase", "manage_scheduled_task", *WEALTH_TOOLS}) & set(registry)
 
 
 def _task_description(task: dict) -> dict:
@@ -321,7 +321,7 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     execute_names = {"manage_transfer_task", "manage_collection_request", "prepare_bill_change",
                      "manage_payment_requests", *WEALTH_TOOLS,
                      "preview_card_operation", "manage_subscription_task", "manipulate_calender_event",
-                     "prepare_shop_purchase"}
+                     "prepare_shop_purchase", "manage_scheduled_task"}
     read_names = _phase_tools(TOOL_REGISTRY) - execute_names
     for item in trace:
         if item.get("name") in read_names:
@@ -411,6 +411,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             subscription_skill_loaded = False
             calendar_skill_loaded = False
             shop_skill_loaded = False
+            scheduled_skill_loaded = False
             wealth_skill_loaded = False
             bills_skill_loaded = False
             calendar_query_skill_loaded = False
@@ -419,7 +420,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             calendar_list_replanned = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
-                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。用户明确要办理转账时选择 manage_transfer_task；收款人、金额等尚未提供也可打开空白转账草稿。理财风险评估选 assess_wealth_risk；规划、推荐、产品详情或申购选 plan_wealth；持仓查询、调整或赎回选 manage_wealth_positions；整体理财收益选 show_wealth_returns。宽泛但明确的理财请求选 plan_wealth，kind=planning。查看或处理现有收款申请使用 manage_payment_requests；新建、修改或撤销向别人收款的草稿时填写 collection_action 并选择 manage_collection_request，查联系人后本轮仍须调用该办理工具。仅查看或处理已发出的收款申请使用 manage_payment_requests。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。用户要在花店或蛋糕店购买商品时选择 prepare_shop_purchase；商品或数量未确定也可打开订单表单，不要查完商品就结束。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
+                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。用户明确要办理转账时选择 manage_transfer_task；收款人、金额等尚未提供也可打开空白转账草稿。理财风险评估选 assess_wealth_risk；规划、推荐、产品详情或申购选 plan_wealth；持仓查询、调整或赎回选 manage_wealth_positions；整体理财收益选 show_wealth_returns。宽泛但明确的理财请求选 plan_wealth，kind=planning。查看或处理现有收款申请使用 manage_payment_requests；新建、修改或撤销向别人收款的草稿时填写 collection_action 并选择 manage_collection_request，查联系人后本轮仍须调用该办理工具。仅查看或处理已发出的收款申请使用 manage_payment_requests。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。用户要让 NOVA 到某个时间再办理一件事，或要为这类任务锁定、预留资金时选择 manage_scheduled_task；查看定时任务选择 list_scheduled_tasks；只在日历记一条安排才用日历工具，到时自动转账用 manage_transfer_task。用户要在花店或蛋糕店购买商品时选择 prepare_shop_purchase；商品或数量未确定也可打开订单表单，不要查完商品就结束。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
                     schema=ToolSelection, max_tokens=400)).data
                 debug_trace.record("tool_selection", selection.model_dump(mode="json"))
                 invalid = [n for n in selection.tool_names if n not in allowed]
@@ -461,6 +462,9 @@ async def chat(message: str, history: list[dict], *, model=None,
                 if 'prepare_shop_purchase' in selected and not shop_skill_loaded:
                     messages.append({'role': 'system', 'content': '店铺业务规则：' + load_skill('shop')})
                     shop_skill_loaded = True
+                if selected & {'manage_scheduled_task', 'list_scheduled_tasks'} and not scheduled_skill_loaded:
+                    messages.append({'role': 'system', 'content': '定时任务业务规则：' + load_skill('scheduled')})
+                    scheduled_skill_loaded = True
                 if selected & {'search_calendar_events', 'list_calendar_events', 'get_calendar_event'} and not calendar_query_skill_loaded:
                     messages.append({'role': 'system', 'content': '日历信息查询规则：' + load_skill('calendar_query')})
                     calendar_query_skill_loaded = True
@@ -470,7 +474,7 @@ async def chat(message: str, history: list[dict], *, model=None,
                 plan = (await client.generate_structured(messages=[*messages,
                     {"role": "system", "content": "现在规划工具调用。仅使用已动态提供的工具 Schema：" +
                      json.dumps(schemas, ensure_ascii=False) +
-                     "。按依赖顺序列出 calls；用户要办理转账时调用 manage_transfer_task，明确 action。新建转账即使收款人和金额都未知也调用 action=create，省略未知字段以打开空白任务卡；能力目录查询不能替代任务卡。新建向别人收款时调用 manage_collection_request(action=create)，把已知付款人和金额填入参数；缺少字段也要打开可补全的草稿卡。查联系人后仍须继续调用该工具。修改或撤销收款草稿时调用 manage_collection_request 并指定可信卡片 ID。理财由主模型直接填写工具参数：评估用 assess_wealth_risk，规划或推荐用 plan_wealth，持仓或赎回用 manage_wealth_positions，整体收益用 show_wealth_returns。缺少预算或产品仍打开卡片，交易由本人核对确认。查看或处理现有收款申请调用 manage_payment_requests，取消/支付/拒绝只打开待本人操作的卡片。打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。日历添加即使缺少事件名称或具体时间也要调用 manipulate_calender_event(action=add) 打开可补全的任务卡；若先查当前时间，本轮查完后继续规划并调用日历操作工具。花店或蛋糕店购买时先查 list_shop_products，再按可信商品 ID 调用 prepare_shop_purchase；缺商品或数量仍须打开可补全订单表单。日历事件按名称或地点搜索无结果时，使用 list_calendar_events 查看相关日期范围的活动，再根据列表规划下一步。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
+                     "。按依赖顺序列出 calls；用户要办理转账时调用 manage_transfer_task，明确 action。新建转账即使收款人和金额都未知也调用 action=create，省略未知字段以打开空白任务卡；能力目录查询不能替代任务卡。新建向别人收款时调用 manage_collection_request(action=create)，把已知付款人和金额填入参数；缺少字段也要打开可补全的草稿卡。查联系人后仍须继续调用该工具。修改或撤销收款草稿时调用 manage_collection_request 并指定可信卡片 ID。理财由主模型直接填写工具参数：评估用 assess_wealth_risk，规划或推荐用 plan_wealth，持仓或赎回用 manage_wealth_positions，整体收益用 show_wealth_returns。缺少预算或产品仍打开卡片，交易由本人核对确认。查看或处理现有收款申请调用 manage_payment_requests，取消/支付/拒绝只打开待本人操作的卡片。打开或修改银行卡片任务时先调用 list_cards，再根据返回的卡片内部 ID 调用 preview_card_operation；取消已有任务时使用 task_action=cancel 和未完成任务的 entry_id。日历添加即使缺少事件名称或具体时间也要调用 manipulate_calender_event(action=add) 打开可补全的任务卡；若先查当前时间，本轮查完后继续规划并调用日历操作工具。新建自定义定时任务即使缺少日期或时间也调用 manage_scheduled_task(action=create) 打开可补全的表单；要开始、完成或取消已有定时任务时先 list_scheduled_tasks，再用 action=show 打开其卡片。花店或蛋糕店购买时先查 list_shop_products，再按可信商品 ID 调用 prepare_shop_purchase；缺商品或数量仍须打开可补全订单表单。日历事件按名称或地点搜索无结果时，使用 list_calendar_events 查看相关日期范围的活动，再根据列表规划下一步。arguments 是工具 JSON 参数对象。工具失败可下一轮重新规划。"}],
                     schema=ToolPlan, max_tokens=3000)).data
                 debug_trace.record("tool_plan", plan.model_dump(mode="json"))
                 if plan.clarification and not plan.calls:
@@ -574,10 +578,10 @@ async def chat(message: str, history: list[dict], *, model=None,
                         continue
                     # An execute tool may depend on a bank read made in this turn.
                     # Replan with that result before opening the task card.
-                    if (selected & ({"manage_transfer_task", "manage_collection_request", "manage_payment_requests", "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event", "prepare_shop_purchase"} | WEALTH_TOOLS)
+                    if (selected & ({"manage_transfer_task", "manage_collection_request", "manage_payment_requests", "preview_card_operation", "prepare_bill_change", "manage_subscription_task", "manipulate_calender_event", "prepare_shop_purchase", "manage_scheduled_task"} | WEALTH_TOOLS)
                             and not any(call.name in {"manage_transfer_task", "preview_card_operation", "prepare_bill_change",
                                                        "manage_subscription_task", "manipulate_calender_event",
-                                                       "prepare_shop_purchase", "manage_collection_request", "manage_payment_requests", *WEALTH_TOOLS}
+                                                       "prepare_shop_purchase", "manage_scheduled_task", "manage_collection_request", "manage_payment_requests", *WEALTH_TOOLS}
                                         for call in calls)
                             ):
                         messages.append({"role": "system", "content": "本轮尚未调用已选的办理工具。若用户要求办理转账，应规划 manage_transfer_task；若要新建向别人收款的草稿，应规划 manage_collection_request(action=create)。新建草稿允许业务字段留空。先前只读结果已经可用，请继续规划。"})

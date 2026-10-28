@@ -18,7 +18,8 @@ from .payment_request import PaymentRequestORM
 from .payment_request_batch import PaymentRequestBatchORM
 from .payment_request_payment import PaymentRequestPaymentORM
 from .subscription import SubscriptionORM
-from .scheduled_task import ScheduledTaskORM
+from .scheduled_task import ScheduledTaskORM, ScheduledTaskFundingORM, ScheduledTransferFundingORM
+from .scheduled_cash_hold import ScheduledCashHoldORM, ScheduledCashHoldLinkORM
 from .card import CardAuthorizationORM, CardORM, CardOperationORM
 from .flower_order import FlowerOrderORM
 from .cake_order import CakeOrderORM

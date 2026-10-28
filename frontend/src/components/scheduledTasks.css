@@ -14,3 +14,9 @@
 .scheduled-tasks-list li span{font-size:.85rem;color:#52637a;background:#edf3fa;border-radius:999px;padding:3px 9px}
 .scheduled-tasks-list li p{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .scheduled-tasks-list li small{display:block;color:#52637a;margin-bottom:10px}
+.scheduled-tasks-lock{display:grid;gap:10px;margin:0;padding:12px 14px;border:1px solid #d9e2ee;border-radius:12px}
+.scheduled-tasks-lock legend{font-weight:600;padding:0 4px}
+.scheduled-tasks-lock select{width:100%;font:inherit;padding:10px 12px;border:1px solid #cad5e1;border-radius:10px}
+.scheduled-tasks-lock small{color:#52637a;font-weight:400}
+.scheduled-tasks-list li small.scheduled-tasks-lock-state{color:#3b4a8f}
+.scheduled-tasks-actions{display:flex;gap:8px;flex-wrap:wrap}

@@ -607,7 +607,7 @@ async def test_manage_transfer_task_scheduled_and_form_switches_execution_mode(d
     pending = scheduled["tasks"][0]["task"]
     confirmed = await confirm_task(
         db, task_id=pending["task_id"], user_id="U1", request_id=uuid4().hex,
-        state_version=pending["state_version"], plan_version=pending["plan_version"])
+        state_version=pending["state_version"], plan_version=pending["plan_version"], bank=InProcessBankApi(db))
     assert confirmed["phase"] == "WAITING_EXECUTION"
     assert (await db.get(AccountORM, "A1")).balance == 5000
     assert (await nova_runtime.inspect_active_tasks(context))["unfinished_execute_tasks"] == []

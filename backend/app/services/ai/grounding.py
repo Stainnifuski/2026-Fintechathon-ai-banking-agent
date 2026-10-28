@@ -25,7 +25,7 @@ TOOL_LABELS = {
     'list_cards': '卡片查询', 'get_card': '卡片详情', 'list_card_transactions': '用卡记录',
     'preview_card_operation': '卡片操作预览', 'request_subscription_cancellation': '取消订阅',
     'list_subscriptions': '订阅查询', 'get_subscription': '订阅详情',
-    'create_calendar_event': '日程', 'prepare_shop_purchase': '店铺订单', 'list_calendar_events': '日历查询', 'search_calendar_events': '日历搜索', 'get_calendar_event': '活动详情',
+    'list_scheduled_tasks': '定时任务查询', 'manage_scheduled_task': '定时任务', 'create_calendar_event': '日程', 'prepare_shop_purchase': '店铺订单', 'list_calendar_events': '日历查询', 'search_calendar_events': '日历搜索', 'get_calendar_event': '活动详情',
     'list_shop_products': '商品查询', 'get_shop_product': '商品报价',
     'list_shop_orders': '订单查询', 'get_shop_order': '订单详情',
     'get_subscription_insights': '订阅扣费核对', 'project_cashflow': '现金流情景',
@@ -384,6 +384,30 @@ def body(name: str, result: dict) -> list[str]:
             lines.append('筛选后全部分页的生效、每月、人民币订阅预计月费：'
                          + money(d['summary'].get('monthly_commitment_fen')) + '，不等于实际扣款。')
         return lines + [subscription_text(row) for row in rows[:MAX_ROWS]]
+    if name == 'list_scheduled_tasks':
+        rows = d.get('items', [])
+        lines = [f'定时任务共 {int(d.get("total", 0))} 项。']
+        for row in rows[:MAX_ROWS]:
+            kind = '定时转账' if row.get('task_type') == 'transfer' else '自定义任务'
+            lock = f'，锁定 {money(row["lock_amount_fen"])}' if row.get('lock_amount_fen') else ''
+            lines.append(f'{kind} {literal(row.get("description") or "未提供")}，执行时间 {literal(row.get("scheduled_at"))}（UTC），'
+                         f'状态 {literal(row.get("status"))}{lock}。')
+        return lines
+    if name == 'manage_scheduled_task':
+        task = d.get('task') or {}
+        lock = f'已从活期锁定 {money(task["lock_amount_fen"])}，任务结束前不能被其他付款使用。' if task.get('lock_amount_fen') else ''
+        if d.get('created'):
+            return [f'已创建自定义定时任务 {literal(task.get("description"))}，执行时间 {literal(task.get("scheduled_at"))}（UTC）。' + lock,
+                    '到时间后请在下方任务卡点击“开始执行”，NOVA 才会按描述办理；也可在卡片中取消。']
+        if not d.get('form_opened'):
+            return [f'已在下方显示定时任务 {literal(task.get("description"))} 的卡片，状态 {literal(task.get("status"))}。' + lock,
+                    '开始、完成或取消请在卡片中由本人点击。']
+        lines = ['已在下方打开定时任务表单，尚未创建。']
+        if d.get('missing_fields'):
+            lines.append('请在表单中补充：' + '、'.join(literal(item) for item in d['missing_fields']) + '。')
+        if d.get('notice'):
+            lines.append(literal(d['notice']))
+        return lines
     if name == 'prepare_shop_purchase':
         if d.get('created'):
             order = d['order']

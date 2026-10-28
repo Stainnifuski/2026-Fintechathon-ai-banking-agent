@@ -16,19 +16,21 @@ import NovaCardOperationCard from './NovaCardOperationCard';
 import NovaSubscriptionCancelCard from './NovaSubscriptionCancelCard';
 import NovaCalendarCard from './NovaCalendarCard';
 import NovaShopCard from './NovaShopCard';
+import NovaScheduledTaskCard from './NovaScheduledTaskCard';
 import NovaPaymentRequestCard from './NovaPaymentRequestCard';
 import NovaBillCard from './NovaBillCard';
 import {getNovaBillResults,type NovaBillResult,type BillResultTarget} from '../services/nova';
 import { getNovaBillActions, type NovaBillAction, type NovaPromptRequest } from '../services/nova';
 import * as bank from '../services/bank';
 import { formatYuanText } from '../utils/money';
-import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask, NovaPaymentRequestTask } from '../services/nova';
+import { streamNova, getNovaTaskSession, listNovaConversations, createNovaConversation, getNovaConversation, NovaConversation, NovaMessage, NovaReply, NovaPageContext, NovaStreamEvent, NovaTransferTask, NovaTaskRequest, NovaTaskSession, NovaCollectionCard as CollectionCard, NovaChatCardTask, NovaChatSubscriptionTask, NovaChatCalendarTask, NovaChatShopTask, NovaChatScheduledTask, NovaPaymentRequestTask } from '../services/nova';
 
 const NovaBillResults=lazy(()=>import('./NovaBillResults'));
 const NovaWealthCard=lazy(()=>import('./NovaWealthCard'));
 
 type Entry = NovaMessage & { details?: NovaReply; streaming?: boolean; status?: string };
 const TOOL_LABELS: Record<string, string> = {
+  list_scheduled_tasks: '定时任务查询', manage_scheduled_task: '定时任务',
   describe_bank_capabilities: '业务能力介绍',
   list_cards: '卡片列表', get_card: '卡片详情', list_subscriptions: '订阅列表与预计月费', get_subscription: '订阅详情',
   get_current_time: '时间查询', get_financial_overview: '账户概览', get_bill_analysis: '账单分析', list_transactions: '流水列表',
@@ -297,7 +299,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           void getNovaBillActions(session).then(items => { if (billSession.current === session) setBillActions(items); })
             .catch(() => setError('账单确认卡读取失败，请重新打开对话核对。'));
         }
-        if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,subscription_tasks:previous?.subscription_tasks,calendar_tasks:previous?.calendar_tasks,shop_tasks:previous?.shop_tasks,payment_request_tasks:previous?.payment_request_tasks,focus_task_id:result.focus_task_id}));
+        if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,subscription_tasks:previous?.subscription_tasks,calendar_tasks:previous?.calendar_tasks,shop_tasks:previous?.shop_tasks,scheduled_tasks:previous?.scheduled_tasks,payment_request_tasks:previous?.payment_request_tasks,focus_task_id:result.focus_task_id}));
         if(result.execution_queue?.steps.some(step=>step.review_operation_id))void getNovaTaskSession(session).then(fresh=>{if(queueSession.current===session)setTaskSession(fresh);}).catch(()=>{});
       }catch{if(queueSession.current===session){
         if(debugRequestId)setLastDebugRequest(debugRequestId);
@@ -372,6 +374,12 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     paymentRequestGroups.set(position, [...(paymentRequestGroups.get(position) || []), task]);
   }
 
+  const scheduledGroups = new Map<number, NovaChatScheduledTask[]>();
+  for (const task of taskSession?.scheduled_tasks || []) {
+    let position = messages.findIndex(entry => entry.role === 'assistant' && entry.request_id === task.origin_request_id);
+    if (position < 0) position = messages.length - 1;
+    scheduledGroups.set(position, [...(scheduledGroups.get(position) || []), task]);
+  }
   const shopGroups = new Map<number, NovaChatShopTask[]>();
   for (const task of taskSession?.shop_tasks || []) {
     let position = positionFor('shop:'+task.entry_id,task.origin_request_id);
@@ -498,11 +506,12 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             subscription_tasks: previous?.session_id === reply.session_id ? previous?.subscription_tasks : undefined,
             calendar_tasks: previous?.session_id === reply.session_id ? previous?.calendar_tasks : undefined,
             shop_tasks: previous?.session_id === reply.session_id ? previous?.shop_tasks : undefined,
+            scheduled_tasks: previous?.session_id === reply.session_id ? previous?.scheduled_tasks : undefined,
             focus_task_id: reply.focus_task_id }));
           setFocusTaskId(undefined);
         }
         const sessionId = taskRequest.session_id;
-        if (sessionId && reply.tool_calls.some(call => ['preview_card_operation', 'request_subscription_cancellation', 'manage_subscription_task', 'manipulate_calender_event', 'prepare_shop_purchase', 'manage_payment_requests'].includes(call.name) && !call.result.error)) {
+        if (sessionId && reply.tool_calls.some(call => ['preview_card_operation', 'request_subscription_cancellation', 'manage_subscription_task', 'manipulate_calender_event', 'prepare_shop_purchase', 'manage_payment_requests', 'manage_scheduled_task'].includes(call.name) && !call.result.error)) {
           // 卡片任务卡状态以服务端授权单为准，随会话一起读取。
           void getNovaTaskSession(sessionId).then(setTaskSession).catch(() => setError('卡片任务卡读取失败，请重新打开对话。'));
         }
@@ -654,6 +663,11 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
               disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, card_operations: tasks } : previous)}
               onActivity={onTransferActivity} /></NovaTaskSlot>)}
+            {scheduledGroups.get(index)?.map(task => <NovaScheduledTaskCard key={'scheduled:'+task.entry_id}
+              task={task} sessionId={taskSession!.session_id} accounts={payerAccounts} disabled={busy || loadingConversation}
+              onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, scheduled_tasks: tasks } : previous)}
+              onStart={started => { if (started.dispatch_request_id) void send(started.description, undefined, undefined, undefined, started.dispatch_request_id); }}
+              onActivity={onTransferActivity} />)}
             {shopGroups.get(index)?.map(task => <NovaTaskSlot key={'shop:'+task.entry_id} meta={metaFor('shop:'+task.entry_id,'店铺订单','thirdParty',task.order?.status==='COMPLETED')}><NovaShopCard key={task.entry_id}
               task={task} sessionId={taskSession!.session_id} accounts={payerAccounts} disabled={busy || loadingConversation}
               onUpdated={tasks => setTaskSession(previous => previous ? { ...previous, shop_tasks: tasks } : previous)}

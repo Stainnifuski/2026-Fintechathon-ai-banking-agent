@@ -205,6 +205,8 @@ async def prepare_shop_purchase(arguments, context):
         except (FlowerShopError, CakeShopError) as error:
             return dict(error=error.code, message=error.message)
         order = (await shop_reads.orders(context.db, context.user_id, shop))[0]
+        from .scheduled_funding import fund_payment_request
+        await fund_payment_request(context.db, context.user_id, context.session_id, order.get('payment_request_id'))
     await _register_shop_task(context, shop=shop, prefill=prefill, notice=notice,
                               order_id=order['order_id'] if order else None)
     if order:
@@ -255,10 +257,12 @@ async def update_chat_shop_task(db, *, user_id: str, session_id: str, entry_id: 
         entry['closed'] = True
     else:
         try:
-            await shop_reads.orders(db, user_id, shop, order_id=order_id)
+            order = (await shop_reads.orders(db, user_id, shop, order_id=order_id))[0]
         except (shop_reads.ShopReadError, KeyError):
             raise CardTaskError('订单不存在', 'SHOP_ORDER_NOT_FOUND', 404) from None
         entry.update(shop=shop, order_id=order_id, notice=None)
+        from .scheduled_funding import fund_payment_request
+        await fund_payment_request(db, user_id, session_id, order.get('payment_request_id'))
     state['shop_tasks'] = entries
     row.state = state
     await db.commit()

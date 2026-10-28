@@ -7,9 +7,11 @@ from ...models.wealth import WealthCashHoldORM
 
 
 async def held_cash(db: AsyncSession, account_id: str) -> int:
-    """只计有效占款；调用方必须先持有账户锁。"""
-    return int(await db.scalar(select(func.coalesce(func.sum(WealthCashHoldORM.amount_fen), 0)).where(
+    """只计有效占款（理财占款 + 定时任务锁定的剩余金额）；调用方必须先持有账户锁。"""
+    from .scheduled_holds import held_by_schedules
+    wealth = int(await db.scalar(select(func.coalesce(func.sum(WealthCashHoldORM.amount_fen), 0)).where(
         WealthCashHoldORM.account_id == account_id, WealthCashHoldORM.status == "HELD")) or 0)
+    return wealth + await held_by_schedules(db, account_id)
 
 
 async def available_cash(db: AsyncSession, account_id: str, balance_fen: int) -> int:

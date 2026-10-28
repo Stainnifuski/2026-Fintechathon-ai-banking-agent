@@ -95,6 +95,15 @@ _CAPABILITIES = (
         ],
     },
     {
+        "domain": "scheduled_tasks", "name": "定时任务",
+        "queries": [
+            {"tool": "list_scheduled_tasks", "description": "本人自定义定时任务和定时转账的时间、状态及锁定资金"},
+        ],
+        "operations": [
+            {"tool": "manage_scheduled_task", "description": "新建到时由 NOVA 办理的自定义定时任务（可锁定活期资金），或显示已有任务卡以便本人开始、完成或取消"},
+        ],
+    },
+    {
         "domain": "shops", "name": "模拟鲜花店与蛋糕店",
         "queries": [
             {"tool": "list_shop_products", "description": "两家模拟店铺的商品目录和价格"},

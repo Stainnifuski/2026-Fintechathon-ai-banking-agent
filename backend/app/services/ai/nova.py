@@ -179,7 +179,7 @@ class RequestRoute(BaseModel):
     mode: Literal["direct_react", "goal_plan"]
     domains: list[Literal[
         "transfer", "collection", "accounts", "transactions", "bills", "contacts",
-        "cards", "subscriptions", "calendar", "shops", "time", "wealth", "capabilities", "other",
+        "cards", "subscriptions", "calendar", "scheduled_tasks", "shops", "time", "wealth", "capabilities", "other",
     ]] = Field(min_length=1, max_length=8)
     has_dependencies: bool
     goal_plan: GoalPlanArguments | None = None
@@ -201,6 +201,7 @@ ROUTER_PROMPT = """你是银行助手的前置路由器，只判断执行结构�
 单一目标使用 direct_react；多个独立目标、同一业务的多个操作对象，或后一步依赖前一步结果时使用 goal_plan，并给出2至8个目标组成的无环计划。
 "给李四转100元"是本人付款，属于单一 transfer 目标，必须 direct_react。
 "向李四收100元"是本人向李四请求付款，属于单一 collection 目标，必须 direct_react；不得路由到transfer。
+让 NOVA 到某个时间再办理一件事（自定义定时任务，可锁定资金）或查看、开始、完成、取消这类任务，属于 scheduled_tasks；到时自动转账属于 transfer；只在日历记一条安排属于 calendar。
 询问本助手支持哪些业务、每项业务能查什么或能办什么，属于capabilities域，必须先调用describe_bank_capabilities；不要把功能介绍当成办理业务的指令。
 transfer_tasks.collection_drafts 列出本对话尚未发出的收款草稿。存在收款草稿时，补充或修改付款人、金额、收款账户、备注、AA方式，或撤销草稿，都属于 collection 的 continue——即使本轮只说了一个名字、一个数字或一句省略主语的补充；明确新建另一笔收款也是 collection，交由收款工具核验目标。上一轮助手就收款提出澄清问题时，本轮回答同样属于 collection。
 “查时间并转账”“查询倒数第六笔转账后复用收款人和金额”包含多个目标或查询依赖，必须 goal_plan。
@@ -504,12 +505,13 @@ COMPLETED是模拟银行交易完成，不代表配送；REFUNDED表示整单已
 定时转账经用户在任务卡确认并完成必要验证后，聊天任务即告完成；银行按预约时间执行。回复应说“已预约”，不要说“已到账”。
 若一句话同时包含查询和转账等多个目标，应分别调用所需工具，不要只完成其中一个。涉及历史转账人、金额或付款账户的指代时先查询本人事实，再把已核实字段填写到转账工具参数；不得把列表展示名当作可信收款账户。按余额比例转账时先查询对应账户的可用余额，再按用户给定比例计算整数分金额，转账工具只接收具体金额。一个收款对象对应一次转账工具调用，不要补造没有依据的字段。
 修改或补充已有转账任务时使用可信任务上下文：用户未明确对象且有 focus_task_id 时直接选择焦点任务；用户明确收款人时选择该收款人唯一对应的 chat_task_id；有多个同名任务才追问。不要因为会话中有多笔任务而忽略焦点任务。
-除受控转账草稿、收款草稿、现有收款申请任务卡、卡片操作预览、账单修改预览、取消订阅任务卡、创建本人日程和店铺下单外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
+除受控转账草稿、收款草稿、现有收款申请任务卡、卡片操作预览、账单修改预览、取消订阅任务卡、创建本人日程、自定义定时任务和店铺下单外只支持查询，不执行授权或其他修改；其他业务引导至对应工作台。"""
 SYSTEM_PROMPT += "\n收款业务 Skill：\n" + load_skill("collection")
 SYSTEM_PROMPT += "\n卡片业务 Skill：\n" + load_skill("card")
 SYSTEM_PROMPT += "\n订阅业务 Skill：\n" + load_skill("subscription")
 SYSTEM_PROMPT += "\n日历业务 Skill：\n" + load_skill("calendar")
 SYSTEM_PROMPT += "\n店铺业务 Skill：\n" + load_skill("shop")
+SYSTEM_PROMPT += "\n定时任务业务 Skill：\n" + load_skill("scheduled")
 SYSTEM_PROMPT += "\n账单洞察业务 Skill：\n" + load_skill("bills")
 
 
