@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import * as calendar from '../services/calendar';
 import { dismissNovaCalendarTask, linkNovaCalendarTask, type NovaChatCalendarTask } from '../services/nova';
 import { beijingTime, fromBeijingInput } from '../utils/time';
+import NovaCalendarMutationCard from './NovaCalendarMutationCard';
 
 const errorText = (err: unknown) => {
   const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;
@@ -13,11 +14,19 @@ const errorText = (err: unknown) => {
 const shortTime = (value: string) => beijingTime(value).slice(0, 16);
 
 /** NOVA 理解的日程：信息完整时已创建并可删除；不完整时为预填表单，空项由本人补全后创建。 */
-export default function NovaCalendarCard({ task, sessionId, disabled, onUpdated, onActivity }: {
+export default function NovaCalendarCard(props: {
   task: NovaChatCalendarTask; sessionId: string; disabled: boolean;
   onUpdated: (tasks: NovaChatCalendarTask[]) => void; onActivity?: () => void;
 }) {
-  const prefill = task.prefill;
+  if (props.task.kind === 'mutation') return <NovaCalendarMutationCard {...props} />;
+  return <LegacyNovaCalendarCard {...props} />;
+}
+
+function LegacyNovaCalendarCard({ task, sessionId, disabled, onUpdated, onActivity }: {
+  task: NovaChatCalendarTask; sessionId: string; disabled: boolean;
+  onUpdated: (tasks: NovaChatCalendarTask[]) => void; onActivity?: () => void;
+}) {
+  const prefill = task.prefill ?? {};
   const [title, setTitle] = useTaskField('title',prefill.title ?? '');
   const [day, setDay] = useTaskField('day',prefill.start_date ?? '');
   const [start, setStart] = useTaskField('start',prefill.start_time ?? '');

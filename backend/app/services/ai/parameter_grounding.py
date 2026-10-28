@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from .nlu import amount_fen, UnderstandingError
 from ...domain.time import utc_now
-from .semantic_bindings import canonical_text, quote_in_message, bind_field, canonical_field,CARD_FIELDS
+from .semantic_bindings import canonical_text, quote_in_message, bind_field, canonical_field
 
 _NUMBER = r'(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二三四五六七八九]+)?)'
 
@@ -145,17 +145,6 @@ def validate_wealth_parameters(intent: object, message: str, context: dict | Non
 
 def validate_tool_parameters(name: str, values: dict, message: str | None, results: list[dict] | None = None) -> None:
     """在副作用发生前验证模型新增的金额及情景假设。"""
-    if name == 'preview_card_operation':
-        from ...schemas.cards import ACTION_FIELDS
-        if any(value is not None and key not in ACTION_FIELDS[values['action']]
-               for key, value in values.items() if key not in {'action','value_quotes'}):
-            # 由既有业务Schema返回INVALID_ARGUMENTS，不把结构错误掩盖为来源错误。
-            return
-        for field in ('credit_limit', 'single_txn_limit', 'daily_txn_limit'):
-            quote=(values.get('value_quotes') or {}).get(field)
-            require_value(values.get(field), message or '',quote=quote)
-            if values.get(field) is not None:
-                bind_field(field,quote or message or '',specs=CARD_FIELDS,semantic_evidence=quote is not None)
     if name == 'project_cashflow':
         for reduction in values.get('reductions', []):
             labels = {'dining': '餐饮', 'shopping': '购物', 'transport': '交通',

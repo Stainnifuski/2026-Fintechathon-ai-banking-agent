@@ -173,7 +173,7 @@ def bind(step, result):
     # Absence of a card is never proof that a mutation completed.
     if step['completion']!='result' or not result.get('tool_calls'):
         return 'blocked'
-    if any(t['name'] in {'manage_transfer_request','preview_card_operation'} for t in result['tool_calls']):
+    if any(t['name'] in {'manage_transfer_task','preview_card_operation'} for t in result['tool_calls']):
         return 'blocked'
     return 'completed'
 
@@ -261,8 +261,8 @@ async def advance(context, *, model=None):
     if not row:return {'reply':'当前没有多操作队列。','mode':'model','tool_calls':[],'execution_queue':None}
     from .task_flow import load as load_flow
     _,flow=await load_flow(context)
-    if flow.get('pending') or flow.get('switch_in_progress'):
-        return response(row,[],'正在等待任务切换核对，暂不启动下一项操作。')
+    if flow.get('switch_in_progress'):
+        return response(row,[],'历史任务切换仍在核对，暂不启动下一项操作。')
     data=unpack(row)
     if data['status'] in TERMINAL or data['status']=='blocked':return response(row,[])
     if data.get('lease_until',0)>time.time():return response(row,[],'正在核对当前步骤，请稍候。')
@@ -366,19 +366,3 @@ async def focus(context):
     transfer=next((r['id'] for r in step['refs'] if r['type']=='transfer'),None)
     return replace(context,serial_focus_only=True,wealth_task_id=context.wealth_task_id or wealth,
                    focus_task_id=context.focus_task_id or transfer)
-
-
-async def guard_tool(context, name):
-    if not context or not context.session_id or context.execution_step:return None
-    row=await context.db.get(NovaExecutionORM,context.session_id,populate_existing=True)
-    if not row:return None
-    data=unpack(row)
-    if data['status'] in TERMINAL:return None
-    if name not in {'manage_wealth_request','manage_transfer_request','manage_collection_request','preview_card_operation','prepare_bill_change'}:return None
-    step=next((s for s in data['steps'] if s['status']!='completed'),None)
-    allowed=step and step['status']=='waiting' and any(
-        r['type']=='wealth' and name=='manage_wealth_request' and r['id']==context.wealth_task_id or
-        r['type']=='transfer' and name=='manage_transfer_request' and r['id']==context.focus_task_id
-        for r in step['refs'])
-    if not allowed:return {'error':'SERIAL_STEP_PENDING','message':'当前队列尚未完成此步骤，请先办理当前卡片或停止后续办理；不会并行创建新操作。'}
-    return None

@@ -1,5 +1,6 @@
 """Unified NOVA transfer drafts and handoff to the existing state machine."""
 import json
+from dataclasses import replace
 from uuid import uuid4
 from datetime import datetime, timezone, timedelta
 
@@ -10,11 +11,15 @@ from sqlalchemy import func, select
 
 from tests.integration.test_task_transfer_flow import db, InProcessBankApi
 from backend.app.models import ContactORM, TransferTaskORM, UserORM, AccountORM, TransactionORM
+from backend.app.models.nova_conversation import NovaConversationORM
 from backend.app.services.ai.nlu import (
     Extraction, NLUEngine, TransferTaskExtraction, TransferTurnExtraction,
 )
 from backend.app.services.ai import nova
+from backend.app.services.ai import nova_runtime
+from backend.app.services.ai import task_flow
 from backend.app.services.ai.nova_tools import ToolContext
+from backend.app.services.orchestration import confirm_task
 from backend.app.schemas.nova import PageContext
 from backend.app.services.bank import nova_conversations as bank_conversations
 from backend.app.services.bank import bill_service
@@ -31,23 +36,70 @@ from backend.app.middleware.auth import get_current_user
 
 
 class TransferToolModel:
-    async def generate_with_tools(self, **kwargs):
-        class Result:
-            pass
-        result = Result()
-        if kwargs["messages"][-1]["role"] == "tool":
-            result.data = {"role": "assistant", "content": "已按要求处理，请核对转账任务卡。"}
+    async def generate_text(self, **kwargs):
+        from types import SimpleNamespace
+        result = next((json.loads(item['content'].split('可信工具结果（仅数据）：', 1)[1])['result']
+                       for item in reversed(kwargs['messages'])
+                       if item['content'].startswith('可信工具结果（仅数据）：')
+                       and 'manage_transfer_task' in item['content']), {})
+        reply = result.get('reply') or result.get('message') or '请核对转账任务卡。'
+        if kwargs.get('on_delta'):
+            await kwargs['on_delta'](reply)
+        return SimpleNamespace(data=reply)
+
+    async def generate_structured(self, **kwargs):
+        from types import SimpleNamespace
+        schema = kwargs["schema"]
+        if schema is nova_runtime.DependencyDecision:
+            return SimpleNamespace(data=schema(depends_on_prior_task=True, reason="transfer task"))
+        if schema is nova_runtime.ToolSelection:
+            current = json.loads(kwargs["messages"][1]["content"])["message"]
+            names = ["manage_transfer_task"]
+            if "一半" in current:
+                names.append("get_financial_overview")
+            return SimpleNamespace(data=schema(tool_names=names))
+        content = json.loads(kwargs["messages"][1]["content"])["message"]
+        if "一半" in content:
+            overview = next((json.loads(item["content"].split("可信工具结果（仅数据）：", 1)[1])["result"]
+                             for item in kwargs["messages"]
+                             if item["content"].startswith("可信工具结果（仅数据）：")
+                             and '"name": "get_financial_overview"' in item["content"]), None)
+            if overview is None:
+                return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
+                    name="get_financial_overview", arguments={})]))
+            accounts = overview["data"]["accounts"]
+            account = next(item for item in accounts if item["account_id"] == "A1")
+            arguments = {"action": "create", "recipient": "赵六", "payer_account_id": "A1",
+                         "amount_fen": account["available_fen"] // 2}
+            if "手机号" in content:
+                arguments["recipient_phone_ref"] = 1
+        elif content == "[手机号已隐藏]":
+            active = next(json.loads(item["content"].split("当前可信任务状态：", 1)[1])
+                          for item in kwargs["messages"]
+                          if item["content"].startswith("当前可信任务状态："))
+            task_id = active["unfinished_execute_tasks"][0]["id"]
+            arguments = {"action": "update", "chat_task_id": task_id,
+                         "recipient_phone_ref": 1}
+        elif "给李四转100元" in content:
+            arguments = {"action": "create", "recipient": "李四", "amount_fen": 10000}
         else:
-            result.data = {"role": "assistant", "content": None, "tool_calls": [{
-                "id": "call-transfer", "type": "function",
-                "function": {"name": "manage_transfer_request", "arguments": "{}"},
-            }]}
-        return result
+            arguments = {"action": "create"}
+        return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
+            name="manage_transfer_task", arguments=arguments)]))
 
 
 def use_transfer_planner(monkeypatch):
     monkeypatch.setattr(nova, "get_mode", lambda: "model")
+    monkeypatch.setattr(nova_runtime, "get_mode", lambda: "model")
     monkeypatch.setattr(nova, "llm", TransferToolModel())
+    monkeypatch.setattr(nova_runtime, "llm", TransferToolModel())
+    # The public tool uses only its structured arguments; no extraction model is invoked.
+    async def overview(_arguments, context):
+        funding = await context.bank_api.transfer_funding_accounts(subject_user_id=context.user_id)
+        return {"source": "accounts", "data": {"accounts": funding["accounts"]}}
+
+    monkeypatch.setitem(nova.TOOL_REGISTRY, "get_financial_overview",
+                        {**nova.TOOL_REGISTRY["get_financial_overview"], "execute": overview})
 
 
 async def send(db, message, previous=None, **kwargs):
@@ -117,16 +169,11 @@ async def test_pending_card_accepts_natural_language_field_reply(db):
     assert "转账金额" in named["tasks"][0]["missing_fields"]
 
 
-@pytest.mark.asyncio
-async def test_half_available_balance_creates_draft_and_quotes_from_bank_api(db):
-    draft = await send(db, "把我银行卡里一半的钱转给赵六。")
-    task = draft["tasks"][0]
-    assert task["recipient"] == "赵六"
-    assert task["amount_fen"] == 250000
-    assert task["form"]["amount_rule"] == "付款账户可用余额的一半"
-    assert task["form"]["amount_basis_available_fen"] == 500000
-    assert task["transfer_task_id"] is None
-    assert "完整手机号或完整银行卡号" in task["missing_fields"]
+def test_transfer_task_schema_rejects_ratio_field():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        nova.ManageTransferTaskArguments.model_validate({"action": "create", "amount_ratio": "half"})
 
 
 @pytest.mark.asyncio
@@ -149,41 +196,9 @@ async def test_legacy_transfer_account_code_is_displayed_as_verified_person_name
 
 
 @pytest.mark.asyncio
-async def test_half_balance_requires_payer_choice_when_multiple_accounts(db):
-    db.add(AccountORM(account_id="A4", user_id="U1", account_type="savings", card_number="4",
-                      balance=1000, daily_transfer_used=0, daily_transfer_limit=50000, status="active"))
-    await db.commit()
-    draft = await send(db, "把我银行卡里一半的钱转给李四")
-    task = draft["tasks"][0]
-    assert task["amount_fen"] is None
-    assert "付款账户" in task["missing_fields"]
-    assert len(task["candidates"]) == 2
-    selected = await send(db, "选择", draft, candidate_id=task["candidates"][1]["candidate_id"],
-                          focus_task_id=task["chat_task_id"])
-    assert selected["tasks"][0]["amount_fen"] == 50000
-    assert "完整手机号或完整银行卡号" in selected["tasks"][0]["missing_fields"]
-
-
-@pytest.mark.asyncio
-async def test_half_balance_requotes_before_plan_and_then_freezes_amount(db):
-    draft = await send(db, "把我银行卡里一半的钱转给李四")
-    assert draft["tasks"][0]["amount_fen"] == 250000
-    account = await db.get(AccountORM, "A1")
-    account.balance = 4000
-    await db.commit()
-    planned = await send(db, "13900000002", draft,
-                         focus_task_id=draft["tasks"][0]["chat_task_id"])
-    task = planned["tasks"][0]
-    assert task["amount_fen"] == 200000
-    assert task["task"]["confirmation_card"]["amount"] == 2000
-    assert (await db.get(AccountORM, "A1")).balance == 4000
-
-
-@pytest.mark.asyncio
 async def test_half_in_note_does_not_change_explicit_amount(db):
     draft = await send(db, "给李四转100元，备注一半的钱")
     assert draft["tasks"][0]["amount_fen"] == 10000
-    assert draft["tasks"][0]["form"]["amount_rule"] is None
 
 
 @pytest.mark.asyncio
@@ -483,7 +498,7 @@ async def test_chat_can_modify_and_clear_focused_draft_note(db):
 
 
 @pytest.mark.asyncio
-async def test_model_derived_amount_and_payer_are_revalidated_before_transfer_draft(db, monkeypatch):
+async def test_structured_transfer_fields_create_plan_without_secondary_extraction(db, monkeypatch):
     source = TransactionORM(
         tx_id="SOURCE-TRANSFER", account_id="A1", type="transfer_out",
         amount_fen=12345, counterparty="A2", category="transfer", note=None,
@@ -497,25 +512,22 @@ async def test_model_derived_amount_and_payer_are_revalidated_before_transfer_dr
     ])
     await db.commit()
 
-    class PlannedNlu:
+    class NoExtraction:
         mode = "model"
 
-        async def extract_tasks(self, message, context):
-            return TransferTurnExtraction(tasks=[TransferTaskExtraction(
-                task_action="create", intent="transfer",
-                recipient="李四", recipient_phone="13900000002",
-                payer="我第二张银行卡", amount_text=None,
-            )])
+        async def extract_tasks(self, *_args, **_kwargs):
+            raise AssertionError("manage_transfer_task must not launch extraction")
 
-    monkeypatch.setattr(nova, "get_nlu", lambda: PlannedNlu())
+    monkeypatch.setattr(nova, "get_nlu", lambda: NoExtraction())
     context = ToolContext(
         "U1", db, PageContext(),
         original_message="按照最近一次转的钱数，从我第二张银行卡里，给李四手机号13900000002转钱",
         request_id=uuid4().hex, session_id="NOVA-DERIVED-TRANSFER",
         bank_api=InProcessBankApi(db),
     )
-    result = await nova.manage_transfer_request(nova.TransferRequestArguments(
-        amount_fen=12345, amount_source_tx_id=source.tx_id, payer_account_id="A4",
+    result = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="李四", recipient_phone_ref=1,
+        amount_fen=12345, payer_account_id="A4",
     ), context)
     task = result["tasks"][0]
     assert len(result["tasks"]) == 1
@@ -525,7 +537,152 @@ async def test_model_derived_amount_and_payer_are_revalidated_before_transfer_dr
 
 
 @pytest.mark.asyncio
-async def test_history_reference_reuses_server_verified_recipient_and_amount(db, monkeypatch):
+async def test_manage_transfer_task_empty_draft_update_and_cancel(db, monkeypatch):
+    class NoExtraction:
+        mode = "model"
+
+        async def extract_tasks(self, *_args, **_kwargs):
+            raise AssertionError("manage_transfer_task must not launch extraction")
+
+    monkeypatch.setattr(nova, "get_nlu", lambda: NoExtraction())
+    context = ToolContext("U1", db, PageContext(), original_message="发起转账",
+                          request_id=uuid4().hex, session_id="NOVA-STRUCTURED-EDIT",
+                          bank_api=InProcessBankApi(db))
+    draft = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(action="create"), context)
+    task_id = draft["tasks"][0]["chat_task_id"]
+    assert draft["tasks"][0]["form"]["recipient"] == ""
+    assert draft["tasks"][0]["amount_fen"] is None
+    updated = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="update", chat_task_id=task_id, recipient="李四", amount_fen=10000),
+        replace(context, original_message="给李四转100元", request_id=uuid4().hex,
+                session_version=draft["session_version"]))
+    assert updated["tasks"][0]["recipient"] == "李四"
+    assert updated["tasks"][0]["amount_fen"] == 10000
+    cancelled = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="cancel", chat_task_id=task_id),
+        replace(context, original_message="取消这笔", request_id=uuid4().hex,
+                session_version=updated["session_version"]))
+    assert cancelled["tasks"][0]["status"] == "CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_manage_transfer_task_scheduled_and_form_switches_execution_mode(db):
+    scheduled_at = datetime.now(timezone.utc) + timedelta(hours=2)
+    context = ToolContext(
+        "U1", db, PageContext(), original_message="两小时后给李四手机号13900000002转100元",
+        request_id=uuid4().hex, session_id="NOVA-SCHEDULED-TRANSFER",
+        bank_api=InProcessBankApi(db),
+    )
+    result = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="李四", recipient_phone_ref=1, amount_fen=10000,
+        execution_mode="scheduled", scheduled_at=scheduled_at,
+    ), context)
+    task = result["tasks"][0]
+    assert task["form"]["execution_mode"] == "scheduled"
+    assert datetime.fromisoformat(task["form"]["scheduled_at"]) == scheduled_at
+    assert datetime.fromisoformat(task["task"]["scheduled_at"]) == scheduled_at
+    assert task["task"]["phase"] == "WAITING_CONFIRMATION"
+    assert (await db.get(AccountORM, "A1")).balance == 5000
+
+    form = dict(user_id="U1", session_id=result["session_id"],
+                chat_task_id=task["chat_task_id"],
+                session_version=result["session_version"], request_id=uuid4().hex,
+                recipient="李四", amount_yuan="100", phone=None, card=None,
+                clear_phone=False, clear_card=False, payer_account_id="A1", note="")
+    instant = await change_task_form(db, context.bank_api, **form,
+                                     execution_mode="instant", scheduled_at=None)
+    instant_task = instant["tasks"][0]
+    assert instant_task["form"]["execution_mode"] == "instant"
+    assert instant_task["task"]["scheduled_at"] is None
+
+    form["session_version"] = instant["session_version"]
+    form["request_id"] = uuid4().hex
+    new_time = scheduled_at + timedelta(hours=1)
+    scheduled = await change_task_form(db, context.bank_api, **form,
+                                       execution_mode="scheduled", scheduled_at=new_time)
+    assert datetime.fromisoformat(scheduled["tasks"][0]["task"]["scheduled_at"]) == new_time
+
+    db.add(NovaConversationORM(conversation_id=context.session_id, user_id="U1", title_ciphertext="test"))
+    await db.commit()
+    pending = scheduled["tasks"][0]["task"]
+    confirmed = await confirm_task(
+        db, task_id=pending["task_id"], user_id="U1", request_id=uuid4().hex,
+        state_version=pending["state_version"], plan_version=pending["plan_version"])
+    assert confirmed["phase"] == "WAITING_EXECUTION"
+    assert (await db.get(AccountORM, "A1")).balance == 5000
+    assert (await nova_runtime.inspect_active_tasks(context))["unfinished_execute_tasks"] == []
+    assert await task_flow.active(context) is None
+    finish = await nova_runtime.llm_finish_tool(context, [{"name": "manage_transfer_task", "result": {}}])
+    assert finish["outcome"] == "completed"
+    assert finish["target_execute_task_ids"] == []
+    assert finish["execute_tasks"][0]["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_manage_transfer_task_scheduled_without_time_keeps_editable_draft(db):
+    context = ToolContext(
+        "U1", db, PageContext(), original_message="给李四定时转100元",
+        request_id=uuid4().hex, session_id="NOVA-SCHEDULED-DRAFT",
+        bank_api=InProcessBankApi(db),
+    )
+    result = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="李四", amount_fen=10000,
+        execution_mode="scheduled",
+    ), context)
+    task = result["tasks"][0]
+    assert task["form"]["execution_mode"] == "scheduled"
+    assert task["form"]["scheduled_at"] is None
+    assert "定时执行时间" in task["missing_fields"]
+    assert task["task"] is None
+
+
+@pytest.mark.asyncio
+async def test_scheduled_transfer_can_open_beside_unfinished_calendar_card(db):
+    from zoneinfo import ZoneInfo
+    from backend.app.models.nova_task import NovaSessionORM
+
+    conversation = await bank_conversations.create(db, "U1")
+    session_id = conversation["session_id"]
+    scheduled = datetime.now(ZoneInfo("Asia/Shanghai")) + timedelta(days=7)
+    scheduled = scheduled.replace(hour=10, minute=0, second=0, microsecond=0)
+    calendar_id = uuid4().hex
+    db.add(NovaSessionORM(session_id=session_id, user_id="U1", version=0, state={
+        "tasks": [], "calendar_tasks": [{
+            "kind": "mutation", "entry_id": calendar_id,
+            "origin_request_id": "birthday-request", "action": "add",
+            "timezone": "Asia/Shanghai", "filters": {},
+            "changes": {"title": "朋友生日", "start_date": scheduled.date().isoformat(),
+                        "start_time": "10:00"},
+            "targets": [], "snapshots": {}, "status": "PENDING", "closed": False,
+        }],
+    }))
+    await db.commit()
+    context = ToolContext("U1", db, PageContext(),
+                          original_message="同一时间设置一个定时向王五的转账",
+                          request_id=uuid4().hex, session_id=session_id,
+                          bank_api=InProcessBankApi(db))
+    proposal = await task_flow.propose(context, "定时转账")
+    assert proposal["task_switch"]
+    context, pending = await task_flow.decide(context)
+    assert pending is None and await task_flow.public(context) is None
+    context = await task_flow.focus(context)
+    result = await nova.execute_tool({"function": {
+        "name": "manage_transfer_task", "arguments": json.dumps({
+            "action": "create", "recipient": "王五", "execution_mode": "scheduled",
+            "scheduled_at": scheduled.isoformat(),
+        })}}, context)
+    assert not result.get("error") and not result.get("task_switch"), result
+    assert result["tasks"][0]["form"]["execution_mode"] == "scheduled"
+    assert datetime.fromisoformat(result["tasks"][0]["form"]["scheduled_at"]) == scheduled.astimezone(timezone.utc)
+    session = await db.get(NovaSessionORM, session_id, populate_existing=True)
+    assert session.state["calendar_tasks"][0]["entry_id"] == calendar_id
+    assert session.state["calendar_tasks"][0]["closed"] is False
+    assert len(session.state["tasks"]) == 1
+    assert (await task_flow.active(context))["type"] == "ambiguous"
+
+
+@pytest.mark.asyncio
+async def test_historical_recipient_is_completed_from_ledger(db, monkeypatch):
     source = TransactionORM(
         tx_id="SOURCE-HISTORY-REFERENCE", account_id="A1", type="transfer_out",
         amount_fen=23456, counterparty="A2", category="transfer", note=None,
@@ -535,30 +692,21 @@ async def test_history_reference_reuses_server_verified_recipient_and_amount(db,
     db.add(source)
     await db.commit()
 
-    class ReferenceNlu:
+    class NoExtraction:
         mode = "model"
 
-        async def extract_tasks(self, message, context):
-            assert context["trusted_history_reference"] == {
-                "resolved": True, "reuse_recipient": True, "reuse_amount": True,
-            }
-            return TransferTurnExtraction(tasks=[TransferTaskExtraction(
-                task_action="create", intent="transfer",
-            )])
+        async def extract_tasks(self, *_args, **_kwargs):
+            raise AssertionError("manage_transfer_task must not launch extraction")
 
-    monkeypatch.setattr(nova, "get_nlu", lambda: ReferenceNlu())
+    monkeypatch.setattr(nova, "get_nlu", lambda: NoExtraction())
     context = ToolContext(
         "U1", db, PageContext(),
-        original_message="给倒数第六笔转账的人转相应的钱数",
+        original_message="再给李四转234.56元",
         request_id=uuid4().hex, session_id="NOVA-HISTORY-REFERENCE",
         bank_api=InProcessBankApi(db),
     )
-    result = await nova.manage_transfer_request(nova.TransferRequestArguments(
-        history_reference={
-            "tx_id": source.tx_id,
-            "reuse_recipient": True,
-            "reuse_amount": True,
-        },
+    result = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="李四", amount_fen=23456,
     ), context)
     task = result["tasks"][0]
     assert task["recipient"] == "李四"
@@ -568,34 +716,45 @@ async def test_history_reference_reuses_server_verified_recipient_and_amount(db,
 
 
 @pytest.mark.asyncio
+async def test_saved_contact_autofill_respects_conflicting_phone(db):
+    db.add(ContactORM(contact_id=uuid4().hex, user_id="U1", name="李四", nickname="房东",
+                      phone="13900000002", account_number="2", phone_known=True,
+                      card_known=False, bank="AI 模拟银行", transfer_count=0))
+    await db.commit()
+    bank = InProcessBankApi(db)
+    good = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="房东", amount_fen=10000),
+        ToolContext("U1", db, PageContext(), original_message="给房东转100元",
+                    request_id=uuid4().hex, session_id="NOVA-CONTACT-AUTOFILL", bank_api=bank))
+    assert good["tasks"][0]["task"]["operation"]["to_account"] == "A2"
+    conflicting = await nova.manage_transfer_task(nova.ManageTransferTaskArguments(
+        action="create", recipient="李四", recipient_phone="13900000003", amount_fen=10000),
+        ToolContext("U1", db, PageContext(), original_message="给李四手机号13900000003转100元",
+                    request_id=uuid4().hex, session_id="NOVA-CONTACT-CONFLICT", bank_api=bank))
+    task = conflicting["tasks"][0]
+    assert task["task"] is None
+    assert "有效收款人" in "、".join(task["missing_fields"])
+
+
+@pytest.mark.asyncio
 async def test_model_plans_relative_transfer_before_bank_read_and_redacts_identifiers(db, monkeypatch):
     events = []
 
-    class PlanningModel:
-        async def generate_with_tools(self, **kwargs):
-            class Result:
-                pass
-            result = Result()
-            if kwargs["messages"][-1]["role"] == "tool":
-                result.data = {"role": "assistant", "content": "请核对任务卡。"}
-            else:
+    class PlanningModel(TransferToolModel):
+        async def generate_structured(self, **kwargs):
+            if kwargs["schema"] is nova_runtime.ToolPlan:
                 events.append("model_plan")
-                assert "13900000002" not in kwargs["messages"][-1]["content"]
-                assert any(tool["function"]["name"] == "manage_transfer_request"
-                           for tool in kwargs["tools"])
-                result.data = {"role": "assistant", "content": None, "tool_calls": [{
-                    "id": "transfer", "type": "function",
-                    "function": {"name": "manage_transfer_request", "arguments": "{}"},
-                }]}
-            return result
+                assert "13900000002" not in kwargs["messages"][1]["content"]
+                assert "manage_transfer_task" in kwargs["messages"][-1]["content"]
+            return await super().generate_structured(**kwargs)
 
     class ObservedBank(InProcessBankApi):
         async def transfer_funding_accounts(self, **kwargs):
             events.append("read_funding_accounts")
             return await super().transfer_funding_accounts(**kwargs)
 
-    monkeypatch.setattr(nova, "get_mode", lambda: "model")
-    monkeypatch.setattr(nova, "llm", PlanningModel())
+    use_transfer_planner(monkeypatch)
+    monkeypatch.setattr(nova_runtime, "llm", PlanningModel())
     monkeypatch.setattr(nova_router, "get_bank_api", lambda: ObservedBank(db))
     app = FastAPI()
     app.include_router(nova_router.router)
@@ -613,7 +772,7 @@ async def test_model_plans_relative_transfer_before_bank_read_and_redacts_identi
             "message": "把我银行卡里一半的钱转给赵六，手机号13900000002", "request_id": uuid4().hex,
         })
     assert response.status_code == 200, response.text
-    assert events == ["model_plan", "read_funding_accounts"]
+    assert events == ["model_plan", "read_funding_accounts", "model_plan", "read_funding_accounts"]
     assert response.json()["tasks"][0]["amount_fen"] == 250000
 
 
@@ -627,8 +786,7 @@ async def test_model_keeps_transfer_history_read_only_by_not_calling_write_tool(
 
     monkeypatch.setattr(nova, "get_mode", lambda: "model")
     result = await nova.chat("请查看我的转账记录", [], model=ReadPlanner())
-    assert '尚未取得可核验' in result['reply']
-    assert result['grounding']['status'] == 'abstained'
+    assert result['reply'] == '我会先查询转账流水。'
     assert result["tool_calls"] == []
 
 
@@ -649,6 +807,8 @@ async def test_vague_transfer_creates_visible_draft_and_confirmation_requests_mi
 @pytest.mark.parametrize("endpoint", ["chat", "chat/stream"])
 async def test_nova_launch_transfer_returns_empty_chat_card(db, monkeypatch, mode, endpoint):
     monkeypatch.setenv("LLM_MODE", mode)
+    if mode == "model":
+        use_transfer_planner(monkeypatch)
     monkeypatch.setattr(nova_router, "get_bank_api", lambda: InProcessBankApi(db))
     app = FastAPI()
     app.include_router(nova_router.router)
@@ -670,7 +830,11 @@ async def test_nova_launch_transfer_returns_empty_chat_card(db, monkeypatch, mod
                        if line.startswith("data: ") and json.loads(line[6:]).get("type") == "done")
                   if endpoint.endswith("stream") else response.json())
         assert result["mode"] == mode
-        assert result["tool_calls"][0]["name"] == "manage_transfer_request"
+        if mode == "offline":
+            assert result["tool_calls"] == []
+            assert result.get("tasks", []) == []
+            return
+        assert any(t["name"] == "manage_transfer_task" for t in result["tool_calls"])
         assert len(result["tasks"]) == 1
         task = result["tasks"][0]
         assert task["status"] == "COLLECTING"
@@ -679,3 +843,53 @@ async def test_nova_launch_transfer_returns_empty_chat_card(db, monkeypatch, mod
         assert {"收款人姓名", "转账金额"} <= set(task["missing_fields"])
         assert task["transfer_task_id"] is None
         assert await db.scalar(select(func.count()).select_from(TransferTaskORM)) == 0
+
+
+@pytest.mark.asyncio
+async def test_capability_read_does_not_end_a_requested_empty_transfer_card(db, monkeypatch):
+    from types import SimpleNamespace
+
+    class CatalogFirstModel(TransferToolModel):
+        plans = 0
+
+        async def generate_structured(self, **kwargs):
+            schema = kwargs['schema']
+            if schema is nova_runtime.ToolSelection:
+                return SimpleNamespace(data=schema(tool_names=[
+                    'describe_bank_capabilities', 'manage_transfer_task']))
+            if schema is nova_runtime.ToolPlan:
+                self.plans += 1
+                if self.plans == 1:
+                    return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
+                        name='describe_bank_capabilities', arguments={})]))
+            return await super().generate_structured(**kwargs)
+
+        async def generate_with_tools(self, **kwargs):
+            return SimpleNamespace(data={'role': 'assistant', 'content': None, 'tool_calls': [{
+                'function': {'name': 'describe_bank_capabilities', 'arguments': '{}'}}]})
+
+    use_transfer_planner(monkeypatch)
+    model = CatalogFirstModel()
+    monkeypatch.setattr(nova_runtime, 'llm', model)
+    monkeypatch.setattr(nova_router, 'get_bank_api', lambda: InProcessBankApi(db))
+    app = FastAPI()
+    app.include_router(nova_router.router)
+    app.dependency_overrides[get_current_user] = lambda: {'user_id': 'U1'}
+    async def current_db():
+        yield db
+    app.dependency_overrides[get_db] = current_db
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.post('/api/v1/nova/chat/stream', json={
+            'message': '我要进行转账', 'request_id': uuid4().hex})
+    assert response.status_code == 200, response.text
+    events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith('data: ')]
+    assert [event['name'] for event in events if event['type'] == 'tool'] == ['manage_transfer_task']
+    assert any(event['type'] == 'status' and event['text'] == '正在整理回复' for event in events)
+    result = next(event for event in events if event['type'] == 'done')
+    assert model.plans == 2
+    assert [item['name'] for item in result['tool_calls'] if item['name'] == 'manage_transfer_task'] == ['manage_transfer_task']
+    assert len(result['tasks']) == 1
+    assert result['tasks'][0]['status'] == 'COLLECTING'
+    assert {'收款人姓名', '转账金额'} <= set(result['tasks'][0]['missing_fields'])
+    assert await db.scalar(select(func.count()).select_from(TransferTaskORM)) == 0

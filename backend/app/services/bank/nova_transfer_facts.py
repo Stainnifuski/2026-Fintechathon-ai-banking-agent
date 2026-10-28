@@ -54,6 +54,26 @@ async def known_recipients(db, user_id, name):
         if row['name'] == name:
             found.append({'name': row['name'], 'phone': row['phone_number'], 'card': row['card_number'],
                 'account_hint': row['card_account_id'] or row['phone_account_id'], 'source': 'transfer_history'})
+    if found:
+        return found
+    # Older completed transfers may predate operation metadata. Their ledger
+    # still proves the destination account, which must be rechecked before use.
+    statement = (select(TransactionORM.counterparty).join(AccountORM,
+        TransactionORM.account_id == AccountORM.account_id).where(
+        AccountORM.user_id == user_id, TransactionORM.type == 'transfer_out',
+        TransactionORM.status == 'completed'))
+    if cutoff is not None:
+        statement = statement.where(TransactionORM.timestamp > cutoff)
+    seen = set()
+    for account_id in (await db.scalars(statement)).all():
+        if account_id in seen:
+            continue
+        seen.add(account_id)
+        recipient = await historical_recipient(db, user_id, account_id)
+        if recipient and recipient.name == name:
+            found.append({'name': recipient.name, 'phone': None,
+                'card': transfer_card_number(recipient.account_id),
+                'account_hint': recipient.account_id, 'source': 'transfer_history'})
     return found
 
 

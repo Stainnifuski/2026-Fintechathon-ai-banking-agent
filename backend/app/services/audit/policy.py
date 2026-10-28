@@ -12,7 +12,7 @@ for domain, tables in {
     "calendar": "calendar_events",
     "shops": "flower_orders cake_orders",
     "bills": "bill_merchants bill_merchant_aliases bill_transfer_pairs bill_recurring_streams bill_recurring_occurrences bill_transaction_metadata bill_user_tags bill_transaction_tags bill_metadata_events bill_classifications bill_category_rules bill_budgets bill_anomaly_reviews bill_recurring_schedules bill_forecast_snapshots bill_sync_states",
-    "assistant": "nova_conversations nova_task_sessions nova_task_messages nova_bill_actions nova_execution_queues nova_reference_contexts nova_task_flows",
+    "assistant": "nova_conversations nova_agent_runtime nova_task_sessions nova_task_messages nova_bill_actions nova_bill_results nova_execution_queues nova_reference_contexts nova_task_flows",
     "wealth": "wealth_profiles wealth_assessments wealth_authorizations wealth_verifications wealth_plans wealth_conversations wealth_contexts wealth_cash_holds wealth_unit_holds wealth_orders wealth_lots wealth_settlements wealth_goals wealth_executions wealth_tasks wealth_task_nodes wealth_task_controls wealth_demo_receipts wealth_ledger_reviews wealth_context_selections wealth_quick_quotas wealth_clocks",
 }.items():
     TABLE_DOMAINS.update({name: domain for name in tables.split()})

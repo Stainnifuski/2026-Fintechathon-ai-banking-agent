@@ -1,5 +1,6 @@
 """日历工具闭环：日期、搜索、重复例外、页面选择和身份隔离。"""
 import json
+from types import SimpleNamespace
 from datetime import datetime, timezone
 
 import httpx
@@ -12,7 +13,7 @@ from backend.app.models import CalendarEventORM
 from backend.app.schemas.calendar import CalendarEventCreate
 from backend.app.schemas.nova import PageContext, CalendarContext, CalendarSelection
 from backend.app.services.calendar import events
-from backend.app.services.ai import nova, calendar_tools
+from backend.app.services.ai import nova, nova_runtime, calendar_tools
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.services.ai.llm import LLMService
 from backend.app.routers.nova import router
@@ -136,27 +137,27 @@ async def test_offline_dates_names_and_multiple_matches(store, monkeypatch):
 @pytest.mark.asyncio
 async def test_authenticated_calendar_tool_loop_and_page_validation(store, monkeypatch):
     point, _ = await seed()
-    seen = []
-    def handler(request):
-        body = json.loads(request.content)
-        if body.get('response_format'):
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
-                'content': json.dumps({'mode': 'direct_react', 'domains': ['calendar'],
-                    'has_dependencies': False, 'goal_plan': None})}}]})
-        seen.append(body)
-        if len(seen) == 1:
-            assert any(point['event_id'] in message.get('content', '') for message in body['messages'])
-            assert 'user_id' not in json.dumps(body)
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'tool_calls', 'message': {
-                'content': None, 'tool_calls': [{'id': 'calendar', 'type': 'function', 'function': {
-                    'name': 'get_calendar_event', 'arguments': '{}'}}]}}]})
-        tool = body['messages'][-1]
-        assert tool['tool_call_id'] == 'calendar' and json.loads(tool['content'])['data']['total'] == 1
-        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': '项目答辩10月15日上午9点举行。'}}]})
+    class Model:
+        async def generate_structured(self, **kwargs):
+            schema = kwargs['schema']
+            if schema is nova_runtime.DependencyDecision:
+                return SimpleNamespace(data=schema(depends_on_prior_task=False, reason='独立查询'))
+            if schema is nova_runtime.ToolSelection:
+                assert point['event_id'] in json.dumps(kwargs['messages'])
+                assert 'user_id' not in json.dumps(kwargs['messages'])
+                return SimpleNamespace(data=schema(tool_names=['get_calendar_event']))
+            assert schema is nova_runtime.ToolPlan
+            return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(name='get_calendar_event', arguments={})]))
+        async def generate_with_tools(self, **kwargs):
+            return SimpleNamespace(data={'role': 'assistant', 'content': None, 'tool_calls': []})
+        async def generate_text(self, **kwargs):
+            assert any('"total": 1' in message['content'] for message in kwargs['messages'])
+            return SimpleNamespace(data='项目答辩10月15日上午9点举行。')
     monkeypatch.setenv('LLM_MODE', 'model')
     monkeypatch.setenv('LLM_API_KEY', 'test-secret')
-    model = LLMService(httpx.MockTransport(handler))
+    model = Model()
     monkeypatch.setattr(nova, 'llm', model)
+    monkeypatch.setattr(nova_runtime, 'llm', model)
     app = FastAPI()
     app.include_router(router)
     async def get_session():
@@ -171,15 +172,15 @@ async def test_authenticated_calendar_tool_loop_and_page_validation(store, monke
                 'event_id': point['event_id'], 'starts_at': '2026-10-15T01:00:00Z'}}
             reply = await client.post('/api/v1/nova/chat', json={'message': '这个活动什么时候举行？', 'page_context': {'page': 'thirdParty', 'calendar': calendar}})
             assert reply.status_code == 200 and '项目答辩' in reply.json()['reply']
-            assert '2026-10-15T09:00:00+08:00' in reply.json()['reply']
-            assert reply.json()['grounding']['status'] == 'grounded'
+            assert reply.json()['reply'] == '项目答辩10月15日上午9点举行。'
+            assert 'grounding' not in reply.json()
             for patch in ({'timezone': 'bad-zone'}, {'selected_date': '2026-02-30'}, {'user_id': 'U2'},
                           {'selected_event': {'event_id': point['event_id'], 'starts_at': '2026-10-15T09:00:00'}}):
                 assert (await client.post('/api/v1/nova/chat', json={'message': '日程', 'page_context': {
                     'page': 'thirdParty', 'calendar': {**calendar, **patch}}})).status_code == 422
             assert (await client.post('/api/v1/nova/chat', json={'message': '日程', 'page_context': {'page': 'home', 'calendar': calendar}})).status_code == 422
     finally:
-        await model.aclose()
+        pass
 
 
 @pytest.mark.asyncio
@@ -205,64 +206,53 @@ async def test_detail_uses_local_day_and_default_future_scope_does_not_hide_save
 
 
 @pytest.mark.asyncio
-async def test_create_event_directly_when_complete_otherwise_prefilled_chat_form(store, monkeypatch):
+async def test_calendar_mutation_requires_user_confirmation_and_supports_bulk_filter(store):
     from dataclasses import replace
     from backend.app.middleware.auth import get_current_user
     from backend.app.services.ai.transfer_manager import get_session
     from backend.app.services.bank import nova_conversations
-    monkeypatch.setattr(calendar_tools, 'utc_now', lambda: datetime(2026, 10, 14, 1, tzinfo=timezone.utc))
+
     async with store() as db:
         session_id = (await nova_conversations.create(db, 'U1'))['session_id']
+        def at(request_id):
+            return replace(ctx(db), session_id=session_id, request_id=request_id)
 
-        def at(message, request_id):
-            return replace(ctx(db), original_message=message, session_id=session_id, request_id=request_id, task_switch_approved=True)
-
-        complete = await nova.execute_tool(call('create_calendar_event', {
-            'title': '和李四吃饭', 'start_date': '2026-10-15', 'start_time': '18:30', 'end_time': '20:00',
-            'location': '海底捞', 'time_quote': '明天晚上六点半到八点'}), at('明天晚上六点半到八点在海底捞和李四吃饭', 'R1'))
-        event = complete['data']['event']
-        assert complete['data']['created'] and event['starts_at_local'] == '2026-10-15T18:30:00+08:00'
-        assert event['ends_at_local'] == '2026-10-15T20:00:00+08:00' and event['location'] == '海底捞'
-        assert await db.scalar(select(func.count()).select_from(CalendarEventORM)) == 1
-
-        missing = await nova.execute_tool(call('create_calendar_event', {
-            'title': '看牙医', 'start_date': '2026-10-16', 'time_quote': '后天'}), at('后天去看牙医', 'R2'))
-        assert not missing['data']['created'] and missing['data']['missing_fields'] == ['开始时间']
-        assert missing['data']['prefill'] == {'title': '看牙医', 'start_date': '2026-10-16'}
-
-        # A time the user never said is dropped, not created.
-        invented = await nova.execute_tool(call('create_calendar_event', {
-            'title': '开会', 'start_date': '2026-10-15', 'start_time': '09:00', 'location': '三楼',
-            'time_quote': '明早九点'}), at('帮我记一下开会', 'R3'))
-        assert not invented['data']['created'] and '时间' in invented['data']['notice']
-        assert invented['data']['prefill'] == {'title': '开会'}
-        past = await nova.execute_tool(call('create_calendar_event', {
-            'title': '跑步', 'start_date': '2026-10-13', 'start_time': '07:00', 'time_quote': '昨天早上七点'}),
-            at('昨天早上七点跑步', 'R4'))
-        assert not past['data']['created'] and '已经过去' in past['data']['notice']
-        assert await db.scalar(select(func.count()).select_from(CalendarEventORM)) == 1
-
-        tasks = (await get_session(db, 'U1', session_id))['calendar_tasks']
-        assert [bool(task['event']) for task in tasks] == [True, False, False, False]
-        assert tasks[0]['event']['title'] == '和李四吃饭'
+        add = await nova.execute_tool(call('manipulate_calender_event', {
+            'action': 'add', 'title': '项目会', 'start_date': '2026-10-15', 'start_time': '09:00',
+            'end_time': '10:00'}), at('R1'))
+        assert add['task_opened'] and await db.scalar(select(func.count()).select_from(CalendarEventORM)) == 0
+        updated = await nova.execute_tool(call('manipulate_calender_event', {
+            'action': 'add', 'task_entry_id': add['entry_id'], 'location': '一号会议室'}), at('R1-update'))
+        assert updated['task_updated'] and updated['entry_id'] == add['entry_id']
+        assert updated['changes']['location'] == '一号会议室'
 
         app = FastAPI()
         app.include_router(router)
-        user = {'user_id': 'U1'}
-        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_current_user] = lambda: {'user_id': 'U1'}
         async def use_db():
             yield db
         app.dependency_overrides[get_db] = use_db
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
-            # The user fills the chat form; it creates through the calendar API, then links the card.
-            created = await events.create_event('U1', CalendarEventCreate(title='看牙医', starts_at='2026-10-16T10:00:00+08:00'))
-            base = f"/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{tasks[1]['entry_id']}"
-            foreign = await events.create_event('U2', CalendarEventCreate(title='别人', starts_at='2026-10-16T10:00:00+08:00'))
-            assert (await client.post(base + '/event', json={'event_id': foreign['event_id']})).status_code == 404
-            linked = (await client.post(base + '/event', json={'event_id': created['event_id']})).json()['calendar_tasks']
-            assert linked[1]['event']['title'] == '看牙医'
-            remaining = (await client.post(f"/api/v1/nova/task-sessions/{session_id}/calendar-tasks/{tasks[3]['entry_id']}/dismiss")).json()
-            assert len(remaining['calendar_tasks']) == 3
-            await events.delete_event('U1', tasks[0]['event_id'])
-            assert (await get_session(db, 'U1', session_id))['calendar_tasks'][0]['deleted'] is True
-    assert '日历业务 Skill' in nova.SYSTEM_PROMPT
+            base = f"/api/v1/nova/task-sessions/{session_id}/calendar-tasks/"
+            response = await client.post(base + add['entry_id'] + '/confirm', json={'changes': {}})
+            assert response.status_code == 200, response.text
+            assert len(response.json()['calendar_tasks'][0]['result']) == 1
+            assert await db.scalar(select(func.count()).select_from(CalendarEventORM)) == 1
+            await events.create_event('U1', CalendarEventCreate(title='项目会', starts_at='2026-10-16T09:00:00+08:00'))
+            await events.create_event('U2', CalendarEventCreate(title='项目会', starts_at='2026-10-17T09:00:00+08:00'))
+            modify = await nova.execute_tool(call('manipulate_calender_event', {
+                'action': 'modify', 'match_title': '项目会', 'start_time': '11:00'}), at('R2'))
+            assert modify['matched_count'] == 2
+            assert all(item['starts_at_local'][11:16] == '09:00' for item in modify['targets'])
+            response = await client.post(base + modify['entry_id'] + '/confirm', json={'changes': {}})
+            assert response.status_code == 200, response.text
+            ours = (await db.scalars(select(CalendarEventORM).where(CalendarEventORM.user_id == 'U1'))).all()
+            assert all(events.utc(item.starts_at).astimezone(__import__('zoneinfo').ZoneInfo('Asia/Shanghai')).hour == 11 for item in ours)
+            remove = await nova.execute_tool(call('manipulate_calender_event', {
+                'action': 'delete', 'match_title': '项目会', 'match_time': '11:00'}), at('R3'))
+            assert remove['matched_count'] == 2
+            response = await client.post(base + remove['entry_id'] + '/confirm', json={'changes': {}})
+            assert response.status_code == 200, response.text
+            assert len((await get_session(db, 'U1', session_id))['calendar_tasks']) == 3
+            assert await db.scalar(select(func.count()).select_from(CalendarEventORM).where(CalendarEventORM.user_id == 'U1')) == 0
+            assert await db.scalar(select(func.count()).select_from(CalendarEventORM).where(CalendarEventORM.user_id == 'U2')) == 1

@@ -44,17 +44,24 @@ YUAN_PATTERN = r'^\d{1,9}(\.\d{1,2})?$'
 
 
 class CardPreviewArguments(StrictModel):
-    action: CardAction
-    card_id: str | None = Field(default=None, min_length=1, max_length=32)
-    account_id: str | None = Field(default=None, min_length=1, max_length=32)
-    credit_limit: str | None = Field(default=None, pattern=YUAN_PATTERN)
-    single_txn_limit: str | None = Field(default=None, pattern=YUAN_PATTERN)
-    daily_txn_limit: str | None = Field(default=None, pattern=YUAN_PATTERN)
-    online_enabled: bool | None = None
-    atm_enabled: bool | None = None
-    overseas_enabled: bool | None = None
-    contactless_enabled: bool | None = None
-    value_quotes: dict[Literal['credit_limit','single_txn_limit','daily_txn_limit'],str] = Field(default_factory=dict,max_length=3)
+    task_action: Literal['open', 'cancel'] = Field(default='open',
+        description='open 打开或更新卡片操作任务；cancel 取消当前会话中尚未完成的卡片操作任务。')
+    task_entry_id: str | None = Field(default=None, min_length=1, max_length=64,
+        description='取消任务时可填写未完成卡片任务的 entry_id；可从当前任务状态取得。')
+    action: CardAction = Field(default='card_set_transaction_limits',
+                               description='open 时要办理的卡片操作；用户未指定操作时默认打开交易限额栏目。cancel 时省略。')
+    card_id: str | None = Field(
+        default=None, min_length=1, max_length=32,
+        description='银行卡内部 ID；打开任务时取自本轮 list_cards，取消任务时也可从未完成任务状态取得。勿填卡号或尾号。',
+    )
+    account_id: str | None = Field(default=None, min_length=1, max_length=32, description='申请虚拟卡时关联的本人借记账户 ID。')
+    credit_limit: str | None = Field(default=None, pattern=YUAN_PATTERN, description='新的信用额度，单位元。')
+    single_txn_limit: str | None = Field(default=None, pattern=YUAN_PATTERN, description='新的单笔交易限额，单位元。')
+    daily_txn_limit: str | None = Field(default=None, pattern=YUAN_PATTERN, description='新的单日交易限额，单位元。')
+    online_enabled: bool | None = Field(default=None, description='是否开启线上支付。')
+    atm_enabled: bool | None = Field(default=None, description='是否开启 ATM 取现。')
+    overseas_enabled: bool | None = Field(default=None, description='是否开启境外交易。')
+    contactless_enabled: bool | None = Field(default=None, description='是否开启非接触支付。')
 
 
 class SubscriptionListArguments(ListArguments):
@@ -75,6 +82,17 @@ class SubscriptionArguments(StrictModel):
 
 class SubscriptionCancelArguments(SubscriptionArguments):
     pass
+
+
+class ManageSubscriptionTaskArguments(StrictModel):
+    action: Literal['open', 'cancel'] = Field(
+        description='open 打开取消订阅任务卡；cancel 关闭当前会话中尚未完成的取消订阅任务卡。')
+    merchant_name: str | None = Field(default=None, min_length=1, max_length=128,
+        description='订阅的商户名称；需与 list_subscriptions 返回的 merchant_name 一致。')
+    subscription_id: str | None = Field(default=None, min_length=1, max_length=40,
+        description='订阅内部 ID，可从 list_subscriptions 取得；有名称且唯一时可省略。')
+    task_entry_id: str | None = Field(default=None, min_length=1, max_length=64,
+        description='cancel 时可填写未完成取消订阅任务的 entry_id；当前只有一项时可省略。')
 
 
 def masked(value):
@@ -113,6 +131,14 @@ async def subscription_rows(context):
 
 async def list_cards(arguments, context):
     items = await card_rows(context)
+    available_ordinal = lost_ordinal = 0
+    for row in items:
+        if row['status'] == 'LOST':
+            lost_ordinal += 1
+            row['lost_card_ordinal'] = lost_ordinal
+        else:
+            available_ordinal += 1
+            row['card_ordinal'] = available_ordinal
     for key in ('status', 'card_type', 'is_virtual'):
         value = getattr(arguments, key)
         if value is not None:
@@ -121,6 +147,8 @@ async def list_cards(arguments, context):
         items = [row for row in items if row['card_number'].endswith(arguments.last_four)]
     data = paginate(items, arguments)
     data['filters'] = arguments.model_dump(exclude_none=True, exclude={'page', 'page_size'})
+    data['ordinal_rule'] = ('未明确说“挂失的卡”时，第几张卡按未挂失卡的 card_ordinal 从 1 开始计算；'
+                            '明确说“第几张挂失的卡”时，按 lost_card_ordinal 计算。序号以本人卡片原始顺序为准。')
     return envelope('cards.list', data)
 
 
@@ -184,24 +212,50 @@ def _entries(state: dict) -> list[dict]:
 
 
 async def register_chat_card_task(context, *, action: str, card_id: str | None, prefill: dict,
-                                  notice: str | None = None, operation_id: str | None = None) -> None:
+                                  notice: str | None = None, operation_id: str | None = None) -> tuple[str | None, bool, dict]:
     """Show a card task in the conversation: an editable form, or a preview awaiting the user's own confirmation.
 
     Only references and form prefill are stored; operation status always comes from the owner-scoped record.
     The transfer/collection version is not bumped because no draft content changes.
     """
     if not (context.session_id and context.request_id):
-        return
+        return None, False, prefill
     row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
     state = json.loads(json.dumps(row.state or {}))
-    entries = [item for item in _entries(state) if item.get('operation_id') != operation_id or operation_id is None]
-    from .task_presentation import replace_or_append
-    entries = replace_or_append(entries, {'entry_id': uuid4().hex, 'origin_request_id': context.request_id, 'action': action,
-                    'card_id': card_id, 'prefill': prefill, 'notice': notice,
-                    'operation_id': operation_id, 'closed': False}, context, 'card')
+    entries = _entries(state)
+    existing = None
+    if card_id:
+        for item in reversed(entries):
+            if item.get('closed') or item.get('card_id') != card_id:
+                continue
+            previous = await context.db.get(CardOperationORM, item['operation_id'], with_for_update=True,
+                                            populate_existing=True) if item.get('operation_id') else None
+            if previous and previous.user_id != context.user_id:
+                continue
+            if previous and previous.status in {'AWAITING_MFA', 'AUTHORIZED'}:
+                raise CardTaskError('原卡片操作已本人确认，请先完成验证或取消原操作', 'CARD_TASK_CONFIRMED')
+            if previous and previous.status != 'AWAITING_CONFIRMATION':
+                continue
+            existing = item
+            if previous and previous.operation_id != operation_id:
+                from ...integrations.card_authorization import cancel
+                cancel(context.db, previous)
+            break
+    if existing:
+        if existing.get('action') == action:
+            prefill = {**existing.get('prefill', {}), **prefill}
+        existing.update(action=action, card_id=card_id, prefill=prefill, notice=notice,
+                        operation_id=operation_id)
+        entry_id, reused = existing['entry_id'], True
+    else:
+        entry_id, reused = uuid4().hex, False
+        entries.append({'entry_id': entry_id, 'origin_request_id': context.request_id, 'action': action,
+                        'card_id': card_id, 'prefill': prefill, 'notice': notice,
+                        'operation_id': operation_id, 'closed': False})
     state['card_operations'] = entries[-MAX_CHAT_CARD_OPERATIONS:]
     row.state = state
     await context.db.commit()
+    return entry_id, reused, prefill
 
 
 async def chat_card_operations(db, user_id: str, state: dict) -> list[dict]:
@@ -235,7 +289,7 @@ async def link_chat_card_operation(db, *, user_id: str, session_id: str, entry_i
     operation = await db.get(CardOperationORM, operation_id, populate_existing=True)
     if entry is None or operation is None or operation.user_id != user_id:
         raise CardTaskError('卡片任务不存在', 'CARD_TASK_NOT_FOUND', 404)
-    if operation.action != entry['action'] or (entry.get('card_id') and operation.card_id != entry['card_id']):
+    if entry.get('card_id') and operation.card_id != entry['card_id']:
         raise CardTaskError('预览与这张卡片任务不一致', 'CARD_TASK_MISMATCH', 422)
     if operation.status not in {AWAITING_CONFIRMATION, AWAITING_MFA}:
         raise CardTaskError('预览已结束，请重新生成', 'CARD_TASK_STALE', 409)
@@ -246,7 +300,14 @@ async def link_chat_card_operation(db, *, user_id: str, session_id: str, entry_i
             raise CardTaskError('原操作已本人确认，请先完成验证或取消原操作', 'CARD_TASK_CONFIRMED', 409)
         if previous and previous.status == AWAITING_CONFIRMATION:
             cancel(db, previous)
-    entry.update(operation_id=operation_id, card_id=operation.card_id, notice=None)
+    # The user may switch operations inside the same card task before requesting a new preview.
+    entry.update(action=operation.action, operation_id=operation_id, card_id=operation.card_id,
+                 prefill={key[:-4] if key.endswith('_fen') else key:
+                          f'{value / 100:.2f}' if key.endswith('_fen') else value
+                          for key, value in (operation.params or {}).items()
+                          if key in CHANNEL_FIELDS or key in {'account_id', 'credit_limit_fen',
+                                                               'single_txn_limit_fen', 'daily_txn_limit_fen'}},
+                 notice=None)
     state['card_operations'] = entries
     row.state = state
     from types import SimpleNamespace
@@ -262,7 +323,7 @@ async def link_chat_card_operation(db, *, user_id: str, session_id: str, entry_i
 
 
 async def dismiss_chat_card_task(db, *, user_id: str, session_id: str, entry_id: str) -> list[dict]:
-    from ...integrations.card_authorization import AWAITING_CONFIRMATION, cancel
+    from ...integrations.card_authorization import OPEN_STATES, cancel
     row = await _owned_session(db, user_id, session_id)
     state = json.loads(json.dumps(row.state or {})) if row else {}
     entries = _entries(state)
@@ -271,15 +332,56 @@ async def dismiss_chat_card_task(db, *, user_id: str, session_id: str, entry_id:
         raise CardTaskError('卡片任务不存在', 'CARD_TASK_NOT_FOUND', 404)
     if entry.get('operation_id'):
         operation = await db.get(CardOperationORM, entry['operation_id'], with_for_update=True, populate_existing=True)
-        if operation and operation.status == AWAITING_CONFIRMATION:
-            cancel(db, operation)
-        elif operation and operation.status not in {'COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED'}:
-            raise CardTaskError('原操作已本人确认，请先完成验证或取消原操作', 'CARD_TASK_CONFIRMED', 409)
+        if operation and operation.user_id != user_id:
+            raise CardTaskError('卡片任务不存在', 'CARD_TASK_NOT_FOUND', 404)
+        if operation and operation.status in OPEN_STATES:
+            try:
+                cancel(db, operation)
+            except CardAuthorizationError as error:
+                if error.code != 'AUTHORIZATION_EXPIRED':
+                    raise
+        elif operation and operation.status == 'AUTHORIZED':
+            raise CardTaskError('卡片操作已授权，不能取消', 'CARD_TASK_CONFIRMED', 409)
     entry['closed'] = True
     state['card_operations'] = entries
     row.state = state
     await db.commit()
     return await chat_card_operations(db, user_id, state)
+
+
+async def cancel_pending_chat_card_task(context, arguments) -> dict:
+    if not context.session_id:
+        return dict(error='CARD_TASK_SESSION_REQUIRED', message='取消卡片任务需要当前会话。')
+    row = await _owned_session(context.db, context.user_id, context.session_id)
+    entries = _entries((row.state or {}) if row else {})
+    pending = []
+    for entry in entries:
+        if entry['closed']:
+            continue
+        operation = await context.db.get(CardOperationORM, entry['operation_id']) if entry.get('operation_id') else None
+        if operation and (operation.user_id != context.user_id or
+                          operation.status in {'COMPLETED', 'CANCELLED', 'EXPIRED', 'FAILED', 'AUTHORIZED'}):
+            continue
+        pending.append(entry)
+    if arguments.task_entry_id:
+        pending = [entry for entry in pending if entry['entry_id'] == arguments.task_entry_id]
+    if arguments.card_id:
+        pending = [entry for entry in pending if entry.get('card_id') == arguments.card_id]
+    if not arguments.task_entry_id and not arguments.card_id and context.focus_task_id:
+        focused = [entry for entry in pending if entry['entry_id'] == context.focus_task_id]
+        if focused:
+            pending = focused
+    if not pending:
+        return dict(error='CARD_TASK_NOT_FOUND', message='当前会话没有匹配的未完成卡片操作任务。')
+    if len(pending) != 1:
+        return dict(error='CARD_TASK_AMBIGUOUS', message='有多项未完成的卡片操作，请指定目标任务或卡片。')
+    entry = pending[0]
+    remaining = await dismiss_chat_card_task(context.db, user_id=context.user_id,
+                                             session_id=context.session_id, entry_id=entry['entry_id'])
+    return envelope('cards.operation_task_cancel', dict(
+        task_cancelled=True, card_operation_executed=False, entry_id=entry['entry_id'],
+        card_id=entry.get('card_id'), remaining_task_count=len(remaining),
+        message='未完成的卡片操作任务已取消；银行卡设置未因此改变。'))
 
 
 def _masked_change(change):
@@ -293,15 +395,20 @@ async def preview_card_operation(arguments, context):
 
     确认、强验证只能由本人在聊天中的卡片任务卡完成。
     """
-    values = arguments.model_dump(exclude_none=True)
-    values.pop('value_quotes',None)
+    if arguments.task_action == 'cancel':
+        if set(arguments.model_fields_set) - {'task_action', 'task_entry_id', 'card_id'}:
+            return dict(error='INVALID_ARGUMENTS', message='取消任务时只填写 task_action、task_entry_id 或 card_id。')
+        return await cancel_pending_chat_card_task(context, arguments)
+    if arguments.task_entry_id is not None:
+        return dict(error='INVALID_ARGUMENTS', message='打开卡片任务时无需填写 task_entry_id。')
+    values = arguments.model_dump(exclude_none=True, exclude={'task_action', 'task_entry_id'})
     action = values['action']
     if action != 'card_apply_virtual' and 'card_id' not in values:
         selected = context.page.cards.selected_card_id if context.page.cards else None
         if selected is not None:
             values['card_id'] = selected
     # 用户只说“关掉境外”或只改一项限额时，其余字段沿用银行当前值；摘要仍绑定完整参数。
-    if action in ('card_set_channels', 'card_set_transaction_limits') and 'card_id' in values:
+    if not context.session_id and action in ('card_set_channels', 'card_set_transaction_limits') and 'card_id' in values:
         current = next((row for row in await card_rows(context) if row['card_id'] == values['card_id']), None)
         if current is None:
             raise BankError('卡片不存在', 'CARD_NOT_FOUND', 404)
@@ -317,6 +424,8 @@ async def preview_card_operation(arguments, context):
                     message=f"{action} 需要且只接受字段：{', '.join(sorted(required))}")
     prefill = {key: value for key, value in values.items() if key not in {'action', 'card_id'}}
     missing = sorted(required - set(values))
+    if context.session_id:
+        return await _open_form(context, action, values.get('card_id'), prefill, missing, None)
     if missing:
         return await _open_form(context, action, values.get('card_id'), prefill, missing, None)
     try:
@@ -354,14 +463,17 @@ async def _open_form(context, action, card_id, prefill, missing, bank_message):
     card = next((row for row in await card_rows(context) if row['card_id'] == card_id), None) if card_id else None
     if card_id and card is None:
         raise BankError('卡片不存在', 'CARD_NOT_FOUND', 404)
-    await register_chat_card_task(context, action=action, card_id=card_id, prefill=prefill, notice=bank_message)
+    entry_id, reused, prefill = await register_chat_card_task(
+        context, action=action, card_id=card_id, prefill=prefill, notice=bank_message)
+    missing = sorted(ACTION_FIELDS[action] - set(prefill) - ({'card_id'} if card_id else set()))
     labels = list(dict.fromkeys(FIELD_LABELS[name] for name in missing))
     return envelope('cards.operation_form', dict(
         form_opened=True, executed=False, action=action, action_label=ACTION_LABELS[action],
+        entry_id=entry_id, task_updated=reused,
         card_id=card_id, card_number=card['card_number'] if card else None,
         missing_fields=labels, bank_message=bank_message,
-        next_step='尚未生成预览。请在聊天中的“' + ACTION_LABELS[action] + '”表单'
-                  + ('补充' + '、'.join(labels) if labels else '按银行提示调整数值')
+        next_step='尚未生成预览。请在聊天中' + ('原有的' if reused else '新打开的') + '“' + ACTION_LABELS[action] + '”表单'
+                  + ('补充' + '、'.join(labels) if labels else '按银行提示调整数值' if bank_message else '核对预填设置')
                   + '，再生成确认信息并由本人确认；NOVA 不能代为确认或输入验证码。'))
 
 
@@ -400,9 +512,11 @@ async def _owned_subscription(context_or_db, user_id: str, subscription_id: str)
     return SubscriptionView.model_validate(row).model_dump(mode='json') if row else None
 
 
-async def request_subscription_cancellation(arguments, context):
+async def request_subscription_cancellation(arguments, context, *, use_page_selection: bool = True,
+                                            merchant_name_hint: str | None = None):
     """在聊天中显示取消订阅任务卡；确认凭证只发给本人页面，取消须本人在任务卡中确认。"""
-    key = arguments.subscription_id or (context.page.subscriptions.selected_subscription_id if context.page.subscriptions else None)
+    key = arguments.subscription_id or (context.page.subscriptions.selected_subscription_id
+                                        if use_page_selection and context.page.subscriptions else None)
     subscription = None
     if key is not None:
         subscription = await _owned_subscription(context.db, context.user_id, key)
@@ -410,25 +524,100 @@ async def request_subscription_cancellation(arguments, context):
             raise BankError('订阅不存在', 'SUBSCRIPTION_NOT_FOUND', 404)
         if subscription['status'] != 'ACTIVE':
             return dict(error='SUBSCRIPTION_NOT_ACTIVE', message='该订阅已取消，无需再次取消。')
+    entry_id, reused = None, False
     if context.session_id and context.request_id:
         row = await _owned_session(context.db, context.user_id, context.session_id, create=True)
         state = json.loads(json.dumps(row.state or {}))
-        entries = [item for item in _subscription_entries(state)
-                   if item['closed'] or key is None or item.get('subscription_id') != key]
-        from .task_presentation import replace_or_append
-        if context.active_entry_type=='subscription': entries=list(state.get('subscription_tasks',[]))
-        entries = replace_or_append(entries, {'entry_id': uuid4().hex, 'origin_request_id': context.request_id,
-                        'subscription_id': key, 'closed': False}, context, 'subscription')
+        entries = _subscription_entries(state)
+        existing = next((item for item in reversed(entries) if not item['closed'] and
+                         item.get('subscription_id') == key and
+                         item.get('merchant_name_hint') == (merchant_name_hint if key is None else None)), None)
+        if existing:
+            entry_id, reused = existing['entry_id'], True
+        else:
+            entry_id = uuid4().hex
+            entries.append({'entry_id': entry_id, 'origin_request_id': context.request_id,
+                            'subscription_id': key, 'merchant_name_hint': merchant_name_hint if key is None else None,
+                            'closed': False})
         state['subscription_tasks'] = entries[-MAX_CHAT_CARD_OPERATIONS:]
         row.state = state
         await context.db.commit()
     data = dict(executed=False, form_opened=subscription is None,
+                entry_id=entry_id, task_updated=reused,
                 next_step='尚未取消。请在聊天中的取消订阅任务卡' + ('选择要取消的订阅，' if subscription is None else '')
                           + '查看取消详情并由本人确认；NOVA 不能代为确认。')
     if subscription:
         data.update({k: subscription[k] for k in ('subscription_id', 'merchant_name', 'amount_fen', 'currency',
                                                    'billing_cycle', 'next_charge_at', 'status')})
     return envelope('subscriptions.cancel_request', data)
+
+
+async def manage_subscription_task(arguments, context):
+    """模型只管理取消订阅任务卡；订阅取消仍由本人在 UI 中确认。"""
+    if arguments.action == 'open':
+        if arguments.task_entry_id:
+            return dict(error='INVALID_ARGUMENTS', message='打开订阅任务时无需填写 task_entry_id。')
+        key = arguments.subscription_id
+        if arguments.merchant_name:
+            matching = [row for row in await subscription_rows(context)
+                        if row['merchant_name'].casefold() == arguments.merchant_name.casefold()]
+            if not matching:
+                return dict(error='SUBSCRIPTION_NOT_FOUND', message='没有找到该名称的本人订阅，请先查询订阅列表。')
+            active = [row for row in matching if row['status'] == 'ACTIVE']
+            if not active:
+                return dict(error='SUBSCRIPTION_NOT_ACTIVE', message='该名称的订阅均已取消。')
+            if key and key not in {row['subscription_id'] for row in active}:
+                return dict(error='SUBSCRIPTION_TARGET_MISMATCH', message='订阅名称与内部 ID 不属于同一项生效订阅。')
+            if not key and len(active) == 1:
+                key = active[0]['subscription_id']
+            # 同名多项时拉起选择任务卡，由本人在 UI 中选具体订阅。
+        result = await request_subscription_cancellation(
+            SubscriptionCancelArguments(subscription_id=key), context,
+            use_page_selection=arguments.merchant_name is None,
+            merchant_name_hint=arguments.merchant_name if not key else None)
+        if arguments.merchant_name and not key and not result.get('error'):
+            result['data']['name_ambiguous'] = True
+            result['data']['next_step'] = '该名称对应多项生效订阅。请在聊天中的任务卡选择具体订阅，再由本人查看详情并确认。'
+        return result
+
+    if not context.session_id:
+        return dict(error='SUBSCRIPTION_TASK_SESSION_REQUIRED', message='取消订阅任务需要当前会话。')
+    row = await _owned_session(context.db, context.user_id, context.session_id)
+    entries = _subscription_entries((row.state or {}) if row else {})
+    pending = []
+    for entry in entries:
+        if entry['closed']:
+            continue
+        subscription = await _owned_subscription(context.db, context.user_id, entry['subscription_id']) if entry.get('subscription_id') else None
+        if subscription and subscription['status'] != 'ACTIVE':
+            continue
+        pending.append((entry, subscription))
+    if arguments.task_entry_id:
+        pending = [item for item in pending if item[0]['entry_id'] == arguments.task_entry_id]
+    if arguments.subscription_id:
+        pending = [item for item in pending if item[0].get('subscription_id') == arguments.subscription_id]
+    if arguments.merchant_name:
+        pending = [item for item in pending if
+                   (item[1]['merchant_name'] if item[1] else item[0].get('merchant_name_hint') or '').casefold()
+                   == arguments.merchant_name.casefold()]
+    if not any((arguments.task_entry_id, arguments.subscription_id, arguments.merchant_name)) and context.focus_task_id:
+        focused = [item for item in pending if item[0]['entry_id'] == context.focus_task_id]
+        if focused:
+            pending = focused
+    if not pending:
+        return dict(error='SUBSCRIPTION_TASK_NOT_FOUND', message='当前会话没有匹配的未完成取消订阅任务。')
+    if len(pending) != 1:
+        return dict(error='SUBSCRIPTION_TASK_AMBIGUOUS', message='有多项未完成取消订阅任务，请指定任务或订阅名称。')
+    entry, subscription = pending[0]
+    remaining = await update_chat_subscription_task(
+        context.db, user_id=context.user_id, session_id=context.session_id,
+        entry_id=entry['entry_id'], close=True)
+    return envelope('subscriptions.task_cancel', dict(
+        task_cancelled=True, subscription_cancelled=False,
+        entry_id=entry['entry_id'], subscription_id=entry.get('subscription_id'),
+        merchant_name=subscription['merchant_name'] if subscription else entry.get('merchant_name_hint'),
+        remaining_task_count=len(remaining),
+        message='取消订阅任务卡已关闭；订阅本身没有被取消。'))
 
 
 async def chat_subscription_tasks(db, user_id: str, state: dict) -> list[dict]:
@@ -438,7 +627,8 @@ async def chat_subscription_tasks(db, user_id: str, state: dict) -> list[dict]:
             continue
         subscription = await _owned_subscription(db, user_id, entry['subscription_id']) if entry.get('subscription_id') else None
         views.append({'entry_id': entry['entry_id'], 'origin_request_id': entry['origin_request_id'],
-                      'subscription_id': entry.get('subscription_id'), 'subscription': subscription})
+                      'subscription_id': entry.get('subscription_id'), 'subscription': subscription,
+                      'merchant_name_hint': entry.get('merchant_name_hint')})
     return views
 
 
@@ -468,11 +658,21 @@ async def update_chat_subscription_task(db, *, user_id: str, session_id: str, en
 
 def card_subscription_tools():
     entries = [
-        ('list_cards', CardListArguments, list_cards, '分页查询本人银行卡片，可按状态（ACTIVE/LOCKED/LOST/CANCELLED）、借记/信用、虚拟卡、卡号末四位筛选。返回脱敏卡号、关联账户、信用额度及已用/可用信用额度、交易限额及银行上限、有效期和渠道开关。信用额度不是现金。'),
+        ('list_cards', CardListArguments, list_cards, '分页查询本人银行卡片，可按状态（ACTIVE/LOCKED/LOST/CANCELLED）、借记/信用、虚拟卡、卡号末四位筛选。返回脱敏卡号、关联账户、信用额度及已用/可用信用额度、交易限额及银行上限、有效期和渠道开关。用户说“第几张卡”时默认按未挂失卡的 card_ordinal 顺序定位，第一张未挂失卡是第一张；只有明确说“第几张挂失的卡”才按 lost_card_ordinal 定位。信用额度不是现金。'),
         ('get_card', CardArguments, get_card, '查询本人卡片详情。省略 card_id 沿用 cards.selected_card_id。未选择先询问；按末四位查询先 list_cards，多个匹配先询问。只读。'),
         ('list_card_transactions', CardTransactionArguments, list_card_transactions, '查询本人某张卡最近20笔用卡授权记录（含被拒绝的交易及拒绝原因，如超限额、渠道关闭、卡片锁定）。省略 card_id 沿用 cards.selected_card_id；按末四位先 list_cards。只读。'),
-        ('preview_card_operation', CardPreviewArguments, preview_card_operation, '为本人卡片操作生成待核对预览，不会执行。action：card_apply_virtual（传 account_id）；card_lock/card_unlock/card_report_lost/card_cancel_virtual/card_reissue（传 card_id）；card_set_transaction_limits（single_txn_limit/daily_txn_limit，元，未提及的一项沿用当前值）；card_adjust_credit_limit（credit_limit，元）；card_set_channels（online_enabled/atm_enabled/overseas_enabled/contactless_enabled，未提及的沿用当前值）。省略 card_id 沿用 cards.selected_card_id。金额取用户原话，不得猜测。缺少目标卡、账户或金额时不要编造：直接调用本工具，聊天中会打开同结构的表单让用户补充；银行要求调整数值时同样打开表单。返回 executed=false：用户须在聊天中的卡片任务卡本人确认，red 还需验证码；NOVA 不能代为确认。'),
+        ('preview_card_operation', CardPreviewArguments, preview_card_operation,
+         '一次调用只操作一张卡；多张卡分别调用本工具。'
+         '支持申请虚拟卡、锁定、解锁、挂失、补卡、注销虚拟卡、调整单笔和单日交易限额、调整信用额度、修改交易渠道。'
+         '选择对应 action 并只填写本次要修改的字段；卡型、状态和具体数值是否允许由银行服务校验。'
+         '用户只要求打开某张卡的操作任务卡、未说明具体操作时，省略 action，默认停留在交易限额栏目。'
+         '打开或修改任务前先调用 list_cards 查看本人当前卡片，再把其中的内部 card_id 填入本工具，不填卡号或尾号；没有明确目标卡片时 card_id 可省略，由任务卡供本人选择。'
+         '聊天中打开或更新该卡已有的操作任务表单，预填当前设置及本次修改；'
+         '取消未完成的卡片操作任务时，传 task_action=cancel，并用 task_entry_id 或 card_id 指定任务；当前会话只有一项未完成卡片任务时可省略目标。取消会撤销未完成预览并关闭任务卡，不会修改银行卡设置。'
+         '本人在任务卡中生成预览、确认，必要时完成验证码验证。NOVA 不能代为确认或验证。'),
         ('request_subscription_cancellation', SubscriptionCancelArguments, request_subscription_cancellation, '用户要取消本人订阅时调用：在聊天中显示取消订阅任务卡，不会取消。省略 subscription_id 沿用 subscriptions.selected_subscription_id；按商户名先 list_subscriptions 定位，多个匹配先询问；用户没说是哪一项时不传，任务卡中会列出生效订阅供选择。已取消的订阅不能再取消。返回 executed=false：用户须在任务卡中查看取消详情并本人确认；NOVA 不能代为确认。'),
+        ('manage_subscription_task', ManageSubscriptionTaskArguments, manage_subscription_task,
+         '执行类型工具：管理当前会话的取消订阅任务卡。action=open 时可传订阅商户名称 merchant_name（与 list_subscriptions 返回的名称一致）或 subscription_id，打开待本人确认的任务卡；同名多项时拉起选择界面。action=cancel 时传 task_entry_id、subscription_id 或 merchant_name 定位并关闭未完成任务；只有一项未完成任务时可省略目标。关闭任务不会取消订阅；订阅取消只能由本人在 UI 查看详情后确认。'),
         ('list_subscriptions', SubscriptionListArguments, list_subscriptions, '分页查询本人订阅，可筛选 ACTIVE/CANCELLED 和商户 keyword。summary 是筛选后所有分页的生效订阅每月预计支出，仅 MONTHLY/CNY，非实际扣款。实际扣费请查询账单流水。'),
         ('get_subscription', SubscriptionArguments, get_subscription, '查询本人订阅详情：商户、周期金额、扣费账户、状态、计划下次扣费、取消时间及识别来源流水。省略 subscription_id 沿用 subscriptions.selected_subscription_id；按商户名先 list_subscriptions，多匹配先询问。不取消、不扣费。'),
     ]

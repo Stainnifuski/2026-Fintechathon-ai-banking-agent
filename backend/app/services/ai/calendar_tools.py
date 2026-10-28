@@ -286,6 +286,10 @@ async def chat_calendar_tasks(db, user_id: str, state: dict) -> list[dict]:
     for entry in state.get('calendar_tasks', []):
         if entry.get('closed'):
             continue
+        if entry.get('kind') == 'mutation':
+            from .calendar_mutation import mutation_view
+            views.append(mutation_view(entry))
+            continue
         event = None
         if entry.get('event_id'):
             row = await db.scalar(select(CalendarEventORM).where(
@@ -323,6 +327,7 @@ async def update_chat_calendar_task(db, *, user_id: str, session_id: str, entry_
 
 
 def calendar_tools():
+    from .calendar_mutation import ManipulateCalendarArguments, manipulate_calendar_event
     entries = [
         ('list_calendar_events', ListArguments, list_calendar,
          '查询本人某天或范围内实际日程（含跨日、全天、重复例外）。start_date/end_date用YYYY-MM-DD，end_date不含当天，最多62天。省略日期沿用日历选中日期，否则今天；timezone默认页面或北京时间。分页20条，最多50。'),
@@ -330,8 +335,8 @@ def calendar_tools():
          '按名称或地点关键词搜索本人所有已保存活动，不限日期。返回事件/系列候选；重复系列显示原始开始时间，不代表下次时间。匹配唯一活动后调用get_calendar_event取得实际发生时间；同名多项先让用户选择。'),
         ('get_calendar_event', DetailArguments, detail_calendar,
          '查询本人活动详情及实际发生次数。event_id省略继承页面选中活动及该次时间；显式ID默认单次原日期/重复系列未来30天（已开始定时事件不作为下次）。occurrence_start可指定带时区的实际开始时间。查询其他日期可给start_date/end_date（不含，最多62天）。长备注可通过description_offset/description_limit分页读取。'),
-        ('create_calendar_event', CreateEventArguments, create_calendar_event,
-         '为本人创建日程。根据用户本轮原话理解事件名称、日期、开始时间，以及可选的结束时间、地点、备注；日期按当前时间和时区换算为YYYY-MM-DD，时间为24小时制HH:MM，并把原话中的时间说法逐字放入time_quote；地点、备注逐字摘录。未说出的字段不填、不猜。名称、日期和开始时间齐全时直接创建；缺少任一项或时间无法核验时，聊天中会打开预填好的日程表单，由用户补全后创建。'),
+        ('manipulate_calender_event', ManipulateCalendarArguments, manipulate_calendar_event,
+         '为本人添加、修改或删除日程。修改或删除可按已有事件名称、发生日期或日期范围、开始时间或时间范围、事件 ID 筛选；所有匹配项会统一修改或删除。添加需事件名称和开始日期、时间，可为时间点或给出结束时间形成时间段。一次调用只准备一项操作，调用后在聊天中打开列出目标和改动的任务卡；只有用户点击卡片中的确认按钮才会真正执行。'),
     ]
     return {name: dict(schema={'type': 'function', 'function': dict(name=name, description=description,
         parameters=model.model_json_schema())}, arguments=model, execute=function, requires_identity=True)

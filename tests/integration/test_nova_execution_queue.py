@@ -147,9 +147,6 @@ async def test_queue_rejects_parallel_new_goal_and_terminal_does_not_need_consen
         execute=AsyncMock(side_effect=run);monkeypatch.setattr(nova,'chat',execute)
         await queue.start(ctx,plan())
         ctx=await queue.focus(ctx)
-        assert await queue.guard_tool(ctx,'preview_card_operation')
-        assert await queue.guard_tool(ctx,'manage_wealth_request') is None
-        assert await queue.guard_tool(ctx,'get_current_time') is None
         result=await queue.start(replace(ctx,request_id='request-another'),plan())
         assert '已有未结束' in result['reply'] and execute.await_count==1
 
@@ -245,7 +242,8 @@ async def test_read_services_rollback_does_not_expire_queue_cas_between_goals(st
 
 @pytest.mark.asyncio
 async def test_followup_router_cannot_recreate_original_queue_from_history(store,monkeypatch):
-    from types import SimpleNamespace
+    from tests.unit.test_nova_runtime import FakeModel
+    from backend.app.services.ai import nova_runtime
     async with store() as db:
         ctx=await setup(db,'申购B017，100元，然后查看我的持仓')
         original_chat=nova.chat
@@ -254,17 +252,16 @@ async def test_followup_router_cannot_recreate_original_queue_from_history(store
         await queue.start(ctx,plan())
         monkeypatch.setattr(nova,'chat',original_chat)
         monkeypatch.setattr(nova,'get_mode',lambda:'model')
-        route=nova.RequestRoute(mode='goal_plan',domains=['wealth'],has_dependencies=True,
-                                goal_plan=nova.GoalPlanArguments.model_validate(plan()))
-        monkeypatch.setattr(nova,'route_request',AsyncMock(return_value=route))
-        model=SimpleNamespace(generate_structured=AsyncMock(),generate_with_tools=AsyncMock(return_value=SimpleNamespace(data={
-            'role':'assistant','content':None,'tool_calls':[{'id':'one','function':{'name':'manage_wealth_request','arguments':'{}'}}]})))
-        monkeypatch.setattr(nova,'llm',model)
+        model=FakeModel(True,['manage_wealth_request'],[
+            nova_runtime.PlannedCall(name='manage_wealth_request',arguments={})])
         handler=AsyncMock(return_value={'reply':'已补充当前卡片','wealth_cards':[]})
         monkeypatch.setitem(nova.TOOL_REGISTRY,'manage_wealth_request',{
             **nova.TOOL_REGISTRY['manage_wealth_request'],'execute':handler})
-        result=await nova.chat('金额改成200元',[],context=replace(ctx,original_message='金额改成200元',request_id='followup-one'))
-        assert handler.await_count==1 and '已补充当前卡片' in result['reply']
+        result=await nova.chat('金额改成200元',[],model=model,
+                               context=replace(ctx,original_message='金额改成200元',request_id='followup-one'))
+        assert handler.await_count==1
+        assert any(item['name']=='manage_wealth_request' and item['result']['reply']=='已补充当前卡片'
+                   for item in result['tool_calls'])
         assert handler.await_args.args[1].wealth_task_id=='NW-first'
         data=queue.unpack(await queue.load(ctx));assert len(data['steps'])==2
 

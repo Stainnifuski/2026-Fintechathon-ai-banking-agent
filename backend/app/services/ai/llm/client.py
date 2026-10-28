@@ -325,9 +325,11 @@ class LLMService:
     async def generate_text(
         self, *, messages: list[dict[str, Any]], max_tokens: int | None = None,
         temperature: float | None = None,
+        on_delta: DeltaCallback | None = None,
     ) -> LLMResult[str]:
-        """生成文本并返回服务商、模型及 token 使用记录。"""
-        return await self._generate(messages, structured=False, max_tokens=max_tokens, temperature=temperature)
+        """生成文本并返回服务商、模型及 token 使用记录；可逐段回调正文。"""
+        return await self._generate(messages, structured=False, max_tokens=max_tokens,
+                                    temperature=temperature, on_delta=on_delta)
 
     async def generate_structured(
         self, *, messages: list[dict[str, Any]], schema: type[ModelT],

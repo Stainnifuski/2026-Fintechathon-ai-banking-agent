@@ -76,7 +76,11 @@ async def active(ctx):
         from .transfer_manager import get_session
         fresh=await get_session(ctx.db,ctx.user_id,ctx.session_id)
         statuses={t['chat_task_id']:t['status'] for t in fresh['tasks']}
-        tasks=[{**t,'status':statuses.get(t['chat_task_id'],t['status'])} for t in tasks]
+        scheduled_confirmed={t['chat_task_id'] for t in fresh['tasks']
+            if t.get('task') and t['task'].get('phase')=='WAITING_EXECUTION'
+            and t['task'].get('scheduled_at')}
+        tasks=[{**t,'status':statuses.get(t['chat_task_id'],t['status'])} for t in tasks
+               if t['chat_task_id'] not in scheduled_confirmed]
     tasks=[t for t in tasks if t.get('status') not in {'SUCCEEDED','CANCELLED','FAILED'}
            and 'transfer:'+t['chat_task_id'] not in data.get('released', {})]
     if not wealth and not transfer and not saved:
@@ -172,7 +176,10 @@ async def decide(ctx):
     if pending and time.time()-pending['created_at']>600:
         data.pop('pending');await save(ctx,row,data);pending=None
     if not ctx.task_switch_token:
-        if pending:return ctx,reply('请先确认是否结束“'+pending['current_label']+'”并转向“'+pending['target_label']+'”，或选择继续当前任务。',await public(ctx))
+        # A new chat turn is a new request. An unconfirmed proposal must not
+        # hold the conversation hostage; the old task is still intact.
+        if pending:
+            data.pop('pending');await save(ctx,row,data)
         return ctx,None
     if not pending or pending['token']!=ctx.task_switch_token or time.time()-pending['created_at']>600:
         return ctx,reply('切换确认已过期或已处理，请重新描述需求；未启动新任务。')
@@ -232,26 +239,6 @@ async def decide(ctx):
                    focus_task_id=None,serial_focus_only=False,task_switch_token=None,accept_task_switch=None,task_switch_approved=True),None
 
 
-async def guard_tool(ctx,name):
-    if not ctx or not ctx.session_id or not ctx.original_message or ctx.execution_step or ctx.task_switch_approved:return None
-    domain={'manage_wealth_request':'wealth','manage_transfer_request':'transfer',
-            'manage_collection_request':'collection','preview_card_operation':'card',
-            'prepare_bill_change':'bill','create_calendar_event':'calendar',
-            'prepare_shop_purchase':'shop','request_subscription_cancellation':'subscription'}.get(name)
-    if not domain:return None
-    current=await active(ctx)
-    if current and current['type']=='ambiguous':
-        return {'error':'TASK_CONTEXT_AMBIGUOUS','message':'当前有多个未结束任务，请说明要补充哪个任务，不能猜测或创建新操作。'}
-    if current and current['type']=='card' and domain=='card' and current.get('status') not in {None,'AWAITING_CONFIRMATION'}:
-        return {'error':'TASK_WRITE_BLOCKED','message':'当前卡片操作已经本人确认，请先在原卡片核对结果；不会通过对话重建或替换待验证操作。'}
-    if current and current['type']!=domain:
-        return await propose(ctx,ctx.original_message)
-    replay = current and name=='prepare_bill_change' and current.get('request_id')==ctx.request_id
-    if current and current.get('entry') and current['type']==domain and ctx.active_entry_id!=current['id'] and not replay:
-        return await propose(ctx,ctx.original_message)
-    return None
-
-
 async def observe(ctx,result):
     if not ctx or not ctx.session_id or ctx.execution_step or result.get('task_switch'):return
     found=[]
@@ -260,7 +247,7 @@ async def observe(ctx,result):
             found.append({'type':'wealth','id':c['task_id']})
     for t in result.get('tasks',[]):
         continuing=t.get('chat_task_id')==ctx.focus_task_id and any(
-            t['name']=='manage_transfer_request' and not t.get('result',{}).get('error') for t in result.get('tool_calls',[]))
+            t['name']=='manage_transfer_task' and not t.get('result',{}).get('error') for t in result.get('tool_calls',[]))
         if (t.get('origin_request_id')==ctx.request_id or continuing) and t.get('status') not in {'CANCELLED','SUCCEEDED','FAILED'}:
             found.append({'type':'transfer','id':t['chat_task_id']})
     for tool in result.get('tool_calls',[]):

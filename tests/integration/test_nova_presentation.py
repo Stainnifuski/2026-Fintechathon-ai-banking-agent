@@ -86,36 +86,62 @@ async def test_position_is_owner_scoped_and_never_adds_fake_user_message(db):
 
 
 @pytest.mark.asyncio
-async def test_other_domain_needs_switch_but_auxiliary_read_does_not(db):
+async def test_other_domain_can_keep_calendar_task_and_auxiliary_read_is_allowed(db):
     ctx=await seed(db)
     assert (await task_flow.active(ctx))['type']=='calendar'
-    assert not await task_flow.guard_tool(ctx,'get_current_time')
-    proposal=await task_flow.guard_tool(replace(ctx,original_message='办理转账'),'manage_transfer_request')
-    assert proposal['task_switch']['current_label']=='日程'
+    assert (await task_flow.active(ctx))['type']=='calendar'
+
+
+@pytest.mark.asyncio
+async def test_multiple_business_cards_remain_enabled_in_chat(db):
+    ctx=await seed(db)
+    session=await db.get(NovaSessionORM,ctx.session_id)
+    session.state={**session.state,'collection_cards':[{
+        'collection_id':'collection-draft','origin_request_id':'collection-request',
+        'status':'DRAFT','requested_names':['王五'],'selected_payer_user_ids':[],
+        'receive_account_id':'A1','amount_fen':10000,'split_equally':False,'note':'',
+    }]}
+    await db.commit()
+    items=await presentation.inventory(ctx)
+    open_items=[item for item in items if not item['finished']]
+    assert {item['type'] for item in open_items}=={'calendar','collection'}
+    assert all(not item.get('blocked') for item in open_items)
 
 
 @pytest.mark.asyncio
 async def test_partial_calendar_continuation_keeps_the_original_task_id(db):
     from backend.app.services.ai import nova
     import json
-    ctx=await task_flow.focus(await seed(db))
+    ctx=await seed(db)
+    session=await db.get(NovaSessionORM,ctx.session_id,populate_existing=True)
+    session.state={**session.state,'calendar_tasks':[{'kind':'mutation','entry_id':'calendar-draft',
+        'origin_request_id':'initial-request','action':'add','timezone':'Asia/Shanghai',
+        'filters':{},'changes':{'title':'测试日程'},'targets':[],'snapshots':{},
+        'status':'PENDING','closed':False}]}
+    await db.commit()
+    ctx=await task_flow.focus(ctx)
     ctx=replace(ctx,request_id='continue-calendar',original_message='测试日程的地点在演示楼')
-    result=await nova.execute_tool({'function':{'name':'create_calendar_event','arguments':json.dumps({
-        'title':'测试日程','location':'演示楼'},ensure_ascii=False)}},ctx)
+    result=await nova.execute_tool({'function':{'name':'manipulate_calender_event','arguments':json.dumps({
+        'action':'add','task_entry_id':'calendar-draft','location':'演示楼'},ensure_ascii=False)}},ctx)
     assert not result.get('error'),result
     session=await db.get(NovaSessionORM,ctx.session_id,populate_existing=True)
     assert len(session.state['calendar_tasks'])==1
     assert session.state['calendar_tasks'][0]['entry_id']=='calendar-draft'
-    assert session.state['calendar_tasks'][0]['prefill']['location']=='演示楼'
+    assert session.state['calendar_tasks'][0]['changes']['location']=='演示楼'
 
 
 @pytest.mark.asyncio
-async def test_another_same_domain_operation_cannot_create_parallel_card(db):
+async def test_another_same_domain_operation_keeps_both_calendar_cards(db):
+    from backend.app.services.ai import nova
+    import json
     ctx=await seed(db)
-    proposal=await task_flow.guard_tool(replace(ctx,original_message='新建另一条日程'),'create_calendar_event')
-    assert proposal['task_switch']
+    proposal=await nova.execute_tool({'function':{'name':'manipulate_calender_event','arguments':json.dumps({
+        'action':'add','title':'另一条日程','start_date':'2026-11-26','start_time':'12:00'})}},
+        replace(ctx,request_id='new-calendar',original_message='新建另一条日程'))
+    assert proposal['task_opened']
     session=await db.get(NovaSessionORM,ctx.session_id,populate_existing=True)
-    assert len(session.state['calendar_tasks'])==1
+    assert len(session.state['calendar_tasks'])==2
+    assert session.state['calendar_tasks'][0]['entry_id']=='calendar-draft'
 
 
 @pytest.mark.asyncio
@@ -131,5 +157,77 @@ async def test_form_snapshot_is_not_authorization_and_does_not_expose_phone_to_m
     entry=await presentation.continuation_entry(replace(ctx,active_entry_type='calendar',active_entry_id='calendar-draft'),'calendar')
     assert entry['prefill']['title']=='本人表单填写'
     await presentation.release(ctx,'calendar:calendar-draft','manual','release-snapshot')
+    assert await presentation.save_draft(ctx,'calendar:calendar-draft',{'title':'不应再写入'}) == {
+        'saved':False,'reason':'task_finished'}
+    _, state = await task_flow.load(ctx)
+    assert state['input_drafts']['calendar:calendar-draft']['title']=='本人表单填写'
+
+
+@pytest.mark.asyncio
+async def test_completed_task_draft_flush_does_not_block_next_chat(db, monkeypatch):
+    ctx=await seed(db)
+
+    async def completed_inventory(_ctx):
+        return [{'key':'shop:completed-order','finished':True,'released':None}]
+
+    monkeypatch.setattr(presentation,'inventory',completed_inventory)
+    assert await presentation.save_draft(ctx,'shop:completed-order',{'productId':'cake','quantity':'1'}) == {
+        'saved':False,'reason':'task_finished'}
+    _, state = await task_flow.load(ctx)
+    assert not state.get('input_drafts')
+
+
+@pytest.mark.asyncio
+async def test_multiple_transfer_cards_remain_individually_actionable(db, monkeypatch):
+    from backend.app.services.ai import transfer_manager
+
+    ctx = await seed(db)
+    session = await db.get(NovaSessionORM, ctx.session_id)
+    session.state = {'tasks': []}
+    await db.commit()
+
+    async def transfer_view(_db, _user_id, _session_id):
+        return {'tasks': [
+            {'chat_task_id': 'first', 'origin_request_id': 'first-request',
+             'recipient': '王五', 'status': 'WAITING_CONFIRMATION',
+             'task': {'allowed_actions': ['confirm'], 'phase': 'WAITING_CONFIRMATION'}},
+            {'chat_task_id': 'second', 'origin_request_id': 'second-request',
+             'recipient': '赵六', 'status': 'COLLECTING', 'task': None},
+        ]}
+
+    monkeypatch.setattr(transfer_manager, 'get_session', transfer_view)
+    cards = await presentation.inventory(ctx)
+    assert [item['key'] for item in cards] == ['transfer:first', 'transfer:second']
+    assert all(not item.get('blocked') for item in cards)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_scheduled_transfer_does_not_block_shop_card(db, monkeypatch):
+    from backend.app.services.ai import transfer_manager
+
+    ctx=await seed(db)
+    session=await db.get(NovaSessionORM,ctx.session_id)
+    session.state={'tasks':[],'shop_tasks':[{'entry_id':'cake-draft','origin_request_id':'cake-request',
+        'shop':'cake','prefill':{},'order_id':None,'closed':False}]}
+    await db.commit()
+
+    async def transfer_view(_db, _user_id, _session_id):
+        return {'tasks':[{'chat_task_id':'scheduled-transfer','origin_request_id':'transfer-request',
+            'status':'WAITING_EXECUTION','task':{'phase':'WAITING_EXECUTION',
+                'scheduled_at':'2026-10-28T09:30:00+08:00'}}],
+            'shop_tasks':[{'entry_id':'cake-draft','origin_request_id':'cake-request',
+                'shop':'cake','order':None}]}
+
+    monkeypatch.setattr(transfer_manager,'get_session',transfer_view)
+    cards=await presentation.inventory(ctx)
+    assert cards[0]['finished'] is True and cards[0]['summary']=='已预约'
+    assert cards[1]['finished'] is False and not cards[1].get('blocked')
+
+
+def test_scheduled_transfer_form_fields_are_valid_draft_data():
+    presentation.validate_draft({
+        'recipient': '李四', 'amount': '100', 'executionMode': 'scheduled',
+        'scheduledAt': '2026-10-28T09:30',
+    })
     with pytest.raises(chats.ConversationError):
-        await presentation.save_draft(ctx,'calendar:calendar-draft',{'title':'不应再写入'})
+        presentation.validate_draft({'executionMode': 'scheduled', 'verification_code': '123456'})

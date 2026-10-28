@@ -3,27 +3,14 @@ import * as bank from '../../services/bank';
 import { beijingTime } from '../../utils/time';
 import { SecondFactor } from '../SecondFactor';
 import { formatFen } from '../../utils/money';
+import { ACTION_HINTS, ACTION_LABELS, CARD_ACTION_OPTIONS, CHANNELS, STATUS_LABELS,
+  availableCardActions } from './cardActions';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const yuan = (fen?: number | null) => fen == null ? '-' : formatFen(fen);
-const STATUS_LABELS: Record<string, string> = { ACTIVE: '正常', LOCKED: '已锁定', LOST: '已挂失', CANCELLED: '已注销' };
-const ACTION_LABELS: Record<bank.CardAction, string> = {
-  card_apply_virtual: '申请虚拟卡', card_set_transaction_limits: '设置交易限额',
-  card_adjust_credit_limit: '调整信用额度', card_unlock: '解锁卡片', card_report_lost: '挂失',
-  card_lock: '锁定卡片', card_cancel_virtual: '注销虚拟卡', card_reissue: '挂失补卡', card_set_channels: '设置交易渠道',
-};
-const CHANNELS: [bank.CardChannelSwitch, string][] = [
-  ['online_enabled', '线上支付'], ['atm_enabled', 'ATM取现'], ['overseas_enabled', '境外交易'], ['contactless_enabled', '免密/闪付'],
-];
 const PURCHASE_CHANNELS: [bank.CardTransactionChannel, string][] = [
   ['pos', '线下刷卡'], ['online', '线上支付'], ['contactless', '免密/闪付'], ['atm', 'ATM取现'], ['overseas', '境外交易'],
 ];
-const ACTION_HINTS: Partial<Record<bank.CardAction, string>> = {
-  card_report_lost: '挂失后该卡永久停用，不能解锁恢复；可随后申请补卡。如只是暂时找不到卡，可先锁卡。',
-  card_cancel_virtual: '注销后该虚拟卡永久停用，不能恢复。',
-  card_lock: '锁定后该卡所有交易都会被拒绝，解锁需要确认并通过验证码。',
-  card_reissue: '新卡沿用原卡的限额、渠道设置和信用额度，银行签发新卡号。',
-};
 const changeValue = (change: bank.CardChange, value?: boolean | number | string | null) => {
   if (value == null) return '无';
   if (typeof value === 'boolean') return value ? '开启' : '关闭';
@@ -182,14 +169,9 @@ export default function CardManagement({ accounts, revision, onActivity, selecte
           {card.cancelled_at && <small>注销时间（北京时间）：{beijingTime(card.cancelled_at)}</small>}</span>
         <div className="subscription-action"><button className="secondary" aria-pressed={selectedCardId === card.card_id} onClick={() => onSelectCard(selectedCardId === card.card_id ? undefined : card.card_id)}>{selectedCardId === card.card_id ? '已选中 · 再点取消' : '选择供 NOVA 查询'}</button><strong data-card-status={card.status} className={active ? 'in' : closed(card) ? 'out' : 'hint'}>{STATUS_LABELS[card.status]}</strong>
           <div className="card-actions">
-            {active && <button className="secondary" disabled={busy} onClick={() => open('card_set_transaction_limits', card)}>交易限额</button>}
-            {active && card.card_type === 'CREDIT' && <button className="secondary" disabled={busy} onClick={() => open('card_adjust_credit_limit', card)}>调整额度</button>}
-            {active && <button className="secondary" disabled={busy} onClick={() => open('card_set_channels', card)}>交易渠道</button>}
-            {active && <button className="secondary" disabled={busy} onClick={() => open('card_lock', card)}>锁卡</button>}
-            {card.status === 'LOCKED' && <button className="secondary" disabled={busy} onClick={() => open('card_unlock', card)}>解锁</button>}
-            {!closed(card) && card.is_virtual && <button className="secondary card-danger" disabled={busy} onClick={() => open('card_cancel_virtual', card)}>注销</button>}
-            {!closed(card) && <button className="secondary card-danger" disabled={busy} onClick={() => open('card_report_lost', card)}>挂失</button>}
-            {card.status === 'LOST' && !card.replaced_by_card_id && <button className="secondary" disabled={busy} onClick={() => open('card_reissue', card)}>补卡</button>}
+            {CARD_ACTION_OPTIONS.filter(({ action }) => availableCardActions(card).includes(action)).map(({ action, label, danger }) =>
+              <button key={action} className={`secondary${danger ? ' card-danger' : ''}`} disabled={busy}
+                onClick={() => open(action, card)}>{label}</button>)}
             {card.status !== 'CANCELLED' && card.status !== 'LOST' && <button className="secondary card-purchase" disabled={busy} onClick={() => openPurchase(card)}>模拟消费</button>}
             <button className="secondary card-history" disabled={busy} aria-pressed={historyCard?.card_id === card.card_id} onClick={() => toggleHistory(card)}>交易记录</button>
           </div></div>

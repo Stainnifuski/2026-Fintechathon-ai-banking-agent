@@ -1,6 +1,6 @@
 import { apiClient } from './api';
 import type { BillQuery } from './bills';
-import type { BankCard, CardAction, CardOperation, Subscription, TaskSnapshot } from './bank';
+import type { BankCard, CardAction, CardOperation, PaymentRequest, Subscription, TaskSnapshot } from './bank';
 import type { CalendarEvent } from './calendar';
 
 export type NovaPageContext = {
@@ -32,6 +32,20 @@ export type NovaPageContext = {
 };
 
 export type NovaMessage = { role: 'user' | 'assistant'; content: string; request_id?: string };
+export type BillResultTarget = {
+  section:'overview'|'transactions'|'budgets'|'checks'|'forecast'|'organize';
+  subsection?:'anomalies'|'subscriptions'|'recurring'|'cashflow'|'history'|'merchants'|'rules'|null;
+  query?:BillQuery|null;tx_id?:string|null;tx_ids?:string[];budget_month?:string|null;account_id?:string|null;
+};
+export type BillResultMetric = {label:string;amount_fen:number|null;text:string|null};
+export type BillResultChart = {title:string;type:'bar'|'line';series:{name:string;points:{label:string;value_fen:number;target?:BillResultTarget|null}[]}[]};
+export type NovaBillResult = {
+  version:1;result_id:string;request_id:string;kind:string;position?:number;title:string;summary:string;as_of:string;
+  scope:string[];notices:string[];metrics:BillResultMetric[];charts:BillResultChart[];
+  rows:{title:string;description:string;badge:string;metrics:BillResultMetric[];progress:number|null;target:BillResultTarget|null}[];
+  total:number|null;has_more:boolean;target:BillResultTarget;evidence_id:string;content_hash:string;compact_reply:boolean;
+};
+export const getNovaBillResults=(sessionId:string)=>apiClient.get<NovaBillResult[]>(`/nova/conversations/${sessionId}/bill-results`).then(r=>r.data);
 export type NovaPromptRequest = { id: string; text: string; context: NovaPageContext; userId: string };
 export type NovaBillAction = {
   action_id: string; request_id: string; session_id: string;
@@ -55,12 +69,17 @@ export type NovaChatShopTask = {
 /** 聊天中的日程：信息完整时已创建（event），否则为预填表单（prefill）。 */
 export type NovaChatCalendarTask = {
   entry_id: string; origin_request_id: string; timezone: string; notice?: string | null;
-  prefill: { title?: string; start_date?: string; start_time?: string; end_date?: string; end_time?: string; location?: string; description?: string };
-  event_id?: string | null; event?: CalendarEvent | null; deleted: boolean;
+  prefill?: { title?: string; start_date?: string; start_time?: string; end_date?: string; end_time?: string; location?: string; description?: string };
+  event_id?: string | null; event?: CalendarEvent | null; deleted?: boolean;
+  kind?: 'mutation'; action?: 'add' | 'modify' | 'delete'; status?: 'PENDING' | 'COMPLETED';
+  filters?: Record<string, string | string[]>; changes?: Record<string, string>;
+  targets?: { event_id: string; title: string; starts_at_local: string; ends_at_local?: string | null; location?: string; recurring?: boolean }[];
+  result?: { event_id: string; title: string }[];
 };
 /** 聊天中的取消订阅任务：确认凭证只由本人页面向订阅接口获取。 */
 export type NovaChatSubscriptionTask = {
   entry_id: string; origin_request_id: string; subscription_id?: string | null; subscription?: Subscription | null;
+  merchant_name_hint?: string | null;
 };
 /** 聊天中的卡片任务：未生成预览时是可编辑表单，生成后由本人确认/验证。 */
 export type NovaChatCardTask = {
@@ -68,7 +87,10 @@ export type NovaChatCardTask = {
   card?: BankCard | null; prefill: Record<string, string | boolean>; notice?: string | null;
   operation?: CardOperation | null;
 };
-export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[]; collection_cards: NovaCollectionCard[]; card_operations?: NovaChatCardTask[]; subscription_tasks?: NovaChatSubscriptionTask[]; calendar_tasks?: NovaChatCalendarTask[]; shop_tasks?: NovaChatShopTask[] };
+export type NovaPaymentRequestTask = {
+  entry_id: string; origin_request_id: string; action: 'cancel' | 'respond'; requests: PaymentRequest[];
+};
+export type NovaTaskSession = { session_id: string; session_version: number; focus_task_id?: string | null; tasks: NovaTransferTask[]; collection_cards: NovaCollectionCard[]; card_operations?: NovaChatCardTask[]; subscription_tasks?: NovaChatSubscriptionTask[]; calendar_tasks?: NovaChatCalendarTask[]; shop_tasks?: NovaChatShopTask[]; payment_request_tasks?: NovaPaymentRequestTask[] };
 
 export async function listNovaConversations(): Promise<NovaConversation[]> {
   return apiClient.get<NovaConversation[]>('/bank/nova/conversations').then(response => response.data);
@@ -80,7 +102,7 @@ export async function getNovaConversation(sessionId: string): Promise<NovaConver
   return apiClient.get<NovaConversationDetail>(`/bank/nova/conversations/${sessionId}`).then(response => response.data);
 }
 export type NovaReply = {
-  task_switch?: NovaTaskSwitch | null;
+  bill_result_cards?: NovaBillResult[];
   execution_queue?: NovaExecutionQueue | null;
   grounding?: {
     version: string;
@@ -97,6 +119,7 @@ export type NovaReply = {
   focus_task_id?: string | null;
   tasks?: NovaTransferTask[];
   collection_cards?: NovaCollectionCard[];
+  payment_request_tasks?: NovaPaymentRequestTask[];
 };
 
 export type NovaExecutionQueue={queue_id:string;version:number;status:string;request_id:string;message:string;
@@ -107,9 +130,10 @@ export const stopNovaExecutionQueue=(session:string,version:number)=>apiClient.p
 
 export type NovaTransferTask = {
   chat_task_id: string; origin_request_id?: string | null; status: string; recipient?: string | null; amount_fen?: number | null;
-  form: { recipient: string; amount_yuan: string; amount_rule?: string | null; amount_basis_available_fen?: number | null;
+  form: { recipient: string; amount_yuan: string;
     phone_masked?: string | null; card_masked?: string | null;
-    payer_account_id: string; note: string };
+    payer_account_id: string; note: string;
+    execution_mode: 'instant' | 'scheduled'; scheduled_at?: string | null };
   missing_fields: string[]; candidates: { candidate_id: string; label: string; kind: string }[];
   transfer_task_id?: string | null;
   task?: TaskSnapshot | null;
@@ -148,6 +172,9 @@ export const linkNovaCalendarTask = (sessionId: string, entryId: string, eventId
 export const dismissNovaCalendarTask = (sessionId: string, entryId: string) =>
   apiClient.post<{ calendar_tasks: NovaChatCalendarTask[] }>(`/nova/task-sessions/${sessionId}/calendar-tasks/${entryId}/dismiss`)
     .then(r => r.data.calendar_tasks);
+export const confirmNovaCalendarTask = (sessionId: string, entryId: string, changes: Record<string, string>) =>
+  apiClient.post<{ calendar_tasks: NovaChatCalendarTask[] }>(`/nova/task-sessions/${sessionId}/calendar-tasks/${entryId}/confirm`, { changes })
+    .then(r => r.data.calendar_tasks);
 
 export const linkNovaShopTask = (sessionId: string, entryId: string, shop: 'flower' | 'cake', orderId: string) =>
   apiClient.post<{ shop_tasks: NovaChatShopTask[] }>(`/nova/task-sessions/${sessionId}/shop-tasks/${entryId}/order`,
@@ -163,10 +190,24 @@ export const sendNovaCollection = (sessionId: string, collectionId: string, payl
 
 export type NovaTaskRequest = {
   debug?: boolean;
-  task_switch_token?:string;accept_task_switch?:boolean;
   request_id: string; session_id?: string; session_version?: number;
   focus_task_id?: string; candidate_id?: string; wealth_task_id?:string; wealth_stage?:string;
 };
+
+export type NovaDebugTrace = {
+  version: number; request_id: string; session_id?: string | null;
+  started_at: string; truncated: boolean;
+  events: { at: string; stage: string; content: unknown }[];
+};
+export type NovaDebugTraceSummary = {
+  request_id: string; started_at: string; event_count: number; has_error: boolean;
+};
+export const getNovaDebugTrace = (requestId: string) =>
+  apiClient.get<NovaDebugTrace>(`/nova/debug/${encodeURIComponent(requestId)}/view`,
+    { headers: { 'Cache-Control': 'no-store' } }).then(r => r.data);
+export const listNovaDebugTraces = (sessionId: string) =>
+  apiClient.get<{ traces: NovaDebugTraceSummary[] }>(`/nova/debug/conversations/${encodeURIComponent(sessionId)}`,
+    { headers: { 'Cache-Control': 'no-store' } }).then(r => r.data.traces);
 
 export async function downloadNovaDebug(requestId: string): Promise<void> {
   const response = await apiClient.get<Blob>(`/nova/debug/${encodeURIComponent(requestId)}`, { responseType: 'blob' });
@@ -180,8 +221,6 @@ export async function downloadNovaDebug(requestId: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export type NovaTaskSwitch={token:string;current_label:string;target_label:string};
-export const getNovaTaskSwitch=(session:string)=>apiClient.get<NovaTaskSwitch|null>(`/nova/task-flow/${session}`).then(r=>r.data);
 
 export async function getNovaTaskSession(sessionId: string) {
   return apiClient.get<NovaTaskSession>(`/nova/task-sessions/${sessionId}`).then(r => r.data);
@@ -190,6 +229,7 @@ export async function getNovaTaskSession(sessionId: string) {
 export type NovaTaskForm = {
   recipient: string; amount_yuan: string; phone?: string | null; card?: string | null;
   clear_phone: boolean; clear_card: boolean; payer_account_id: string; note: string;
+  execution_mode: 'instant' | 'scheduled'; scheduled_at?: string | null;
 };
 export async function saveNovaTaskForm(sessionId: string, taskId: string, sessionVersion: number,
                                        form: NovaTaskForm, requestId = crypto.randomUUID()): Promise<NovaTaskSession> {
@@ -213,6 +253,7 @@ export async function askNova(message: string, signal: AbortSignal, pageContext:
 
 export type NovaStreamEvent =
   | { type: 'tool'; name: string }
+  | { type: 'status'; text: string }
   | { type: 'delta'; text: string }
   | { type: 'reset' };
 

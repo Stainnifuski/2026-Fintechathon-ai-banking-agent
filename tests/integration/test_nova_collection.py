@@ -1,11 +1,11 @@
 """NOVA collection drafts: the model interprets, the server verifies and writes."""
 import json
-from dataclasses import replace
 from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from fastapi import FastAPI
 from sqlalchemy import select
 
@@ -16,10 +16,51 @@ from backend.app.database.connection import get_db
 from backend.app.middleware.auth import get_current_user
 from backend.app.services.ai import collection_manager
 from backend.app.services.ai import nova as nova_service
+from backend.app.services.ai import nova_runtime
 from backend.app.services.ai.nova_tools import ToolContext
 from backend.app.schemas.nova import PageContext
 from backend.app.services.bank import nova_conversations as bank_conversations
 from backend.app.models.nova_task import NovaSessionORM
+
+
+@pytest.mark.asyncio
+async def test_single_collection_tool_creates_saved_and_unknown_payers(db):
+    await add_contact(db, "C2", "李四", "13900000002", "小李")
+    conversation = await bank_conversations.create(db, "U1")
+    context = ToolContext(user_id="U1", db=db, page=PageContext(),
+                          original_message="向小李和王五AA收100元", request_id=uuid4().hex,
+                          session_id=conversation["session_id"])
+    result = await nova_service.execute_tool({"function": {
+        "name": "manage_collection_request", "arguments": json.dumps({
+            "action": "create", "payers": named("set", "小李", "王五"),
+            "amount_fen": 10000, "split_equally": True,
+        }, ensure_ascii=False)}}, context)
+    assert "error" not in result, result
+    card = result["collection_cards"][0]
+    assert card["selected_payer_user_ids"] == ["U2"]
+    assert card["unknown_names"] == ["王五"]
+    assert card["amount_fen"] == 10000 and card["split_equally"] is True
+
+
+@pytest.mark.asyncio
+async def test_single_collection_tool_drops_invalid_receive_account_only(db):
+    await add_contact(db, "C2", "李四", "13900000002")
+    conversation = await bank_conversations.create(db, "U1")
+    context = ToolContext(user_id="U1", db=db, page=PageContext(),
+                          original_message="向李四收100元", request_id=uuid4().hex,
+                          session_id=conversation["session_id"])
+    result = await nova_service.execute_tool({"function": {
+        "name": "manage_collection_request", "arguments": json.dumps({
+            "action": "create", "payers": named("set", "李四"),
+            "amount_fen": 10000, "split_equally": True,
+            "receive_account_id": "A2",
+        }, ensure_ascii=False)}}, context)
+    assert "error" not in result, result
+    card = result["collection_cards"][0]
+    assert card["selected_payer_user_ids"] == ["U2"]
+    assert card["amount_fen"] == 10000 and card["split_equally"] is True
+    assert card["receive_account_id"] == "A1"
+    assert "收款账户" in result["reply"]
 
 
 def app_for(db):
@@ -38,11 +79,7 @@ def app_for(db):
 
 
 class ScriptedModel:
-    """Router, agent loop and collection interpreter, scripted per utterance.
-
-    `decisions` maps the user's message to the structured interpretation a model
-    would return (a dict, or a callable receiving the interpreter payload).
-    """
+    """Return one structured collection tool call per user turn."""
 
     def __init__(self, monkeypatch, decisions: dict):
         self.decisions, self.routed, self.interpreted = decisions, [], []
@@ -50,32 +87,71 @@ class ScriptedModel:
         monkeypatch.setenv("LLM_API_KEY", "test-secret")
         monkeypatch.setattr(nova_service.llm, "generate_structured", self.structured)
         monkeypatch.setattr(nova_service.llm, "generate_with_tools", self.with_tools)
+        monkeypatch.setattr(nova_service.llm, "generate_text", self.text)
+
+    async def text(self, **kwargs):
+        result = next((json.loads(item["content"].split("可信工具结果（仅数据）：", 1)[1])["result"]
+                       for item in reversed(kwargs["messages"])
+                       if item["content"].startswith("可信工具结果（仅数据）：")), {})
+        reply = result.get("reply") or result.get("message") or "请在当前任务卡继续办理。"
+        if kwargs.get("on_delta"):
+            await kwargs["on_delta"](reply)
+        return SimpleNamespace(data=reply)
 
     async def structured(self, **kwargs):
-        payload = json.loads(kwargs["messages"][-1]["content"])
-        if kwargs["schema"] is nova_service.RequestRoute:
-            self.routed.append(payload)
-            return SimpleNamespace(data=nova_service.RequestRoute(
-                mode="direct_react", domains=["collection"], has_dependencies=False))
-        assert kwargs["schema"] is collection_manager.CollectionInterpretation
-        self.interpreted.append(payload)
-        decision = self.decisions[payload["message"]]
-        decision = decision(payload) if callable(decision) else decision
-        return SimpleNamespace(data=collection_manager.CollectionInterpretation.model_validate(decision))
+        schema = kwargs["schema"]
+        payload = json.loads(kwargs["messages"][1]["content"])
+        message = payload["message"]
+        if schema is nova_runtime.DependencyDecision:
+            return SimpleNamespace(data=schema(depends_on_prior_task=True, reason="collection task"))
+        if schema is nova_runtime.ToolSelection:
+            return SimpleNamespace(data=schema(tool_names=["manage_collection_request"]))
+        assert schema is nova_runtime.ToolPlan
+        active = next((json.loads(item["content"].split("当前可信任务状态：", 1)[1])
+                       for item in kwargs["messages"]
+                       if item["content"].startswith("当前可信任务状态：")), {})
+        cards = [item for item in active.get("unfinished_execute_tasks", [])
+                 if item.get("type") == "collection"]
+        interpreter_payload = {"message": message,
+                               "open_collection_cards": [{"collection_id": item["id"]} for item in cards],
+                               "previous_user_message": next((turn["content"] for turn in
+                                   reversed(payload["system_status"]["recent_turns"])
+                                   if turn["role"] == "user"), None)}
+        self.interpreted.append(interpreter_payload)
+        decision = self.decisions[message]
+        decision = decision(interpreter_payload) if callable(decision) else decision
+        if decision["action"] == "clarify":
+            return SimpleNamespace(data=schema(calls=[], clarification=
+                collection_manager.CLARIFICATIONS[decision.get("clarify_reason") or "intent"]))
+        if decision["action"] == "not_collection":
+            return SimpleNamespace(data=schema(calls=[]))
+        arguments = {"action": decision["action"]}
+        if decision.get("payers") is not None:
+            arguments["payers"] = decision["payers"]
+        for key in ("amount_fen", "split_equally", "note", "clear_note", "receive_account_id"):
+            if key in decision:
+                arguments[key] = decision[key]
+        if decision["action"] in {"update", "cancel"}:
+            target = decision.get("target_card_id")
+            if target is None and len(cards) == 1:
+                target = cards[0]["id"]
+            if target is None:
+                return SimpleNamespace(data=schema(calls=[], clarification=
+                    collection_manager.CLARIFICATIONS["target_draft"]))
+            arguments["target_card_id"] = target
+        return SimpleNamespace(data=schema(calls=[nova_runtime.PlannedCall(
+            name="manage_collection_request", arguments=arguments)]))
 
     async def with_tools(self, **kwargs):
-        last = kwargs["messages"][-1]
-        name = "manage_collection_request" if last.get("role") == "tool" else "inspect_collection_request"
-        return SimpleNamespace(data={"role": "assistant", "content": None, "tool_calls": [
-            {"id": uuid4().hex, "type": "function", "function": {"name": name, "arguments": "{}"}}]})
+        return SimpleNamespace(data={"role": "assistant", "content": None, "tool_calls": []})
 
 
-def named(change, quote, *names):
-    return {"change": change, "scope": "named", "names": list(names), "quote": quote}
+def named(change, *names):
+    return {"change": change, "scope": "named", "names": list(names)}
 
 
-def everyone(quote, change="set"):
-    return {"change": change, "scope": "all_saved_contacts", "names": [], "quote": quote}
+def everyone(change="set"):
+    return {"change": change, "scope": "all_saved_contacts", "names": []}
 
 
 async def add_contact(db, contact_id, name, phone, nickname=None):
@@ -108,8 +184,8 @@ def client_for(db):
 @pytest.mark.parametrize("endpoint", ["chat", "chat/stream"])
 async def test_collection_prefills_saved_alias_and_unknown_contact(db, monkeypatch, endpoint):
     ScriptedModel(monkeypatch, {"向小李和王五各收100元": {
-        "action": "create", "payers": named("set", "小李和王五", "小李", "王五"),
-        "amount_quote": "100元", "amount_mode": "per_person"}})
+        "action": "create", "payers": named("set", "小李", "王五"),
+        "amount_fen": 10000, "split_equally": False}})
     await add_contact(db, "C2", "李四", "13900000002", "小李")
     async with client_for(db) as client:
         response = await client.post(f"/api/v1/nova/{endpoint}", json={
@@ -119,8 +195,8 @@ async def test_collection_prefills_saved_alias_and_unknown_contact(db, monkeypat
         result = (next(json.loads(line[6:]) for line in response.text.splitlines()
                        if line.startswith("data: ") and json.loads(line[6:]).get("type") == "done")
                   if endpoint.endswith("stream") else response.json())
-        assert [item["name"] for item in result["tool_calls"][:2]] == [
-            "inspect_collection_request", "manage_collection_request"]
+        assert [item["name"] for item in result["tool_calls"]].count("manage_collection_request") == 1
+        assert all(item["name"] != "inspect_collection_request" for item in result["tool_calls"])
         assert "返回资料不完整" not in result["reply"]
         assert result["tasks"] == []
         card = result["collection_cards"][0]
@@ -139,8 +215,8 @@ async def test_collection_prefills_saved_alias_and_unknown_contact(db, monkeypat
 @pytest.mark.asyncio
 async def test_collection_refresh_and_explicit_send(db, monkeypatch):
     ScriptedModel(monkeypatch, {"向小李和王五各收100元": {
-        "action": "create", "payers": named("set", "小李和王五", "小李", "王五"),
-        "amount_quote": "100元", "amount_mode": "per_person"}})
+        "action": "create", "payers": named("set", "小李", "王五"),
+        "amount_fen": 10000, "split_equally": False}})
     calls = []
 
     async def fake_batch(**kwargs):
@@ -192,7 +268,7 @@ async def test_collection_refresh_and_explicit_send(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_ambiguous_saved_name_needs_one_card_selection(db, monkeypatch):
     ScriptedModel(monkeypatch, {"向李四收100元": {
-        "action": "create", "payers": named("set", "李四", "李四"), "amount_quote": "100元"}})
+        "action": "create", "payers": named("set", "李四"), "amount_fen": 10000}})
     calls = []
 
     async def fake_batch(**kwargs):
@@ -219,32 +295,32 @@ async def test_ambiguous_saved_name_needs_one_card_selection(db, monkeypatch):
         assert calls[0]["payer_user_ids"] == ["U2"]
 
 
-def test_verification_drops_only_ungrounded_fields():
-    decision = collection_manager.CollectionInterpretation.model_validate({
-        "action": "update", "payers": named("add", "李四", "李四", "赵六"),
-        "amount_quote": "200", "amount_mode": "split_total", "note": "午饭",
-        "receive_account_id": "A9", "receive_account_quote": "尾号1234"})
-    verified, rejected = collection_manager._verify(
-        decision, ["李四也一起，总共200"], [{"collection_id": "X"}],
-        [{"account_id": "A1", "card_masked": "1234", "account_type": "savings"}])
-    assert rejected == ["payers", "note", "receive_account"]
-    assert verified.payers is None and verified.note is None and verified.receive_account_id is None
-    assert verified.amount_quote == "200"
-    assert verified.amount_mode == "split_total"
-    bad_amount, rejected = collection_manager._verify(
-        collection_manager.CollectionInterpretation(action="update", amount_quote="300"),
-        ["改成200"], [], [])
-    assert rejected == ["amount"] and bad_amount.amount_quote is None
+@pytest.mark.parametrize("field", [
+    "target_quote", "amount_quote", "split_quote", "receive_account_quote",
+    "continues_clarification",
+])
+def test_collection_tool_rejects_removed_fields(field):
+    with pytest.raises(ValidationError):
+        collection_manager.ManageCollectionRequestArguments.model_validate({
+            "action": "create", field: "旧参数",
+        })
+
+
+def test_collection_tool_rejects_payer_quotes():
+    with pytest.raises(ValidationError):
+        collection_manager.ManageCollectionRequestArguments.model_validate({
+            "action": "create", "payers": {**named("set", "李四"), "quote": "李四"},
+        })
 
 
 @pytest.mark.asyncio
 async def test_reported_followup_adds_payer_by_bare_name(db, monkeypatch):
     """Regression: “向王五收款” then “加上李四” left the card unchanged but replied “已更新”."""
     model = ScriptedModel(monkeypatch, {
-        "向王五收款": {"action": "create", "payers": named("set", "王五", "王五")},
-        "加上李四": {"action": "update", "payers": named("add", "李四", "李四")},
-        "李四也一起，总共200，AA均分": {"action": "update", "payers": named("add", "李四", "李四"),
-                                      "amount_quote": "200", "amount_mode": "split_total"},
+        "向王五收款": {"action": "create", "payers": named("set", "王五")},
+        "加上李四": {"action": "update", "payers": named("add", "李四")},
+        "李四也一起，总共200，AA均分": {"action": "update", "payers": named("add", "李四"),
+                                      "amount_fen": 20000, "split_equally": True},
     })
     await add_contact(db, "C2", "李四", "13900000002")
     await add_wangwu(db)
@@ -257,7 +333,7 @@ async def test_reported_followup_adds_payer_by_bare_name(db, monkeypatch):
         assert set(card["selected_payer_user_ids"]) == {"U2", "U3"}
         assert "添加付款人李四" in second["reply"]
         assert "返回资料不完整" not in second["reply"]
-        assert model.routed[-1]["transfer_tasks"]["collection_drafts"][0]["requested_names"] == ["王五"]
+        assert model.interpreted[-1]["open_collection_cards"][0]["collection_id"] == card["collection_id"]
         third = await say(client, "李四也一起，总共200，AA均分", second)
     card = third["collection_cards"][0]
     assert card["amount_fen"] == 20000
@@ -266,11 +342,11 @@ async def test_reported_followup_adds_payer_by_bare_name(db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_update_without_effect_does_not_claim_success(db, monkeypatch):
+async def test_update_without_effect_and_direct_amount_value(db, monkeypatch):
     ScriptedModel(monkeypatch, {
-        "向李四收100元": {"action": "create", "payers": named("set", "李四", "李四"), "amount_quote": "100元"},
-        "加上李四": {"action": "update", "payers": named("add", "李四", "李四")},
-        "金额改成李四的生日": {"action": "update", "amount_quote": "520"},
+        "向李四收100元": {"action": "create", "payers": named("set", "李四"), "amount_fen": 10000},
+        "加上李四": {"action": "update", "payers": named("add", "李四")},
+        "金额改成李四的生日": {"action": "update", "amount_fen": 52000},
     })
     await add_contact(db, "C2", "李四", "13900000002")
     async with client_for(db) as client:
@@ -280,18 +356,17 @@ async def test_update_without_effect_does_not_claim_success(db, monkeypatch):
         assert "没有识别到需要修改的内容" in same["reply"]
         row = await db.get(NovaSessionORM, first["session_id"])
         assert row.version == first["session_version"]
-        ungrounded = await say(client, "金额改成李四的生日", first)
-    assert "未能从你的原话中确认" in ungrounded["reply"] and "金额" in ungrounded["reply"]
-    assert "已更新" not in ungrounded["reply"]
+        updated = await say(client, "金额改成李四的生日", first)
+    assert "金额改为520.00元" in updated["reply"]
     row = await db.get(NovaSessionORM, first["session_id"])
-    assert row.state["collection_cards"][0]["amount_fen"] == 10000
+    assert row.state["collection_cards"][0]["amount_fen"] == 52000
 
 
 @pytest.mark.asyncio
 async def test_all_saved_contacts_are_scope_and_followup_updates_same_card(db, monkeypatch):
     ScriptedModel(monkeypatch, {
-        "向我存着的通讯录每一位朋友发起收款": {"action": "create", "payers": everyone("我存着的通讯录每一位朋友")},
-        "每个人收款100元": {"action": "update", "amount_quote": "100元", "amount_mode": "per_person"},
+        "向我存着的通讯录每一位朋友发起收款": {"action": "create", "payers": everyone()},
+        "每个人收款100元": {"action": "update", "amount_fen": 10000, "split_equally": False},
     })
     await add_contact(db, "C2", "李四", "13900000002", "小李")
     async with client_for(db) as client:
@@ -311,57 +386,34 @@ async def test_all_saved_contacts_are_scope_and_followup_updates_same_card(db, m
 
 
 @pytest.mark.asyncio
-async def test_model_must_inspect_contacts_before_collection_draft(db, monkeypatch):
+async def test_collection_uses_one_business_tool_for_all_saved_contacts(db, monkeypatch):
     ScriptedModel(monkeypatch, {"向我的联系人列表里所有人发起收款": {
-        "action": "create", "payers": everyone("联系人列表里所有人")}})
+        "action": "create", "payers": everyone()}})
     await add_contact(db, "C2", "李四", "13900000002", "小李")
-    calls = []
-
-    async def with_tools(**kwargs):
-        names = {tool["function"]["name"] for tool in kwargs["tools"]}
-        assert names == {"inspect_collection_request", "manage_collection_request"}
-        name = ("manage_collection_request" if len(calls) in (0, 2)
-                else "inspect_collection_request")
-        calls.append(name)
-        return SimpleNamespace(data={"role": "assistant", "content": None,
-            "tool_calls": [{"id": f"call-{len(calls)}", "type": "function",
-                            "function": {"name": name, "arguments": "{}"}}]})
-
-    monkeypatch.setattr(nova_service.llm, "generate_with_tools", with_tools)
     async with client_for(db) as client:
         data = await say(client, "向我的联系人列表里所有人发起收款")
-    assert calls == ["manage_collection_request", "inspect_collection_request",
-                     "manage_collection_request"]
-    assert data["tool_calls"][0]["result"]["error"] == "COLLECTION_INSPECTION_REQUIRED"
+    assert [call["name"] for call in data["tool_calls"]].count("manage_collection_request") == 1
+    assert "inspect_collection_request" not in nova_service.TOOL_REGISTRY
     assert data["collection_cards"][0]["selected_payer_user_ids"] == ["U2"]
     assert data["collection_cards"][0]["requested_names"] == []
 
 
 @pytest.mark.asyncio
-async def test_collection_inspection_expires_when_directory_changes(db, monkeypatch):
+async def test_collection_reads_latest_contacts_in_same_tool_call(db, monkeypatch):
     ScriptedModel(monkeypatch, {"向联系人列表里所有人收款": {
-        "action": "create", "payers": everyone("联系人列表里所有人")}})
-    context = ToolContext(user_id="U1", db=db, page=PageContext(),
-                          original_message="向联系人列表里所有人收款", request_id=uuid4().hex,
-                          session_id=uuid4().hex)
-    inspection = await nova_service.execute_tool({
-        "function": {"name": "inspect_collection_request", "arguments": "{}"}}, context)
-    assert "error" not in inspection
+        "action": "create", "payers": everyone()}})
     await add_contact(db, "C2", "李四", "13900000002", "小李")
-    context = replace(context, current_tool_results=[{
-        "name": "inspect_collection_request", "result": inspection}])
-    with pytest.raises(collection_manager.CollectionError) as error:
-        await collection_manager.create_collection_draft(context)
-    assert error.value.code == "COLLECTION_INSPECTION_REQUIRED"
-    assert (await db.scalars(select(NovaSessionORM))).all() == []
+    async with client_for(db) as client:
+        data = await say(client, "向联系人列表里所有人收款")
+    assert data["collection_cards"][0]["selected_payer_user_ids"] == ["U2"]
 
 
 @pytest.mark.asyncio
 async def test_unbound_everyone_clarifies_then_answer_continues_request(db, monkeypatch):
     model = ScriptedModel(monkeypatch, {
         "向每个人收款100": {"action": "clarify", "clarify_reason": "payer_scope"},
-        "全部已保存联系人": {"action": "create", "continues_clarification": True,
-                       "payers": everyone("全部已保存联系人"), "amount_quote": "100"},
+        "全部已保存联系人": {"action": "create",
+                       "payers": everyone(), "amount_fen": 10000},
     })
     await add_contact(db, "C2", "李四", "13900000002", "小李")
     async with client_for(db) as client:
@@ -382,8 +434,8 @@ async def test_unbound_everyone_clarifies_then_answer_continues_request(db, monk
 async def test_failed_clarification_answer_can_be_retried(db, monkeypatch):
     ScriptedModel(monkeypatch, {
         "向每个人收款100": {"action": "clarify", "clarify_reason": "payer_scope"},
-        "全部已保存联系人": {"action": "create", "continues_clarification": True,
-                       "payers": everyone("全部已保存联系人"), "amount_quote": "100"},
+        "全部已保存联系人": {"action": "create",
+                       "payers": everyone(), "amount_fen": 10000},
     })
     async with client_for(db) as client:
         first = await say(client, "向每个人收款100")
@@ -395,27 +447,26 @@ async def test_failed_clarification_answer_can_be_retried(db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_history_amount_is_not_reused_without_continuing_clarification(db, monkeypatch):
+async def test_new_request_omits_amount_without_model_value(db, monkeypatch):
     ScriptedModel(monkeypatch, {
         "向每个人收款100": {"action": "clarify", "clarify_reason": "payer_scope"},
-        "向李四收款": {"action": "create", "payers": named("set", "李四", "李四"), "amount_quote": "100"},
+        "向李四收款": {"action": "create", "payers": named("set", "李四")},
     })
     async with client_for(db) as client:
         first = await say(client, "向每个人收款100")
         second = await say(client, "向李四收款", first)
     card = second["collection_cards"][0]
     assert card["amount_fen"] is None
-    assert "金额" in second["reply"] and "未能从你的原话中确认" in second["reply"]
 
 
 @pytest.mark.asyncio
 async def test_chat_can_set_aa_edit_fields_and_cancel_collection(db, monkeypatch):
     ScriptedModel(monkeypatch, {
-        "向小李AA收100元": {"action": "create", "payers": named("set", "小李", "小李"),
-                        "amount_quote": "100元", "amount_mode": "split_total"},
-        "每人100元": {"action": "update", "amount_quote": "100元", "amount_mode": "per_person"},
-        "把这次收款改成每人收50元，备注改为午餐": {"action": "update", "amount_quote": "50元",
-                                      "amount_mode": "per_person", "note": "午餐"},
+        "向小李AA收100元": {"action": "create", "payers": named("set", "小李"),
+                        "amount_fen": 10000, "split_equally": True},
+        "每人100元": {"action": "update", "amount_fen": 10000, "split_equally": False},
+        "把这次收款改成每人收50元，备注改为午餐": {"action": "update", "amount_fen": 5000,
+                                      "split_equally": False, "note": "午餐"},
         "备注改为晚饭": {"action": "update", "note": "晚饭"},
         "清空备注": {"action": "update", "clear_note": True},
         "撤销这次收款": {"action": "cancel"},
@@ -449,37 +500,47 @@ async def test_chat_can_set_aa_edit_fields_and_cancel_collection(db, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_new_collection_requires_switch_and_preserves_original_until_confirmed(db, monkeypatch):
+async def test_multiple_collection_drafts_remain_independently_editable(db, monkeypatch):
     ScriptedModel(monkeypatch, {
-        "向小李收100元": {"action":"create","payers":named("set","小李","小李"),"amount_quote":"100元"},
-        "向王五收200元": {"action":"create","payers":named("set","王五","王五"),"amount_quote":"200元"},
+        "向小李收100元": {"action": "create", "payers": named("set", "小李"), "amount_fen": 10000},
+        "向王五收200元": {"action": "create", "payers": named("set", "王五"), "amount_fen": 20000},
+        "改成AA": {"action": "clarify", "clarify_reason": "target_draft"},
+        "把小李那笔收款改成AA": lambda payload: {"action": "update", "split_equally": True,
+                                       "target_card_id": payload["open_collection_cards"][0]["collection_id"]},
+        "撤销第二张收款": lambda payload: {"action": "cancel", "target_card_id": payload["open_collection_cards"][1]["collection_id"]},
+        "向李四收300元": {"action": "create", "payers": named("set", "李四"), "amount_fen": 30000},
     })
     await add_contact(db,"C2","李四","13900000002","小李")
     async with client_for(db) as client:
         first=await say(client,"向小李收100元")
-        second=await say(client,"向王五收200元",first)
-        assert second["task_switch"]["token"]
         session=await db.get(NovaSessionORM,first['session_id'],populate_existing=True)
-        assert len(session.state['collection_cards'])==1
-        assert session.state['collection_cards'][0]['status']=='DRAFT'
-        response=await client.post('/api/v1/nova/chat',json={
-            'message':'确认切换操作','request_id':uuid4().hex,'session_id':first['session_id'],
-            'session_version':first['session_version'],
-            'task_switch_token':second['task_switch']['token'],'accept_task_switch':True})
-        assert response.status_code==200,response.text
-        cards=response.json()['collection_cards']
-        assert len(cards)==2
-        assert [card['status'] for card in cards]==['CANCELLED','DRAFT']
+        session.state={**session.state,'calendar_tasks':[{
+            'kind':'mutation','entry_id':'birthday-draft','origin_request_id':'birthday-request',
+            'action':'add','timezone':'Asia/Shanghai','filters':{},
+            'changes':{'title':'朋友生日','start_date':'2026-11-03','start_time':'12:00'},
+            'targets':[],'snapshots':{},'status':'PENDING','closed':False,
+        }]}
+        await db.commit()
+        second=await say(client,"向王五收200元",first)
+        assert not second.get("task_switch")
+        session=await db.get(NovaSessionORM,first['session_id'],populate_existing=True)
+        assert len(session.state['collection_cards'])==2
+        assert session.state['calendar_tasks'][0]['closed'] is False
+        assert [card['status'] for card in session.state['collection_cards']]==['DRAFT','DRAFT']
+        changed=await say(client,"把小李那笔收款改成AA",second)
+        assert changed['collection_cards'][0]['split_equally'] is True
+        assert changed['collection_cards'][1]['split_equally'] is False
+        cancelled=await say(client,"撤销第二张收款",changed)
+        assert [card['status'] for card in cancelled['collection_cards']]==['DRAFT','CANCELLED']
 
 
 @pytest.mark.asyncio
 async def test_chat_can_edit_payers_and_receive_account(db, monkeypatch):
     ScriptedModel(monkeypatch, {
-        "向李四收100元": {"action": "create", "payers": named("set", "李四", "李四"), "amount_quote": "100元"},
-        "王五也要付": {"action": "update", "payers": named("add", "王五", "王五")},
-        "把收款账户换成尾号1234的银行卡": {"action": "update", "receive_account_id": "A3",
-                                 "receive_account_quote": "尾号1234"},
-        "李四不用了，只找王五": {"action": "update", "payers": named("set", "只找王五", "王五")},
+        "向李四收100元": {"action": "create", "payers": named("set", "李四"), "amount_fen": 10000},
+        "王五也要付": {"action": "update", "payers": named("add", "王五")},
+        "把收款账户换成尾号1234的银行卡": {"action": "update", "receive_account_id": "A3"},
+        "李四不用了，只找王五": {"action": "update", "payers": named("set", "王五")},
     })
     await add_contact(db, "C2", "李四", "13900000002")
     await add_wangwu(db)
@@ -501,18 +562,17 @@ async def test_chat_can_edit_payers_and_receive_account(db, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_model_failure_does_not_fall_back_to_keyword_parsing(db, monkeypatch):
-    model = ScriptedModel(monkeypatch, {})
+    ScriptedModel(monkeypatch, {})
 
     async def broken(**kwargs):
-        if kwargs["schema"] is nova_service.RequestRoute:
-            return await model.structured(**kwargs)
-        raise RuntimeError("model down")
+        from backend.app.services.ai.llm import LLMError
+        raise LLMError("MODEL_UNAVAILABLE")
 
     monkeypatch.setattr(nova_service.llm, "generate_structured", broken)
     async with client_for(db) as client:
-        result = await say(client, "向李四收100元")
-    assert "暂时不可用" in result["reply"]
-    assert not result.get("collection_cards")
+        response = await client.post("/api/v1/nova/chat", json={
+            "message": "向李四收100元", "request_id": uuid4().hex})
+    assert response.status_code == 503
     assert (await db.scalars(select(NovaSessionORM))).all() == []
 
 

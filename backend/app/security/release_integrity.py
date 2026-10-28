@@ -12,7 +12,7 @@ from .agent_guard import security_event
 
 ROOT = Path(__file__).resolve().parents[1] / 'skills'
 MANIFEST = Path(__file__).with_name('skill_hashes.json')
-NAMES = frozenset({'transfer', 'collection', 'wealth', 'card', 'subscription', 'calendar', 'shop', 'bills'})
+NAMES = frozenset({'transfer', 'collection', 'wealth', 'card', 'subscription', 'calendar', 'calendar_query', 'shop', 'bills'})
 
 
 def _read(name: str) -> bytes:
@@ -50,4 +50,4 @@ if __name__ == '__main__':
         hashes = {name: hashlib.sha256(_read(name)).hexdigest() for name in sorted(NAMES)}
         MANIFEST.write_text(json.dumps(hashes, indent=2) + '\n', encoding='utf-8')
     verify_skills()
-    print('All 8 server-owned Skills match the reviewed manifest.')
+    print(f'All {len(NAMES)} server-owned Skills match the reviewed manifest.')

@@ -604,7 +604,7 @@ async def transfer_funding_accounts(db: AsyncSession, *, subject_user_id: str) -
         AccountORM.account_id.not_in(isolated_account_ids()),
     ).order_by(AccountORM.account_id))).all()
     return {"accounts": [{"account_id": account.account_id,
-                          "label": f"{account.account_type} · 尾号{transfer_card_number(account.account_id)[-4:]}",
+                          "label": f"debit · 尾号{transfer_card_number(account.account_id)[-4:]}",
                           "available_fen": max(0, await available_cash(db, account.account_id, account.balance_fen))}
                          for account in accounts],
             "as_of": datetime.now(timezone.utc).isoformat()}

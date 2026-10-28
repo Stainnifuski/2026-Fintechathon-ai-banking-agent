@@ -16,7 +16,7 @@ export default function Transactions({result,accounts,filter,page,onPage,selecte
   const [rows,setRows]=useState<bills.BillPage|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0),[detailOpen,setDetailOpen]=useState(false);
   useEffect(()=>{let live=true;setBusy(true);setError('');bills.details({...result.query,category:filter.category||result.query.category},page,result.as_of,filter.tx_ids)
     .then(data=>{if(live)setRows(data);}).catch(e=>{if(live)setError(errorText(e));}).finally(()=>{if(live)setBusy(false);});return()=>{live=false;};},[result,filter,page,retry]);
-  useEffect(()=>{if(!selected)setDetailOpen(false);},[selected]);
+  useEffect(()=>{setDetailOpen(!!selected);},[selected]);
   return <section id="bill-transactions" aria-label="交易明细工作区">
     <div className="bill-heading"><div><h3>{filter.label}</h3><p className="hint">打开详情后可整理分类、标签及关联交易，选中流水会同步给 NOVA。</p></div><button type="button" className="secondary" onClick={onReset}>重置明细筛选</button></div>
     {busy&&<p role="status">正在加载流水…</p>}{error&&<p role="alert" className="error">{error} <button onClick={()=>setRetry(n=>n+1)}>重试</button></p>}
