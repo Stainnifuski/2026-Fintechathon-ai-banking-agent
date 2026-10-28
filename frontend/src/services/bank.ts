@@ -23,6 +23,15 @@ export interface SubscriptionChargeResult {
   subscription: Subscription; transaction_id: string; charged_amount: number;
   duplicate: boolean; message: string;
 }
+export interface ScheduledTask {
+  task_id:string;task_type:'custom'|'transfer';description:string;scheduled_at:string;
+  status:string;completed:boolean;can_start:boolean;dispatch_request_id:string|null;started_at:string|null;
+}
+export const scheduledTasks=()=>apiClient.get<{items:ScheduledTask[];as_of:string}>('/scheduled-tasks').then(r=>r.data.items);
+export const createScheduledTask=(description:string,scheduled_at:string)=>
+  apiClient.post<ScheduledTask>('/scheduled-tasks',{description,scheduled_at}).then(r=>r.data);
+export const startScheduledTask=(taskId:string)=>
+  apiClient.post<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(taskId)}/start`).then(r=>r.data);
 export interface ConfirmationCard {
   card_id: string; plan_version: number; from_account: string; to_account: string;
   recipient_name: string; recipient_phone_masked?: string; amount: number; currency: string;

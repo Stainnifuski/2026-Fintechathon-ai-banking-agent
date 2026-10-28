@@ -943,6 +943,24 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/scheduled-tasks",
+    "domain": "assistant",
+    "action": "list_scheduled_tasks"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks",
+    "domain": "assistant",
+    "action": "create_custom_task"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/scheduled-tasks/{task_id}/start",
+    "domain": "assistant",
+    "action": "start_custom_task"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/subscriptions",
     "domain": "subscriptions",
     "action": "list_user_subscriptions"

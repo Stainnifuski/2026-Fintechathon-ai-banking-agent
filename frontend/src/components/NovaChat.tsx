@@ -442,14 +442,14 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     finally { setLoadingConversation(false); }
   }
 
-  async function send(text: string, candidateId?: string, selectedTaskId?: string, contextOverride?: NovaPageContext) {
+  async function send(text: string, candidateId?: string, selectedTaskId?: string, contextOverride?: NovaPageContext, requestId?: string) {
     const content = text.trim();
     if (!content || busy || queueLock.current || loadingConversation || request.current) return;
     if (uncertainRetry.current?.content !== content) uncertainRetry.current = null;
     const controller = new AbortController();
     request.current = controller;
     const newRequest: NovaTaskRequest = {
-      request_id: crypto.randomUUID(), session_id: activeConversationId || undefined,
+      request_id: requestId??crypto.randomUUID(), session_id: activeConversationId || undefined,
       session_version: taskSession?.session_version || 0,
       focus_task_id: selectedTaskId || focusTaskId,
       candidate_id: candidateId,
@@ -558,7 +558,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     if (!promptRequest || promptRequest.userId !== userId || handledPrompt.current === promptRequest.id
         || !open || busy || loadingConversation || queueBusy || queueLock.current || request.current) return;
     handledPrompt.current = promptRequest.id;
-    void send(promptRequest.text, undefined, undefined, promptRequest.context);
+    void send(promptRequest.text, undefined, undefined, promptRequest.context, promptRequest.id);
     onPromptHandled?.(promptRequest.id);
   }, [promptRequest, userId, open, busy, loadingConversation, queueBusy]);
   if (!open) return null;

@@ -1,0 +1,16 @@
+.scheduled-tasks-page{display:grid;gap:20px;max-width:1080px;margin:0 auto;padding-bottom:40px}
+.scheduled-tasks-create,.scheduled-tasks-list{padding:24px}
+.scheduled-tasks-create form{display:grid;gap:14px;max-width:650px}
+.scheduled-tasks-create label{display:grid;gap:8px;font-weight:600}
+.scheduled-tasks-create textarea{min-height:110px;resize:vertical}
+.scheduled-tasks-create input,.scheduled-tasks-create textarea{width:100%;font:inherit;padding:10px 12px;border:1px solid #cad5e1;border-radius:10px}
+.scheduled-tasks-create form button{justify-self:start}
+.scheduled-tasks-list-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.scheduled-tasks-group{margin-top:20px}
+.scheduled-tasks-group h3{margin:0 0 12px}
+.scheduled-tasks-list ul{list-style:none;padding:0;margin:0;display:grid;gap:12px}
+.scheduled-tasks-list li{padding:16px;border:1px solid #d9e2ee;border-radius:14px;background:#fff}
+.scheduled-tasks-list li>div{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.scheduled-tasks-list li span{font-size:.85rem;color:#52637a;background:#edf3fa;border-radius:999px;padding:3px 9px}
+.scheduled-tasks-list li p{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.scheduled-tasks-list li small{display:block;color:#52637a;margin-bottom:10px}

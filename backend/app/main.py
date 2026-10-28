@@ -36,6 +36,7 @@ from .routers.cake_shop import router as cake_shop_router
 from .routers.calendar import router as calendar_router
 from .routers.audit import router as audit_router
 from .routers.voice import router as voice_router
+from .routers.scheduled_tasks import router as scheduled_tasks_router
 from .services.orchestration.scheduler import scheduled_transfer_loop, subscription_charge_loop
 from .services.orchestration.wealth_task_worker import loop as wealth_task_loop
 from .services.ai.llm import get_mode, get_settings, llm
@@ -130,6 +131,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(wealth_tasks_router)
+app.include_router(scheduled_tasks_router)
 from .routers.bill_foundations import router as bill_foundations_router
 app.include_router(bill_foundations_router)
 from .routers.bill_features import router as bill_features_router
