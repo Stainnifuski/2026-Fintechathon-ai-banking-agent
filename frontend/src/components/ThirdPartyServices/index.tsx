@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { beijingTime } from '../../utils/time';
 import { useCallback, useEffect, useState } from 'react';
 import * as flowerShop from '../../services/flowerShop';
@@ -204,7 +205,7 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
           </ul>}
       </section>
 
-    {pendingProduct && <div className="flower-modal" role="dialog" aria-modal="true" aria-label={`确认${category}订单`}>
+    {pendingProduct && <Modal scope="third-party" className="flower-modal" role="dialog" aria-modal="true" aria-label={`确认${category}订单`}>
       <section className="card">
         <p className="eyebrow">订单确认</p>
         <h2>{pendingProduct.name}</h2>
@@ -219,6 +220,6 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
           <button disabled={isSubmitting} onClick={submitOrder}>{isSubmitting ? '正在提交…' : '提交订单'}</button>
         </div>
       </section>
-    </div>}
+    </Modal>}
   </section>;
 }

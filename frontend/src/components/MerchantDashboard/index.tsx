@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { beijingTime } from '../../utils/time';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Account, Transaction, User } from '../../services/bank';
@@ -148,7 +149,7 @@ export default function MerchantDashboard({
       </div>
     </section>
 
-    {pendingRefund && <div className="merchant-modal" role="dialog" aria-modal="true" aria-label="确认退款">
+    {pendingRefund && <Modal scope="merchant-dashboard" className="merchant-modal" role="dialog" aria-modal="true" aria-label="确认退款">
       <section className="card">
         <p className="merchant-kicker">退款确认</p>
         <h2>向 {pendingRefund.payment_request?.payer_name || '顾客'} 退款？</h2>
@@ -157,6 +158,6 @@ export default function MerchantDashboard({
         <p className="hint">确认后银行将从商户账户原路退回顾客付款账户，并生成双方退款流水。支持多次部分退款，累计不超过原付款。按原操作重试不会重复记账。</p>
         <div className="confirm"><button className="secondary" disabled={busy} onClick={() => setPendingRefund(null)}>返回</button><button disabled={busy} onClick={confirmRefund}>{busy ? '退款处理中…' : '确认退款'}</button></div>
       </section>
-    </div>}
+    </Modal>}
   </main>;
 }

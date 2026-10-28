@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { useEffect, useState } from 'react';
 import * as w from '../../services/wealth';
 import { beijingTime } from '../../utils/time';
@@ -23,7 +24,7 @@ export default function ProductDetail({productId,productVersion,onClose,loadDeta
   const reasons:Record<string,string>={AT_LEAST_TWO_OBSERVATIONS:'至少需要2个净值点',AT_LEAST_TWENTY_RETURNS:'至少需要20个有效日收益',DATA_QUALITY_REVIEW_REQUIRED:'数据质量待核对'};
   const feeRate=(value:string|null|undefined)=>value==null?'未提供':`${(Number(value)*100).toLocaleString('zh-CN',{maximumFractionDigits:4})}%`;
   const categories:Record<string,string>={cash_management:'活钱',stable:'稳健',growth:'进取',cash:'活钱',bond:'债券',mixed:'混合',equity:'权益',index:'指数'};
-  return <div className="wealth-modal"><section role="dialog" aria-modal="true" aria-label="产品详情" className="card wealth-detail"><button className="secondary" onClick={onClose}>关闭</button><h3>{detail?.name || '产品详情'}</h3>{error&&<p role="alert">{error}</p>}{!detail&&!error&&<p>正在读取已发布数据…</p>}
+  return <Modal className="wealth-modal" scope="wealth wealth-page"><section role="dialog" aria-modal="true" aria-label="产品详情" className="card wealth-detail"><button className="secondary" onClick={onClose}>关闭</button><h3>{detail?.name || '产品详情'}</h3>{error&&<p role="alert">{error}</p>}{!detail&&!error&&<p>正在读取已发布数据…</p>}
     {detail&&<><p>{detail.identity}</p><p>{categories[detail.category || ''] || '类别待核对'} · {detail.risk_source_kind==='project_policy'?'项目等级（独立于发行人评级）':'风险'} {detail.risk_level?`R${detail.risk_level}`:'未审核'}</p>{detail.execution_price?<p>预览参考净值 {detail.execution_price.value} · 来源净值日期 {detail.execution_price.date}；交易前自动核对最新有效净值；本人确认与MFA后即时模拟成交。</p>:detail.simulated_unit_price?<p>项目模拟计价 {detail.simulated_unit_price}元／份；真实单位NAV未核实，收益率不转换成NAV。</p>:detail.latest_nav&&<p>已发布净值 {detail.latest_nav.nav} · {detail.latest_nav.date}</p>}
       <p>本金可能亏损；R1和快赎均不代表本金或收益保证。公开更高评级或分类冲突不得降级。</p>
       {detail.public_nav_date_basis?.includes('MM-DD')&&<p>原报告只有月日；年份按观测日前最近日期解释，原值与来源指纹已保留。</p>}
@@ -36,5 +37,5 @@ export default function ProductDetail({productId,productVersion,onClose,loadDeta
         <div className="wealth-metric-grid">{Object.entries(labels).filter(([key])=>activeChart?.metrics[key]?.value_percent!=null).map(([key,label])=>{const metric=activeChart?.metrics[key];return <article key={key}><strong>{label}</strong><p>{metric?.value_percent==null?'暂无':`${metric.value_percent}%`}</p><small>{metric?.reason?reasons[metric.reason] || '资料不足':key==='volatility'?'按每年252个交易日折算的日收益波动':key==='max_drawdown'?'窗口内峰值到谷值的最大跌幅':'末值相对首值的变化'}</small></article>;})}</div><p className="hint">{activeChart.notice}</p>{activeChart.quality_flags.length>0&&<p>本窗口数据质量待核对。</p>}</>}
       {detail.source && <p>来源：{typeof detail.source==='string'?<a href={detail.source} target="_blank" rel="noreferrer">原始资料</a>:detail.source.url?<a href={detail.source.url} target="_blank" rel="noreferrer">{detail.source.title || '官方规则参考资料'}</a>:'来源信息待核对'}</p>}
       <p className="hint">历史仅在打开详情时按本代码查询，切窗口复用本次结果，不用于成交或选品。数据时点（北京时间）{beijingTime(detail.as_of)}。短历史按实际点展示，历史表现不代表未来回报。</p></>}
-  </section></div>;
+  </section></Modal>;
 }

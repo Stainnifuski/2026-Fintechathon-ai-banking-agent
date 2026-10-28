@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { useEffect, useState } from 'react';
 import { get, money } from '../../services/wealth';
 import type { Product } from '../../services/wealth';
@@ -38,7 +39,7 @@ export default function ProductComparison({ products, onClose, loadComparison = 
       .finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
   }, [ids, loadComparison]);
-  return <div className="wealth-modal"><section role="dialog" aria-modal="true" aria-label="产品比较" className="card picker-comparison">
+  return <Modal className="wealth-modal" scope="wealth wealth-page"><section role="dialog" aria-modal="true" aria-label="产品比较" className="card picker-comparison">
     <div className="consumer-card-head"><h2>比较具体份额</h2><button className="secondary" onClick={onClose}>关闭比较</button></div>
     <p>请选择 2—4 只。比较和详情均可选，不影响已选产品，也不是继续操作的前置条件。</p>
     <div className="picker-compare-options">{products.map(product => <label key={product.product_id}><input type="checkbox" checked={ids.includes(product.product_id)} disabled={!ids.includes(product.product_id) && ids.length >= 4} onChange={event => {const checked=event.target.checked;setIds(current=>checked?(current.includes(product.product_id)||current.length>=4?current:[...current,product.product_id]):current.filter(id=>id!==product.product_id));}} />{product.name}</label>)}</div>
@@ -50,5 +51,5 @@ export default function ProductComparison({ products, onClose, loadComparison = 
       <td>模拟成交以确认页价格及规则为准；公开费用未知不补零。<small>本金可能亏损，低风险不代表收益保证。</small></td>
     </tr>)}</tbody></table></div>}
     <p className="consumer-note">本表费用是模拟银行成交条件，不代表现实渠道完整费用；公开未知值仍未知。历史指标须按各自口径阅读，不代表本人实际收益或未来回报。</p>
-  </section></div>;
+  </section></Modal>;
 }

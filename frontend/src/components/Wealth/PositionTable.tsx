@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import {useEffect,useState} from 'react';
 import {get} from '../../services/wealth';
 import type {WealthReturns} from '../../services/wealthReturns';
@@ -42,8 +43,8 @@ export default function PositionTable({data,loadDetail,onRedeem,onReturns,blocke
 }
 export function PositionDetail({row,loadDetail,onClose}:{row:PositionRow;loadDetail?:ProductDetailLoader;onClose:()=>void;onReturns?:()=>void}){
   const [product,setProduct]=useState(false);
-  return <><div className="wealth-modal"><section className="card" role="dialog" aria-modal="true" aria-label="持仓事实详情"><button className="secondary" onClick={onClose}>关闭持仓详情</button><h3>{row.product_name}</h3>
+  return <><Modal className="wealth-modal" scope="wealth wealth-page"><section className="card" role="dialog" aria-modal="true" aria-label="持仓事实详情"><button className="secondary" onClick={onClose}>关闭持仓详情</button><h3>{row.product_name}</h3>
     <p>{row.units}份 · 市值 {money(row.market_value_fen)} · 可赎 {row.redeemable_units}份</p><p>净值 {row.nav??'未知'} · {row.nav_date??'无有效日期'} · 成本 {money(row.cost_fen)}</p>
     {row.lots.map((lot, index)=><article key={lot.lot_id}><strong>第 {index + 1} 笔买入</strong><p>持有 {lot.units} · 可赎 {lot.redeemable_units} · 锁定 {lot.locked_units} · 占用 {lot.held_units}</p><p>买入确认 {lot.acquired_date??'未知'} · 解锁 {lot.unlock_date??'未知'} · 市值 {money(lot.market_value_fen)} · 成本 {money(lot.cost_fen)}</p></article>)}
-    <button onClick={()=>setProduct(true)}>查看该版本产品资料</button></section></div>{product&&<ProductDetail productId={row.product_id} productVersion={row.product_version} loadDetail={loadDetail} onClose={()=>setProduct(false)}/>}</>;
+    <button onClick={()=>setProduct(true)}>查看该版本产品资料</button></section></Modal>{product&&<ProductDetail productId={row.product_id} productVersion={row.product_version} loadDetail={loadDetail} onClose={()=>setProduct(false)}/>}</>;
 }

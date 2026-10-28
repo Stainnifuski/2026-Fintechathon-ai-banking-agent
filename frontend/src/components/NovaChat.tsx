@@ -191,7 +191,7 @@ function promptsFor(context: NovaPageContext): Prompt[] {
 
 export default function NovaChat({ headerControls, name, userId, open, onClose, onNavigate, pageContext, onTransferActivity, promptRequest, onPromptHandled, onBillNavigate }: {
   headerControls?:HTMLElement|null; name: string; userId: string; open: boolean; onClose: () => void; pageContext: NovaPageContext;
-  onNavigate: (section: 'transfer' | 'insights' | 'wealth') => void;
+  onNavigate: (section: 'transfer' | 'insights' | 'wealth' | 'cards' | 'subscriptions' | 'services') => void;
   onReviewCardOperation?: (operationId: string) => void;
   onTransferActivity?: () => void;
   promptRequest?: NovaPromptRequest | null;
@@ -202,7 +202,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   const [taskMeta,setTaskMeta]=useState<Record<string,TaskMeta>>({});
   const [placements,setPlacements]=useState<Record<string,string>>({});
   const refreshPresentation=async(session:string)=>{try{const {data}=await apiClient.get<(TaskMeta&{request_id?:string;position?:string})[]>(`/nova/presentation/${session}`);if(billSession.current!==session)return;setTaskMeta(Object.fromEntries(data.map(item=>[item.key,{...item,session}])));setPlacements(old=>({...old,...Object.fromEntries(data.filter(item=>item.position).map(item=>[item.key,item.position!]))}));}catch{setError('任务状态读取失败，请重新打开对话核对。');}};
-  const metaFor=(key:string,label:string,destination:string,finished=false):TaskMeta=>({...taskMeta[key],key,label:taskMeta[key]?.label??label,destination,session:activeConversationId??'',ready:!!taskMeta[key]||finished,finished:taskMeta[key]?.finished??finished});
+  const metaFor=(key:string,label:string,destination:string,finished=false):TaskMeta=>({...taskMeta[key],key,label:taskMeta[key]?.label??label,destination,session:activeConversationId??'',ready:!!taskMeta[key]||finished,finished:!!taskMeta[key]?.finished||finished});
   const positionFor=(key:string,origin?:string|null)=>{const requestId=placements[key]??origin;const found=messages.findIndex(entry=>entry.role==='assistant'&&entry.request_id===requestId);return found<0?messages.length-1:found;};
   const [billResults,setBillResults]=useState<NovaBillResult[]>([]);
   const mergeBillResults=(items:NovaBillResult[])=>setBillResults(previous=>[...new Map([...previous,...items].map(item=>[item.result_id,item])).values()]);
@@ -605,7 +605,12 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             })}
           </div>
         </div>}
-        {messages.length === 0 && !error && <div className="nova-empty" aria-label={`${name}的银行助手`}><div className="eyebrow">YOUR AI BANKING AGENT</div><h1>今天想办理什么？</h1><p>查账、转账、管理财务，直接告诉 NOVA。</p><div className="nova-topic-ribbon"><span>💳 账户与卡片</span><span>🧾 账单洞察</span><span>📈 理财</span><span>🔁 转账</span></div></div>}
+        {messages.length === 0 && !error && <div className="nova-empty" aria-label={`${name}的银行助手`}><div className="eyebrow">YOUR AI BANKING AGENT</div><h1>今天想办理什么？</h1><p>查账、转账、管理财务，直接告诉 NOVA。</p><nav className="nova-topic-ribbon" aria-label="业务场景">
+          {([['cards', '💳 账户与卡片'], ['insights', '🧾 账单洞察'], ['wealth', '📈 理财'], ['transfer', '🔁 转账'], ['subscriptions', '🔄 订阅'], ['services', '🛍️ 生活服务']] as const).map(([section, label]) =>
+            <button key={section} type="button" data-destination={section} onClick={() => onNavigate(section)}>{label}</button>)}
+        </nav></div>}
+        <div className="nova-conversation-layout">
+        <div className="nova-task-workbench" ref={presentation.setWorkbench} aria-label="展开的任务卡片" />
         <div className="nova-messages" aria-live="polite">
           {!messages.some(entry => entry.role === 'assistant') && billActions.map(card => <NovaTaskSlot key={'bill:'+card.action_id} meta={metaFor('bill:'+card.action_id,card.title,'insights',card.status!=='pending')}><NovaBillCard key={card.action_id} card={card} disabled={busy || loadingConversation || queueBusy}
             onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onTransferActivity} /></NovaTaskSlot>)}
@@ -666,7 +671,9 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
           {error && <p className="nova-error" role="alert">{error}</p>}
           <div ref={bottom} />
         </div>
+        </div>
       </div>
+      <div className="nova-composer-area">
       <div className="agent-controls">
         <div className="nova-debug-row"><label><input type="checkbox" checked={debugEnabled} disabled={busy} onChange={event=>setDebugEnabled(event.target.checked)}/> 调试模式</label>
           {debugEnabled&&lastDebugRequest&&<button type="button" onClick={()=>void downloadNovaDebug(lastDebugRequest).catch(()=>setDebugError('调试记录下载失败，请稍后重试。'))}>下载副本</button>}
@@ -699,10 +706,14 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         </div>}
       </div>
 
-      {wealthFocus&&<div className="nova-focus-hint">正在补充：{wealthFocus.label}<button type="button" onClick={()=>setWealthFocus(null)} aria-label="取消理财补充对象">×</button></div>}
-      <form className="agent-compose" onSubmit={event=>{if(voiceBusy)event.preventDefault();else submit(event);}}><input ref={composerInput} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="输入你的问题和需求"/><NovaVoiceInput key={`${userId}:${activeConversationId??'new'}`} disabled={busy||loadingConversation} onBusy={setVoiceBusy} onText={text=>{const next=appendVoiceText(input,text);if(next===null)return false;setInput(next);composerInput.current?.focus();return true;}}/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || voiceBusy || !input.trim()}>↑</button></form>
       {!showHelp&&messages.length===0&&pageContext.page==='home'&&<div className="nova-home-suggestions" aria-label="开始对话">
         {HOME_PROMPTS.map(prompt=><button type="button" key={prompt.text} disabled={busy||loadingConversation} title="填入输入框，编辑后发送" onClick={()=>{setInput(prompt.text);composerInput.current?.focus();}}>{prompt.label}<span aria-hidden="true">↗</span></button>)}
       </div>}
+      {wealthFocus&&<div className="nova-focus-hint">正在补充：{wealthFocus.label}<button type="button" onClick={()=>setWealthFocus(null)} aria-label="取消理财补充对象">×</button></div>}
+      <div className="nova-composer-row">
+      <form className="agent-compose" onSubmit={event=>{if(voiceBusy)event.preventDefault();else submit(event);}}><input ref={composerInput} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} aria-label="向 NOVA 提问" maxLength={2000} value={input} disabled={busy || loadingConversation} onChange={event => setInput(event.target.value)} placeholder="输入你的问题和需求"/><NovaVoiceInput key={`${userId}:${activeConversationId??'new'}`} disabled={busy||loadingConversation} onBusy={setVoiceBusy} onText={text=>{const next=appendVoiceText(input,text);if(next===null)return false;setInput(next);composerInput.current?.focus();return true;}}/><button type="submit" aria-label="发送" disabled={busy || loadingConversation || voiceBusy || !input.trim()}>↑</button></form>
+      <button type="button" className="nova-help-toggle nova-composer-side-help" aria-expanded={showHelp} aria-controls="nova-help" onClick={()=>{setShowHelp(value=>!value);setShowHistory(false);}}>{showHelp?'收起示例':'更多示例'} <span aria-hidden="true">{showHelp?'−':'+'}</span></button>
+      </div>
+      </div>
   </aside>;
 }

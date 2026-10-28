@@ -1,0 +1,17 @@
+.modal-root,.modal-context { display:contents; }
+.modal-root { --modal-shadow:0 18px 64px #1720332b,0 2px 12px #17203312; }
+.modal-root .app-modal-backdrop.app-modal-backdrop {
+  position:fixed; inset:0; z-index:1200; width:auto; height:100dvh;
+  display:flex; align-items:center; justify-content:center;
+  padding:20px; margin:0; overflow:auto;
+  background:transparent; backdrop-filter:none; outline:none;
+}
+.modal-root .app-modal-backdrop.app-modal-backdrop > :first-child {
+  position:relative; flex:0 1 auto; max-height:calc(100dvh - 40px);
+  overflow:auto; margin:0; border:1px solid #dce0ec;
+  border-radius:16px; background:#fff; box-shadow:var(--modal-shadow);
+}
+@media(max-width:540px) {
+  .modal-root .app-modal-backdrop.app-modal-backdrop { padding:12px; }
+  .modal-root .app-modal-backdrop.app-modal-backdrop > :first-child { max-height:calc(100dvh - 24px); }
+}

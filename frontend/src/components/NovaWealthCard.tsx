@@ -1,4 +1,5 @@
-import {useNovaPresentation} from './NovaTaskPresentation';
+import {useNovaPresentation,useTaskCompletion} from './NovaTaskPresentation';
+import Modal from './Modal';
 import {WealthStepContext} from './Wealth/AgentStepCard';
 import {useEffect,useRef,useState,useCallback} from 'react';
 import type {NovaWealthCard as Card} from '../services/nova';
@@ -14,6 +15,7 @@ const titles:Record<Card['command']['kind'],string>={assets:'理财资产',posit
 
 /** Resumes bank references, never replays a chat message as a trade. */
 function RecoveredPlan({id,onPrepared,onActivity}:{id:string;onPrepared:(id:string)=>Promise<void>;onActivity:()=>void}){
+ const finishTask=useTaskCompletion();
  const [plan,setPlan]=useState<w.Plan|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  useEffect(()=>{let live=true;void w.get<w.Plan>(`/plans/${id}/progress`).then(p=>{if(live)setPlan(p);}).catch(e=>{if(live)setError(wealthRequestFailure(e));});return()=>{live=false;};},[id]);
  const continued=useRef(false);
@@ -28,13 +30,14 @@ function RecoveredPlan({id,onPrepared,onActivity}:{id:string;onPrepared:(id:stri
  };
  const needsPurchase=plan?.stage==='SELL'&&!!(plan as w.Plan&{portfolio_plan?:w.PortfolioPlan}).portfolio_plan?.planning;
  return <section><p>已恢复原银行方案；以原操作号核对结果，不重新下单。</p>{error&&<p role="alert">{error}</p>}
-  {plan&&<PlanExecution key={`${plan.plan_id}:${plan.version}`} plan={plan} onActivity={onActivity} onCompleted={()=>{if(needsPurchase)void continuePurchase();}}/>}
+  {plan&&<PlanExecution key={`${plan.plan_id}:${plan.version}`} plan={plan} onActivity={onActivity} onCompleted={()=>{if(needsPurchase)void continuePurchase();else finishTask?.();}}/>}
   {needsPurchase&&plan?.items.length&&plan.items.every(i=>i.status==='SETTLED')?<button disabled={busy} onClick={()=>void continuePurchase()}>{busy?'正在核实实际到账…':'核实到账后继续申购（独立确认及第二次MFA）'}</button>:null}
  </section>;
 }
 
 export default function NovaWealthCard({card,userId,disabled,onUpdated,onActivity,focusedStage,onFocus}:{focusedStage?:string;onFocus:(stage:string,label:string)=>void;card:Card;userId:string;disabled:boolean;onUpdated:(cards:Card[])=>void;onActivity:()=>void}){
  const {confirm}=useNovaPresentation();
+ const finishTask=useTaskCompletion();
  const taskTitle=card.origin_kind==='positions'?'我的持仓与赎回':titles[card.command.kind];
  const readOnly=['assets','positions','returns','detail','compare'].includes(card.command.kind)&&!card.execution_plan_id;
  const [expanded,setExpanded]=useState(true),[revision,setRevision]=useState(0),[error,setError]=useState('');
@@ -58,6 +61,7 @@ export default function NovaWealthCard({card,userId,disabled,onUpdated,onActivit
   const next=Array.from(new Set([...completedRef.current,...stages]));
   if(next.length===completedRef.current.length)return;
   completedRef.current=next;setCompleted(next);saveDraft({completed_stages:next});
+  if(next.includes('trade'))finishTask?.();
  },[saveDraft]);
  const active=activeStep(stepOrder(card.command.kind),registered,completed);
  // Follow the active step after a reply or manual advance, without remounting
@@ -88,6 +92,6 @@ export default function NovaWealthCard({card,userId,disabled,onUpdated,onActivit
    {card.parent_task_id&&<p>这是原任务的可选查看步骤，原选择和输入已保留。<button className="secondary" onClick={()=>document.getElementById(`nova-wealth-${card.parent_task_id}`)?.scrollIntoView({behavior:'smooth',block:'start'})}>返回原任务</button></p>}
    <fieldset disabled={!!card.pending_backtrack}>{card.command.kind==='clarify'?<p>{card.command.question}</p>:recovered?<RecoveredPlan id={recovered} onPrepared={persist} onActivity={activity}/>:<Wealth accounts={[]} revision={revision} onActivity={activity} userId={userId} agentCommand={command} agentContext={card.context_id} agentTaskId={card.task_id} agentSelection={card.view_context?.selected_products} onView={saveDraft} onPrepared={persist}/>}</fieldset>
   </div>}
-  {card.pending_backtrack&&<section role="dialog" aria-label="确认回退步骤" className="wealth-step-card" data-wealth-backtrack-confirm><h4>回到“{card.pending_backtrack.label}”？</h4><p>将重新处理：{card.pending_backtrack.invalidated.map(s=>stepLabels[s]??s).join(' → ')}。</p><p>受影响的后续输入、建议和旧交易确认将重置，需要重新填写和核对。其他无依赖的选择保留；已成交或已到账阶段不能回退。</p><button disabled={disabled} onClick={()=>decideBacktrack(false)}>取消，保留当前步骤</button><button disabled={disabled} onClick={()=>decideBacktrack(true)}>确认回退并重置</button></section>}
+  {card.pending_backtrack&&<Modal className="nova-confirm-overlay" scope="wealth wealth-page"><section role="dialog" aria-modal="true" aria-label="确认回退步骤" className="wealth-step-card" data-wealth-backtrack-confirm><h4>回到“{card.pending_backtrack.label}”？</h4><p>将重新处理：{card.pending_backtrack.invalidated.map(s=>stepLabels[s]??s).join(' → ')}。</p><p>受影响的后续输入、建议和旧交易确认将重置，需要重新填写和核对。其他无依赖的选择保留；已成交或已到账阶段不能回退。</p><button disabled={disabled} onClick={()=>decideBacktrack(false)}>取消，保留当前步骤</button><button disabled={disabled} onClick={()=>decideBacktrack(true)}>确认回退并重置</button></section></Modal>}
  </section></WealthStepContext.Provider>;
 }

@@ -1,3 +1,4 @@
+import Modal from './components/Modal';
 import type {BillResultTarget} from './services/nova';
 import {ManualTaskWorkspace} from './components/NovaTaskPresentation';
 import { FormEvent, useCallback, lazy, Suspense, useEffect, useRef, useState } from 'react';
@@ -131,7 +132,10 @@ function App() {
   const [wealthTestMode, setWealthTestMode] = useState(false);
   const [agentOpen, setAgentOpen] = useState(() => window.matchMedia('(min-width: 1101px)').matches);
   const [agentExpanded, setAgentExpanded] = useState(!wealthConsumerPreviewEnabled);
+  const [agentModeChanging, setAgentModeChanging] = useState(false);
   const modeTransition = useRef(false);
+  const modeTimers = useRef<number[]>([]);
+  useEffect(() => () => modeTimers.current.forEach(window.clearTimeout), []);
   const [desktopLayout,setDesktopLayout]=useState(()=>window.matchMedia('(min-width: 1101px)').matches);
   const [novaControls,setNovaControls]=useState<HTMLDivElement|null>(null);
   useEffect(()=>{const media=window.matchMedia('(min-width: 1101px)'); const update=()=>setDesktopLayout(media.matches); media.addEventListener('change',update); return()=>media.removeEventListener('change',update);},[]);
@@ -598,11 +602,22 @@ function App() {
     if (!window.matchMedia('(min-width: 1101px)').matches) { setAgentOpen(value => !value); return; }
     if (modeTransition.current) return;
     const change = () => flushSync(() => { setAgentOpen(true); setAgentExpanded(!agentOpen || !agentExpanded); });
-    const transitionDocument = document as Document & {startViewTransition?: (update: () => void) => {finished: Promise<void>}};
-    if (transitionDocument.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      modeTransition.current = true;
-      void transitionDocument.startViewTransition(change).finished.catch(() => {}).finally(() => { modeTransition.current = false; });
-    } else change();
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { change(); return; }
+    // Fade only the moving titles first. Fixed controls never join the fade.
+    modeTransition.current = true;
+    flushSync(() => setAgentModeChanging(true));
+    modeTimers.current = [window.setTimeout(() => {
+      change();
+      modeTimers.current.push(window.setTimeout(() => {
+        setAgentModeChanging(false);
+        modeTransition.current = false;
+        modeTimers.current = [];
+      }, 400)); // 380ms shared panel/mascot motion plus one display frame.
+    }, 110)];
+  };
+  const openServices = () => {
+    if (appView !== 'thirdParty') setThirdPartyPageContext({ version: 1, page: 'thirdParty' });
+    setAppView('thirdParty'); setAgentExpanded(false);
   };
   const reviewCardOperation = (operationId: string) => { openSection('cards'); setPendingCardOperationId(operationId); };
 
@@ -618,14 +633,14 @@ function App() {
   const payerCardTail = confirmationCard?.payer_card_masked?.slice(-4)
     || accounts.find(account => account.account_id === confirmationCard?.from_account)?.transfer_card_number?.slice(-4);
 
-  return <main className={`app prototype-app home-workspace${agentOpen ? ' nova-open' : ''}${agentOpen && agentExpanded ? ' nova-expanded' : ' nova-docked'}`}>
+  return <main className={`app prototype-app home-workspace${agentOpen ? ' nova-open' : ''}${agentOpen && agentExpanded ? ' nova-expanded' : ' nova-docked'}${agentModeChanging ? ' nova-mode-changing' : ''}`}>
     <div className="bank-shell" ref={bankShellRef}>
       <aside className="bank-sidebar">
         <button className="brand" onClick={() => openSection('home')} aria-label="返回首页"><span className="brand-mark">N</span><span>NOVA<small>AI BANKING</small></span></button>
         <nav aria-label="主要功能">
           {([['home','概览'],['transfer','转账与收款'],['insights','账单洞察'],['cards','卡片'],['subscriptions','订阅'],['wealth','理财']] as [BankingSection,string][]).map(([key,label]) =>
             <button key={key} data-destination={key} className={appView === 'banking' && bankingSection === key ? 'active' : ''} onClick={() => openSection(key)}><span><NavIcon d={NAV_ICONS[key]} /></span>{label}</button>)}
-          <button data-destination="services" className={appView === 'thirdParty' ? 'active' : ''} onClick={() => { if (appView !== 'thirdParty') setThirdPartyPageContext({ version: 1, page: 'thirdParty' }); setAppView('thirdParty'); setAgentExpanded(false); }}><span><NavIcon d={NAV_ICONS.services} /></span>生活服务</button>
+          <button data-destination="services" className={appView === 'thirdParty' ? 'active' : ''} onClick={openServices}><span><NavIcon d={NAV_ICONS.services} /></span>生活服务</button>
         </nav>
         <div className="sidebar-bottom">
           <button className={`sidebar-audit-button ${appView === 'banking' && bankingSection === 'audit' ? 'active' : ''}`} data-destination="audit" onClick={() => openSection('audit')}><span><NavIcon d={NAV_ICONS.audit} /></span>操作记录</button>
@@ -763,8 +778,8 @@ function App() {
         </div>
       </div>
     </div>
-    <NovaChat onBillNavigate={target=>{setBillNavigation({id:crypto.randomUUID(),target});openSection('insights');setAgentExpanded(false);if(!window.matchMedia('(min-width: 1101px)').matches)setAgentOpen(false);}} promptRequest={novaPrompts[0]} onPromptHandled={id => setNovaPrompts(items => items.filter(item => item.id !== id))} headerControls={desktopLayout?novaControls:null} pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: activeSubscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection === 'audit' ? 'home' : bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => { if (window.matchMedia('(min-width: 1101px)').matches) setAgentExpanded(false); else setAgentOpen(false); }} onNavigate={section => openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
-    {mfaOpen && <div className="transfers-mfa" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
+    <NovaChat onBillNavigate={target=>{setBillNavigation({id:crypto.randomUUID(),target});openSection('insights');setAgentExpanded(false);if(!window.matchMedia('(min-width: 1101px)').matches)setAgentOpen(false);}} promptRequest={novaPrompts[0]} onPromptHandled={id => setNovaPrompts(items => items.filter(item => item.id !== id))} headerControls={desktopLayout?novaControls:null} pageContext={appView === 'thirdParty' ? thirdPartyPageContext : bankingSection === 'insights' ? billPageContext : bankingSection === 'cards' ? { version: 1, page: 'cards', cards: { selected_card_id: selectedCardId } } : bankingSection === 'subscriptions' ? { version: 1, page: 'subscriptions', subscriptions: { selected_subscription_id: activeSubscriptions.some(s => s.subscription_id === selectedSubscriptionId) ? selectedSubscriptionId : undefined } } : { version: 1, page: bankingSection === 'audit' ? 'home' : bankingSection }} key={user.user_id} name={user.name} userId={user.user_id} open={agentOpen} onClose={() => { if (window.matchMedia('(min-width: 1101px)').matches) setAgentExpanded(false); else setAgentOpen(false); }} onNavigate={section => section === 'services' ? openServices() : openSection(section)} onReviewCardOperation={reviewCardOperation} onTransferActivity={() => { void load(); }} />
+    {mfaOpen && <Modal className="transfers-mfa" role="dialog" aria-modal="true" aria-label="身份验证" onClick={() => { if (!isActing) { setMfaOpen(false); setMfaCode(''); } }}>
       <div className="card" style={{ width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 身份验证</h2>
         {activeTask && <SecondFactor purpose="transfer" referenceId={activeTask.task_id} factor={mfaFactor} onChange={setMfaFactor} disabled={isActing} />}
@@ -774,8 +789,8 @@ function App() {
           <button disabled={isActing || !mfaFactor || mfaCode.length !== 6} onClick={submitMfa}>{isActing ? '验证中…' : '提交验证'}</button>
         </div>
       </div>
-    </div>}
-    {rebindConfirmOpen && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setRebindConfirmOpen(false)}>
+    </Modal>}
+    {rebindConfirmOpen && <Modal onClick={() => setRebindConfirmOpen(false)}>
       <div className="card" role="dialog" aria-modal="true" aria-labelledby="rebind-title" style={{ width: 400, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2 id="rebind-title">🔐 重新绑定验证器</h2>
         <p className="hint">你已经绑定过验证器。重新绑定会立即作废当前验证器里的 NOVA 条目，完成新绑定之前，大额转账、调高卡片额度等需要验证器的操作都无法进行。</p>
@@ -784,8 +799,8 @@ function App() {
           <button onClick={() => void startEnroll()}>作废并重新绑定</button>
         </div>
       </div>
-    </div>}
-    {enrollOpen && enrollData && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { if (!isActing) { setEnrollOpen(false); setEnrollData(null); setEnrollCode(''); } }}>
+    </Modal>}
+    {enrollOpen && enrollData && <Modal role="dialog" aria-modal="true" aria-label="绑定验证器" onClick={() => { if (!isActing) { setEnrollOpen(false); setEnrollData(null); setEnrollCode(''); } }}>
       <div className="card" style={{ width: 400, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
         <h2>🔐 绑定验证器</h2>
         <p className="hint">用 Google Authenticator 扫描二维码，或手动输入下方密钥，然后回填一次验证码完成绑定。</p>
@@ -797,7 +812,7 @@ function App() {
           <button disabled={isActing || enrollCode.length !== 6} onClick={submitEnroll}>{isActing ? '绑定中…' : '确认绑定'}</button>
         </div>
       </div>
-    </div>}
+    </Modal>}
   </main>;
 }
 

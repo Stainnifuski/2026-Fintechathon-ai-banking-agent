@@ -17,7 +17,7 @@
 .merchant-status { padding: 5px 9px; border-radius: 999px; background: #fff1cf; color: #765400; font-size: 12px; font-weight: 700; }
 .merchant-status.completed { background: #ddf7e9; color: #087443; }
 .merchant-status.refunded, .merchant-status.payment_closed { background: #edf0f4; color: #637087; }
-.merchant-modal { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 18px; background: #15233baa; }
+.merchant-modal { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 18px; background: transparent; }
 .merchant-modal > section { width: min(480px, 100%); }
 .merchant-refund-amount { display: block; margin-block: 18px; color: #a51d4f; font-size: 34px; }
 @media (max-width: 900px) {

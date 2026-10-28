@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import { useState, useEffect, useCallback, type CSSProperties, type ChangeEvent } from 'react';
 import type { ChatMessage, MfaData } from '@/types';
 
@@ -58,18 +59,6 @@ export function MFAVerify({ message, onSubmit, onCancel }: MFAVerifyProps) {
     }
   };
 
-  const overlayStyle: CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  };
 
   const dialogStyle: CSSProperties = {
     backgroundColor: '#fff',
@@ -171,7 +160,7 @@ export function MFAVerify({ message, onSubmit, onCancel }: MFAVerifyProps) {
   };
 
   return (
-    <div style={overlayStyle}>
+    <Modal role="dialog" aria-modal="true">
       <div style={dialogStyle}>
         <div style={titleStyle}>
           <span>🔐</span>
@@ -219,6 +208,6 @@ export function MFAVerify({ message, onSubmit, onCancel }: MFAVerifyProps) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

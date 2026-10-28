@@ -74,7 +74,7 @@ export default function PortfolioAllocation({ plan, snapshot, modelView, assetTo
     <h2>整体资产配置</h2><p className={styles.hint}>{controlHint || (readOnly ? '只读模式，不能修改方案' : '本人配置草稿；目标不等于购买授权')}</p>
     {(error || failure) && <div role="alert" className={styles.error}>{portfolioExplanation(failure || error!)}</div>}
     {loading && <p role="status">正在读取当前事实…</p>}
-    <div className={styles.summary}><strong>整体总资产 {yuan(accepted?.basis_fen ?? snap?.total_assets_fen)}</strong><span>可支付现金 {yuan(view?.available_cash_fen ?? (snap ? assetTotals?.available_cash_fen : null))}</span><span>赎回应收 {yuan(view?.receivable_fen ?? snap?.receivable_fen)}</span><span>冻结 {yuan(view?.held_fen ?? (snap ? assetTotals?.held_fen : null))}（不重复计入总资产）</span></div>
+    <div className={styles.summary}><strong>整体总资产 {yuan(accepted?.basis_fen ?? snap?.total_assets_fen)}</strong><span>可支付现金 {yuan(view?.available_cash_fen ?? (snap ? assetTotals?.available_cash_fen : null))}</span>{(view?.receivable_fen ?? snap?.receivable_fen ?? 0)>0&&<span>历史赎回应收 {yuan(view?.receivable_fen ?? snap?.receivable_fen)}</span>}<span>冻结 {yuan(view?.held_fen ?? (snap ? assetTotals?.held_fen : null))}（不重复计入总资产）</span></div>
     <p className={styles.hint}>资产状态：{(accepted?.basis_status ?? snap?.basis_status) === 'fixture_only' ? '隔离样例' : snap ? '已读取当前范围' : '尚未读取'} · 数据日期 {accepted?.as_of || snap?.as_of ? `${beijingTime(accepted?.as_of ?? snap!.as_of)} 北京时间` : '未知'}</p>
     <details className={styles.hint}><summary>资产来源</summary><p>{(accepted?.basis_status ?? snap?.basis_status) === 'fixture_only' ? '隔离测试资料' : '本人银行资产资料'} · 更新于 {accepted?.as_of || snap?.as_of ? beijingTime(accepted?.as_of ?? snap!.as_of) : '未知时间'}</p></details>
     {accepted ? <>

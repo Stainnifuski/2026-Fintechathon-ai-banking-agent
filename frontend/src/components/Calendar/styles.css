@@ -36,7 +36,7 @@
 .third-party .calendar-empty p { color: #667085; font-size: 13px; line-height: 1.7; }
 .third-party .calendar-error { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px; background: #fff0ed; color: #b42318; border-radius: 10px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .third-party .calendar-module > .notice { margin: 0; padding: 14px 16px; border: 1px solid #cfe3d5; border-radius: 12px; background: #eaf4ed; color: #287544; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
-.third-party .calendar-modal { position: fixed; inset: 0; z-index: 1100; padding: 18px; display: grid; place-items: center; background: #15233baa; }
+.third-party .calendar-modal { position: fixed; inset: 0; z-index: 1100; padding: 18px; display: grid; place-items: center; background: transparent; }
 .third-party .calendar-modal > section { width: min(520px, 100%); max-height: calc(100dvh - 36px); overflow: auto; }
 .third-party .calendar-modal form { gap: 14px; }
 .third-party .calendar-modal textarea { resize: vertical; width: 100%; font: inherit; font-size: 14px; }

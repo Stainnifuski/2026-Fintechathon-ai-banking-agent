@@ -1,3 +1,4 @@
+import Modal from '../Modal';
 import AgentStepCard,{WealthStepContext,useStepInstruction} from './AgentStepCard';
 import {useRef,useState,useEffect,useContext} from 'react';
 import * as w from '../../services/wealth';
@@ -45,7 +46,7 @@ export default function RedemptionDialog({rows,contextId,fixtureOnly,blockedAcco
   useStepInstruction('redemption_input',()=>{if(!busy&&!result)void prepare();});
   const attempted=useRef(false);
   useEffect(()=>{if(autoPrepare&&rows.length===1&&initialInput?.value&&!attempted.current){attempted.current=true;void prepare();}},[autoPrepare,rows.length]);
-  return <div className={inline?'nova-inline-redemption':'wealth-modal'}><section className={inline?'nova-redemption-card':'card'} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label="持仓赎回输入">
+  return <Modal inline={inline} scope="wealth wealth-page" className={inline?'nova-inline-redemption':'wealth-modal'}><section className={inline?'nova-redemption-card':'card'} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label="持仓赎回输入">
     {!result?<AgentStepCard stage="redemption_input" title="填写赎回数量"><h3>填写要赎回的持仓</h3><p>每只产品分别填写，填写完成后统一核对、一次本人确认和验证。不会自动均摊。</p>
       {rows.map(row=>{const input=inputs[row.position_key]??{mode:'units',value:'',redemption:'standard'};return <article key={row.position_key} className="table-operation-row"><strong>{row.product_name} · {row.account_id} · v{row.product_version}</strong><p>持有 {row.units}份 · 可赎 {row.redeemable_units}份 · 锁定 {row.locked_units} · 占用 {row.held_units}</p>
         <label>输入方式<select aria-label={`${row.position_key}输入方式`} disabled={busy} value={input.mode} onChange={e=>change(row.position_key,'mode',e.target.value)}><option value="units">按份额</option><option value="market_value">按持仓市值（元）</option><option value="holding_ratio">按持仓比例（%）</option></select></label>
@@ -54,7 +55,7 @@ export default function RedemptionDialog({rows,contextId,fixtureOnly,blockedAcco
         {blockedAccounts.includes(row.account_id)&&<p>该账户已有人工接管或暂停任务，暂不可发起赎回。</p>}
       </article>;})}
       <button disabled={busy||!rows.length||rows.some(row=>!inputs[row.position_key]?.value||row.disclosure_version==null||blockedAccounts.includes(row.account_id))} onClick={()=>void prepare()}>{busy?'正在核对全部赎回…':`统一核对${rows.length}只赎回`}</button>
-    </AgentStepCard>:<><h3>核对全部赎回</h3><p>以下逐笔列出份额、预计到账和披露；只需一次本人确认与验证码。部分失败时按原操作号核对，不自动撤销已成功赎回。</p><PlanExecution key={result.plan.plan_id} plan={result.plan} initialPreview={result.preview} onActivity={onActivity} onCompleted={onCompleted}/></>}
+    </AgentStepCard>:<><h3>核对全部赎回</h3><p>以下逐笔列出份额、预计到账和披露；只需一次本人确认与验证码。部分失败时按原操作号核对，不自动撤销已成功赎回。</p><PlanExecution key={result.plan.plan_id} plan={result.plan} initialPreview={result.preview} onActivity={onActivity} onCompleted={message=>{steps?.complete('trade');onCompleted?.(message);}}/></>}
     {error&&<p role="alert">{error}</p>}<button className="secondary" disabled={busy} onClick={onClose}>{inline?'收起赎回卡片':'关闭赎回窗口'}</button>
-  </section></div>;
+  </section></Modal>;
 }

@@ -5,16 +5,13 @@ export type NovaMascotState = 'waiting' | 'typing' | 'thinking';
 
 /** 画布固定为这个尺寸，只用 transform 平移和缩放；移动中不改变画布大小，引擎不会重建画布。 */
 const BASE = 480;
+// Orbit renderer: purple body radius 58, drawing scale BASE / 410.
+const PURPLE_RADIUS_RATIO = 58 / 410;
 /** 换位置时的移动时长 */
-const DURATION = 650;
-const ease = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const DURATION = 380;
+const ease = (t: number) => 1 - Math.pow(1 - t, 3);
 
 interface Box { x: number; y: number; size: number }
-
-/** 面板切换大屏/侧栏时整页有一次 View Transition；进行中画面是快照，球先不动，结束后再出发。 */
-function viewTransitionRunning(): boolean {
-  try { return document.documentElement.matches(':active-view-transition'); } catch { return false; }
-}
 
 /**
  * NOVA 吉祥物（动画来自 mascot-engine）。
@@ -45,24 +42,32 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
 
   useEffect(() => {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const desktop = window.matchMedia('(min-width:1101px)');
     let raf = 0;
     let current: Box | null = null;
     let goal: Box | null = null;
+    let expanded: boolean | undefined;
     let tween: { from: Box; start: number } | null = null;
     const step = (now: number) => {
       raf = requestAnimationFrame(step);
       const anchor = anchorRef.current, layer = layerRef.current;
-      const panel = layer?.offsetParent as HTMLElement | null;
-      if (!anchor || !layer || !panel) return;
+      if (!anchor || !layer) return;
       const r = anchor.getBoundingClientRect();
       if (!r.width || !r.height) return;
       const size = Math.min(r.width, r.height);
       const next: Box = { x: r.left + (r.width - size) / 2, y: r.top + (r.height - size) / 2, size };
-      if (!goal || Math.abs(next.x - goal.x) > 0.5 || Math.abs(next.y - goal.y) > 0.5 || Math.abs(next.size - goal.size) > 0.5) {
+      const nextExpanded = anchor.closest('.home-workspace')?.classList.contains('nova-expanded') ?? false;
+      if (nextExpanded && desktop.matches && anchor.classList.contains('nova-mascot-started')) next.x += size * PURPLE_RADIUS_RATIO;
+      if (nextExpanded !== expanded) {
         if (current && !reduced.matches) tween = { from: { ...current }, start: now };
+        expanded = nextExpanded;
+      }
+      if (!goal || Math.abs(next.x - goal.x) > 0.5 || Math.abs(next.y - goal.y) > 0.5 || Math.abs(next.size - goal.size) > 0.5) {
+        // Follow the moving panel without restarting the clock on every frame.
+        if (current && !reduced.matches && !tween) tween = { from: { ...current }, start: now };
         goal = next;
       }
-      if (tween && viewTransitionRunning()) tween.start = now;
+      if (reduced.matches) tween = null;
       let box = goal;
       if (tween && current) {
         const t = Math.min(1, (now - tween.start) / DURATION);
@@ -75,9 +80,8 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
         if (t >= 1) tween = null;
       }
       current = box;
-      // 球放在面板内（与原来一样在内容之下），所以把视口坐标换算成相对面板的坐标。
-      const p = panel.getBoundingClientRect();
-      layer.style.transform = `translate3d(${box.x - p.left}px, ${box.y - p.top}px, 0) scale(${box.size / BASE})`;
+      // A fixed layer keeps the canvas visible while the panel changes width.
+      layer.style.transform = `translate3d(${box.x}px, ${box.y}px, 0) scale(${box.size / BASE})`;
       layer.dataset.ready = 'true';
     };
     raf = requestAnimationFrame(step);
