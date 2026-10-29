@@ -32,7 +32,8 @@ async page => {
     await nav('◫ 账单洞察').click();
     await waitCharts(1);
     check(true,'刷新后重新进入账单不白屏');
-    await page.getByRole('button',{name:'问 NOVA',exact:true}).click();
+    check(await page.getByRole('button',{name:'问 NOVA',exact:true}).count()===0,'账单工作台不再显示重复的问NOVA入口');
+    await page.getByRole('button',{name:'展开 NOVA',exact:true}).click();
     check(await page.getByRole('complementary',{name:'NOVA 对话'}).isVisible(),'账单页可展开NOVA');
     await page.getByRole('button',{name:'更多示例',exact:true}).click();
     check(await page.getByRole('button',{name:'问：解释当前账单',exact:true}).isVisible(),'NOVA仍提供当前账单的上下文示例');
@@ -55,7 +56,8 @@ async page => {
     check(await page.getByText('UI隔离非空图表样例：只验证显示与组件注册，不是银行实际交易。',{exact:true}).isVisible(),'明确标注的非空饼图、趋势图与现金流图正常显示');
     await page.screenshot({path:'output/playwright/nova20-bills-ui-fixture-nonempty-desktop.png'});
     await page.setViewportSize({width:390,height:844});
-    await page.getByRole('button',{name:'问 NOVA',exact:true}).click();
+    check(await page.getByRole('button',{name:'问 NOVA',exact:true}).count()===0,'账单工作台不再显示重复的问NOVA入口');
+    await page.getByRole('button',{name:'展开 NOVA',exact:true}).click();
     const g=await page.evaluate(() => {
       const input=document.querySelector('.agent-compose input').getBoundingClientRect();
       const close=document.querySelector('.agent-head .icon-button').getBoundingClientRect();

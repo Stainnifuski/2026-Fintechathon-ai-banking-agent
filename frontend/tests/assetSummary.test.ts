@@ -72,8 +72,8 @@ test('F10 displays missing valuation without turning known cash into the total',
   assert.equal(summaryTotal(cases.F18),'¥10,000.00');
 });
 test('only successful asset-changing requests invalidate the shared reader',()=>{
-  for(const path of ['/wealth/contexts/select','/wealth/demo/reset','/wealth/demo/adjust','/wealth/demo/advance','/wealth/demo/delete','/wealth/previews/p1/execute','/wealth/orders/o1/cancel','/wealth/plans/p1/progress','/wealth/tasks/t1/progress'])assert.ok(changesAssetFacts('POST',path));
-  for(const path of ['/wealth/asset-summary','/wealth/assets','/wealth/demo/delete-preview','/wealth/previews','/wealth/previews/p1/confirm','/wealth/research'])assert.equal(changesAssetFacts('POST',path),false);
+  for(const path of ['/wealth/contexts/select','/wealth/previews/p1/execute','/wealth/orders/o1/cancel','/wealth/plans/p1/progress','/wealth/tasks/t1/progress'])assert.ok(changesAssetFacts('POST',path));
+  for(const path of ['/wealth/demo/reset','/wealth/demo/adjust','/wealth/demo/advance','/wealth/demo/delete','/wealth/asset-summary','/wealth/assets','/wealth/demo/delete-preview','/wealth/previews','/wealth/previews/p1/confirm','/wealth/research'])assert.equal(changesAssetFacts('POST',path),false);
   assert.equal(changesAssetFacts('GET','/wealth/plans/p1/progress'),false);
   let refreshed=0;const unsubscribe=subscribeAssetSummaryChanges(()=>refreshed++);
   invalidateAssetSummary();unsubscribe();invalidateAssetSummary();assert.equal(refreshed,1);

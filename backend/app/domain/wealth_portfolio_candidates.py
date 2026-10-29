@@ -1,5 +1,6 @@
 """结构化匹配、证据标签、可靠家族及排序资料；不排序，不计算模型分数。"""
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -9,6 +10,17 @@ from ..schemas.wealth_portfolio_candidates import (CandidateFilter,ThemeEvidence
 from ..schemas.wealth_portfolio_data import ProductFact, DataSnapshot,FieldFact
 from .wealth_portfolio_eligibility import qualify_purchase,assessment_reasons,version_context
 from ..services.orchestration.wealth_portfolio_data import digest
+
+
+def matches_product_name(query: str, name: str, product_id: str) -> bool:
+    """Shared candidate comparison for chat and workbench; never selects a product."""
+    normalized = unicodedata.normalize('NFKC', query).casefold().strip()
+    code = unicodedata.normalize('NFKC', product_id).casefold()
+    if normalized == code:
+        return True
+    candidate = unicodedata.normalize('NFKC', name).casefold()
+    terms = normalized.split()
+    return bool(terms) and all(term in candidate for term in terms)
 
 class _ReadOnlyEmptyList(list):
     def _deny(self,*args,**kwargs):raise TypeError('immutable source observation')
@@ -149,7 +161,7 @@ class ProductIndex:
         result=[]
         for code in self.scope_codes:
             p=self.products[code]
-            if filter.mode=='name' and filter.name_query.casefold() not in p.name.casefold() and filter.name_query.casefold()!=p.product_id.casefold():continue
+            if filter.mode=='name' and not matches_product_name(filter.name_query,p.name,p.product_id):continue
             if filter.bucket and p.bucket!=filter.bucket:continue
             if filter.mode=='category':
                 expected={'bond_fund':{'bond'},'mixed_fund':{'mixed'},'equity_fund':{'equity'}}

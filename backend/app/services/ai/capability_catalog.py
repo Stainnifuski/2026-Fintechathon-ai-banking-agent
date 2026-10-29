@@ -123,7 +123,7 @@ _CAPABILITIES = (
         ],
         "operations": [
             {"tool": "assess_wealth_risk", "description": "本人风险评估或重新评估"},
-            {"tool": "plan_wealth", "description": "理财规划、目标推荐、产品查看与申购草稿"},
+            {"tool": "plan_wealth", "description": "目标产品推荐可按类别（可快速赎回、银行理财、债券基金、混合基金、权益基金）或名称/代码搜索候选；产品资料、比较、申购草稿；本人明确启动后的整体理财规划。未选产品或缺金额仍可打开对应表单。"},
             {"tool": "manage_wealth_positions", "description": "持仓查询、调整及赎回草稿"},
         ],
     },

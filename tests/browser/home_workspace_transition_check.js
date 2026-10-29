@@ -37,7 +37,7 @@ async page => {
  await page.getByRole('button',{name:/日历/}).first().waitFor();checks.push('生活服务原入口可达');
  await page.getByRole('navigation',{name:'主要功能'}).getByRole('button',{name:'理财',exact:false}).click();
  await page.getByRole('heading',{name:'理财规划与购买',exact:true}).waitFor();
- await page.getByRole('button',{name:'进入测试模式',exact:true}).waitFor();checks.push('理财原页和测试模式入口保留');
+ check(await page.getByRole('button',{name:'进入测试模式',exact:true}).count()===0,'理财测试模式入口已移除');checks.push('理财原页可达');
  await page.getByRole('navigation',{name:'主要功能'}).getByRole('button',{name:'概览'}).click();
  check(await page.getByTitle(/绑定验证器/).count()===1,'验证器原功能入口保留');
  check(await page.getByTitle('退出登录').count()===1,'头像退出入口保留');

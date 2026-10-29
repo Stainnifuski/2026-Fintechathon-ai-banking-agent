@@ -15,13 +15,32 @@ from .llm import LLMError, get_mode, llm
 from .nova_tools import ToolContext
 from .transfer_manager import ManagerError, get_session
 from .skill_registry import load_skill
-from . import debug_trace, task_graph, task_graph_status
+from . import debug_trace, task_graph, task_graph_status, planning_knowledge
 
 
 class DependencyDecision(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     depends_on_prior_task: bool
     reason: str = Field(max_length=200)
+    planning_mode: Literal['none', 'offer', 'explain', 'start'] = Field(default='none',
+        description='none其他具体功能；offer确有办理投资意图且全部现有具体功能均无法匹配；explain规划或配置模型问答；start本人明确要求或确认开始规划。')
+    start_quote: str | None = Field(default=None, max_length=300,
+        description='start时逐字引用本轮用户明确要求开始或确认进入规划的原文，不能引用助手或历史消息。')
+    investment_function: Literal['none','category_recommendation','name_recommendation','purchase',
+        'redemption','positions','returns','assessment','detail','compare','planning'] = Field(default='none',
+        description='逐项核对能力目录后，本轮投资需求可由哪个现有功能承接。类别即使尚未选定产品仍用category_recommendation，不能判为none。')
+    investment_category: Literal['quick_redeem','bank_wealth','bond_fund','mixed_fund','equity_fund'] | None = None
+    investment_action_quote: str | None = Field(default=None,max_length=300,
+        description='仅当确认本人本轮希望实际办理投资操作时，逐字引用该意图原文；纯知识、假设、犹豫或否定留空。')
+    unmatched_investment_reason: str | None = Field(default=None,max_length=300,
+        description='仅investment_function=none且确有办理投资的意图时，解释为何全部已开放投资功能都不能匹配。信息缺失不等于功能不匹配。')
+
+
+def may_offer_planning(decision: DependencyDecision, message: str) -> bool:
+    """Require model-assessed action intent and no supported investment operation."""
+    return bool(decision.planning_mode == 'offer' and decision.investment_function == 'none'
+                and decision.unmatched_investment_reason and decision.investment_action_quote
+                and decision.investment_action_quote in message)
 
 
 class PlannedCall(BaseModel):
@@ -418,9 +437,25 @@ async def chat(message: str, history: list[dict], *, model=None,
     try:
         async with asyncio.timeout(90):
             decision = (await client.generate_structured(messages=[
-                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款、理财、银行卡、订阅、日历或店铺订单任务卡；只输出结构化判断。"}],
-                schema=DependencyDecision, max_tokens=300)).data
+                *messages, {"role": "system", "content": "判断本轮是否依赖先前未完成的转账、收款、理财、银行卡、订阅、日历或店铺订单任务卡；只输出结构化判断。\n" + planning_knowledge.ROUTING_RULES + '\n当前业务能力目录：' + json.dumps(catalog, ensure_ascii=False)}],
+                schema=DependencyDecision, max_tokens=550)).data
             debug_trace.record("dependency_decision", decision.model_dump(mode="json"))
+            planning_confirmed = (decision.planning_mode == 'start' and bool(decision.start_quote)
+                                  and decision.start_quote in message)
+            offer_allowed = may_offer_planning(decision, message)
+            if decision.planning_mode == 'explain' or offer_allowed:
+                result['reply'] = await planning_knowledge.explain(client, message, history,
+                    offer=offer_allowed, local_data={'active_tasks': active_tasks})
+                return result
+            if decision.planning_mode == 'start' and not planning_confirmed:
+                result['reply'] = '未能核实本轮开始规划的确认，请明确是否要启动理财规划；目前没有创建规划任务。'
+                return result
+            messages.append({'role':'system','content':'本轮已核验的投资功能匹配：' + json.dumps({
+                'function':decision.investment_function,'category':decision.investment_category,
+                'planning_offer_allowed':offer_allowed,'planning_start_confirmed':planning_confirmed},ensure_ascii=False) +
+                '。已有具体投资功能优先，缺产品或金额仍用相应表单补充；不得把缺参数、未评估或未选产品当成规划引导理由。'
+                'planning_offer_allowed=false时不得主动建议进入规划或输出进入按钮。'
+                '只有planning_start_confirmed=true时可按本人确认调用kind=planning新建规划。'})
             if decision.depends_on_prior_task:
                 tasks = await inspect_active_tasks(context)
                 trace.append({"name": "inspect_active_tasks", "result": tasks})
@@ -470,7 +505,7 @@ async def chat(message: str, history: list[dict], *, model=None,
             calendar_list_replanned = False
             for _ in range(3):
                 selection = (await client.generate_structured(messages=[*messages,
-                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。用户明确要办理转账时选择 manage_transfer_task；收款人、金额等尚未提供也可打开空白转账草稿。理财风险评估选 assess_wealth_risk；规划、推荐、产品详情或申购选 plan_wealth；持仓查询、调整或赎回选 manage_wealth_positions；整体理财收益选 show_wealth_returns。宽泛但明确的理财请求选 plan_wealth，kind=planning。查看或处理现有收款申请使用 manage_payment_requests；新建、修改或撤销向别人收款的草稿时填写 collection_action 并选择 manage_collection_request，查联系人后本轮仍须调用该办理工具。仅查看或处理已发出的收款申请使用 manage_payment_requests。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。用户要让 NOVA 到某个时间再办理一件事，或要为这类任务锁定、预留资金时选择 manage_scheduled_task；查看定时任务选择 list_scheduled_tasks；只在日历记一条安排才用日历工具，到时自动转账用 manage_transfer_task。用户要在花店或蛋糕店购买商品时选择 prepare_shop_purchase；商品或数量未确定也可打开订单表单，不要查完商品就结束。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
+                    {"role": "system", "content": "依据能力目录选择本轮需要的业务工具名称。用户明确要办理转账时选择 manage_transfer_task；收款人、金额等尚未提供也可打开空白转账草稿。理财风险评估选 assess_wealth_risk；规划、推荐、产品详情或申购选 plan_wealth；持仓查询、调整或赎回选 manage_wealth_positions；整体理财收益选 show_wealth_returns。新建理财规划必须已有本轮明确启动确认，宽泛投资愿望先邀请进入。查看或处理现有收款申请使用 manage_payment_requests；新建、修改或撤销向别人收款的草稿时填写 collection_action 并选择 manage_collection_request，查联系人后本轮仍须调用该办理工具。仅查看或处理已发出的收款申请使用 manage_payment_requests。打开或修改银行卡片任务时同时选择 list_cards 和 preview_card_operation；取消已有卡片任务可直接使用 preview_card_operation。用户要添加、修改或删除日程时必须选择 manipulate_calender_event；字段不全也可打开任务卡，不要只选择 get_current_time。用户要让 NOVA 到某个时间再办理一件事，或要为这类任务锁定、预留资金时选择 manage_scheduled_task；查看定时任务选择 list_scheduled_tasks；只在日历记一条安排才用日历工具，到时自动转账用 manage_transfer_task。用户要在花店或蛋糕店购买商品时选择 prepare_shop_purchase；商品或数量未确定也可打开订单表单，不要查完商品就结束。日历事件搜索无结果时继续选择 list_calendar_events 查看相关日期的活动。可选：" + json.dumps(sorted(allowed))}],
                     schema=ToolSelection, max_tokens=400)).data
                 debug_trace.record("tool_selection", selection.model_dump(mode="json"))
                 invalid = [n for n in selection.tool_names if n not in allowed]
@@ -582,6 +617,16 @@ async def chat(message: str, history: list[dict], *, model=None,
                                   PlannedCall(name='list_shop_products', arguments={'shop': shop_hint}))]
                 failed = False
                 for call in calls:
+                    if (call.name == 'plan_wealth' and call.arguments.get('kind', 'planning') == 'planning'
+                            and not call.arguments.get('task_id') and not context.wealth_task_id
+                            and not planning_confirmed):
+                        graph = None
+                        value={'error':'PLANNING_START_NOT_CONFIRMED','message':
+                            '用户未确认启动规划。请按已匹配的具体投资功能重新填写工具参数；若需要产品类别/名称推荐，使用kind=recommend，不能改为规划引导。'}
+                        trace.append({'name':call.name,'result':value})
+                        messages.append({'role':'system','content':json.dumps(value,ensure_ascii=False)})
+                        failed=True
+                        continue
                     if on_event is not None and call.name in selected and call.name in progress_tools:
                         await on_event({'type': 'tool', 'name': call.name})
                     if call.name not in selected:
@@ -697,6 +742,19 @@ async def chat(message: str, history: list[dict], *, model=None,
                         if item.get('name') == 'manage_collection_request' and item.get('result', {}).get('error')), None)
         result['reply'] = failure or '收款任务卡尚未生成，请再试一次；目前没有发出收款申请。'
     called_business = [item for item in trace if item.get('name') in business_tools]
+    planning_call = next((item for item in called_business if item['name'] == 'plan_wealth'
+        and not item.get('result', {}).get('error')
+        and json.loads(item.get('arguments', '{}')).get('kind', 'planning') == 'planning'), None)
+    planning_intro = None
+    if planning_call and finish['outcome'] != 'tool_failed':
+        try:
+            planning_intro = await planning_knowledge.explain(client, message, history, intro=True,
+                continuing=bool(json.loads(planning_call.get('arguments', '{}')).get('task_id') or context.wealth_task_id),
+                local_data={'wealth_cards': planning_call['result'].get('wealth_cards', [])})
+        except LLMError:
+            planning_intro = '规划卡片已打开，知识库解释暂时未能生成。你可以在卡片继续核对，或稍后追问。'
+        if len(called_business) == 1:
+            result['reply'] = planning_intro
     if (not result['reply'] and len(called_business) == 1
             and called_business[0]['name'] in WEALTH_TOOLS
             and finish['outcome'] != 'tool_failed'):
@@ -711,6 +769,10 @@ async def chat(message: str, history: list[dict], *, model=None,
             "区分已生成任务卡、待本人确认、已完成和失败，不把预览说成已执行。"
             "不要输出内部卡片 ID、工具参数或 JSON 证据编号。任务收尾状态：" +
             json.dumps(finish, ensure_ascii=False)}]
+        if planning_intro:
+            final_messages.append({'role':'system', 'content':
+                '理财规划和资产配置模型的知识库解释由服务端单独附加。这里只汇总其他业务工具的实际结果，'
+                '不要补充规划或模型的理论、事实、算法说明，也不要使用外部知识。'})
         async def on_delta(chunk: str) -> None:
             if on_event is not None:
                 await on_event({"type": "delta", "text": chunk})
@@ -718,4 +780,9 @@ async def chat(message: str, history: list[dict], *, model=None,
                                               on_delta=on_delta if on_event is not None else None)
         result["reply"] = response.data
         result["_reply_streamed"] = on_event is not None
+    if planning_intro and len(called_business) != 1:
+        result['reply'] = result['reply'] + '\n\n' + planning_intro
+        # A streamed multi-business summary must also deliver the sourced part.
+        if on_event is not None and result.get('_reply_streamed'):
+            await on_event({'type':'delta', 'text':'\n\n' + planning_intro})
     return result

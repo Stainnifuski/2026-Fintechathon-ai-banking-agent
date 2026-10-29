@@ -33,7 +33,7 @@ def parameter_stage(prior,command,fallback=None):
         except (InvalidOperation,TypeError):return v
     def ids(items):return {(p['product_id'],p['product_version']) for p in items}
     stages=[];kind=command['kind']
-    if command.get('category')!=old.get('category'):stages.append('match')
+    if command.get('category')!=old.get('category') or command.get('name_query')!=old.get('name_query'):stages.append('match')
     if ids(command.get('products',[]))!=ids(view.get('selected_products',old.get('products',[]))):
         stages.append('selected' if kind=='planning' else 'redemption_input' if kind=='redeem' else 'candidates')
     field=lambda f:'invest' if f=='investment' else f
@@ -74,7 +74,7 @@ def reset_data(data, stage, command=None):
     if stage=='match':
         view.update(selected_products=[],visible_products=[],amounts_yuan={})
         cmd.update(products=[],amounts_yuan=[])
-        if command is None:cmd['category']=None
+        if command is None:cmd.update(category=None,name_query=None,name_query_quote=None)
     elif command is not None:
         view['selected_products']=deepcopy(cmd.get('products',[]))
     elif stage=='candidates':

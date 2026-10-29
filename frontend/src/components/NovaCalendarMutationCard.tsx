@@ -16,7 +16,8 @@ export default function NovaCalendarMutationCard({ task, sessionId, disabled, on
   onUpdated: (tasks: NovaChatCalendarTask[]) => void; onActivity?: () => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>(task.changes ?? {});
-  useEffect(() => setValues(task.changes ?? {}), [task.changes]);
+  const changesKey=JSON.stringify(task.changes??{});
+  useEffect(() => setValues(task.changes ?? {}), [task.entry_id,changesKey]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const action = task.action ?? 'add';

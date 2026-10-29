@@ -332,6 +332,7 @@ export async function streamNova(message: string, signal: AbortSignal,
 export interface NovaWealthCommand {
  kind:'assets'|'positions'|'returns'|'detail'|'compare'|'assessment'|'recommend'|'planning'|'purchase'|'redeem'|'resume'|'abandon'|'clarify';
  products:{product_id:string;product_version:number;name:string}[];
+ name_query?:string|null; name_query_quote?:string|null;
  category?:string|null; cash_field?:'reserve'|'invest'|'total'|null; cash_yuan?:string|null;
  amounts_yuan:(string|null)[]; redemption_input:'units'|'market_value'|'holding_ratio';
  auto_prepare?:boolean;
@@ -351,7 +352,7 @@ export const getNovaWealthCards=(session:string)=>apiClient.get<NovaWealthCard[]
 export const updateNovaWealthCard=(card:NovaWealthCard,change:{execution_plan_id?:string;closed?:boolean;paused?:boolean;reset_draft?:boolean;backtrack_stage?:string;backtrack_token?:string;accept_backtrack?:boolean})=>
  apiClient.post<NovaWealthCard[]>(`/nova/wealth-sessions/${card.nova_session_id}/cards/${card.task_id}`,{version:card.version,...change}).then(r=>r.data);
 
-export type NovaWealthView={selection_kind?:'positions'|'products';workflow?:'planning'|'target';workflow_request_id?:string;completed_stages?:string[];risk_answers?:Record<string,number>;cash_field?:'reserve'|'investment'|'total';cash_yuan?:string;amounts_yuan?:Record<string,string>;visible_products:NovaWealthCommand['products'];selected_products:NovaWealthCommand['products']};
+export type NovaWealthView={search_mode?:'name'|'category';name_query?:string;search_category?:string;search_request_id?:string;selection_kind?:'positions'|'products';workflow?:'planning'|'target';workflow_request_id?:string;completed_stages?:string[];risk_answers?:Record<string,number>;cash_field?:'reserve'|'investment'|'total';cash_yuan?:string;amounts_yuan?:Record<string,string>;visible_products:NovaWealthCommand['products'];selected_products:NovaWealthCommand['products']};
 const pendingWealthViews=new Map<string,Promise<unknown>>();
 export function saveNovaWealthView(card:NovaWealthCard,view:NovaWealthView){
  const previous=pendingWealthViews.get(card.task_id);

@@ -8,7 +8,7 @@ import re
 from typing import Literal
 from types import SimpleNamespace
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select, update
 
 from ...models.wealth import WealthConversationORM, WealthPlanORM
@@ -30,13 +30,6 @@ from .semantic_bindings import card_frame,canonical_text,product_name_key,object
 CATEGORY_NAMES = {'债券基金':'bond_fund','混合基金':'mixed_fund','股票基金':'equity_fund',
                   '权益基金':'equity_fund','银行理财':'bank_wealth','快赎理财':'quick_redeem'}
 
-PLANNING_MODEL_INTRO = (
-    '我们的理财规划使用三板块资产配置模型：依据本人已确认的风险评估和授权资产，'
-    '将资产分为活钱、稳健、成长；在现金保留、风险上限和产品资格等约束下，'
-    '结合现有持仓计算目标比例与可调整范围，再从当前合格产品中选择候选并分配目标金额。'
-    '模型不预测收益，也不保证本金。请在下方卡片生成并核对具体规划；交易仍需本人确认和验证。'
-)
-
 
 def category_intent(intent):
     # Exact category labels are not names of individual products. Preserve real
@@ -55,11 +48,15 @@ class EmptyArguments(BaseModel):
 class WealthIntent(EmptyArguments):
     kind: Literal['assets','positions','returns','detail','compare','assessment',
                   'recommend','planning','purchase','redeem','resume','abandon','clarify'] = Field(
-        description='本轮业务意图。明确开始理财或投资但未指定更具体操作时选planning；未提供预算或产品仍可选planning，不因此选clarify。')
+        description='本轮业务意图。本人明确要求开始理财规划或确认进入后选planning；宽泛投资愿望先解释并邀请进入，不直接建卡；未提供预算或产品仍可选planning，不因此选clarify。')
     task_id: str | None = Field(default=None, max_length=64,
         description='修改或继续已有卡片时使用可信未关闭任务 ID；明确新开卡片时留空。')
     product_queries: list[str] = Field(default_factory=list, max_length=4,
-        description='只填用户本轮明确指名的具体产品名称或代码；产品类别填 category，不在这里填类别。')
+        description='已选候选、已有卡片的具体产品引用或详情/比较/赎回对象。新对话要买或投资某名称但尚未选择候选时用name_query搜索，不在这里把名称当作已选产品。')
+    name_query: str | None = Field(default=None, min_length=1, max_length=120,
+        description='目标产品名称搜索：按语义摘出用户原文中有识别作用的名称核心关键词/简称或代码，区分专有名称、办理动作和泛称类别，不把泛称类别并入名称，不补全、不猜产品。多个名称关键词用空格分隔，每个词都逐字来自name_query_quote。新对话指名要投资/买产品时用kind=recommend，展示候选供本人选择。与product_queries、candidate_indices、category互斥。')
+    name_query_quote: str | None = Field(default=None, min_length=1, max_length=200,
+        description='支撑name_query的本轮连续原文，包含每个名称关键词；不引用历史或模型猜测。')
     candidate_indices: list[int] = Field(default_factory=list, max_length=4,
         description='用户所指卡片的候选序号，从1开始：第一个填[1]，第二个填[2]。不是从0开始的数组下标。')
     category: Literal['quick_redeem','bank_wealth','bond_fund','mixed_fund','equity_fund'] | None = Field(
@@ -90,6 +87,12 @@ class WealthIntent(EmptyArguments):
     selection_operation: Literal['keep','add','replace','remove'] = 'keep'
     edit_kind: Literal['correction','backtrack'] = 'correction'
     target_stage: Literal['match','cash_management','stable','growth','candidates','selected','budget','amounts','purchase_review','allocation','details','redemption_input','trade'] | None = None
+
+    @model_validator(mode='after')
+    def search_is_not_selection(self):
+        if self.name_query and (self.kind not in {'recommend','purchase'} or self.product_queries or self.candidate_indices or self.category):
+            raise ValueError('名称搜索只能用于目标推荐/申购候选，不能同时声明产品已选或类别筛选')
+        return self
 
 
 class IntentBatch(EmptyArguments):
@@ -130,6 +133,14 @@ class AssessmentGateIntent(EmptyArguments):
     kind: Literal['assets','positions','returns','detail','compare','assessment',
                   'recommend','planning','purchase','redeem'] = Field(
         description='用户希望在完成本人风险评估后办理的理财类型；笼统的理财规划需求归为planning。')
+
+
+def verified_name_query(intent, message):
+    """Verify model-supplied evidence; never infer or expand a product name."""
+    query = intent.name_query
+    quote = intent.name_query_quote
+    terms = query.split() if query else []
+    return query if terms and quote and all(term in quote for term in terms) and quote in message else None
 
 
 def reject(message, code='WEALTH_AGENT_CONFLICT', status=409):
@@ -271,7 +282,7 @@ async def propose_backtrack(db,user,row,stage,command=None):
     from uuid import uuid4
     await assert_reversible(db,user,row.data)
     kind=wealth_steps.effective_kind(row.data)
-    if stage=='candidates' and kind in {'recommend','purchase'} and not row.data['command'].get('category'):
+    if stage=='candidates' and kind in {'recommend','purchase'} and not row.data['command'].get('category') and not row.data['command'].get('name_query'):
         stage='match'
     if stage=='trade':stage='allocation' if kind=='planning' else 'redemption_input' if kind=='redeem' else 'purchase_review'
     if stage=='details' and kind=='planning':stage='allocation'
@@ -330,11 +341,15 @@ async def manage(arguments, context):
                     'trusted_reply':repeated.response.get('trusted_reply'),
                     'wealth_cards':await cards(db,user,session)}
         kind=gated.data.kind
+        name_query=verified_name_query(arguments,context.original_message) if isinstance(arguments,WealthIntent) else None
         existing=next((c for c in current if c.get('assessment_pending') and not c.get('closed')
-                       and not c.get('execution_plan_id') and c.get('command',{}).get('kind')==kind),None)
+                       and not c.get('execution_plan_id') and c.get('command',{}).get('kind')==kind
+                       and (not name_query or c.get('command',{}).get('name_query')==name_query)),None)
         if not existing:
             task_id='NW'+hashlib.sha256(f'{user}:{session}:{context.request_id}:assessment'.encode()).hexdigest()[:40]
             command=WealthIntent(kind=kind).model_dump(mode='json')
+            if name_query:
+                command.update(name_query=name_query,name_query_quote=arguments.name_query_quote)
             command['products']=[]
             db.add(WealthConversationORM(session_id=task_id,user_id=user,version=1,data={
                 'nova_session_id':session,'request_id':context.request_id,'context_id':facts['context_id'],
@@ -344,7 +359,7 @@ async def manage(arguments, context):
             response={'session_id':session,'reply':reply,'trusted_reply':reply},started_at=utc_now()))
         await db.commit()
         return {'reply':reply,'trusted_reply':reply,'wealth_cards':await cards(db,user,session)}
-    result = SimpleNamespace(data=IntentBatch(intents=[arguments])) if isinstance(arguments,WealthIntent) else await llm.generate_structured(messages=[
+    result = SimpleNamespace(data=IntentBatch(intents=[arguments.model_copy(deep=True)])) if isinstance(arguments,WealthIntent) else await llm.generate_structured(messages=[
         {'role':'system','content':load_skill('wealth') + '\n金额和份额只能来自本轮原文。'
          'cash_yuan提供cash_quote；amounts_yuan逐项提供amount_quotes；redemption_value提供redemption_quote。'
          'quote必须是本轮连续原文并包含数值和单位，多产品金额quote还须包含该产品名、代码或明确序号。'
@@ -359,7 +374,11 @@ async def manage(arguments, context):
             'tasks':[{k:c.get(k) for k in ('task_id','version','command','view_context','closed','execution_plan_id')} for c in editable[-20:]],
         },ensure_ascii=False)}], schema=IntentBatch, max_tokens=2000)
     result.data.intents=[category_intent(i) for i in result.data.intents]
+    name_notices=[]
     for intent in result.data.intents:
+        if intent.name_query and not verified_name_query(intent,context.original_message):
+            intent.name_query=None;intent.name_query_quote=None
+            name_notices.append('产品名称片段未能从本轮原文核实，请在目标产品推荐中填写名称或代码。')
         if intent.task_id and intent.task_id not in editable_ids:
             intent.task_id=None
     # Read-only drill-downs never replace their parent selection/holding task.
@@ -391,7 +410,7 @@ async def manage(arguments, context):
                 if intent.task_id not in (None,focused['task_id']):raise ValueError('REFERENCE_NOT_GROUNDED')
                 intent.task_id=focused['task_id']
             if (not intent.task_id and context.wealth_task_id and
-                    (intent.cash_yuan is not None or intent.amounts_yuan or intent.redemption_value is not None or intent.candidate_indices)):
+                    (intent.cash_yuan is not None or intent.amounts_yuan or intent.redemption_value is not None or intent.candidate_indices or intent.name_query)):
                 focused=next((c for c in current if c['task_id']==context.wealth_task_id),None)
                 if focused and intent.kind==focused.get('command',{}).get('kind'):
                     intent.task_id=context.wealth_task_id
@@ -447,7 +466,7 @@ async def manage(arguments, context):
             reject('请求编号不能用于不同的理财需求','IDEMPOTENCY_CONFLICT')
         await db.rollback()
         return {'reply':'已恢复本次理财任务，请核对卡片。','wealth_cards':await cards(db,user,session)}
-    replies=[]
+    replies=list(name_notices)
     planning_opened=False
     for index, intent in enumerate(result.data.intents):
         if intent.kind=='assets':
@@ -497,7 +516,7 @@ async def manage(arguments, context):
                              'stage':context.wealth_stage or intent.stage}
             if not (intent.product_queries or intent.candidate_indices or intent.cash_yuan is not None
                     or any(value is not None for value in intent.amounts_yuan)
-                    or intent.redemption_value is not None or intent.category is not None):
+                    or intent.redemption_value is not None or intent.category is not None or intent.name_query is not None):
                 row.data={**row.data,'instruction':pending_advance}
                 row.version+=1
                 replies.append('已交给当前卡片核对。交易同意须本人手动勾选，验证码仍在验证框输入。')
@@ -566,7 +585,7 @@ async def manage(arguments, context):
                 refs.append({'product_id':p['product_id'],'product_version':p['product_version'],'name':matches[0]['name']})
         if prior and intent.kind in ('recommend','purchase','planning'):
             saved=prior.get('view_context') or {}
-            previous=saved['selected_products'] if 'selected_products' in saved else prior.get('command',{}).get('products',[])
+            previous=[] if intent.name_query else saved['selected_products'] if 'selected_products' in saved else prior.get('command',{}).get('products',[])
             # A singular amount on the explicitly focused amounts card has one
             # unambiguous recipient. Never spread it across several products.
             if (not refs and not intent.product_queries and not intent.candidate_indices
@@ -582,10 +601,14 @@ async def manage(arguments, context):
             if command['cash_yuan'] is None and saved.get('cash_yuan'):
                 command['cash_yuan']=saved['cash_yuan']
                 command['cash_field']='invest' if saved.get('cash_field')=='investment' else saved.get('cash_field')
-            if command['category'] is None:command['category']=prior.get('command',{}).get('category')
-        if command['kind']!='clarify' and intent.kind == 'purchase' and not refs and not command.get('category'):
+            if command['category'] is None and not intent.name_query:command['category']=prior.get('command',{}).get('category')
+            if not command.get('name_query') and not intent.category:
+                command['name_query']=prior.get('command',{}).get('name_query')
+        if command['kind']!='clarify' and intent.kind == 'purchase' and not refs and not command.get('category') and not command.get('name_query'):
             command.update(kind='clarify',question='希望查找哪类产品，或哪只产品的名称／代码？')
         command['products'] = refs
+        if intent.name_query:
+            replies.append(f'已按“{intent.name_query}”打开目标产品名称匹配，请在卡片中查看候选并选择具体产品；尚未选定或购买。')
         parent_id=None
         if intent.kind in {'detail','compare'} and prior:
             parent_id=prior['task_id']
@@ -655,8 +678,8 @@ async def manage(arguments, context):
             db.add(WealthConversationORM(session_id=task_id,user_id=user,version=1,data=data))
         if command['kind']=='planning':
             planning_opened=True
-            replies.append(PLANNING_MODEL_INTRO)
-    trusted_reply='\n\n'.join(replies) if planning_opened else None
+            replies.append('已打开理财规划卡片，请在卡片中继续选择和核对。')
+    trusted_reply=None
     db.add(WealthChatRequestORM(request_key=request_key,user_id=user,digest=request_digest,status='COMPLETED',
         response={'session_id':session,'reply':'\n\n'.join(replies),'trusted_reply':trusted_reply},started_at=utc_now()))
     await db.commit()
@@ -791,7 +814,8 @@ def wealth_tools():
             '打开或操作本人风险评估卡。action=open 查询当前等级并显示是否重新评估的按钮；reassess 打开问卷；answer 将本轮明确回答的题目填入卡片；submit 在九题完整且本人明确声明成年完全民事行为能力后提交；confirm 须本人明确确认最新结果。'
             'answers 是题目 ID 到从0开始的选项编号，answer_evidence 每题分别逐字引用本轮题目和选项原文。不得猜答案或代用户声明；未回答的题目留空。'),
         'plan_wealth':(WealthPlanningArguments,manage,
-            '打开或更新规划与推荐表单。kind=planning 为整体配置规划，宽泛的“要理财”也选 planning；kind=recommend 为目标产品推荐，kind=purchase 为申购草稿，detail/compare 为产品资料查看。'
+            '打开或更新规划与推荐表单。kind=planning 为整体配置规划，仅本人明确要求或确认启动规划时选 planning；kind=recommend 为目标产品推荐，kind=purchase 为申购草稿，detail/compare 为产品资料查看。'
+            '新对话指名要买/投资某产品而尚未选择候选时，使用kind=recommend、name_query及name_query_quote，保留原文名称片段供名称包含匹配，不补全、不将匹配结果视为已选产品；无匹配仍保留搜索表单。'
             '把用户明确给出的产品、类别、预算和操作填入字段；缺失字段留空仍打开卡片。更新已有卡时传可信 task_id。'
             '用户通过聊天选择产品、调整预算、换批或继续时，用 candidate_indices、selection_operation、cash_field/cash_yuan、advance、target_stage 表达；引用须来自当前可见候选和用户原文。'),
         'manage_wealth_positions':(WealthPositionsArguments,manage,

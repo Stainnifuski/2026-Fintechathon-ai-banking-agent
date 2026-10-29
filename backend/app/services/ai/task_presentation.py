@@ -185,7 +185,7 @@ async def position(ctx, key, request_id, existing=False):
                 NovaConversationMessageORM.conversation_id == ctx.session_id))
             ctx.db.add(NovaConversationMessageORM(message_id=uuid4().hex, conversation_id=ctx.session_id,
                 request_id=request_id, role='assistant', sequence=sequence+1, position=0,
-                content_ciphertext=chats._encrypt('已更新操作，请核对下方卡片。')))
+                content_ciphertext=chats._encrypt('')))
             await ctx.db.commit()
     return {'position': request_id}
 

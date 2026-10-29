@@ -37,9 +37,11 @@ schema v5给净值增量增加`available_at`，导入保留数据的可用瞬时
 
 整合`6120eef`新增店铺和ICS日历。商户/客户订单瞬时使用共享`beijingTime`，商户工作台也显示服务端现实日期时钟。日历有时间事件按北京时间分日，查询窗口显式转换北京午夜到UTC；手工时间按`+08:00`解析，全天事件保留纯日期，ICS源TZID仍由导入服务解释，不能统一改写源时区。日历网格的Date仅表示日历格位置，不作为事件时区。前端类型检查及Vite706模块构建通过；完整日历浏览器回归仍待执行。
 
-## 模拟测试工具
+## 模拟测试工具（已退出工作台）
 
-`WEALTH_DEMO_TOOLS_ENABLED=false`为默认值。启用后仍只允许本人当前disposable轮次；普通/他人账户不能使用。
+理财工作台的测试模式入口及对外、内部银行的 `/demo/*` HTTP 接口均已移除。以下为历史维护逻辑说明；设置 `WEALTH_DEMO_TOOLS_ENABLED` 不会恢复页面或接口。账户归档校验和历史迁移仍复用底层服务，已有账本和订单记录保留。
+
+`WEALTH_DEMO_TOOLS_ENABLED=false`为底层维护逻辑的默认值。启用后仍只允许本人当前disposable轮次；普通/他人账户不能使用。
 
 - `/demo/current`、`/demo/archives`为读取；`/demo/delete-preview`给范围计数与摘要，不做删除。
 - `/demo/reset`归档当前整组run并新建20,000元账户。无初始持仓配置时为显式空基线；管理员场景在首次创建完成后冻结`disposable-opening-v1`持仓/订单/占用/流水快照，重置只恢复冻结初始状态，生成新编号，不复制当前轮次或授权。恢复订单标记`opening_fixture`及`human_authorization_inherited=false`；这是虚构开账fixture，不代表本人交易或真实验证。场景和数据库已有的有效本人评估保留。

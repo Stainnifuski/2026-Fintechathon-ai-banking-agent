@@ -84,7 +84,7 @@ async def test_missing_assessment_uses_gate_prompt_and_opens_assessment_first(st
 
 
 @pytest.mark.asyncio
-async def test_planning_intro_is_trusted_and_replayed(store,monkeypatch):
+async def test_planning_tool_leaves_knowledge_intro_to_runtime_and_replays(store,monkeypatch):
     model=AsyncMock(return_value=SimpleNamespace(data=agent.IntentBatch(intents=[agent.WealthIntent(kind='planning')])))
     monkeypatch.setattr(agent.llm,'generate_structured',model)
     monkeypatch.setattr(agent,'HttpWealthBankApi',lambda:SimpleNamespace(assets=AsyncMock(return_value={'context_id':'test'})))
@@ -93,9 +93,9 @@ async def test_planning_intro_is_trusted_and_replayed(store,monkeypatch):
         ctx=replace(context(db),original_message='帮我做理财规划')
         first=await agent.manage(agent.EmptyArguments(),ctx)
         assert first['wealth_cards'][0]['command']['kind']=='planning'
-        assert first['trusted_reply']==first['reply']==agent.PLANNING_MODEL_INTRO
-        assert '三板块资产配置模型' in first['reply']
-        assert '交易仍需本人确认和验证' in first['reply']
+        assert first['trusted_reply'] is None
+        assert '已打开理财规划卡片' in first['reply']
+        assert '三板块资产配置模型' not in first['reply']
         repeated=await agent.manage(agent.EmptyArguments(),ctx)
         assert repeated['trusted_reply']==first['trusted_reply']
         assert model.await_count==1

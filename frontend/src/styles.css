@@ -105,9 +105,7 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .wealth-intro { max-width: none; display: flex; align-items: end; justify-content: space-between; gap: 20px; }
 .wealth-intro > div { max-width: 760px; }
 .wealth-intro > div > p:last-child { color: var(--muted); line-height: 1.7; }
-.test-mode-button { flex: none; padding: 11px 17px; color: var(--blue); background: #e8edff; border: 1px solid #d8e0ff; }
 .wealth-intro > button { flex: none; }
-.wealth-test-notice { margin-top: 0; }
 .task-focus { margin-bottom: 18px; border-color: #cfd8ff !important; box-shadow: 0 8px 30px #3157e812 !important; }
 .prototype-app.nova-open { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 34vw, 600px); align-items: start; }
 .nova-open .bank-shell { min-width: 0; }

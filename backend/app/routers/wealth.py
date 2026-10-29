@@ -263,46 +263,6 @@ async def product_detail(product_id:str,period:str='1y',product_version:int|None
     except BankApiError as error:fail(error)
 
 
-from ..schemas.wealth_demo import DemoReset, DemoAdjust, DemoDeletePreview, DemoDelete
-
-
-@router.get('/demo/current')
-async def demo_current(user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
-    try: return await bank.call('POST', '/demo/current', {'subject_user_id': user['user_id']})
-    except BankApiError as error: fail(error)
-
-
-@router.get('/demo/archives')
-async def demo_archives(user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
-    try: return await bank.call('POST', '/demo/archives', {'subject_user_id': user['user_id']})
-    except BankApiError as error: fail(error)
-
-
-async def demo_call(action: str, request: StrictRequest, user: dict, bank: HttpWealthBankApi) -> dict:
-    try: return await bank.call('POST', '/demo/'+action, {**request.model_dump(), 'subject_user_id': user['user_id']})
-    except BankApiError as error: fail(error)
-
-
-@router.post('/demo/reset')
-async def demo_reset(request: DemoReset, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
-    return await demo_call('reset', request, user, bank)
-
-
-@router.post('/demo/adjust')
-async def demo_adjust(request: DemoAdjust, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
-    return await demo_call('adjust', request, user, bank)
-
-
-@router.post('/demo/delete-preview')
-async def demo_delete_preview(request: DemoDeletePreview, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
-    return await demo_call('delete-preview', request, user, bank)
-
-
-@router.post('/demo/delete')
-async def demo_delete(request: DemoDelete, user: dict=Depends(get_current_user), bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
-    return await demo_call('delete', request, user, bank)
-
-
 @router.get('/contexts')
 async def contexts(user: dict=Depends(get_current_user),bank: HttpWealthBankApi=Depends(get_wealth_bank)) -> dict:
     try: return await bank.call('POST','/contexts',{'subject_user_id':user['user_id']})

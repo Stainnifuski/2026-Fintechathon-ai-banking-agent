@@ -1,3 +1,4 @@
+import {showNovaMessage} from './novaMessageVisibility';
 import {NovaTaskSlot,useNovaPresentation,type TaskMeta} from './NovaTaskPresentation';
 import {apiClient} from '../services/api';
 import './Wealth/novaWealth.css';
@@ -429,7 +430,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   useEffect(()=>{if(activeConversationId)void refreshPresentation(activeConversationId);},[activeConversationId,taskSession,wealthCards,billActions]);
   useEffect(()=>{
     const released=(event:Event)=>{const detail=(event as CustomEvent<{session:string;key:string;message:string}>).detail;if(detail.session!==activeConversationId)return;setWealthFocus(null);setFocusTaskId(undefined);setExecutionQueue(null);setMessages(items=>[...items,{role:'assistant',content:detail.message,request_id:'release-'+crypto.randomUUID()}]);void refreshPresentation(detail.session);};
-    const updated=(event:Event)=>{const detail=(event as CustomEvent<{key:string}>).detail;if(!activeConversationId)return;const requestId='action-'+crypto.randomUUID();setPlacements(old=>({...old,[detail.key]:requestId}));setMessages(items=>[...items,{role:'assistant',content:'',request_id:requestId}]);void apiClient.post(`/nova/presentation/${activeConversationId}/position`,{key:detail.key,request_id:requestId}).catch(()=>setError('展示位置保存失败；原业务状态保留，请核对原卡片。'));void refreshPresentation(activeConversationId);};
+    const updated=()=>{if(activeConversationId)void refreshPresentation(activeConversationId);};
     window.addEventListener('nova-task-released',released);window.addEventListener('nova-task-updated',updated);return()=>{window.removeEventListener('nova-task-released',released);window.removeEventListener('nova-task-updated',updated);};
   },[activeConversationId]);
   function updatePinnedTasks() {
@@ -654,11 +655,11 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
             onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onCardActivity} /></NovaTaskSlot>)}
           {messages.map((entry, index) => <div key={`${entry.request_id || index}-${entry.role}-${index}`} className="nova-turn-entry">
             {entry.role==='assistant'&&entry.request_id&&taskGraphs[entry.request_id]?.complex&&<NovaTaskGraph graph={taskGraphs[entry.request_id!]} streaming={entry.streaming}/>}
-            <div className={`nova-message nova-${entry.role}`}>
+            {showNovaMessage(entry)&&<div className={`nova-message nova-${entry.role}`}>
             <small>{entry.role === 'user' ? '你' : 'NOVA'}</small>
             {entry.role === 'assistant' ? (entry.content ? (billResults.some(card=>card.request_id===entry.request_id)&&billResults.filter(card=>card.request_id===entry.request_id).every(card=>card.compact_reply)&&(!entry.details||entry.details.grounding?.status==='grounded')&&!entry.streaming
               ? <details className="nova-result-evidence"><summary>查看完整分析与依据</summary><NovaMarkdown content={entry.content}/></details>
-              : <NovaMarkdown content={entry.content} onConversation={id=>{if(id===activeConversationId)body.current?.scrollTo({top:0,behavior:'smooth'});else void selectConversation(id);}} />) : null) : <p>{entry.content}</p>}
+              : <NovaMarkdown content={entry.content} disabled={busy||loadingConversation||!!entry.streaming} onStartPlanning={()=>{void send('我确认进入理财规划，请开始新的理财规划任务');}} onConversation={id=>{if(id===activeConversationId)body.current?.scrollTo({top:0,behavior:'smooth'});else void selectConversation(id);}} />) : null) : <p>{entry.content}</p>}
             {entry.streaming && <p className="hint" role="status">{entry.status ? `${entry.status}…` : entry.content ? '▍' : '正在理解你的需求…'}</p>}
             {entry.details && <small>{entry.details.mode === 'offline' ? '离线规则' : '模型回答'}{visibleToolCalls(entry.details).length > 0 && ` · 处理记录 ${visibleToolCalls(entry.details).length} 项`}</small>}
             {entry.details?.grounding && <small className="hint">{({
@@ -666,7 +667,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
               abstained: '尚无可核验的业务结果', blocked: '本次请求已停止处理',
             })[entry.details.grounding.status]}</small>}
             {visibleToolCalls(entry.details).map((call, callIndex) => <details key={callIndex}><summary>{TOOL_LABELS[call.name]}{call.result.error ? '（失败）' : ''}</summary><p>{queryRecord(call)}</p></details>)}
-            </div>
+            </div>}
             {entry.role==='assistant'&&billResults.filter(card=>card.request_id===entry.request_id).map(card=><Suspense key={card.result_id} fallback={<p role="status">正在加载账单图表…</p>}><NovaBillResults card={card} onNavigate={onBillNavigate}/></Suspense>)}
             {entry.role === 'assistant' && billActions.filter(card => positionFor('bill:'+card.action_id,card.request_id)===index).map(card => <NovaTaskSlot key={'bill:'+card.action_id} meta={metaFor('bill:'+card.action_id,card.title,'insights',card.status!=='pending')}><NovaBillCard key={card.action_id} card={card} disabled={busy || loadingConversation || queueBusy}
               onUpdated={updated => { if (billSession.current === updated.session_id) setBillActions(items => items.map(item => item.action_id === updated.action_id ? updated : item)); }} onActivity={onCardActivity} /></NovaTaskSlot>)}

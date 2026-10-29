@@ -553,42 +553,6 @@
   },
   {
     "method": "POST",
-    "path": "/api/v1/internal/bank/wealth/demo/adjust",
-    "domain": "wealth",
-    "action": "demo_adjust"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/internal/bank/wealth/demo/archives",
-    "domain": "wealth",
-    "action": "demo_archives"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/internal/bank/wealth/demo/current",
-    "domain": "wealth",
-    "action": "demo_current"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/internal/bank/wealth/demo/delete",
-    "domain": "wealth",
-    "action": "demo_delete"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/internal/bank/wealth/demo/delete-preview",
-    "domain": "wealth",
-    "action": "demo_delete_preview"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/internal/bank/wealth/demo/reset",
-    "domain": "wealth",
-    "action": "demo_reset"
-  },
-  {
-    "method": "POST",
     "path": "/api/v1/internal/bank/wealth/external-evidence",
     "domain": "wealth",
     "action": "external_evidence"
@@ -1258,42 +1222,6 @@
     "path": "/api/v1/wealth/contexts/select",
     "domain": "wealth",
     "action": "select_context"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/wealth/demo/adjust",
-    "domain": "wealth",
-    "action": "demo_adjust"
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/wealth/demo/archives",
-    "domain": "wealth",
-    "action": "demo_archives"
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/wealth/demo/current",
-    "domain": "wealth",
-    "action": "demo_current"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/wealth/demo/delete",
-    "domain": "wealth",
-    "action": "demo_delete"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/wealth/demo/delete-preview",
-    "domain": "wealth",
-    "action": "demo_delete_preview"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/wealth/demo/reset",
-    "domain": "wealth",
-    "action": "demo_reset"
   },
   {
     "method": "GET",

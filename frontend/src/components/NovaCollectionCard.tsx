@@ -23,7 +23,8 @@ export default function NovaCollectionCard({ card, session, onUpdated, onActivit
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => { setSelected(card.selected_payer_user_ids); }, [card.selected_payer_user_ids]);
+  const selectedPrefillKey=JSON.stringify(card.selected_payer_user_ids);
+  useEffect(() => { setSelected(card.selected_payer_user_ids); }, [selectedPrefillKey]);
   useEffect(() => { setAccount(card.receive_account_id); }, [card.receive_account_id]);
   useEffect(() => {
     setAmount(card.amount_fen ? (card.amount_fen / 100).toFixed(2) : '');

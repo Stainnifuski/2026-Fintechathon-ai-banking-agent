@@ -5,7 +5,7 @@ import type {TableState} from '../components/Wealth/tableState';
 
 export interface ManualDraft {
   orderTable:TableState;positionTable:TableState;
-  mode:string; category:string; theme:string;
+  mode:string; category:string; nameQuery:string; theme:string;
   workflow:'planning'|'target';
   inputMode:string; value:string;
   target:string; period:string; date:string;
@@ -13,7 +13,7 @@ export interface ManualDraft {
   portfolio:PortfolioPlan|null; ratios:{planKey:string;values:Record<string,string>}|null;
 }
 export const draftScope=(owner:string,context:string,accounts:string[])=>JSON.stringify([owner,context,[...accounts].sort()]);
-const initial=(context:string):ManualDraft=>({orderTable:initialTableState(),positionTable:initialTableState(),workflow:'planning',mode:'category',category:'bond_fund',theme:'high_dividend',inputMode:'market_value',value:'',target:'',period:'day',date:'',candidateGroups:[],candidateSelection:{scopeKey:context,items:[],preferredShares:{}},portfolio:null,ratios:null});
+const initial=(context:string):ManualDraft=>({orderTable:initialTableState(),positionTable:initialTableState(),workflow:'planning',mode:'category',category:'bond_fund',nameQuery:'',theme:'high_dividend',inputMode:'market_value',value:'',target:'',period:'day',date:'',candidateGroups:[],candidateSelection:{scopeKey:context,items:[],preferredShares:{}},portfolio:null,ratios:null});
 /** Memory-only inputs. Never store previews, consent, codes, tokens or action sessions. */
 export class ManualDraftStore {
   private currentKey:string|null=null;

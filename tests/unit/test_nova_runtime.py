@@ -13,7 +13,7 @@ from backend.app.models.nova_task import NovaSessionORM
 from backend.app.models.wealth import WealthConversationORM, WealthPlanORM
 from backend.app.services.ai import nova_runtime, task_flow
 from backend.app.services.ai import nova
-from backend.app.services.ai import debug_trace
+from backend.app.services.ai import debug_trace, planning_knowledge
 from backend.app.services.ai.wealth_agent import wealth_tools
 from backend.app.services.ai import wealth_agent
 from backend.app.services.ai.nova_tools import ToolContext
@@ -43,7 +43,12 @@ class FakeModel:
         schema = kwargs["schema"]
         self.schemas.append(schema)
         if schema is nova_runtime.DependencyDecision:
-            return SimpleNamespace(data=schema(depends_on_prior_task=self.dependent, reason="context"))
+            message=json.loads(kwargs['messages'][1]['content'])['message']
+            planning=any(c.name=='plan_wealth' and c.arguments.get('kind','planning')=='planning' for c in self.calls)
+            return SimpleNamespace(data=schema(depends_on_prior_task=self.dependent, reason="context",
+                planning_mode='start' if planning else 'none', start_quote=message if planning else None))
+        if schema is planning_knowledge.KnowledgeAnswer:
+            return SimpleNamespace(data=schema(covered=True,parts=[{'text':'本项目将资产配置组织为活钱、稳健、进取三个板块。','evidence':[{'source':'knowledge','quote':'本项目将资产配置组织为活钱、稳健、进取三个板块。'}]}]))
         if schema is nova_runtime.ToolSelection:
             return SimpleNamespace(data=schema(tool_names=self.names))
         return SimpleNamespace(data=schema(calls=self.calls))
@@ -129,8 +134,8 @@ async def test_main_model_opens_planning_and_risk_form_without_wealth_submodel(c
     monkeypatch.setattr(wealth_agent,'HttpWealthBankApi',lambda:SimpleNamespace(
         assets=AsyncMock(return_value={'context_id':'test'})))
     model=FakeModel(False,['plan_wealth'],[nova_runtime.PlannedCall(name='plan_wealth',arguments={})])
-    result=await nova_runtime.chat('我要理财',[],model=model,
-        context=replace(context,original_message='我要理财',request_id='risk-gated-request'))
+    result=await nova_runtime.chat('请开始理财规划',[],model=model,
+        context=replace(context,original_message='请开始理财规划',request_id='risk-gated-request'))
     tool=next(item for item in result['tool_calls'] if item['name']=='plan_wealth')
     assert tool['result']['wealth_cards'][0]['command']['kind']=='planning'
     assert tool['result']['wealth_cards'][0]['assessment_pending']
@@ -155,7 +160,8 @@ async def test_trusted_planning_reply_skips_freeform_final_generation(context, m
         raise AssertionError('理财规划回复不应再由主 Agent 自由生成')
     model.generate_text=unexpected_final
     result=await nova_runtime.chat('帮我做理财规划',[],model=model,context=context)
-    assert result['reply']=='受控的投资模型介绍。'
+    assert '本项目将资产配置组织为活钱、稳健、进取三个板块。' in result['reply']
+    assert '受控的投资模型介绍。' not in result['reply']
 
 
 @pytest.mark.asyncio

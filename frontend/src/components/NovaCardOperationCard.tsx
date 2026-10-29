@@ -51,6 +51,8 @@ export default function NovaCardOperationCard({ task, sessionId, accounts, disab
   const [error, setError] = useState(task.notice ?? '');
   useTaskPrefill({...prefill,card_id:task.card_id},{card_id:v=>setCardId(String(v??'')),account_id:v=>setAccountId(String(v??'')),single_txn_limit:v=>setSingleLimit(String(v??'')),daily_txn_limit:v=>setDailyLimit(String(v??'')),credit_limit:v=>setCreditLimit(String(v??'')),...Object.fromEntries(CHANNELS.map(([key])=>[key,(v:unknown)=>{if(typeof v==='boolean')setChannels(old=>({...old,[key]:v}));}]))});
 
+  const taskPrefillKey=JSON.stringify([task.entry_id,task.action,task.card_id,task.prefill,task.card,task.notice,
+    task.operation?.operation_id,task.operation?.status]);
   useEffect(() => {
     setOperation(task.operation ?? null);
     setEditing(!task.operation);
@@ -64,8 +66,7 @@ export default function NovaCardOperationCard({ task, sessionId, accounts, disab
     setChannels(Object.fromEntries(CHANNELS.map(([key]) =>
       [key, typeof task.prefill[key] === 'boolean' ? task.prefill[key] as boolean : task.card?.[key] ?? false])) as Channels);
     setError(task.notice ?? '');
-  }, [task.action, task.card_id, task.prefill, task.card, task.notice,
-      task.operation?.operation_id, task.operation?.status]);
+  }, [taskPrefillKey]);
   // 未指定卡片时，在表单中列出本人当前允许该操作的卡片供选择。
   useEffect(() => {
     if (task.card_id || task.action === 'card_apply_virtual') return;

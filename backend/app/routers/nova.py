@@ -788,6 +788,10 @@ class WealthViewContext(BaseModel):
     selection_kind: Literal['positions','products'] | None = None
     workflow: Literal['planning','target'] | None = None
     workflow_request_id: str | None = Field(default=None,max_length=128)
+    search_mode: Literal['name','category'] | None = None
+    name_query: str = Field(default='',max_length=120)
+    search_category: str = Field(default='',max_length=120)
+    search_request_id: str | None = Field(default=None,max_length=128)
     risk_answers: dict[str,int] = Field(default_factory=dict,max_length=9)
     visible_products: list[WealthViewProduct] = Field(default_factory=list,max_length=60)
     selected_products: list[WealthViewProduct] = Field(default_factory=list,max_length=160)

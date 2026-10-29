@@ -1,7 +1,7 @@
 import AgentStepCard,{WealthStepContext,useStepInstruction,useStepReady} from './AgentStepCard';
 import type {NovaWealthView,NovaWealthCommand} from '../../services/nova';
 import {ManualDraftStore} from '../../services/wealthManualDraft';
-import {toggleProduct,changeShare,emptyProductSelection,groupMessage} from './productSelection';
+import {toggleProduct,changeShare,emptyProductSelection} from './productSelection';
 import {wealthFeedback,wealthRequestFailure} from '../../utils/wealthFeedback';
 import {useEffect,useState,useRef,useCallback,useMemo,useContext} from 'react';
 import * as w from '../../services/wealth';
@@ -28,7 +28,7 @@ import {WealthActionSession} from '../../services/wealthActionSession';
 import type {WealthReturns} from '../../services/wealthReturns';
 import {beijingTime} from '../../utils/time';
 import ProductPicker from './ProductPicker';
-import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup,actionCandidateGroups} from '../../services/wealthCandidates';
+import {readCandidateGroup,assertCurrentCandidates,sameCandidateFilter,replaceCandidateGroup} from '../../services/wealthCandidates';
 import {readPortfolioPlan,planProductSelection} from '../../services/wealthPortfolioReview';
 import {agentCommandKey} from './stepFlow';
 import StructuredPortfolioReview from './StructuredPortfolioReview';
@@ -38,7 +38,6 @@ import {useManualDraft} from './useManualDraft';
 type ResultSlot='planning'|'positions'|'returns'|'product'|'redemption'|'comparison';
 const resultSlot=(action:ActionName):ResultSlot=>action==='list_positions'?'positions':action==='show_wealth_returns'?'returns':action==='show_product_detail'?'product':action==='preview_redemption'?'redemption':action==='compare_products'?'comparison':'planning';
 const resultTitles:Record<ResultSlot,string>={planning:'规划与推荐结果',positions:'持仓查询结果',returns:'收益查询结果',product:'产品资料查询结果',redemption:'赎回核对结果',comparison:'产品比较结果'};
-const planningBucketNames:Record<string,string>={cash_management:'活钱',stable:'稳健',growth:'进取'};
 interface Page {rows:w.PositionRow[];page:number;pages:number;total:number;object_type:'positions';table_data:w.PositionTableData;snapshot_id:string}
 interface Converted {preview:w.Preview;resolved_units:string;holding_ratio:string;estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;notice:string}
 export default function StructuredActionPanel({userId,revision,onActivity,agentCommand,agentContext,agentTaskId,agentRequestId,agentSelection,agentWorkflow,onView,onPrepared}:{userId:string;revision:number;onActivity:()=>void;agentCommand?:NovaWealthCommand;agentContext?:string;agentTaskId?:string;agentRequestId?:string;agentSelection?:NovaWealthView['selected_products'];agentWorkflow?:'planning'|'target';onView?:(view:Partial<NovaWealthView>)=>void;onPrepared?:(id:string)=>Promise<void>}){
@@ -52,6 +51,8 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
   const steps=useContext(WealthStepContext);
   useStepReady('match',candidateGroups.length>0);
   const [candidateSelection,setCandidateSelection]=shared('candidateSelection');
+  const [mode,setMode]=shared('mode');const [category,setCategory]=shared('category');
+  const [nameQuery,setNameQuery]=shared('nameQuery');
   const [portfolio,setPortfolio]=shared('portfolio');
   const [planningBaseline,setPlanningBaseline]=useState<w.PortfolioPlan|null>(()=>portfolio&&!portfolio.reasons.includes('PLANNING_CASH_BUDGET_V1')?portfolio:null);
   const [selectionAttempted,setSelectionAttempted]=useState(false);
@@ -62,9 +63,9 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
   const [cashDraft,setCashDraft]=useState<CashDraft>({field:'reserve',text:''});
   useEffect(()=>{
     if(!onView||!candidateGroups.length)return;
-    const timer=setTimeout(()=>onView({visible_products:candidateGroups.flatMap(g=>g.items.flatMap(c=>c.share_classes.map(s=>({product_id:s.product_id,product_version:s.product_version,name:c.name,bucket:c.bucket})))).slice(0,60),cash_field:cashDraft.field,cash_yuan:cashDraft.text,selected_products:candidateSelection.items.map(({candidate,share})=>({product_id:share.product_id,product_version:share.product_version,name:candidate.name,bucket:candidate.bucket}))}),300);
+    const timer=setTimeout(()=>onView({search_mode:mode==='name'?'name':'category',name_query:nameQuery,search_category:category,search_request_id:agentRequestId,visible_products:candidateGroups.flatMap(g=>g.items.flatMap(c=>c.share_classes.map(s=>({product_id:s.product_id,product_version:s.product_version,name:c.name,bucket:c.bucket})))).slice(0,60),cash_field:cashDraft.field,cash_yuan:cashDraft.text,selected_products:candidateSelection.items.map(({candidate,share})=>({product_id:share.product_id,product_version:share.product_version,name:candidate.name,bucket:candidate.bucket}))}),300);
     return()=>clearTimeout(timer);
-  },[candidateGroups,candidateSelection,onView,cashDraft]);
+  },[candidateGroups,candidateSelection,onView,cashDraft,mode,nameQuery,category,agentRequestId]);
 
   const availableCash=availablePlanningCash(ready?.assets.cash??[]);
   const currentHoldings=ready?.assets.asset_summary?.positions_market_value_fen??null;
@@ -87,9 +88,7 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
   const client=useRef(new WealthActionSession(request=>sendAction(request,agentTaskId)));const latestRequest=useRef(0);
   useEffect(()=>()=>client.current.setContext(null),[]);
   const [detailView,setDetailView]=useState<{id:string;version:number}|null>(null);const [compareView,setCompareView]=useState(false);
-  const [mode,setMode]=shared('mode');const [category,setCategory]=shared('category');
   const [workflow,setWorkflow]=shared('workflow');
-  const [nameQuery,setNameQuery]=useState('');
   const [positionState,setPositionState]=shared('positionTable');
   useEffect(()=>{const result=results.positions;if(!onView||result?.status!=='ok'||result.action!=='list_positions')return;
     const page=result.data as Page;onView(holdingsSelection(page.table_data.rows as w.PositionRow[],positionState.selected));
@@ -204,8 +203,20 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
       }
       if(cmd.kind==='recommend'||cmd.kind==='purchase'){
         setWorkflow('target');setCandidateGroups([]);setCandidateSelection(emptyProductSelection(contextId));
-        setMode(cmd.products.length?'name':'category');setCategory(cmd.category??'');
+        setMode(cmd.name_query||cmd.products.length?'name':'category');setNameQuery(cmd.name_query??'');setCategory(cmd.category??'');
         const groups:w.CandidateGroup[]=[];
+        if(cmd.name_query&&!cmd.products.length){
+          const response=await run('recommend_products',{filter:{mode:'name',name_query:cmd.name_query}});
+          if(response?.status==='ok')groups.push(readCandidateGroup(response.data));
+          setCandidateGroups(groups);
+          let selected=emptyProductSelection(contextId);
+          for(const p of agentSelection??[]){
+            const candidate=groups.flatMap(g=>g.items).find(c=>c.share_classes.some(share=>share.product_id===p.product_id&&share.product_version===p.product_version));
+            if(candidate){selected=changeShare(selected,candidate,p.product_id);selected=toggleProduct(selected,candidate);}
+          }
+          setCandidateSelection(selected);
+          return;
+        }
         if(!cmd.products.length&&cmd.category){const response=await run('recommend_products',{filter:{mode:'category',category:cmd.category}});if(response?.status==='ok')groups.push(readCandidateGroup(response.data));}
         const requested=agentSelection??cmd.products;
         if(requested.length){
@@ -300,10 +311,8 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
     const compared=result?.status==='ok'&&result.action==='compare_products'?result.data as w.Product[]:null;
     const converted=result?.status==='ok'&&result.action==='preview_redemption'?result.data as Converted:null;
     const detail=result?.status==='ok'&&result.action==='show_product_detail'?result.data as ProductDetailData:null;
-    const displayedCandidates=actionCandidateGroups(result);
 
     return <section className="action-result" aria-label={resultTitles[slot]} aria-live="polite" aria-busy={pending===slot}><h3>{resultTitles[slot]}</h3>{pending===slot&&<p role="status">正在查询 / 核对…</p>}{actionError&&<p role="alert" className="action-error">{wealthFeedback(actionError)}</p>}{result&&<><p className="action-result-message">{wealthFeedback(result.message)}</p>{(pending===slot||actionErrors[slot])&&<p className="consumer-note">下方保留上次结果，请以本次完成后的反馈为准。</p>}{result.status==='blocked'&&<p className="consumer-note">本次操作未执行；可继续查询本人持仓与收益，操作限制见上述原因。</p>}
-      {displayedCandidates.length>0&&<div className="candidate-summary" aria-label={result?.action==='plan_portfolio'?'本次理财规划的具体产品候选':'本次目标产品推荐的具体产品候选'}><h4>具体产品候选</h4><p className="consumer-note">以下产品来自本次资格核对，尚未选定或购买；可在下方候选步骤查看详情并选择。</p>{displayedCandidates.map((group,index)=><div key={`${group.bucket??'general'}-${index}`}><strong>{planningBucketNames[group.bucket??'']??'产品'}候选</strong>{group.items.length?<ul>{group.items.map(candidate=><li key={candidate.family_id}>{candidate.name} · {candidate.share_classes.map(share=>`${share.product_id}${share.share_class?`（${share.share_class}类）`:''}`).join('、')}</li>)}</ul>:<p className="consumer-note">{groupMessage(group)??'当前没有符合条件的可选产品。'}</p>}</div>)}</div>}
       {result.required_fields.map(field=><div key={field.field}><p>{field.reason}</p>{field.options&&field.options.length>0&&<label>补充选择<select defaultValue="" onChange={e=>{if(field.field==='redemption.position_key'){setPositionState(current=>({...current,selected:[e.target.value]}));}else if(field.field==='product_id'){setTarget(e.target.value);}}}><option value="">请选择</option>{field.options.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select></label>}</div>)}
       {page&&page.table_data.object_type==='positions'&&<PositionTable data={{...page.table_data,scope_key:JSON.stringify([userId,contextId,page.table_data.scope_key])}} control={{state:positionState,onChange:next=>{setPositionState(next);if(onView)onView(holdingsSelection(page.table_data.rows as w.PositionRow[],next.selected));}}} loadDetail={loadDetail} blockedAccounts={blockedAccounts} onRedeem={selectRedeem} onReturns={openReturns}/>}
       {converted&&<><p>赎回{converted.resolved_units}份 · 比例{(Number(converted.holding_ratio)*100).toFixed(4)}% · 市值{w.money(converted.estimated_market_value_fen)}</p><p>预计费用{w.money(converted.estimated_fee_fen)} · 预计到账{w.money(converted.estimated_net_cash_fen)}</p><p>{converted.notice}</p><button onClick={()=>setConfirm(converted)}>继续本人确认与验证</button></>}
@@ -324,7 +333,7 @@ export default function StructuredActionPanel({userId,revision,onActivity,agentC
       </AgentStepCard>{pending==='planning'&&<p role="status">{workflow==='planning'?'正在计算整体配置…':'正在匹配产品…'}，请等待当前请求完成。</p>}{renderResult('planning')}
       {candidateGroups.length>0&&ready&&<><ProductPicker requiredBuckets={workflow==='planning'?poolHint.required:undefined} selectionLocked={executionActive} allowEmptySelection={workflow==='planning'&&!!planningBaseline&&poolHint.required.length===0} selectionDescription={workflow==='planning'?poolHint.description:undefined} planningRefresh={workflow==='planning'} continueDisabled={workflow==='planning'&&(!cashBudget||!planningBaseline)} beforeContinue={<PlanningCashInput disabled={executionActive} holdings={currentHoldings} available={availableCash} draft={cashDraft} onChange={next=>{setCashDraft(next);setReviewing(false);setActionErrors(current=>({...current,planning:''}));}}/>} showBuckets={workflow==='planning'} groups={candidateGroups} scopeKey={ready.assets.context_id??'legacy-v1'} selection={candidateSelection} onSelectionChange={next=>{setCandidateSelection(next);setReviewing(false);setActionErrors(current=>({...current,planning:''}));}} busy={busy}
         onRefreshGroup={(group,ids)=>void run('recommend_products',{filter:group.filter,cursor:group.next_cursor,selected_family_ids:workflow==='planning'?[...ids,...group.items.map(i=>i.family_id)]:ids,selected:workflow==='planning'?candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class})):undefined})}
-        loadDetail={loadDetail} loadComparison={loadComparison} onContinue={workflow==='planning'?()=>{setSelectionAttempted(true);if(poolHint.warning){setActionErrors(current=>({...current,planning:''}));return;}const selected=candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class}));if(cashBudget)void run('plan_portfolio',{selected,cash_reserve_fen:cashBudget.reserve,available_cash_fen:availableCash});}:undefined}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。</p>{workflow==='target'&&<TargetPurchase autoPrepare={agentCommand?.auto_prepare} novaTaskId={agentTaskId} initialAmounts={agentCommand?Object.fromEntries(agentCommand.products.map((p,i)=>[p.product_id,agentCommand.amounts_yuan[i]??''])):undefined} onPrepared={onPrepared} selection={candidateSelection} assets={ready.assets} accountId={ready.accountId} onActivity={onActivity}/>}</>}
+        loadDetail={loadDetail} loadComparison={loadComparison} onContinue={workflow==='planning'?()=>{setSelectionAttempted(true);if(poolHint.warning){setActionErrors(current=>({...current,planning:''}));return;}const selected=candidateSelection.items.map(({share})=>({product_id:share.product_id,product_version:share.product_version,share_class:share.share_class}));if(cashBudget)void run('plan_portfolio',{selected,cash_reserve_fen:cashBudget.reserve,available_cash_fen:availableCash});}:undefined}/><p className="consumer-note">勾选与换批保留待校验产品，不会生成订单。</p>{workflow==='target'&&<TargetPurchase initialAmountsKey={agentRequestId} autoPrepare={agentCommand?.auto_prepare} novaTaskId={agentTaskId} initialAmounts={agentCommand?Object.fromEntries(agentCommand.products.map((p,i)=>[p.product_id,agentCommand.amounts_yuan[i]??''])):undefined} onPrepared={onPrepared} selection={candidateSelection} assets={ready.assets} accountId={ready.accountId} onActivity={onActivity}/>}</>}
       {workflow==='planning'&&portfolio&&(reviewing||executionActive)&&<StructuredPortfolioReview onPrepared={onPrepared} onFlowActive={setExecutionActive} key={`${portfolio.portfolio_id}:${portfolio.snapshot_id}`} plan={portfolio} selection={candidateSelection} ratios={ratios} onRatiosChange={setRatios} onActivity={()=>{setActivityNotice('银行操作已返回，资金与持仓已刷新；请以银行实际结果为准。');onActivity();}}
         onRevise={async selection=>{const result=await run('revise_portfolio',{selection},{object_type:'products',ids:selection.items.map(i=>`${i.product_id}:${i.product_version}`)},true);if(result?.status!=='ok')throw new Error(result?.message??'比例调整未完成，请按当前范围检查输入后重试。');return readPortfolioPlan(result.data,portfolio.context_id??contextId);}}
         onPrepare={async (plan)=>{if(!ready?.assets.cash.some(a=>a.account_id===ready.accountId&&['savings','checking'].includes(a.account_type)))throw new Error('当前理财绑定的借记账户不可用，请刷新账户资料。');const paymentAccountId=ready.accountId;const result=await run('prepare_purchase',{portfolio_id:plan.portfolio_id,expected_version:plan.version,snapshot_id:plan.snapshot_id,...(paymentAccountId?{payment_account_id:paymentAccountId}:{})},undefined,true);if(result?.status!=='ok')throw new Error(result?.message??'差额准备未完成，请重新核对。');return result.data as w.PreparedPortfolio;}}/>}

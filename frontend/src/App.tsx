@@ -32,7 +32,6 @@ const BillAnalysis = lazy(() => import('./components/BillAnalysis'));
 const Wealth = lazy(() => import('./components/Wealth'));
 const PortfolioConsumerPreview = import.meta.env.DEV ? lazy(() => import('./components/Wealth/PortfolioConsumerPreview')) : null;
 const wealthConsumerPreviewEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).get('wealth-dev') === '1';
-const DemoTools = lazy(() => import('./components/Wealth/DemoTools'));
 const CardManagement = lazy(() => import('./components/CardManagement'));
 const ThirdPartyServices = lazy(() => import('./components/ThirdPartyServices'));
 const MerchantDashboard = lazy(() => import('./components/MerchantDashboard'));
@@ -75,7 +74,6 @@ function App() {
   const [bankRevision, setBankRevision] = useState(0);
   const [novaPrompts, setNovaPrompts] = useState<NovaPromptRequest[]>([]);
   useEffect(() => { setNovaPrompts([]); }, [user?.user_id]);
-  const [wealthWorkspaceEpoch,setWealthWorkspaceEpoch]=useState(0);
   const [workspaceReady,setWorkspaceReady]=useState<string|null>(null);
   const [workspaceError,setWorkspaceError]=useState('');
   const [workspaceRetry,setWorkspaceRetry]=useState(0);
@@ -131,7 +129,6 @@ function App() {
   const [retryChat, setRetryChat] = useState<bank.ChatRequest | null>(null);
   const [appView, setAppView] = useState<'banking' | 'thirdParty'>('banking');
   const [bankingSection, setBankingSection] = useState<BankingSection>(wealthConsumerPreviewEnabled ? 'wealth' : 'home');
-  const [wealthTestMode, setWealthTestMode] = useState(false);
   const [agentOpen, setAgentOpen] = useState(() => window.matchMedia('(min-width: 1101px)').matches);
   const [agentExpanded, setAgentExpanded] = useState(!wealthConsumerPreviewEnabled);
   const [agentModeChanging, setAgentModeChanging] = useState(false);
@@ -557,7 +554,7 @@ function App() {
     setSelectedCardId(undefined); setSelectedSubscriptionId(undefined);
     setBillPageContext({ version: 1, page: 'insights' });
     setThirdPartyPageContext({ version: 1, page: 'thirdParty' });
-    setAppView('banking'); setBankingSection('home'); setWealthTestMode(false); setAgentOpen(window.matchMedia('(min-width: 1101px)').matches); setAgentExpanded(true); setHighlightedPaymentRequest('');
+    setAppView('banking'); setBankingSection('home'); setAgentOpen(window.matchMedia('(min-width: 1101px)').matches); setAgentExpanded(true); setHighlightedPaymentRequest('');
   };
 
   useEffect(()=>{
@@ -662,9 +659,9 @@ function App() {
         {bankingSection === 'scheduled' && <Suspense fallback={<section className="card"><p>正在加载定时任务…</p></section>}><ScheduledTasks accounts={accounts} onFundsChanged={()=>{void load();}} onGoTransfer={()=>openSection('transfer')} onDispatch={task=>{if(!task.dispatch_request_id)return;setNovaPrompts(items=>[...items,{id:task.dispatch_request_id!,text:task.description,context:{version:1,page:'home'},userId:user.user_id}]);setAgentOpen(true);setAgentExpanded(false);}} /></Suspense>}
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
-        {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>理财规划与购买</h1><p>选择整体规划或目标产品，核对方案后确认并完成验证。</p></div><button className={wealthTestMode ? 'secondary' : 'test-mode-button'} onClick={() => setWealthTestMode(value => !value)}>{wealthTestMode ? '退出测试模式' : '进入测试模式'}</button></div>{wealthTestMode && <><p className="notice wealth-test-notice">测试模式已开启：下方保留团队原有的理财工作台与模拟测试工具。重置资金或删除旧轮次仍需单独确认。</p><Suspense fallback={null}><DemoTools key={user.user_id} userId={user.user_id} revision={bankRevision} changed={async()=>{setWealthWorkspaceEpoch(value=>value+1);await load();}} /></Suspense></>}<Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}>{workspaceReady===user.user_id?<Wealth key={`${user.user_id}:${wealthWorkspaceEpoch}`} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} />:<section className="card">{workspaceError?<><p role="alert">{workspaceError}</p><button onClick={()=>{workspaceBoot.current=null;setWorkspaceRetry(n=>n+1);}}>重新开启操作轮次</button></>:<p role="status">正在开启新的理财操作轮次…</p>}</section>}</Suspense></>}
+        {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>理财规划与购买</h1><p>选择整体规划或目标产品，核对方案后确认并完成验证。</p></div></div><Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}>{workspaceReady===user.user_id?<Wealth key={user.user_id} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} />:<section className="card">{workspaceError?<><p role="alert">{workspaceError}</p><button onClick={()=>{workspaceBoot.current=null;setWorkspaceRetry(n=>n+1);}}>重新开启操作轮次</button></>:<p role="status">正在开启新的理财操作轮次…</p>}</section>}</Suspense></>}
         {bankingSection === 'audit' && <Suspense fallback={<section className="card"><p>正在加载操作记录…</p></section>}><Audit key={user.user_id} /></Suspense>}
-        {bankingSection === 'insights' && <><div className="page-intro bills-page-intro"><p className="eyebrow">INSIGHTS</p><h1>查看支出与变化</h1><p>查看消费与周期收支，按自己的标签整理账单。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis navigation={billNavigation} key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} onOpenNova={() => {setAgentOpen(true);setAgentExpanded(false);}} onAskNova={(text, context) => { setNovaPrompts(items => [...items,{id:crypto.randomUUID(),text,context,userId:user.user_id}]); setAgentOpen(true); setAgentExpanded(false); }} /></Suspense></>}
+        {bankingSection === 'insights' && <><div className="page-intro bills-page-intro"><p className="eyebrow">INSIGHTS</p><h1>查看支出与变化</h1><p>查看消费与周期收支，按自己的标签整理账单。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis navigation={billNavigation} key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} onAskNova={(text, context) => { setNovaPrompts(items => [...items,{id:crypto.randomUUID(),text,context,userId:user.user_id}]); setAgentOpen(true); setAgentExpanded(false); }} /></Suspense></>}
 
         {bankingSection === 'transfer' && <div className="transfers-page"><div className="page-intro transfers-page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账与收款</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="transfer-board">
       <div className="transfer-col">

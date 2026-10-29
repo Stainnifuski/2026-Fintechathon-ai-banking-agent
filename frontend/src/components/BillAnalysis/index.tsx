@@ -25,8 +25,8 @@ const descriptions:Record<BillSection,string>={overview:'查看收支、消费�
 const defaultOpen:Record<string,boolean>={anomalies:true,subscriptions:false,recurring:true,cashflow:false,history:false,merchants:true,rules:false};
 const quickQuestions:Record<string,string>={overview:'解释当前筛选的账单，并说明支出变化的主要依据',transactions:'查看当前筛选的交易明细',budgets:'查看当前预算月份的预算使用情况与超支预警',anomalies:'查看当前账期尚待核对的异常及其依据',subscriptions:'核对当前账期的订阅扣费及差异',recurring:'查看我的周期收支及纳入预测的设置',cashflow:'估计未来30天的储蓄现金流，说明计划与历史估计的区别',history:'查看我保存的基准预测与实际收支的偏差',merchants:'查看我的商户与别名目录',rules:'查看我的商户分类规则和流水标签'};
 
-type Props={navigation?:{id:string;target:BillResultTarget};accounts:Account[];revision:number;onViewCashflows?:()=>void;onContextChange?:(context:NovaPageContext)=>void;onManageSubscription?:(id:string)=>void;onAskNova:(text:string,context:NovaPageContext)=>void;onOpenNova:()=>void};
-export default function BillAnalysis({navigation,accounts,revision,onViewCashflows,onContextChange,onManageSubscription,onAskNova,onOpenNova}:Props) {
+type Props={navigation?:{id:string;target:BillResultTarget};accounts:Account[];revision:number;onViewCashflows?:()=>void;onContextChange?:(context:NovaPageContext)=>void;onManageSubscription?:(id:string)=>void;onAskNova:(text:string,context:NovaPageContext)=>void};
+export default function BillAnalysis({navigation,accounts,revision,onViewCashflows,onContextChange,onManageSubscription,onAskNova}:Props) {
  const [section,setSection]=useState<BillSection>('overview');
  const [expanded,setExpanded]=useState(defaultOpen),[focused,setFocused]=useState<Record<string,string>>({checks:'anomalies',forecast:'recurring',organize:'merchants'});
  const [selections,setSelections]=useState<Record<string,BillSelection|null>>({});
@@ -102,7 +102,7 @@ export default function BillAnalysis({navigation,accounts,revision,onViewCashflo
       <details className="bill-notices"><summary>统计口径与数据说明</summary><ul>{result.notices.map(line => <li key={line}>{line}</li>)}</ul><p>数据截止：{dateTime(result.as_of)}。报告按交易时间查询，未保存历史快照；稍后补录的数据可能改变结果。</p></details>
  </>:<p className="bill-empty">正在准备账单报告。</p>;
  return <section className="bills bill-workspace" aria-label="账单工作台">
-  <header className="bill-workspace-head"><div><h2>账单工作台</h2><p>{descriptions[section]}</p></div><button type="button" className="secondary" onClick={onOpenNova}>问 NOVA</button></header>
+  <header className="bill-workspace-head"><div><h2>账单工作台</h2><p>{descriptions[section]}</p></div></header>
   <BillTabs items={sections} value={section} onChange={value=>setSection(value as BillSection)} label="账单功能导航" prefix="bill"/>
   <div className="bill-nova-context"><div><strong>当前功能：{sections.find(([key])=>key===section)?.[1]}{subsection&&` / ${submenu?.find(([key])=>key===subsection)?.[1]}`}</strong><small>可手动办理，也可在同一个 NOVA 对话中查询或整理。</small></div><button type="button" className="secondary" onClick={ask}>让 NOVA 分析当前内容</button></div>
   {selected&&<div className="bill-selection" role="status"><span>{selectionLabels[featureKey]||'已选择当前对象'} · 已同步给 NOVA</span><button type="button" className="text-button" onClick={()=>selectAt(featureKey,null)}>清除选择</button></div>}

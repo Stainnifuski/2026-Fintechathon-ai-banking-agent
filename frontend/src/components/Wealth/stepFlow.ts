@@ -13,6 +13,10 @@ export const effectiveStepKind=(kind:string,workflow:'planning'|'target'|null,wo
 // request_id. Reapply only the latter to preserve the user's live form state.
 export const agentCommandKey=(taskId:string|undefined,requestId:string|undefined):string=>`${taskId??'agent'}:${requestId??'initial'}`;
 
+/** Same-request bank refreshes cannot roll back locally completed UI steps. */
+export const reconcileCompletedSteps=(local:string[],saved:string[],reset:boolean):string[]=>
+ reset?[...saved]:[...local];
+
 export const stepLabels:Record<string,string>={match:'匹配条件',cash_management:'活钱候选',stable:'稳健候选',growth:'进取候选',candidates:'产品候选',selected:'已选产品',budget:'规划资金',amounts:'申购金额',purchase_review:'申购核对',allocation:'配置建议',details:'交易明细',redemption_input:'赎回输入',trade:'本人确认与验证'};
 
 export function activeStep(order:string[],registered:string[],completed:string[]):string|undefined{

@@ -31,3 +31,13 @@ test('logout clear drops draft and rejects late updates until fresh facts bind',
   store.update(key,'value','9');store.clear();store.update(key,'value','late');
   assert.equal(store.read(key,'c').value,'');store.bind(key,'c');assert.equal(store.read(key,'c').value,'');
 });
+
+test('name search stays with its candidate draft across workbench handoff and clears with scope',()=>{
+  const store=new ManualDraftStore(),key=draftScope('u','c',['a']);store.bind(key,'c');
+  store.update(key,'workflow','target');store.update(key,'mode','name');store.update(key,'nameQuery','华夏 成长');
+  const restored=store.read(key,'c');
+  assert.equal(restored.workflow,'target');assert.equal(restored.mode,'name');
+  assert.equal(restored.nameQuery,'华夏 成长');assert.deepEqual(restored.candidateSelection.items,[]);
+  const other=draftScope('other','c',['a']);store.bind(other,'c');
+  assert.equal(store.read(other,'c').nameQuery,'');
+});

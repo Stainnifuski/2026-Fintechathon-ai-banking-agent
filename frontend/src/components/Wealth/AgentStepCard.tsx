@@ -6,6 +6,7 @@ export interface StepContext {
  focus:(stage:string,label:string)=>void; draft?:(data:Record<string,unknown>)=>void;
  completed:string[];active?:string;register:(stage:string)=>()=>void;complete:(...stages:string[])=>void;
  backtrack:(stage:string)=>void;
+ invalidate?:(...stages:string[])=>void;
  reopenedStage?:string;
 }
 

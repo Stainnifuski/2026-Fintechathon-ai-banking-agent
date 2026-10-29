@@ -9,7 +9,8 @@ import Wealth from './Wealth';
 import PlanExecution from './Wealth/PlanExecution';
 import {wealthRequestFailure} from '../utils/wealthFeedback';
 import './Wealth/novaWealth.css';
-import {stepOrder,activeStep,stepLabels,effectiveStepKind} from './Wealth/stepFlow';
+import {stepOrder,activeStep,stepLabels,effectiveStepKind,reconcileCompletedSteps} from './Wealth/stepFlow';
+import {restoreWealthInputs} from './Wealth/restoreInputs';
 
 const titles:Record<Card['command']['kind'],string>={assets:'理财资产',positions:'我的持仓',returns:'理财收益',detail:'产品详情',compare:'产品比较',assessment:'本人风险评估',recommend:'目标产品推荐',planning:'理财规划',purchase:'申购',redeem:'赎回',resume:'恢复理财任务',abandon:'放弃草稿',clarify:'补充理财需求'};
 
@@ -52,10 +53,15 @@ export default function NovaWealthCard({card,userId,disabled,onUpdated,onActivit
  const registrations=useRef(new Map<string,number>());
  const [completed,setCompleted]=useState<string[]>(card.view_context?.completed_stages??[]);
  const completedRef=useRef(completed);
- useEffect(()=>{viewDraft.current=card.view_context??{visible_products:[],selected_products:[]};const stages=card.view_context?.completed_stages??[];
+ const progressIdentity=useRef(`${card.request_id}:${card.draft_epoch??0}`);
+ useEffect(()=>{
+  const identity=`${card.request_id}:${card.draft_epoch??0}`;
+  const reset=progressIdentity.current!==identity;progressIdentity.current=identity;
+  const stages=reconcileCompletedSteps(completedRef.current,card.view_context?.completed_stages??[],reset);
+  viewDraft.current=reset?card.view_context??{visible_products:[],selected_products:[]}:{...card.view_context,...viewDraft.current,completed_stages:stages};
   completedRef.current=stages;setCompleted(stages);
-  setWorkflowOverride(card.view_context?.workflow_request_id===card.request_id?card.view_context.workflow??null:null);
- },[card.request_id,card.version]);
+  if(reset)setWorkflowOverride(card.view_context?.workflow_request_id===card.request_id?card.view_context.workflow??null:null);
+ },[card.request_id,card.version,card.draft_epoch]);
  const register=useCallback((stage:string)=>{
   registrations.current.set(stage,(registrations.current.get(stage)??0)+1);
   setRegistered(s=>s.includes(stage)?s:[...s,stage]);
@@ -66,6 +72,11 @@ export default function NovaWealthCard({card,userId,disabled,onUpdated,onActivit
   if(next.length===completedRef.current.length)return;
   completedRef.current=next;setCompleted(next);saveDraft({completed_stages:next});
   if(next.includes('trade'))finishTask?.();
+ },[saveDraft]);
+ const invalidate=useCallback((...stages:string[])=>{
+  const next=completedRef.current.filter(stage=>!stages.includes(stage));
+  if(next.length===completedRef.current.length)return;
+  completedRef.current=next;setCompleted(next);saveDraft({completed_stages:next});
  },[saveDraft]);
  const effectiveKind=effectiveStepKind(card.command.kind,workflowOverride,viewDraft.current.workflow_request_id,card.request_id) as Card['command']['kind'];
  const taskTitle=card.origin_kind==='positions'?'我的持仓与赎回':titles[effectiveKind];
@@ -87,11 +98,14 @@ export default function NovaWealthCard({card,userId,disabled,onUpdated,onActivit
  };
  const activity=()=>{setRevision(n=>n+1);onActivity();};
  const restoredCashField=card.view_context?.cash_field;
- const products=card.command.products??[];
+ const {products,amounts_yuan}=restoreWealthInputs(card.command,card.view_context);
+ const restoredSearch=card.view_context?.search_request_id===card.request_id?card.view_context:undefined;
  const command={...card.command,products,cash_field:restoredCashField==='investment'?'invest' as const:restoredCashField??card.command.cash_field,
+  name_query:restoredSearch?.search_mode==='name'?restoredSearch.name_query:restoredSearch?.search_mode==='category'?null:card.command.name_query,
+  category:restoredSearch?.search_mode==='category'?restoredSearch.search_category:card.command.category,
   cash_yuan:card.view_context?.cash_yuan??card.command.cash_yuan,
-  amounts_yuan:products.map((p,i)=>card.view_context?.amounts_yuan?.[p.product_id]??card.command.amounts_yuan?.[i]??null)};
- return <WealthStepContext.Provider value={{taskId:card.task_id,focusedStage,instruction:card.instruction?.id===restoredInstruction.current?undefined:card.instruction,focus:onFocus,draft:saveDraft,completed,active,register,complete,backtrack,reopenedStage:card.reopen_stage}}><section ref={root} id={`nova-wealth-${card.task_id}`} className="nova-wealth-card wealth-page" aria-label={taskTitle}>
+  amounts_yuan};
+ return <WealthStepContext.Provider value={{taskId:card.task_id,focusedStage,instruction:card.instruction?.id===restoredInstruction.current?undefined:card.instruction,focus:onFocus,draft:saveDraft,completed,active,register,complete,invalidate,backtrack,reopenedStage:card.reopen_stage}}><section ref={root} id={`nova-wealth-${card.task_id}`} className="nova-wealth-card wealth-page" aria-label={taskTitle}>
   <div className="nova-wealth-task-head"><div><h3>{taskTitle}</h3><small>{card.paused?'已暂停':card.closed?'草稿已放弃':readOnly?'比赛模拟 · 查询结果':'比赛模拟 · 待本人核对'}</small></div><button className="secondary" onClick={()=>setExpanded(v=>!v)}>{expanded?'折叠':'展开'}</button>{!card.closed&&!card.execution_plan_id&&<button className="nova-card-remove" aria-label="移除理财草稿" disabled={disabled} onClick={async()=>{if(await confirm('移除理财草稿？','移除这个未提交的理财草稿，不会删除已有成交。','确认移除'))void updateNovaWealthCard(current.current,{closed:true}).then(onUpdated).catch(e=>setError(wealthRequestFailure(e)));}}>×</button>}</div>
   {!card.closed&&card.execution_plan_id&&<button className="secondary" disabled={disabled} onClick={()=>void updateNovaWealthCard(current.current,{reset_draft:true}).then(onUpdated).catch(e=>setError(wealthRequestFailure(e)))}>修改未提交方案（旧确认失效）</button>}
   <details className="nova-wealth-more"><summary>更多操作</summary>{!card.closed&&<button className="secondary" disabled={disabled} onClick={()=>void updateNovaWealthCard(current.current,{paused:!card.paused}).then(onUpdated).catch(e=>setError(wealthRequestFailure(e)))}>{card.paused?'恢复并重新核对':'暂停后续步骤'}</button>}</details>
