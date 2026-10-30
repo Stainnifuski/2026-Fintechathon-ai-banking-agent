@@ -231,7 +231,11 @@ async def test_existing_planning_continues_without_restarting_or_appending_intro
 
 
 @pytest.mark.asyncio
-async def test_actual_deepseek_http_payload_has_full_knowledge_and_generated_text_is_final(monkeypatch):
+@pytest.mark.parametrize('phase,options', [
+    ('offer', {'offer':True}), ('followup', {}),
+    ('started', {'intro':True}), ('active', {'intro':True,'continuing':True}),
+])
+async def test_actual_deepseek_http_payload_has_full_knowledge_and_generated_text_is_final(monkeypatch,phase,options):
     monkeypatch.setenv('LLM_API_KEY', 'isolated-test-key')
     monkeypatch.setenv('LLM_MODE', 'model')
     captured = []
@@ -243,15 +247,22 @@ async def test_actual_deepseek_http_payload_has_full_knowledge_and_generated_tex
         return httpx.Response(200, json={'choices':[{'message':{'content':json.dumps(answer,ensure_ascii=False)},
                                                      'finish_reason':'stop'}]})
     client = LLMService(httpx.MockTransport(handler))
+    history = [{'role':'assistant','content':'先前已介绍整体用途。'}]
+    facts = {'status':'隔离测试：尚未选择产品'}
     try:
-        reply = await knowledge.explain(client, '如何投资', [], offer=True)
+        reply = await knowledge.explain(client, '解释当前问题', history, local_data=facts, **options)
     finally:
         await client.aclose()
     body = captured[0]
     payload = json.loads(next(m['content'] for m in body['messages'] if m['role'] == 'user'))
     assert payload['knowledge'] == knowledge.KNOWLEDGE_PATH.read_text(encoding='utf-8')
-    assert payload['question'] == '如何投资' and payload['phase'] == 'offer'
+    assert payload['question'] == '解释当前问题' and payload['phase'] == phase
+    assert payload['recent_turns'] == history
+    local = json.loads(payload['authorized_local_data_text'])
+    assert local['status'] == facts['status'] and local['phase'] == phase
+    if phase in {'started','active'}:
+        assert local['stage_facts']
     assert body['response_format'] == {'type':'json_object'}
     assert 'tools' not in body
-    assert reply == GENERATED + '\n\n' + knowledge.START_LINK
+    assert reply == GENERATED + ('\n\n' + knowledge.START_LINK if phase == 'offer' else '')
     assert QUOTE not in reply

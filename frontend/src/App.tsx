@@ -265,7 +265,24 @@ function App() {
       const result = loginMode === 'login' ? await bank.login(phone, password) : await bank.register(name, phone, password);
       localStorage.setItem('token', result.access_token);
       localStorage.setItem('bank-user', JSON.stringify(result.user));
-      setUser(result.user);
+      document.documentElement.dataset.novaAuth='moving';
+      flushSync(()=>{setAgentOpen(true);setAgentExpanded(true);setUser(result.user);});
+      // The persistent orb reveals the workspace when its 500 ms move finishes.
+      // Merchant workspaces have no NOVA destination.
+      await new Promise<void>(resolve=>{
+        const finish=()=>{
+          window.removeEventListener('nova-auth-arrived',finish);clearTimeout(fallback);
+          document.documentElement.dataset.novaAuth='revealing';
+          window.setTimeout(()=>{
+            document.documentElement.removeAttribute('data-nova-auth');
+            document.querySelectorAll<HTMLElement>('#root > :not(.nova-global-orb)').forEach(element=>{element.inert=false;});
+            resolve();
+          },500);
+        };
+        const fallback=window.setTimeout(finish,550);
+        window.addEventListener('nova-auth-arrived',finish);
+        document.querySelectorAll<HTMLElement>('#root > :not(.nova-global-orb)').forEach(element=>{element.inert=true;});
+      });
     } catch (error) { setStatus(`${loginMode === 'login' ? '登录' : '注册'}失败：${message(error)}`); }
     finally { authenticationPending.current = false; setIsAuthenticating(false); }
   };

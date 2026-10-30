@@ -975,8 +975,6 @@
 .home-workspace .nova-composer-area .agent-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px 12px; padding:0; max-height:28dvh; overflow:auto; }
 .home-workspace .nova-composer-area .nova-quick-prompts,
 .home-workspace .nova-composer-area .nova-help { grid-column:1 / -1; }
-.home-workspace .nova-composer-area .nova-debug-row label { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
-.home-workspace .nova-composer-area .nova-debug-row input { margin:0; flex:none; }
 .home-workspace .nova-composer-area .nova-help-toggle { height:28px; min-height:0; padding:3px 8px; line-height:20px; margin:0; border-radius:6px; }
 .home-workspace .nova-composer-area .nova-home-suggestions { grid-template-columns:1fr; gap:6px; }
 .home-workspace .nova-composer-area .nova-home-suggestions button { padding:9px 12px; min-height:36px; }
@@ -1011,3 +1009,13 @@
   .home-workspace .nova-empty .eyebrow,.home-workspace .nova-empty p { display:none; }
   .home-workspace .nova-empty .nova-topic-ribbon { margin-top:10px; }
 }
+
+.nova-global-orb {position:fixed!important;z-index:40;left:0;top:0;width:480px;height:480px;transform-origin:0 0;pointer-events:none;opacity:0;will-change:transform}
+.nova-global-orb[data-ready="true"] {opacity:.96}
+.nova-global-orb canvas {display:block;width:100%;height:100%}
+.nova-global-orb[data-state="thinking"] {filter:saturate(1.16) brightness(1.08)}
+.nova-global-orb[data-state="typing"] {filter:saturate(1.08) brightness(1.03)}
+html[data-nova-auth="moving"] #root > :not(.nova-global-orb) {visibility:hidden;pointer-events:none}
+html[data-nova-auth="moving"] .nova-global-orb {visibility:visible}
+@keyframes nova-auth-reveal {from {opacity:0} to {opacity:1}}
+html[data-nova-auth="revealing"] #root > :not(.nova-global-orb) {animation:nova-auth-reveal .5s ease both;pointer-events:none}

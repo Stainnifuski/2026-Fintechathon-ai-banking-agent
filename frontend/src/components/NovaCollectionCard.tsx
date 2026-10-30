@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import {useTaskField} from './NovaTaskPresentation';
 import { useEffect, useState, type FormEvent } from 'react';
 import AddContactForm from './AddContactForm';
@@ -9,10 +10,7 @@ type Props = { card: CollectionCard; session: NovaTaskSession;manual?:boolean;
   onUpdated: (update: Pick<NovaTaskSession, 'session_id' | 'session_version' | 'collection_cards'>) => void;
   onActivity?: () => void; disabled: boolean };
 
-function errorText(error: unknown) {
-  const detail = (error as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail;
-  return detail?.message || (error instanceof Error ? error.message : '操作失败，请稍后重试。');
-}
+const errorText=requestFeedback;
 
 export default function NovaCollectionCard({ card, session, onUpdated, onActivity, disabled,manual }: Props) {
   const [selected, setSelected] = useTaskField('selected',card.selected_payer_user_ids);

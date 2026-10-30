@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import {useTaskField} from './NovaTaskPresentation';
 import { FormEvent, useEffect, useState } from 'react';
 import * as bank from '../services/bank';
@@ -14,11 +15,7 @@ type Props = {
   onSelectCandidate: (candidateId: string) => void; onTransferActivity?: () => void;
 };
 
-const errorText = (error: unknown) => {
-  const detail = (error as { response?: { data?: { detail?: { message?: string } | string } } })?.response?.data?.detail;
-  return typeof detail === 'string' ? detail : detail?.message ||
-    (error instanceof Error ? error.message : '操作失败，请刷新任务后重试。');
-};
+const errorText=requestFeedback;
 
 export default function NovaTransferCard({ task, session, accounts, focused, disabled,manual,
   onUpdated, onFocus, onSelectCandidate, onTransferActivity }: Props) {

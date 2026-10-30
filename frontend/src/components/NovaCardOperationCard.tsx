@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import {useTaskField,useTaskPrefill} from './NovaTaskPresentation';
 import { useEffect, useState } from 'react';
 import * as bank from '../services/bank';
@@ -18,12 +19,7 @@ const changeValue = (change: bank.CardChange, value?: boolean | number | string 
   if (change.unit === 'fen' && typeof value === 'number') return yuan(value);
   return STATUS_LABELS[String(value)] ?? String(value);
 };
-const errorText = (err: unknown) => {
-  const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;
-  if (typeof detail === 'string') return detail;
-  if (detail?.message) return detail.message;
-  return err instanceof Error ? err.message : '请求失败，请稍后重试';
-};
+const errorText=requestFeedback;
 type Channels = Record<bank.CardChannelSwitch, boolean>;
 
 /** NOVA 识别出的卡片操作在聊天中以表单办理：本人填写/修改 → 生成确认信息 → 本人确认（及验证）。 */

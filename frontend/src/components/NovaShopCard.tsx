@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import {useTaskField,useTaskPrefill} from './NovaTaskPresentation';
 import { useEffect, useState, type FormEvent } from 'react';
 import * as bank from '../services/bank';
@@ -18,12 +19,7 @@ const ORDER_STATUS: Record<string, string> = {
 const RISK: Record<string, string> = { green: '低风险', yellow: '需本人确认', red: '需确认 + 验证码' };
 const yuan = (fen: number) => formatFen(fen);
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
-const errorText = (err: unknown) => {
-  const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;
-  if (typeof detail === 'string') return detail;
-  if (detail?.message) return detail.message;
-  return err instanceof Error ? err.message : '请求失败，请稍后重试';
-};
+const errorText=requestFeedback;
 
 /** NOVA 下单的店铺订单：信息不全时补全下单；付款由本人在卡片中选择账户、确认并验证。 */
 export default function NovaShopCard({ task, sessionId, accounts, disabled, onUpdated, onActivity }: {

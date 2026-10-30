@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import {useTaskField,useTaskPrefill} from './NovaTaskPresentation';
 import { useEffect, useState, type FormEvent } from 'react';
 import * as calendar from '../services/calendar';
@@ -5,12 +6,7 @@ import { dismissNovaCalendarTask, linkNovaCalendarTask, type NovaChatCalendarTas
 import { beijingTime, fromBeijingInput } from '../utils/time';
 import NovaCalendarMutationCard from './NovaCalendarMutationCard';
 
-const errorText = (err: unknown) => {
-  const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;
-  if (typeof detail === 'string') return detail;
-  if (detail?.message) return detail.message;
-  return err instanceof Error ? err.message : '请求失败，请稍后重试';
-};
+const errorText=requestFeedback;
 const shortTime = (value: string) => beijingTime(value).slice(0, 16);
 
 /** NOVA 理解的日程：信息完整时已创建并可删除；不完整时为预填表单，空项由本人补全后创建。 */

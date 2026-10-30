@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import { useEffect, useState } from 'react';
 import * as bank from '../services/bank';
 import { dismissNovaSubscriptionTask, selectNovaSubscriptionTask, type NovaChatSubscriptionTask } from '../services/nova';
@@ -7,12 +8,7 @@ import { formatFen } from '../utils/money';
 const CYCLES: Record<string, string> = { MONTHLY: '每月', YEARLY: '每年', WEEKLY: '每周' };
 const amountText = (subscription: bank.Subscription) =>
   `${subscription.currency === 'CNY' ? formatFen(subscription.amount_fen) : `${(subscription.amount_fen / 100).toFixed(2)} ${subscription.currency}`} / ${CYCLES[subscription.billing_cycle] ?? subscription.billing_cycle}`;
-const errorText = (err: unknown) => {
-  const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;
-  if (typeof detail === 'string') return detail;
-  if (detail?.message) return detail.message;
-  return err instanceof Error ? err.message : '请求失败，请稍后重试';
-};
+const errorText=requestFeedback;
 
 /** NOVA 发起的取消订阅：本人在聊天中查看银行返回的取消详情并确认；确认凭证不经过 NOVA。 */
 export default function NovaSubscriptionCancelCard({ task, sessionId, disabled, onUpdated, onActivity }: {

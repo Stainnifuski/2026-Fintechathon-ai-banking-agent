@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
+  <!-- Vector version of the repository's .brand-mark: rounded gradient N. -->
+  <defs><linearGradient id="nova" x2="1" y2="1"><stop stop-color="#3157e8"/><stop offset="1" stop-color="#7257f2"/></linearGradient></defs>
+  <rect width="36" height="36" rx="11" fill="url(#nova)"/>
+  <path d="M12 26V10h3.4L22 20.8V10h3v16h-3.4L15 15.2V26z" fill="white" transform="translate(-.5 0)"/>
+</svg>

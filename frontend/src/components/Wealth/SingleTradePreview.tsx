@@ -7,6 +7,7 @@ import {SecondFactor} from '../SecondFactor';
 import {beijingTime} from '../../utils/time';
 import {disclosureLabels,displayDisclosure,visibleDisclosures} from './disclosureView';
 import {statusLabels} from './tradeStatus';
+import {wealthRequestFailure} from '../../utils/wealthFeedback';
 
 /** Bank preview/confirm/verify/execute shared by the three B4 input modes. */
 export default function SingleTradePreview({preview:initial,onClose,onActivity,onCompleted,redemption}:{preview:w.Preview;onClose:()=>void;onActivity:()=>void;onCompleted?:(message:string)=>void;redemption?:{holding_ratio:string;estimated_market_value_fen:number;notice:string}}){
@@ -14,7 +15,7 @@ export default function SingleTradePreview({preview:initial,onClose,onActivity,o
   const [preview,setPreview]=useState(initial);const [consent,setConsent]=useState(false);
   const [factor,setFactor]=useState<Factor|null>({method:'totp'});const [code,setCode]=useState('');
   const [busy,setBusy]=useState(false);const [notice,setNotice]=useState('');const [done,setDone]=useState(false);
-  const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(error){setNotice((error as {response?:{data?:{detail?:{message?:string}}}})?.response?.data?.detail?.message??'请求失败，请稍后核对结果');}finally{setBusy(false);}};
+  const act=async(work:()=>Promise<void>)=>{setBusy(true);setNotice('');try{await work();}catch(error){setNotice(wealthRequestFailure(error));}finally{setBusy(false);}};
   const execute=async()=>{const result=await w.post<w.Order>(`/previews/${preview.authorization_id}/execute`,{});setDone(true);setCode('');const message=`${statusLabels[result.status]??'状态待核对'}；${result.status==='SETTLED'?'模拟即时成交成功，资金与持仓已刷新':'结果尚未完成，请先刷新核对，勿重复提交'}。`;setNotice(message);onCompleted?.(message);onActivity();if(result.status==='SETTLED'&&finishTask){onClose();finishTask();}};
   const direction=preview.command.direction==='purchase'?'申购':'赎回';
   return <Modal className="wealth-modal" scope="wealth wealth-page"><section className="card" role="dialog" aria-modal="true" aria-label={`${direction}本人确认`}><h3>{preview.product_name} · {direction} {preview.command.direction==='purchase'?w.money(preview.command.amount_fen):`${preview.command.units}份`}</h3>

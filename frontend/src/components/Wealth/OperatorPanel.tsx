@@ -1,3 +1,4 @@
+import {tradeStatusLabel} from './tradeStatus';
 import {useEffect,useRef,useState} from 'react';
 import * as w from '../../services/wealth';
 import {beijingTime} from '../../utils/time';
@@ -52,7 +53,7 @@ export default function OperatorPanel({userId,revision,onActivity}:{userId:strin
         {task.control_mode==='HANDOFF_PENDING'?<button disabled={busy} onClick={()=>{void act(task,'claim');}}>领取任务</button>:owned&&<button disabled={busy} onClick={()=>{void act(task,'facts');}}>读取原账户银行事实</button>}
         {selected&&review&&owned&&<section aria-label="领取任务核对资料">
           <h4>银行账户事实</h4>{review.facts.cash.map(account=><p key={account.account_id}>账面 {w.money(account.balance_fen)} · 可用 {w.money(account.available_fen)} · 占款 {w.money(account.held_fen)}</p>)}
-          {review.facts.orders.map((order,index)=><p key={order.operation_id}>第 {index + 1} 笔订单 · {order.status}</p>)}
+          {review.facts.orders.map((order,index)=><p key={order.operation_id}>第 {index + 1} 笔订单 · {tradeStatusLabel(order.status)}</p>)}
           <h4>原任务对话与方案</h4>
           {review.context.conversation?.history.map((turn,index)=><article key={index}><p>用户：{turn.user}</p><p>助手：{turn.reply.message}</p></article>)}
           {review.context.plan&&<p>方案 v{review.context.plan.version} · {review.context.plan.status}</p>}

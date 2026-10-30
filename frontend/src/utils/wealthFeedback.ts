@@ -1,12 +1,16 @@
 import {authenticationExpiredMessage,isSessionAuthenticationFailure} from './sessionAuthentication.ts';
+import {requestFeedback,unverifiedResult} from './requestFeedback.ts';
 
 /** Preserve the actual request failure instead of replacing it with a ratio error. */
 export function wealthRequestFailure(error:unknown):string {
  if(isSessionAuthenticationFailure(error))return authenticationExpiredMessage;
  const detail=(error as {response?:{data?:{detail?:string|{message?:string;code?:string}}}})?.response?.data?.detail;
  const status=(error as {response?:{status?:number}})?.response?.status;
+ if(status===403||typeof detail==='object'&&['TOTP_INVALID','SMS_INVALID','TOTP_REPLAY','SECURITY_LOCKED','AGENT_SESSION_LOCKED','PROMPT_INJECTION_BLOCKED'].includes(detail?.code??''))return requestFeedback(error);
  if(status===500&&(detail==null||typeof detail==='string'&&!/[\u4e00-\u9fff]/.test(detail)))
-  return '系统处理请求时发生异常。请稍后重试；涉及交易时先核对原操作结果，避免重复提交。持续失败请联系维护人员处理。';
+  return `系统处理请求时发生异常。${unverifiedResult} 请先核对原操作结果；持续失败请联系维护人员处理。`;
+ if(status&&status>=500)return `服务暂未正常返回结果。${unverifiedResult}`;
+ if(!status&&!detail)return requestFeedback(error);
  if(typeof detail==='string')return wealthFeedback(detail);
  if(detail?.message&&detail.code&&['INSUFFICIENT_AVAILABLE_FUNDS','INVALID_AMOUNT','NAV_UNAVAILABLE',
   'DATA_STALE','PURCHASE_STOPPED','HOLDING_CAP'].includes(detail.code)&&!/请|后重试/.test(detail.message))
@@ -29,7 +33,7 @@ export function wealthFeedback(raw:string):string {
   [['PLANNING_HOLDING_PERMISSION_UNPROVEN','PLANNING_FEE_UNPROVEN'],'持仓权限或费用资料尚未核实，请刷新资料后重新规划；不会自动交易。'],
   [['PLANNING_EXTRA_ASSET_CHANGE','PLANNING_RECALCULATION_REQUIRED'],'赎回后资金或持仓发生额外变化，请重新生成规划。已到账资金保留为现金，不会自动追加交易。'],
   [['PLANNING_REDEMPTION_NOT_SETTLED'],'赎回结果尚未全部核实到账。请先核对原交易结果，到账后再继续准备申购。'],
-  [['BANK_UNAVAILABLE','BANK_TIMEOUT','database is locked'],'银行资料或最新报价读取暂未完成，尚未生成交易预览。请稍后再次点击“核对差额与准备预览”；原方案和已受理交易保留。'],
+  [['BANK_UNAVAILABLE','BANK_TIMEOUT','database is locked'],'银行资料或报价请求未正常完成，结果尚未核实。请先核对原任务及原交易预览，避免重复提交；确认原状态后，再按页面“核对差额与准备预览”继续。'],
   [['ASSESSMENT_UNCONFIRMED'],'风险评估已填写，但还没有本人确认。请展开上方“本人风险评估”，点击“本人确认上述评估结果并继续原需求”，再重新发起推荐或规划。'],
   [['ASSESSMENT_PURCHASE_FORBIDDEN'],'当前正式风险评估结果不允许申购。请先查看“本人风险评估”中的结果说明；可以继续查询产品、订单和持仓，不能跳过评估限制购买。'],
   [['ASSESSMENT_LIMIT_REACHED'],'已达到风险评估次数限制，请按评估页面提示的可用时间再尝试；现有查询不受影响。'],

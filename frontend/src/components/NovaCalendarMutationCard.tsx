@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import { useEffect, useState, type FormEvent } from 'react';
 import { confirmNovaCalendarTask, dismissNovaCalendarTask, type NovaChatCalendarTask } from '../services/nova';
 
@@ -6,10 +7,7 @@ const labels: Record<string, string> = {
   end_date: '结束日期', end_time: '结束时间', location: '地点', description: '备注',
 };
 const actions = { add: '添加', modify: '修改', delete: '删除' };
-const errorText = (error: unknown) => {
-  const detail = (error as { response?: { data?: { detail?: { message?: string } | string } } })?.response?.data?.detail;
-  return typeof detail === 'string' ? detail : detail?.message || (error instanceof Error ? error.message : '操作失败');
-};
+const errorText=requestFeedback;
 
 export default function NovaCalendarMutationCard({ task, sessionId, disabled, onUpdated, onActivity }: {
   task: NovaChatCalendarTask; sessionId: string; disabled: boolean;

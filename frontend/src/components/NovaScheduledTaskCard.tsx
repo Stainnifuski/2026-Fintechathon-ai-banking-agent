@@ -1,3 +1,4 @@
+import {requestFeedback} from '../utils/requestFeedback';
 import { useEffect, useState, type FormEvent } from 'react';
 import * as bank from '../services/bank';
 import { dismissNovaScheduledTask, linkNovaScheduledTask, type NovaChatScheduledTask } from '../services/nova';
@@ -7,12 +8,7 @@ const STATUS: Record<string, string> = {
   SCHEDULED: '等待执行时间', READY: '可以开始', STARTED: '已开始', RUNNING: '进行中', FINISHED: '已完成', CANCELLED: '已取消',
 };
 const yuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`;
-const errorText = (err: unknown) => {
-  const detail = (err as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail;
-  if (typeof detail === 'string') return detail;
-  if (detail?.message) return detail.message;
-  return err instanceof Error ? err.message : '请求失败，请稍后重试';
-};
+const errorText=requestFeedback;
 
 /** NOVA 理解的自定义定时任务：完整时已创建；否则为预填表单。开始、完成、取消均由本人点击。 */
 export default function NovaScheduledTaskCard({ task, sessionId, accounts, disabled, onUpdated, onStart, onActivity }: {

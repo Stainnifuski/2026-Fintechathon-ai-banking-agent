@@ -603,3 +603,13 @@
     font-size: 21px;
   }
 }
+
+/* The same persistent NOVA canvas travels from this target to the workspace. */
+.login-stage {padding-top:12px}
+.login-orb-anchor {width:240px;height:180px;margin:0 auto 8px;visibility:hidden;pointer-events:none}
+.login-center h1 {font-size:clamp(42px,4.5vw,66px);letter-spacing:-3px}
+.login-eyebrow {margin-bottom:12px}
+.login-subtitle {margin:16px 0 22px}
+.login-page.is-authenticating {min-height:100svh}
+.login-page.is-authenticating :is(.login-header,.login-decorations,.login-center > :not(.login-orb-anchor),.login-footer) {visibility:hidden}
+@media(max-width:600px){.login-stage{padding-top:12px}.login-orb-anchor{width:200px;height:150px}.login-center h1{font-size:clamp(32px,8vw,44px);letter-spacing:-2px}}

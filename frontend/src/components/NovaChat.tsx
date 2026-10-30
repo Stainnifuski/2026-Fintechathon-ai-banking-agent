@@ -1,11 +1,12 @@
 import {showNovaMessage} from './novaMessageVisibility';
+import {requestFeedback} from '../utils/requestFeedback';
 import {NovaTaskSlot,useNovaPresentation,type TaskMeta} from './NovaTaskPresentation';
 import {apiClient} from '../services/api';
 import './Wealth/novaWealth.css';
 import NovaVoiceInput from './NovaVoiceInput';
-import NovaMascot, { type NovaMascotState } from './NovaMascot';
+import { NovaMascotTarget as NovaMascot, type NovaMascotState } from './NovaMascot';
 import {appendVoiceText} from '../utils/voiceInput';
-import {flushNovaWealthView,downloadNovaDebug,getNovaDebugTrace,listNovaDebugTraces,type NovaDebugTrace} from '../services/nova';
+import {flushNovaWealthView} from '../services/nova';
 import {getNovaExecutionQueue,advanceNovaExecutionQueue,stopNovaExecutionQueue,type NovaExecutionQueue} from '../services/nova';
 import {createPortal} from 'react-dom';
 import {getNovaWealthCards,deleteNovaConversation,type NovaWealthCard as WealthCard} from '../services/nova';
@@ -93,7 +94,8 @@ function queryRecord(call: NovaReply['tool_calls'][number]): string {
   let text = '模拟银行数据';
   if (['list_cards', 'get_card', 'list_subscriptions', 'get_subscription'].includes(call.name)) {
     const item = result.data as { total?: number; card_number?: string; merchant_name?: string; status?: string; summary?: { monthly_commitment_fen?: number } };
-    text += call.name.startsWith('list_') ? ` · 共 ${item.total ?? 0} 项匹配结果` : ` · ${item.card_number || item.merchant_name} · ${item.status}`;
+    const labels:Record<string,string>={ACTIVE:'生效中',LOCKED:'已锁定',LOST:'已挂失',CANCELLED:'已取消',REPLACED:'已换卡'};
+    text += call.name.startsWith('list_') ? ` · 共 ${item.total ?? 0} 项匹配结果` : ` · ${item.card_number || item.merchant_name} · ${labels[item.status??'']??'状态待核对'}`;
     if (item.summary) text += ` · 预计月费 ${money(item.summary.monthly_commitment_fen)}（非已扣款）`;
   }
   if (call.name === 'get_financial_overview') text += ` · 储蓄账户可用 ${money(data?.totals?.available_fen)} · 占款 ${money(data?.totals?.held_fen)}`;
@@ -117,6 +119,8 @@ const HOME_PROMPTS: Prompt[] = [
   { label: '↻ 查看即将扣款的订阅', text: '有哪些订阅即将扣款' },
 ];
 const COMMON_PROMPTS: Prompt[] = [
+  { label: '账单与订阅一起看', text: '先查看本月账单，再查看当前订阅及预计月费。' },
+  { label: '日程与扣费一起看', text: '查看明天的日程和即将扣款的订阅，分别列出结果。' },
   { label: '可用资金', text: '我现在有多少钱可以用？' },
   { label: '明天的安排', text: '明天有什么日程安排？' },
   { label: '北京时间', text: '现在北京时间几点？' },
@@ -222,10 +226,6 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   const [input, setInput] = useState('');
   const [composerFocused, setComposerFocused] = useState(false);
   const [voiceBusy,setVoiceBusy]=useState(false);
-  const [debugEnabled,setDebugEnabled]=useState(false);
-  const [lastDebugRequest,setLastDebugRequest]=useState<string|null>(null);
-  const [debugTrace,setDebugTrace]=useState<NovaDebugTrace|null>(null);
-  const [debugError,setDebugError]=useState('');
   const [conversations, setConversations] = useState<NovaConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -234,25 +234,7 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   const [showHistory, setShowHistory] = useState(false);
   useEffect(()=>{const close=()=>{setShowHistory(false);setShowHelp(false);};window.addEventListener('nova-dismiss-menus',close);return()=>window.removeEventListener('nova-dismiss-menus',close);},[]);
   useEffect(() => { if (!open) setShowHistory(false); }, [open]);
-  useEffect(() => { setShowHistory(false); setDebugEnabled(false); setLastDebugRequest(null); setDebugTrace(null); setDebugError(''); }, [userId]);
-  useEffect(() => { setLastDebugRequest(null); setDebugTrace(null); }, [activeConversationId]);
-  useEffect(() => {
-    if (!debugEnabled || !activeConversationId) return;
-    let live = true;
-    void listNovaDebugTraces(activeConversationId).then(traces => {
-      if (live) setLastDebugRequest(current => current ?? traces[0]?.request_id ?? null);
-    }).catch(() => { if (live) setDebugError('读取会话调试记录列表失败。'); });
-    return () => { live = false; };
-  }, [debugEnabled, activeConversationId]);
-  useEffect(() => {
-    if (!debugEnabled || !lastDebugRequest) { setDebugTrace(null); return; }
-    let live = true;
-    setDebugError('');
-    void getNovaDebugTrace(lastDebugRequest).then(trace => {
-      if (live) setDebugTrace(trace);
-    }).catch(() => { if (live) setDebugError('读取完整调试记录失败，请稍后重试。'); });
-    return () => { live = false; };
-  }, [debugEnabled, lastDebugRequest]);
+  useEffect(() => { setShowHistory(false); }, [userId]);
   const prompts = [...promptsFor(pageContext), ...COMMON_PROMPTS];
   const contextKey = JSON.stringify({ ...pageContext, observed_as_of: undefined });
   useEffect(() => { setShowHelp(false); }, [contextKey]);
@@ -306,12 +288,10 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
     const timer=window.setTimeout(async()=>{
       if(queueLock.current)return;
       queueLock.current=true;setQueueBusy(true);
-      const debugRequestId=debugEnabled?crypto.randomUUID():undefined;
       try{
         const latest=await getNovaExecutionQueue(session);
         if(!latest||queueSession.current!==session)return;
-        const result=await advanceNovaExecutionQueue(session,latest.version,debugEnabled,debugRequestId);
-        if(debugRequestId)setLastDebugRequest(debugRequestId);
+        const result=await advanceNovaExecutionQueue(session,latest.version);
         if(queueSession.current!==session)return;
         setExecutionQueue(result.execution_queue??null);
         if(result.bill_result_cards)mergeBillResults(result.bill_result_cards);
@@ -323,12 +303,11 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         if(result.tasks&&result.session_version!==undefined)setTaskSession(previous=>({session_id:session,session_version:result.session_version!,tasks:result.tasks!,collection_cards:result.collection_cards??previous?.collection_cards??[],card_operations:previous?.card_operations,subscription_tasks:previous?.subscription_tasks,calendar_tasks:previous?.calendar_tasks,shop_tasks:previous?.shop_tasks,scheduled_tasks:previous?.scheduled_tasks,payment_request_tasks:previous?.payment_request_tasks,focus_task_id:result.focus_task_id}));
         if(result.execution_queue?.steps.some(step=>step.review_operation_id))void getNovaTaskSession(session).then(fresh=>{if(queueSession.current===session)setTaskSession(fresh);}).catch(()=>{});
       }catch{if(queueSession.current===session){
-        if(debugRequestId)setLastDebugRequest(debugRequestId);
         try{setExecutionQueue(await getNovaExecutionQueue(session));}catch{setError('办理进度读取失败，已暂停自动接续，请重新打开对话核对原任务。');}
       }}finally{queueLock.current=false;setQueueBusy(false);}
     },4000);
     return()=>window.clearTimeout(timer);
-  },[activeConversationId,executionQueue,open,busy,loadingConversation,debugEnabled]);
+  },[activeConversationId,executionQueue,open,busy,loadingConversation]);
   useEffect(()=>{setWealthFocus(null);},[activeConversationId]);
   const wealthSession=useRef<string|null>(null);
   useEffect(()=>{wealthSession.current=activeConversationId;setWealthCards([]);if(!activeConversationId)return;let live=true;void getNovaWealthCards(activeConversationId).then(cards=>{if(live)setWealthCards(cards);}).catch(()=>{if(live)setError('理财任务读取失败，请重新打开对话核对原任务。');});return()=>{live=false;};},[activeConversationId]);
@@ -487,7 +466,6 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       focus_task_id: selectedTaskId || focusTaskId,
       candidate_id: candidateId,
       wealth_task_id:wealthFocus?.taskId,wealth_stage:wealthFocus?.stage,
-      debug:debugEnabled,
     };
     const taskRequest = uncertainRetry.current?.content === content ? uncertainRetry.current.request : newRequest;
     // 先放一条草稿回答，流式片段逐步写入；完成后替换为带查询记录的正式回答。
@@ -516,7 +494,6 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       await flushNovaWealthView(taskRequest.wealth_task_id);
       if(taskRequest.session_id)await presentation.flush(taskRequest.session_id);
       const reply = await streamNova(content, controller.signal, contextOverride || pageContext, onEvent, taskRequest);
-      if(taskRequest.debug)setLastDebugRequest(taskRequest.request_id);
       if (!controller.signal.aborted) {
         uncertainRetry.current = null;
         if(reply.bill_result_cards)mergeBillResults(reply.bill_result_cards);
@@ -555,12 +532,10 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
         }
       }
     } catch (failure: unknown) {
-      if(taskRequest.debug)setLastDebugRequest(taskRequest.request_id);
       if (!controller.signal.aborted) {
-        const detail = (failure as { response?: { data?: { detail?: { message?: string; code?: string } } } }).response?.data?.detail;
         const status = (failure as { response?: { status?: number } }).response?.status;
         uncertainRetry.current = !status || status >= 500 ? { content, request: taskRequest } : null;
-        setError(`${detail?.message || '查询失败，请重新发送。'}${detail?.code ? `（${detail.code}）` : ''}`);
+        setError(requestFeedback(failure));
         setInput(content);
         if (taskRequest.session_id) {
           const failedSession = taskRequest.session_id;
@@ -720,18 +695,6 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
       </div>
       <div className="nova-composer-area">
       <div className="agent-controls">
-        <div className="nova-debug-row"><label><input type="checkbox" checked={debugEnabled} disabled={busy} onChange={event=>setDebugEnabled(event.target.checked)}/> 调试模式</label>
-          {debugEnabled&&lastDebugRequest&&<button type="button" onClick={()=>void downloadNovaDebug(lastDebugRequest).catch(()=>setDebugError('调试记录下载失败，请稍后重试。'))}>下载副本</button>}
-          {debugEnabled&&<small>后续请求会自动保存完整执行记录，并在下方直接显示；敏感凭据会隐藏。</small>}
-          {debugEnabled&&debugError&&<small role="alert">{debugError}</small>}
-          {debugEnabled&&debugTrace&&<details className="nova-debug-trace" open>
-            <summary>调试记录 · {debugTrace.events.length} 个步骤 · {debugTrace.request_id}</summary>
-            {debugTrace.events.map((event,index)=><div className="nova-debug-event" key={`${event.at}-${index}`}>
-              <strong>{index+1}. {event.stage}</strong><time>{event.at}</time>
-              <pre>{JSON.stringify(event.content,null,2)}</pre>
-            </div>)}
-          </details>}
-        </div>
         <div className="nova-guide-row">
           <button type="button" className="nova-help-toggle" aria-expanded={showHelp} aria-controls="nova-help" onClick={() => { setShowHelp(value => !value); setShowHistory(false); }}>{showHelp ? '收起示例' : '更多示例'} <span aria-hidden="true">{showHelp ? '−' : '+'}</span></button>
         </div>

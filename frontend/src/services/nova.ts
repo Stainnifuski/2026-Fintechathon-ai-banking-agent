@@ -142,7 +142,7 @@ export type NovaReply = {
 export type NovaExecutionQueue={queue_id:string;version:number;status:string;request_id:string;message:string;
   steps:{goal_id:string;objective:string;status:string;request_id:string;depends_on:string[];reply:string;review_operation_id?:string|null}[]};
 export const getNovaExecutionQueue=(session:string)=>apiClient.get<NovaExecutionQueue|null>(`/nova/execution-queues/${session}`).then(r=>r.data);
-export const advanceNovaExecutionQueue=(session:string,version:number,debug=false,debugRequestId?:string)=>apiClient.post<NovaReply>(`/nova/execution-queues/${session}/advance`,{version,debug,debug_request_id:debugRequestId},{timeout:95000}).then(r=>r.data);
+export const advanceNovaExecutionQueue=(session:string,version:number)=>apiClient.post<NovaReply>(`/nova/execution-queues/${session}/advance`,{version},{timeout:95000}).then(r=>r.data);
 export const stopNovaExecutionQueue=(session:string,version:number)=>apiClient.post<NovaExecutionQueue>(`/nova/execution-queues/${session}/stop`,{version}).then(r=>r.data);
 
 export type NovaTransferTask = {
@@ -213,37 +213,10 @@ export const sendNovaCollection = (sessionId: string, collectionId: string, payl
 }) => apiClient.post<NovaTaskSession>(`/nova/task-sessions/${sessionId}/collections/${collectionId}/send`, payload).then(r => r.data);
 
 export type NovaTaskRequest = {
-  debug?: boolean;
   request_id: string; session_id?: string; session_version?: number;
   focus_task_id?: string; candidate_id?: string; wealth_task_id?:string; wealth_stage?:string;
 };
 
-export type NovaDebugTrace = {
-  version: number; request_id: string; session_id?: string | null;
-  started_at: string; truncated: boolean;
-  events: { at: string; stage: string; content: unknown }[];
-};
-export type NovaDebugTraceSummary = {
-  request_id: string; started_at: string; event_count: number; has_error: boolean;
-};
-export const getNovaDebugTrace = (requestId: string) =>
-  apiClient.get<NovaDebugTrace>(`/nova/debug/${encodeURIComponent(requestId)}/view`,
-    { headers: { 'Cache-Control': 'no-store' } }).then(r => r.data);
-export const listNovaDebugTraces = (sessionId: string) =>
-  apiClient.get<{ traces: NovaDebugTraceSummary[] }>(`/nova/debug/conversations/${encodeURIComponent(sessionId)}`,
-    { headers: { 'Cache-Control': 'no-store' } }).then(r => r.data.traces);
-
-export async function downloadNovaDebug(requestId: string): Promise<void> {
-  const response = await apiClient.get<Blob>(`/nova/debug/${encodeURIComponent(requestId)}`, { responseType: 'blob' });
-  const url = URL.createObjectURL(response.data);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `nova-debug-${requestId}.json`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 
 export async function getNovaTaskSession(sessionId: string) {

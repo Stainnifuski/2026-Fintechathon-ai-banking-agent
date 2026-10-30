@@ -14,7 +14,7 @@ LLM_API_KEY=替换为你的密钥
 
 | 配置 | 默认值 | 行为 |
 |---|---|---|
-| LLM_MODE | auto | 有效密钥启用所有模型功能，无密钥或占位密钥使用有限离线规则 |
+| LLM_MODE | auto | 有效密钥启用模型；无密钥或占位值时NOVA不猜测语义，手动功能仍可用 |
 | LLM_API_KEY | 空 | 全局唯一模型密钥，空白及模板占位值不视为有效密钥 |
 | LLM_BASE_URL | https://api.deepseek.com | 兼容 Chat Completions 的根地址，不含 `/chat/completions` |
 | LLM_MODEL | deepseek-flash | 默认服务预设；其他服务地址必须明确指定模型 |
@@ -93,9 +93,9 @@ text = result.data
 
 `llm.generate_with_tools(messages=messages, tools=tools)` 返回assistant消息字典（content、可选tool_calls），支持原生工具调用和role=tool回传，复用统一连接池与LLM配置，不改变generate_text/generate_structured契约。服务商须支持兼容Chat Completions的工具调用，否则返回模型错误。
 
-NOVA当前注册16个只读工具，覆盖时间、账户/账单、卡片/订阅、日历及两家模拟店铺。每轮输出显式申请4096 token，受LLM_MAX_TOKENS上限约束；底层工具接口默认仍为800，其他业务预算不变。默认报告优先摘要，年度趋势概括主要变化，异常只举少量例子；详细内容可继续查询。
+NOVA通过当前能力目录和工具注册表提供查询及受控任务准备，详见 `backend/app/services/ai/capability_catalog.py` 与 `nova.py`。不同阶段只暴露允许的工具；模型不能替代可信界面的交易授权。
 
-业务工具发送查询所需的本人事实：脱敏账户与账单、本人日历事件、模拟店铺商品和本人订单。金额为整数分，日历使用user_calendar，店铺使用simulated_merchant；登录凭据、服务端ToolContext和订单客户ID字段不发送给模型。无模型时NOVA使用明确标记的有限离线规则；模型启用后的调用失败不会伪装成离线成功。
+业务工具发送查询所需的本人事实：脱敏账户与账单、本人日历事件、模拟店铺商品和本人订单。金额为整数分，日历使用user_calendar，店铺使用simulated_merchant；登录凭据、服务端ToolContext和订单客户ID字段不发送给模型。无模型时NOVA明确提示启用模型，不通过关键词规则猜测用户意图；模型启用后的调用失败不会伪装成离线成功。
 
 停止原因length会记录实际预算及completion_tokens，并提示回答超出输出限制；其他中断保留白名单原因，不记录提示词、外部响应正文或密钥。截断工具参数不会执行。
 

@@ -47,7 +47,8 @@ test('unexpected server failures do not pretend refreshing bank facts repairs se
 
 test('bank quote failures explain the preview boundary and next step',()=>{
  const message=wealthFeedback('BANK_UNAVAILABLE: database is locked');
- assert.match(message,/尚未生成交易预览/);
+ assert.match(message,/结果尚未核实/);
+ assert.doesNotMatch(message,/尚未生成交易预览/);
  assert.match(message,/核对差额与准备预览/);
  assert.doesNotMatch(message,/database is locked|BANK_UNAVAILABLE/);
 });

@@ -71,12 +71,13 @@ export default function LoginPage(props: Props) {
       {errors[fieldName] && <p className="login-field-error" id={`login-${fieldName}-error`}>{errors[fieldName]}</p>}
     </div>;
   }
-  return <div className="login-page">
+  return <div className={`login-page${busy?' is-authenticating':''}`}>
     <header className="login-header"><div className="login-brand"><span className="login-brand-mark">N</span><div>NOVA<small>AI BANKING</small></div></div><div className="login-header-note">模拟银行体验</div></header>
     <main className="login-stage" data-state={state}>
       <div className="login-decorations" aria-hidden="true">{modules.map(([icon, label], index) =>
         <div key={label} className={`login-tag login-t${index + 1}`}><div className="login-pill"><i>{icon}</i>{label}</div></div>)}</div>
       <section className="login-center" aria-labelledby="login-title">
+        <div className="login-orb-anchor" data-state={busy?'thinking':'waiting'} aria-hidden="true"/>
         <p className="login-eyebrow">AI BANKING AGENT</p>
         <h1 id="login-title">NOVA<span>你的银行智能体</span></h1>
         <p className="login-subtitle">查账、转账、管理财务，直接告诉 NOVA。</p>

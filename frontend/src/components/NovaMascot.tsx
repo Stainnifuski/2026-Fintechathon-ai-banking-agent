@@ -19,8 +19,7 @@ interface Box { x: number; y: number; size: number }
  * 第二个 div 是唯一的球：每一帧读取落点，位置一变就从当前位置沿直线平滑移过去，不会闪现；
  * 移动途中落点再变化（例如面板宽度改变）时从当前位置继续，轨迹保持连续。
  */
-export default function NovaMascot({ state, started }: { state: NovaMascotState; started: boolean }) {
-  const anchorRef = useRef<HTMLDivElement>(null);
+export default function NovaMascot() {
   const layerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<ReturnType<typeof createMascot>>();
@@ -37,10 +36,6 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
   }, []);
 
   useEffect(() => {
-  (rendererRef.current as (typeof rendererRef.current & { setState?: (value: NovaMascotState) => void }) | undefined)?.setState?.(state);
-  }, [state]);
-
-  useEffect(() => {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     const desktop = window.matchMedia('(min-width:1101px)');
     let raf = 0;
@@ -48,12 +43,21 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
     let goal: Box | null = null;
     let expanded: boolean | undefined;
     let tween: { from: Box; start: number } | null = null;
+    let visualState = '';
+    let authMoving = false;
     const step = (now: number) => {
       raf = requestAnimationFrame(step);
-      const anchor = anchorRef.current, layer = layerRef.current;
-      if (!anchor || !layer) return;
+      const anchor = document.querySelector<HTMLDivElement>('.login-orb-anchor, .home-workspace .nova-mascot-anchor'), layer = layerRef.current;
+      if (!layer) return;
+      if (!anchor) { layer.style.opacity='0'; return; }
+      layer.style.opacity='';
+      const state=anchor.dataset.state??'waiting';
+      if(state!==visualState){rendererRef.current?.setState?.(state as NovaMascotState);layer.dataset.state=state;visualState=state;}
+      const moving=document.documentElement.dataset.novaAuth==='moving';
+      if(moving&&!authMoving&&current)tween={from:{...current},start:now};
+      authMoving=moving;
       const r = anchor.getBoundingClientRect();
-      if (!r.width || !r.height) return;
+      if (!r.width || !r.height) {layer.style.opacity='0';return;}
       const size = Math.min(r.width, r.height);
       const next: Box = { x: r.left + (r.width - size) / 2, y: r.top + (r.height - size) / 2, size };
       const nextExpanded = anchor.closest('.home-workspace')?.classList.contains('nova-expanded') ?? false;
@@ -70,7 +74,7 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
       if (reduced.matches) tween = null;
       let box = goal;
       if (tween && current) {
-        const t = Math.min(1, (now - tween.start) / DURATION);
+        const t = Math.min(1, (now - tween.start) / (moving?500:DURATION));
         const k = ease(t);
         box = {
           x: tween.from.x + (goal.x - tween.from.x) * k,
@@ -83,18 +87,18 @@ export default function NovaMascot({ state, started }: { state: NovaMascotState;
       // A fixed layer keeps the canvas visible while the panel changes width.
       layer.style.transform = `translate3d(${box.x}px, ${box.y}px, 0) scale(${box.size / BASE})`;
       layer.dataset.ready = 'true';
+      if(moving&&!tween){document.documentElement.dataset.novaAuth='revealing';window.dispatchEvent(new Event('nova-auth-arrived'));}
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // 还没开始对话时，只是在输入框里打字不移动：球留在正中间，NOVA 开始回复（thinking）或对话开始后才移到右侧。
-  const placement = !started && state === 'typing' ? 'waiting' : state;
-
-  return <>
-    <div ref={anchorRef} className={`nova-mascot nova-mascot-anchor nova-mascot-${placement}${started ? ' nova-mascot-started' : ''}`} aria-hidden="true" />
-    <div ref={layerRef} className="nova-mascot nova-mascot-layer" data-state={state} aria-hidden="true">
+  return <div ref={layerRef} className="nova-mascot nova-mascot-layer nova-global-orb" aria-hidden="true">
       <canvas ref={canvasRef} />
-    </div>
-  </>;
+    </div>;
+}
+
+export function NovaMascotTarget({state,started}:{state:NovaMascotState;started:boolean}){
+ const placement=!started&&state==='typing'?'waiting':state;
+ return <div data-state={state} className={`nova-mascot nova-mascot-anchor nova-mascot-${placement}${started?' nova-mascot-started':''}`} aria-hidden="true"/>;
 }
