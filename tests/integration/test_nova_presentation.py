@@ -231,3 +231,25 @@ def test_scheduled_transfer_form_fields_are_valid_draft_data():
     })
     with pytest.raises(chats.ConversationError):
         presentation.validate_draft({'executionMode': 'scheduled', 'verification_code': '123456'})
+
+
+@pytest.mark.asyncio
+async def test_manual_transfer_handoff_returns_owner_recipient_for_page_form(db, monkeypatch):
+    from backend.app.services.ai import transfer_manager
+
+    ctx = await seed(db)
+    session = await db.get(NovaSessionORM, ctx.session_id)
+    session.state = {'tasks': [{'chat_task_id': 'draft-transfer', 'origin_request_id': 'transfer-request',
+        'status': 'COLLECTING', 'slots': {'recipient': '李四', 'amount_fen': 10000,
+            'phone': '13800000002', 'to_account': 'A003', 'from_account': 'A001'}}]}
+    await db.commit()
+
+    async def transfer_view(_db, _user_id, _session_id):
+        return {'tasks': [{'chat_task_id': 'draft-transfer', 'origin_request_id': 'transfer-request',
+            'recipient': '李四', 'status': 'COLLECTING', 'task': None}]}
+
+    monkeypatch.setattr(transfer_manager, 'get_session', transfer_view)
+    # The card only ever shows the masked number; the page form needs the full one.
+    result = await presentation.release(ctx, 'transfer:draft-transfer', 'manual', 'handoff-transfer',
+                                        {'recipient': '李四', 'amount': '100', 'phone': '••••0002'})
+    assert result['handoff'] == {'phone': '13800000002', 'to_account': 'A003'}

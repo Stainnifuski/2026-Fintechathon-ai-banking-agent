@@ -198,17 +198,11 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
       <label>备注（可选）<input value={note} maxLength={256} disabled={disabled || busy || !canSave}
         onChange={event => setNote(event.target.value)} placeholder="转账备注" /></label>
       <label>执行方式<select value={executionMode} disabled={disabled || busy || !canSave}
-        onChange={event => {
-          const mode = event.target.value as 'instant' | 'scheduled';
-          setExecutionMode(mode);
-          if (mode === 'scheduled' && !scheduledAt) setScheduledAt(beijingInput(new Date(Date.now() + 2 * 60_000)));
-        }}><option value="instant">立即转账</option><option value="scheduled">定时转账</option></select></label>
+        onChange={event => setExecutionMode(event.target.value as 'instant' | 'scheduled')}><option value="instant">立即转账</option><option value="scheduled">定时转账</option></select></label>
       {executionMode === 'scheduled' && <>
         <label>执行时间（北京时间）<input type="datetime-local" required min={beijingInput(new Date())}
           value={scheduledAt} disabled={disabled || busy || !canSave} onChange={event => setScheduledAt(event.target.value)} />
           <small>到达设定时间后才执行；确认前可修改。</small></label>
-        <button type="button" className="secondary" disabled={disabled || busy || !canSave}
-          onClick={() => setScheduledAt(beijingInput(new Date(Date.now() + 2 * 60_000)))}>快速设置为约 2 分钟后</button>
       </>}
       {canSave && <button type="submit" disabled={disabled || busy || !dirty}>保存卡片信息</button>}
     </form>

@@ -7,6 +7,7 @@ import Calendar from '../Calendar';
 import type { NovaPageContext } from '../../services/nova';
 import './styles.css';
 import { formatYuan } from '../../utils/money';
+import { useManualPrefill } from '../../services/manualPrefill';
 
 type ServiceTab = 'calendar' | 'flower' | 'cake';
 
@@ -114,6 +115,19 @@ function Storefront({ revision, onGoBank, shopType, onContextChange }: Pick<Prop
     setIdempotencyKey(newId());
     setNotice('');
   };
+
+  // 人工接管：带入 NOVA 中选好的商品与数量，在本店原下单确认中继续；已下单则定位该订单。
+  useManualPrefill(['shop'], ({ draft, task }) => {
+    if ((task.shop ?? draft.shop) !== shopType) return false;
+    const order = task.order as { order_id: string } | null | undefined;
+    if (order) { setSelected({ type: 'order', id: order.order_id }); return; }
+    const product = products.find(item => item.product_id === draft.productId);
+    if (!product) return;
+    const quantity = Math.min(5, Math.max(1, Number(draft.quantity) || 1));
+    setQuantities(current => ({ ...current, [product.product_id]: quantity }));
+    setSelected({ type: 'product', id: product.product_id });
+    openConfirmation(product);
+  }, !isLoading);
 
   const submitOrder = async () => {
     if (!pendingProduct || !idempotencyKey || isSubmitting) return;
