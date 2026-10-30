@@ -4,6 +4,7 @@ import * as calendar from '../../services/calendar';
 import type { NovaPageContext } from '../../services/nova';
 import { beijingTime, beijingInput } from '../../utils/time';
 import './styles.css';
+import { useManualPrefill } from '../../services/manualPrefill';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -112,6 +113,22 @@ export default function Calendar({ revision, onContextChange }: { revision: numb
     setTitle(''); setKind('point'); setStarts(`${selected}T09:00`); setEnds(`${selected}T10:00`);
     setDescription(''); setLocation(''); setFormError(''); setOpen(true);
   };
+  // 人工接管：把 NOVA 中填写的日程内容填入本页新建事件表单。
+  useManualPrefill(['calendar'], ({ draft, task }) => {
+    const text = (value: unknown) => typeof value === 'string' ? value : '';
+    const created = task.event as calendar.CalendarEvent | null | undefined;
+    const target = (task.targets as { starts_at_local: string }[] | undefined)?.[0];
+    if (created || task.kind === 'mutation') {
+      const day = created ? eventDate(created) : target?.starts_at_local.slice(0, 10);
+      if (day) selectDay(day);
+      return;
+    }
+    const day = text(draft.day) || selected, endDay = text(draft.endDay) || day;
+    const start = text(draft.start) || '09:00', end = text(draft.end);
+    setTitle(text(draft.title)); setDescription(text(draft.description)); setLocation(text(draft.location));
+    setKind(end ? 'range' : 'point'); setStarts(`${day}T${start}`); setEnds(end ? `${endDay}T${end}` : `${day}T10:00`);
+    selectDay(day); setFormError(''); setOpen(true);
+  });
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;

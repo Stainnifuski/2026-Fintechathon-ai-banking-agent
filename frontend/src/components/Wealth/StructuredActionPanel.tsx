@@ -33,7 +33,7 @@ import {readPortfolioPlan,planProductSelection} from '../../services/wealthPortf
 import {agentCommandKey} from './stepFlow';
 import StructuredPortfolioReview from './StructuredPortfolioReview';
 import './structuredActions.css';
-import {manualDrafts,draftScope} from '../../services/wealthManualDraft';
+import {manualDrafts,agentDrafts,draftScope} from '../../services/wealthManualDraft';
 import {useManualDraft} from './useManualDraft';
 type ResultSlot='planning'|'positions'|'returns'|'product'|'redemption'|'comparison';
 const resultSlot=(action:ActionName):ResultSlot=>action==='list_positions'?'positions':action==='show_wealth_returns'?'returns':action==='show_product_detail'?'product':action==='preview_redemption'?'redemption':action==='compare_products'?'comparison':'planning';
@@ -42,6 +42,7 @@ interface Page {rows:w.PositionRow[];page:number;pages:number;total:number;objec
 interface Converted {preview:w.Preview;resolved_units:string;holding_ratio:string;estimated_market_value_fen:number;estimated_fee_fen:number;estimated_net_cash_fen:number;notice:string}
 export default function StructuredActionPanel({userId,revision,onActivity,agentCommand,agentContext,agentTaskId,agentRequestId,agentSelection,agentWorkflow,onView,onPrepared}:{userId:string;revision:number;onActivity:()=>void;agentCommand?:NovaWealthCommand;agentContext?:string;agentTaskId?:string;agentRequestId?:string;agentSelection?:NovaWealthView['selected_products'];agentWorkflow?:'planning'|'target';onView?:(view:Partial<NovaWealthView>)=>void;onPrepared?:(id:string)=>Promise<void>}){
   const [draftStore]=useState(()=>agentCommand?new ManualDraftStore():manualDrafts);
+  useEffect(()=>{if(!agentTaskId||draftStore===manualDrafts)return;agentDrafts.set(agentTaskId,draftStore);return()=>{if(agentDrafts.get(agentTaskId)===draftStore)agentDrafts.delete(agentTaskId);};},[agentTaskId,draftStore]);
   const commandApplied=useRef<string|null>(null);
   const [facts,setFacts]=useState<{owner:string;assets:w.Assets;products:w.Product[];tasks:w.WealthTask[];accountId:string}|null>(null);
   const ready=facts?.owner===userId?facts:null;

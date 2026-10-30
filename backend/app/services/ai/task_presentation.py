@@ -288,7 +288,16 @@ async def release(ctx, key, mode, request_id, draft=None):
         wealth.data={**wealth.data,'agent_released':True}
     message = (f'当前操作已转交人工办理，后续尚未开始的{pending}项任务已取消。如需办理，请重新提出。'
                if mode == 'manual' else f'当前Agent任务已结束，后续尚未开始的{pending}项任务已取消；已有银行结果保留。')
-    receipt = {**item, 'mode': mode, 'request_id': request_id, 'message': message, 'cancelled_count': pending, 'draft': draft}
+    # 人工接管后由本人在页面原表单继续：卡片上只有脱敏号码，这里交回本人已核实的完整收款信息。
+    handoff = {}
+    if mode == 'manual' and item['type'] == 'transfer':
+        current = await ctx.db.get(NovaSessionORM, ctx.session_id, populate_existing=True)
+        task = next((t for t in ((current.state or {}).get('tasks', []) if current else [])
+                     if t['chat_task_id'] == item['id']), {})
+        slots = task.get('slots', {})
+        handoff = {field: slots[field] for field in ('phone', 'card', 'to_account') if slots.get(field)}
+    receipt = {**item, 'mode': mode, 'request_id': request_id, 'message': message, 'cancelled_count': pending,
+               'draft': draft, 'handoff': handoff}
     session = await ctx.db.get(NovaSessionORM, ctx.session_id, populate_existing=True)
     if session and item['type'] in GROUPS:
         group, field, _, _ = GROUPS[item['type']]

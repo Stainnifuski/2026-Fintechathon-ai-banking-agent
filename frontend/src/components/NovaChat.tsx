@@ -408,7 +408,9 @@ export default function NovaChat({ headerControls, name, userId, open, onClose, 
   useEffect(()=>{setTaskMeta({});setPlacements({});},[activeConversationId]);
   useEffect(()=>{if(activeConversationId)void refreshPresentation(activeConversationId);},[activeConversationId,taskSession,wealthCards,billActions]);
   useEffect(()=>{
-    const released=(event:Event)=>{const detail=(event as CustomEvent<{session:string;key:string;message:string}>).detail;if(detail.session!==activeConversationId)return;setWealthFocus(null);setFocusTaskId(undefined);setExecutionQueue(null);setMessages(items=>[...items,{role:'assistant',content:detail.message,request_id:'release-'+crypto.randomUUID()}]);void refreshPresentation(detail.session);};
+    const released=(event:Event)=>{const detail=(event as CustomEvent<{session:string;key:string;message:string}>).detail;if(detail.session!==activeConversationId)return;setWealthFocus(null);setFocusTaskId(undefined);setExecutionQueue(null);setMessages(items=>[...items,{role:'assistant',content:detail.message,request_id:'release-'+crypto.randomUUID()}]);void refreshPresentation(detail.session);
+      // 接管会推进会话版本；同步最新版本，否则下一条消息会因版本过期被拒。
+      void getNovaTaskSession(detail.session).then(fresh=>{if(fresh.session_id===detail.session)setTaskSession(current=>current?.session_id===detail.session?fresh:current);}).catch(()=>{});};
     const updated=()=>{if(activeConversationId)void refreshPresentation(activeConversationId);};
     window.addEventListener('nova-task-released',released);window.addEventListener('nova-task-updated',updated);return()=>{window.removeEventListener('nova-task-released',released);window.removeEventListener('nova-task-updated',updated);};
   },[activeConversationId]);

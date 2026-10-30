@@ -32,5 +32,12 @@ export class ManualDraftStore {
     this.value={...this.value,[field]:value};this.listeners.forEach(listener=>listener());
   }
   clear=()=>{this.currentKey=null;this.value=initial('');this.listeners.forEach(listener=>listener());};
+  /** 人工接管：页面表单沿用聊天理财卡已填写的输入。 */
+  adopt=(source:ManualDraftStore)=>{
+    if(source.currentKey===null)return;
+    this.currentKey=source.currentKey;this.value=source.value;this.listeners.forEach(listener=>listener());
+  };
 }
 export const manualDrafts=new ManualDraftStore();
+/** 聊天中各理财任务卡自己的输入草稿，按理财任务编号索引，仅供人工接管时移交。 */
+export const agentDrafts=new Map<string,ManualDraftStore>();

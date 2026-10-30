@@ -1,7 +1,7 @@
 .home-workspace {
   font-family:Inter,"Microsoft YaHei","PingFang SC",sans-serif;
   --home-nav:244px;
-  --home-agent:clamp(390px,30vw,560px)
+  --home-agent:clamp(440px,33vw,580px)
 }
 .home-workspace .profile-button {
   background:#29345c;

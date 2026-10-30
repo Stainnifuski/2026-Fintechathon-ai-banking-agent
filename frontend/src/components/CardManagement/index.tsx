@@ -4,7 +4,8 @@ import { beijingTime } from '../../utils/time';
 import { SecondFactor } from '../SecondFactor';
 import { formatFen } from '../../utils/money';
 import { ACTION_HINTS, ACTION_LABELS, CARD_ACTION_OPTIONS, CHANNELS, STATUS_LABELS,
-  availableCardActions } from './cardActions';
+  availableCardActions, initialCardAction } from './cardActions';
+import { useManualPrefill } from '../../services/manualPrefill';
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const yuan = (fen?: number | null) => fen == null ? '-' : formatFen(fen);
@@ -93,6 +94,27 @@ export default function CardManagement({ accounts, revision, onActivity, selecte
     if (card) setChannels({ online_enabled: card.online_enabled, atm_enabled: card.atm_enabled, overseas_enabled: card.overseas_enabled, contactless_enabled: card.contactless_enabled });
   };
   const close = () => { setDraft(null); setOperation(null); setCode(''); };
+  // 人工接管：沿用聊天卡片已填写的内容打开本页原表单；已生成的预览直接在此确认。
+  useManualPrefill(['card'], ({ draft: values, task }) => {
+    const text = (value: unknown) => typeof value === 'string' ? value : '';
+    const pendingOperation = task.operation as bank.CardOperation | null | undefined;
+    const card = cards.find(item => item.card_id === (text(values.cardId) || task.card_id));
+    const action = initialCardAction(card, task.action as bank.CardAction);
+    if (card) onSelectCard(card.card_id);
+    if (pendingOperation?.allowed_actions.length) {
+      setDraft({ action: pendingOperation.action, card }); setOperation(pendingOperation); setPurchaseCard(null);
+      setCode(''); setFactor({ method: 'totp' }); setError(''); setStatus('已转人工办理：请核对以下变更后由你本人确认。');
+    } else {
+      open(action, card);
+      if (eligibleAccounts.some(a => a.account_id === values.accountId)) setAccountId(values.accountId as string);
+      if (text(values.singleLimit)) setSingleLimit(text(values.singleLimit));
+      if (text(values.dailyLimit)) setDailyLimit(text(values.dailyLimit));
+      if (text(values.creditLimit)) setCreditLimit(text(values.creditLimit));
+      if (values.channels && typeof values.channels === 'object') setChannels(current => ({ ...current, ...values.channels as Channels }));
+      setStatus('已转人工办理：已带入 NOVA 中填写的内容，请核对后生成确认信息。');
+    }
+    setTimeout(() => panel.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0);
+  }, cards.length > 0);
   const openPurchase = (card: bank.BankCard) => {
     close(); setStatus(''); setError(''); setPurchaseCard(card); setPurchase({ amount: '', merchant: '', channel: 'pos' });
   };

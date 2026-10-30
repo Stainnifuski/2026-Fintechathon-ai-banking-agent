@@ -1,6 +1,6 @@
 import Modal from './components/Modal';
 import type {BillResultTarget} from './services/nova';
-import {ManualTaskWorkspace} from './components/NovaTaskPresentation';
+import {useManualPrefill} from './services/manualPrefill';
 import { FormEvent, useCallback, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import * as bank from './services/bank';
 import {manualDrafts} from './services/wealthManualDraft';
@@ -39,7 +39,6 @@ const ScheduledTasks = lazy(() => import('./components/ScheduledTasks'));
 
 const newId = () => crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random()}`;
 const localDateTimeInput = beijingInput;
-const suggestedScheduleTime = () => localDateTimeInput(new Date(Date.now() + 2 * 60_000));
 type BankingSection = 'home' | 'transfer' | 'insights' | 'cards' | 'subscriptions' | 'scheduled' | 'wealth' | 'audit';
 // 侧栏导航图标：只是彩色圆角方块里的白色线条，方块颜色仍由 data-destination 决定。
 const NAV_ICONS: Record<BankingSection | 'services', string> = {
@@ -153,6 +152,47 @@ function App() {
   const updateThirdPartyPageContext = useCallback((context: NovaPageContext) => setThirdPartyPageContext(context), []);
   const updateBillPageContext = useCallback((context: NovaPageContext) => setBillPageContext(context), []);
   const [highlightedPaymentRequest, setHighlightedPaymentRequest] = useState('');
+  // 人工接管：把聊天任务卡已填写的内容填入本页原表单，由本人在原表单继续。
+  useManualPrefill(['transfer','collection','payment_request','subscription'],({key,draft,task,handoff={}})=>{
+    const text=(value:unknown)=>typeof value==='string'?value:'';
+    const known=(id:unknown)=>typeof id==='string'&&accounts.some(account=>account.account_id===id);
+    if(key.startsWith('transfer:')){
+      // 银行已生成待确认的转账：在本页“转账任务”中继续确认，不再重填表单，避免同一笔转账提交两次。
+      const snapshot=task.task as bank.TaskSnapshot|null|undefined;
+      if(snapshot&&snapshot.phase!=='FINISHED'){
+        setActiveTask(snapshot);setStatus('已转人工办理：这笔转账已生成确认信息，请在下方“转账任务”中核对并确认。');
+        if(user)localStorage.setItem(`active-task-${user.user_id}`,snapshot.task_id);
+        setTimeout(()=>document.querySelector('.transfer-task')?.scrollIntoView({behavior:'smooth',block:'center'}),0);
+        return;
+      }
+      // 卡片只显示脱敏号码；完整号码与收款账户由服务端在接管时交回。
+      const usable=(value:string)=>!!value&&!/[*•]/.test(value);
+      const phone=usable(text(draft.phone))?text(draft.phone):text(handoff.phone);
+      const card=usable(text(draft.card))?text(draft.card):text(handoff.card);
+      // 只有收款人未在卡片上改动时，才沿用服务端核实过的收款账户。
+      const original=(task.form as {recipient?:string}|undefined)?.recipient;
+      const target=text(draft.recipient)===original?text(handoff.to_account):'';
+      setRecipientName(text(draft.recipient));
+      setRecipientMode(card&&!phone?'card':'phone');
+      setRecipientNumbers({card,phone});
+      setRecipientAccountIds({card:card?target:'',phone:phone?target:''});
+      setAmount(text(draft.amount));setNote(text(draft.note));
+      if(known(draft.payer))setFromAccount(draft.payer as string);
+      setTransferMode(draft.executionMode==='scheduled'?'scheduled':'instant');setScheduledAt(text(draft.scheduledAt));
+      setTransferError('');
+    }else if(key.startsWith('collection:')){
+      if(Array.isArray(draft.selected))setRequestPayerIds(draft.selected.filter((id):id is string=>typeof id==='string'));
+      if(known(draft.account))setRequestAccountId(draft.account as string);
+      setRequestAmount(text(draft.amount));setSplitEqually(!!draft.split);setRequestNote(text(draft.note));setRequestError('');
+    }else if(key.startsWith('payment_request:')){
+      const requests=(task.requests as bank.PaymentRequest[]|undefined)??[];
+      const target=requests.find(request=>['PENDING','ACCEPTED'].includes(request.status))??requests[0];
+      if(target)setHighlightedPaymentRequest(target.payment_request_id);
+    }else if(key.startsWith('subscription:')){
+      const id=(task.subscription_id as string|null|undefined)??(task.subscription as bank.Subscription|null|undefined)?.subscription_id;
+      if(id)setSelectedSubscriptionId(id);
+    }
+  },accounts.length>0);
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isActing, setIsActing] = useState(false);
@@ -667,7 +707,7 @@ function App() {
         <header className="bank-topbar"><div><BeijingClock /><span className="workspace-label">{desktopLayout && agentOpen && agentExpanded ? 'NOVA 银行智能体' : appView === 'thirdParty' ? '生活服务' : ({home:'财务概览',transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',scheduled:'定时任务',wealth:'理财规划',audit:'操作记录'} as Record<BankingSection,string>)[bankingSection]}</span>{desktopLayout&&agentOpen&&agentExpanded&&(bankingSection!=='home'||appView==='thirdParty')&&<small className="nova-reference-context">参考工作台：{appView==='thirdParty'?'生活服务':({transfer:'转账与收款',insights:'账单洞察',cards:'卡片管理',subscriptions:'订阅管理',scheduled:'定时任务',wealth:'理财规划'} as Partial<Record<BankingSection,string>>)[bankingSection]}</small>}</div><div className="top-actions"><div className="nova-header-slot" ref={setNovaControls} /><button id="nova-toggle" className="agent-button" aria-expanded={desktopLayout ? agentExpanded && agentOpen : agentOpen} aria-controls="nova-panel" title={desktopLayout ? (agentExpanded && agentOpen ? '切换为侧边对话，查看财务概览' : '展开 NOVA 对话') : (agentOpen ? '收起 NOVA 对话' : '打开 NOVA 对话')} onClick={switchAgentMode}>{desktopLayout ? (agentExpanded && agentOpen ? '收起 NOVA' : '展开 NOVA') : (agentOpen ? '收起 NOVA' : '展开 NOVA')}</button><button className="icon-button auth-enroll-button" disabled={isActing} onClick={openEnroll} aria-label={totpEnabled ? '已绑定验证器' : '绑定验证器'} title={totpEnabled ? '已绑定验证器' : '绑定验证器'}>⌾</button><button className="profile-button" onClick={logout} title="退出登录">{user.name.slice(0,1)}</button></div></header>
         <SecurityNotice userId={user.user_id} />
         {status && <p className="notice global-notice">{status}</p>}
-        <div className="workspace-content"><ManualTaskWorkspace destination={appView==='thirdParty'?(thirdPartyPageContext.calendar?'calendar':'thirdParty'):bankingSection}/>
+        <div className="workspace-content">
         {appView==='banking'&&bankingSection==='wealth'&&import.meta.env.DEV&&import.meta.env.VITE_B6_BROWSER_TEST==='true'&&<p className="notice" role="status">B6 隔离验收：固定契约方案＋独立模拟账户。不是模型建议，与日常演示账户无关；测试业务时钟与现实时间分开。</p>}
         {appView === 'thirdParty' ? <Suspense fallback={<section className="card"><p>正在加载第三方服务…</p></section>}>
           <ThirdPartyServices requestedTab={manualTab} onContextChange={updateThirdPartyPageContext} revision={bankRevision} onBack={() => openSection('home')} onGoBank={goToBankPayment} />
@@ -710,8 +750,8 @@ function App() {
         <label>金额（元）<input inputMode="decimal" value={amount} placeholder="0.00" onChange={e => setAmount(e.target.value)} /></label>
         <label>备注（可选）<input maxLength={256} value={note} onChange={e => setNote(e.target.value)} /></label>
         <div className="span-2 transfer-field">
-          <div className="transfer-field-head"><span>执行时间</span><div className="transfer-segmented" role="group" aria-label="执行时间">{(['instant', 'scheduled'] as const).map(mode => <button type="button" key={mode} aria-pressed={transferMode === mode} onClick={() => { setTransferMode(mode); if (mode === 'scheduled' && !scheduledAt) setScheduledAt(suggestedScheduleTime()); }}>{mode === 'instant' ? '立即' : '定时'}</button>)}</div></div>
-          {transferMode === 'scheduled' && <div className="transfer-schedule"><input aria-label="执行时间（北京时间）" min={localDateTimeInput(new Date())} type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /><button type="button" className="secondary" onClick={() => setScheduledAt(suggestedScheduleTime())}>约 2 分钟后</button><small>按北京时间执行。</small></div>}
+          <div className="transfer-field-head"><span>执行时间</span><div className="transfer-segmented" role="group" aria-label="执行时间">{(['instant', 'scheduled'] as const).map(mode => <button type="button" key={mode} aria-pressed={transferMode === mode} onClick={() => setTransferMode(mode)}>{mode === 'instant' ? '立即' : '定时'}</button>)}</div></div>
+          {transferMode === 'scheduled' && <div className="transfer-schedule"><input aria-label="执行时间（北京时间）" min={localDateTimeInput(new Date())} type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /><small>按北京时间执行。</small></div>}
         </div>
         {transferError && <p className="error span-2" role="alert">{transferError}</p>}
         <div className="span-2 transfer-submit"><button disabled={!fromAccount || isActing}>{isActing ? '正在生成…' : '生成确认信息'}</button><small>生成后在下方任务卡上确认，确认前不会扣款。</small></div>
