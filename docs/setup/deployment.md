@@ -4,7 +4,7 @@
 
 ## 1. 准备源码与配置
 
-需要 Docker Engine／Docker Desktop、Compose v2及首次构建所需网络，启动前让Docker处于运行状态。源码须包含 `backend/`、`frontend/`、`config/`、`scripts/`、`data/wealth/wealth-compact-806-v1.zip`、`docker-compose.yml`、`.env.example`。语音为可选CPU服务，首次需下载模型，详见 [语音部署](voice_input.md)。
+需要 Docker Engine／Docker Desktop、Compose v2及首次构建所需网络，启动前让Docker处于运行状态。源码须包含 `backend/`、`frontend/`、`config/`、`scripts/`、`services/sensevoice/`、`data/wealth/wealth-compact-806-v1.zip`、`docker-compose.yml`、`.env.example`。默认启动包含SenseVoice CPU语音服务，首次需下载模型，详见 [语音部署](voice_input.md)。
 
 在源码根目录首次复制 `.env.example` 为 `.env`。已有 `.env` 不覆盖；真实Key、私人配置和业务库不放入提交压缩包。已有账本必须保留原加密密钥及持久卷，不通过删除数据库解决启动失败。
 
@@ -56,9 +56,9 @@ Windows在这份源码根目录执行 `start_bank.cmd`，或：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_bank.ps1
 ```
 
-Linux／macOS执行 `bash scripts/start_bank.sh`。启动器复用本机 `.deps/bank-runtime.override.yml`（若存在），构建前后端、安装匹配固定资料并等待健康。源码压缩包没有Git元数据时启动器使用 `source-archive` 标识。固定资料与升级说明见 [安装与旧库保护](wealth_compact_upgrade.md)。
+Linux／macOS执行 `bash scripts/start_bank.sh`。启动器复用本机 `.deps/bank-runtime.override.yml`（若存在），构建前后端和SenseVoice语音服务、安装匹配固定资料并等待银行服务健康。语音模型有独立的下载／加载就绪状态，需按下文单独确认。源码压缩包没有Git元数据时启动器使用 `source-archive` 标识。固定资料与升级说明见 [安装与旧库保护](wealth_compact_upgrade.md)。
 
-首次构建需要拉取镜像及下载软件依赖，耗时取决于网络和机器；不要把构建期间尚未开放网页当作启动完成。若先体验文字功能，可跳过语音构建：
+首次构建需要拉取镜像及下载软件依赖，耗时取决于网络和机器；不要把构建期间尚未开放网页当作启动完成。默认部署包含语音。仅在排障或暂时只体验文字时，可跳过语音构建：
 
 ```powershell
 # Windows PowerShell
@@ -86,6 +86,8 @@ bash scripts/start_bank.sh --skip-voice
 4. 按下文发送一个真实查询，并确认没有未启用模型、认证、余额不足或网络错误。服务商返回的错误要先解决，再判断AI体验。
 
 访问首页，展开“演示账号帮助”；通用种子示例为 `13800000001 / password123`，仅适用于已按当前种子初始化的库。已有自定义库使用原账号，不通过重置账本找回演示账号。新用户按页面注册。
+
+语音就绪检查：登录后打开NOVA，等待SenseVoice模型下载／加载完成；如页面提示初始化中，稍后点“重试语音”。允许麦克风权限，录制一句“查看我的账户余额”，结束后应将识别文字填入输入框，尚未发送；由本人核对后再发送。首次下载失败或语音未就绪不影响文字输入，但不能据银行健康就绪认定语音通过。详细网络、权限和排障步骤见 [语音输入说明](voice_input.md)。
 
 登录后可先查询“现在北京时间几点”，再从“更多示例”选择查询。能收到基于工具结果的模型回复才构成一次真实连接体验；不要用离线或模拟测试结果代替它。交易仍须本人确认与TOTP或模拟短信验证，不因登录或点击示例而自动授权。理财需本人填写并确认风险问卷，不能由部署脚本代填。
 
