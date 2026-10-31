@@ -4,7 +4,9 @@
 
 ## 1. 准备源码与配置
 
-需要 Docker Engine／Docker Desktop、Compose v2及首次构建所需网络，启动前让Docker处于运行状态。源码须包含 `backend/`、`frontend/`、`config/`、`scripts/`、`services/sensevoice/`、`data/wealth/wealth-compact-806-v1.zip`、`docker-compose.yml`、`.env.example`。默认启动包含SenseVoice CPU语音服务，首次需下载模型，详见 [语音部署](voice_input.md)。
+**Windows／macOS 使用者安装并启动 Docker Desktop 即可，无需另装 Compose、Python、Node.js 或 PostgreSQL。** Linux 可使用 Docker Engine 配合 Compose v2。请按 [Docker 官方安装说明](https://docs.docker.com/get-started/get-docker/)完成对应系统的运行环境准备；Windows 采用 WSL 2 后端时，需满足其虚拟化及 WSL 2 要求。使用源码 ZIP 无需安装 Git。首次构建需联网，完整 AI 功能另需有效的 DeepSeek API Key。
+
+源码须包含 `backend/`、`frontend/`、`config/`、`scripts/`、`services/sensevoice/`、`data/wealth/wealth-compact-806-v1.zip`、`docker-compose.yml`、`.env.example`。默认启动包含SenseVoice CPU语音服务，首次需下载模型，详见 [语音部署](voice_input.md)。
 
 在源码根目录首次复制 `.env.example` 为 `.env`。已有 `.env` 不覆盖；真实Key、私人配置和业务库不放入提交压缩包。已有账本必须保留原加密密钥及持久卷，不通过删除数据库解决启动失败。
 

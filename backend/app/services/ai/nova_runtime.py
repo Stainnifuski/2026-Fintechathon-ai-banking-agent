@@ -271,17 +271,31 @@ def _transfer_chat_completed(task: dict) -> bool:
             or (actions is not None and not any(action in actions for action in ("modify", "cancel"))))
 
 
+def _transfer_task_fact(task: dict) -> dict:
+    """Reply facts include terminal transfers; scheduling still uses unfinished tasks."""
+    bank_task = task.get("task") or {}
+    operation = bank_task.get("operation") or {}
+    return {"id": task["chat_task_id"], "status": task["status"],
+            "task_id": bank_task.get("task_id"), "phase": bank_task.get("phase"),
+            "outcome": bank_task.get("outcome"), "description": _task_description(task),
+            "operation": {key: operation.get(key) for key in (
+                "operation_id", "status", "bank_status", "amount_fen",
+                "from_account", "to_account")}}
+
+
 async def inspect_active_tasks(context: ToolContext) -> dict:
     """Internal scheduling tool; the bank snapshot refreshes terminal states."""
     _, state = await _load(context)
     try:
         bank = await get_session(context.db, context.user_id, context.session_id)
+        transfer_facts = [_transfer_task_fact(task) for task in bank["tasks"]]
         tasks = [dict(id=t["chat_task_id"], type="execute", status=t["status"],
                       description=_task_description(t)) for t in bank["tasks"]
                  if not _transfer_chat_completed(t)]
     except ManagerError as error:
         if error.code != "SESSION_NOT_FOUND":
             raise
+        transfer_facts = []
         tasks = []
     tasks.extend({key: card[key] for key in ("id", "type", "status", "description")}
                  for card in await _collection_records(context) if not card["completed"])
@@ -298,7 +312,7 @@ async def inspect_active_tasks(context: ToolContext) -> dict:
     tasks.extend({key: task[key] for key in ('id', 'type', 'status', 'description')}
                  for task in await _wealth_records(context) if not task['completed'])
     ids = {t["id"] for t in tasks}
-    return {"unfinished_execute_tasks": tasks,
+    return {"unfinished_execute_tasks": tasks, "current_transfer_tasks": transfer_facts,
             "target_execute_task_ids": [t for t in state.get("target_execute_task_ids", []) if t in ids]}
 
 
@@ -362,7 +376,9 @@ async def llm_finish_tool(context: ToolContext, trace: list[dict], *, waiting_us
     else:
         row.state = state
     await context.db.commit()
-    return {"execute_tasks": new_tasks, "target_execute_task_ids": target,
+    return {"execute_tasks": new_tasks,
+            "current_transfer_tasks": [_transfer_task_fact(task) for task in current],
+            "target_execute_task_ids": target,
             "read_task_count": len(reads), "outcome": state["last_finish"]["outcome"]}
 
 
@@ -422,6 +438,7 @@ async def chat(message: str, history: list[dict], *, model=None,
     debug_trace.record("capability_catalog", catalog)
     active_tasks = await inspect_active_tasks(context)
     status = {"recent_turns": history[-10:],
+              "current_transfer_tasks": active_tasks["current_transfer_tasks"],
               "target_execute_task_ids": active_tasks["target_execute_task_ids"],
               "wealth_focus": {"task_id": context.wealth_task_id, "stage": context.wealth_stage}
               if context.wealth_task_id else None}

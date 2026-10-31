@@ -61,6 +61,64 @@ class FakeModel:
         return SimpleNamespace(data=reply)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status,outcome,phase,balance_fen', [
+    ('SUCCEEDED', 'SUCCEEDED', 'FINISHED', 7300),
+    ('WAITING_CONFIRMATION', 'NONE', 'WAITING_CONFIRMATION', 8200),
+])
+async def test_current_transfer_facts_precede_planning_and_survive_final_reply(
+        context, monkeypatch, status, outcome, phase, balance_fen):
+    """Old assistant text cannot be the only transfer context before planning."""
+    bank_task = {'chat_task_id': 'card-current', 'status': status,
+                 'recipient': '合成收款人', 'amount_fen': 900, 'form': {},
+                 'missing_fields': [], 'task': {
+                     'task_id': 'bank-task-current', 'phase': phase, 'outcome': outcome,
+                     'operation': {'operation_id': 'operation-current',
+                                   'status': 'SUCCEEDED' if outcome == 'SUCCEEDED' else 'DRAFT',
+                                   'bank_status': 'SUCCEEDED' if outcome == 'SUCCEEDED' else None,
+                                   'amount_fen': 900}}}
+
+    async def bank(*_args):
+        return {'tasks': [bank_task]}
+
+    calls = []
+
+    async def read_only(call, _context):
+        name = call['function']['name']
+        calls.append(name)
+        assert name == 'get_financial_overview', 'a reply must not execute funds'
+        return {'source': 'accounts', 'amount_unit': 'fen',
+                'data': {'totals': {'balance_fen': balance_fen}}}
+
+    class ObservingModel(FakeModel):
+        async def generate_structured(self, **kwargs):
+            if kwargs['schema'] is nova_runtime.DependencyDecision:
+                supplied = json.loads(kwargs['messages'][1]['content'])['system_status']
+                facts = supplied['current_transfer_tasks']
+                assert len(facts) == 1
+                assert facts[0]['status'] == status
+                assert facts[0]['outcome'] == outcome
+                assert facts[0]['operation']['operation_id'] == 'operation-current'
+            return await super().generate_structured(**kwargs)
+
+        async def generate_text(self, **kwargs):
+            finish = json.loads(kwargs['messages'][-1]['content'].split('任务收尾状态：', 1)[1])
+            assert finish['current_transfer_tasks'][0]['outcome'] == outcome
+            assert finish['current_transfer_tasks'][0]['phase'] == phase
+            assert any(str(balance_fen) in m['content'] and 'get_financial_overview' in m['content']
+                       for m in kwargs['messages'])
+            return await super().generate_text(**kwargs)
+
+    monkeypatch.setattr(nova_runtime, 'get_session', bank)
+    monkeypatch.setattr(nova, 'execute_tool', read_only)
+    model = ObservingModel(True, ['get_financial_overview'], [
+        nova_runtime.PlannedCall(name='get_financial_overview', arguments={})])
+    await nova_runtime.chat('现在的实际余额是多少？', [
+        {'role': 'assistant', 'content': '之前的转账仍待本人确认，尚未扣款。'}],
+        context=context, model=model)
+    assert calls == ['get_financial_overview']
+
+
 def test_wealth_tools_expose_structured_main_model_arguments():
     assert set(wealth_tools())=={'assess_wealth_risk','plan_wealth','manage_wealth_positions','show_wealth_returns'}
     definition=wealth_tools()['plan_wealth']['schema']['function']
