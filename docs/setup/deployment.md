@@ -113,3 +113,109 @@ docker compose -f docker-compose.yml stop
 若存在 `.deps/bank-runtime.override.yml`，每条命令均在 `-f docker-compose.yml` 后增加 `-f .deps/bank-runtime.override.yml`。既有运行环境若使用其他配置，先查容器 `com.docker.compose.project.config_files` 标签，沿用其全部配置；不要靠改库名、删卷或重新初始化绕过错误。日志对外分享前先遮盖密钥和个人资料。
 
 重新启动仍使用第2节启动器。不要执行删除卷的命令；PostgreSQL账本、持久密钥和本机固定资料／备份是不同存储，应一起保留。日常体验服务、独立开发预览和隔离测试环境应分开。逐步体验见 [评委操作用例](../testing/test_cases.md)，代码测试命令见 [开发者测试索引](../testing/automated_tests.md)。本说明按启动脚本和既有运行记录核对，本轮未另建全新机器做完整部署验收。
+
+
+## 5. 无Docker部署（本机运行，非推荐方案）
+
+> **推荐使用前述Docker Compose部署方案。** 无Docker方案仅供无法使用Docker或需要原生开发环境时参考，需要自行维护系统依赖和服务配置，尚未在全新原生环境完成完整验收。
+
+本方案使用相同应用源码及固定资料，在本机启动PostgreSQL、Python后端、Vite前端和SenseVoice。前四节为Docker方案；本节可独立使用。以下步骤按源码启动流程整理。
+
+### 5.1 环境与数据库
+
+安装Python 3.11、Node.js 22或24（含npm）、PostgreSQL 16及客户端工具、Git；语音另需FFmpeg和libsndfile（Windows可通过soundfile依赖提供相应库）。确认 `python --version`、`node --version`、`npm --version`、`psql --version`、`pg_dump --version` 和 `ffmpeg -version`可运行。Python安装须包含venv。Linux若依赖编译报错，安装系统编译工具及对应开发头文件。
+
+PostgreSQL服务启动后，在管理员终端执行（用户名及口令可自定，并与配置保持一致）：
+
+```text
+createuser -U postgres -P bankuser
+createdb -U postgres -O bankuser banking_agent
+```
+
+输入管理员认证及新用户口令。已有用户／数据库时跳过创建，先核对归属与备份，勿删除或重置已有账本。`pg_dump`须在后端进程PATH中且支持该服务端版本，资料升级会先执行受保护备份。
+
+### 5.2 独立配置
+
+从仓库根目录复制 `.env.example` 为 `.env.native`，使用编辑器修改；保留既有 `.env`。Windows使用 `Copy-Item .env.example .env.native`，Linux／macOS使用 `cp .env.example .env.native`，仅在目标文件不存在时执行。关键配置如下，口令特殊字符须按数据库URL规则编码：
+
+```dotenv
+DATABASE_URL=postgresql+asyncpg://bankuser:替换为数据库口令@127.0.0.1:5432/banking_agent
+LLM_MODE=auto
+LLM_API_KEY=替换为有效DeepSeek密钥
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-flash
+INTERNAL_BANK_TOKEN=替换为至少32字符的独立随机密钥
+BANK_API_BASE_URL=http://127.0.0.1:8000
+WEALTH_CATALOG_AUTO_UPGRADE=true
+SENSEVOICE_URL=http://127.0.0.1:50000
+```
+
+密钥生成与模型配置见第1节。`.env.native`包含私人凭据，只保留本机，不纳入源码提交或压缩包。现有账本须沿用原强密钥及安全目录。
+
+### 5.3 后端（终端一，仓库根目录）
+
+```text
+python -m venv .venv-native
+```
+
+Windows PowerShell：
+
+```powershell
+.\.venv-native\Scripts\python.exe -m pip install -r backend/requirements.txt -r backend/requirements-market.txt
+.\.venv-native\Scripts\python.exe -m uvicorn backend.app.main:app --env-file .env.native --host 127.0.0.1 --port 8000
+```
+
+Linux／macOS：
+
+```bash
+.venv-native/bin/python -m pip install -r backend/requirements.txt -r backend/requirements-market.txt
+.venv-native/bin/python -m uvicorn backend.app.main:app --env-file .env.native --host 127.0.0.1 --port 8000
+```
+
+保持终端运行。后端启动流程负责数据库建表、演示种子、固定资料校验安装与目录升级，使用源码包中的 `data/wealth/wealth-compact-806-v1.zip`，并在 `.deps/`保存资料与升级备份。初始化失败时先读错误日志；已有库升级保护失败应停止排查，不通过删除数据绕过。
+
+### 5.4 前端（终端二）
+
+```text
+cd frontend
+npm ci
+npm run dev -- --host 127.0.0.1
+```
+
+打开 `http://localhost:3000/`。Vite已将API与健康检查代理到本机8000端口；本方案使用本地开发服务器提供体验。3000或8000被Docker服务占用时，先停止本项目对应服务，勿停止无关进程，也不要同时运行两套连接同一账本的后端。
+
+### 5.5 SenseVoice（终端三，仓库根目录）
+
+使用独立虚拟环境隔离语音依赖，固定源码版本与Docker一致：
+
+```text
+git clone https://github.com/QwenAudio/SenseVoice.git .deps/sensevoice-source
+git -C .deps/sensevoice-source checkout 586bbdb2b052f4fe19322581825228b6810a9fb3
+python -m venv .venv-voice
+```
+
+已有目录时先核对版本，勿覆盖私人文件。Windows PowerShell：
+
+```powershell
+.\.venv-voice\Scripts\python.exe -m pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+.\.venv-voice\Scripts\python.exe -m pip install -r services/sensevoice/requirements.txt
+$env:OMP_NUM_THREADS='2'
+$env:MKL_NUM_THREADS='2'
+.\.venv-voice\Scripts\python.exe -m uvicorn services.sensevoice.server:app --app-dir .deps/sensevoice-source --host 127.0.0.1 --port 50000 --no-access-log
+```
+
+Linux／macOS：
+
+```bash
+.venv-voice/bin/python -m pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+.venv-voice/bin/python -m pip install -r services/sensevoice/requirements.txt
+OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 .venv-voice/bin/python -m uvicorn services.sensevoice.server:app --app-dir .deps/sensevoice-source --host 127.0.0.1 --port 50000 --no-access-log
+```
+
+该CPU依赖组合与当前镜像一致；未提供相应wheel的操作系统／CPU架构须另行适配和验证。首次下载固定版本模型需网络。`http://127.0.0.1:50000/health`返回 `ready=true` 后，在NOVA中允许麦克风权限并检查录音转写。音频及模型许可说明见[语音输入说明](voice_input.md)。
+
+### 5.6 验证、停止与更新
+
+按第3节检查 `http://localhost:3000/health`、登录、真实模型查询及语音转写，再按[测试用例](../testing/test_cases.md)操作。银行健康与语音健康分别核对。
+
+停止时在三个服务终端分别按Ctrl+C；数据库由本机服务管理。更新代码后重启后端，依赖清单变化时重新安装对应环境；前端更新依赖后重新执行 `npm ci`。保留数据库、密钥、`.env.native`、资料及备份；虚拟环境、模型缓存和私人配置不随源码分发。

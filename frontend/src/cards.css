@@ -73,3 +73,11 @@
  .card.card-management {padding:18px}
  .page-intro.cards-page-intro {padding-top:8px}
 }
+
+.card-management .card-list > li {flex-wrap:wrap}
+.card-management .card-list > li > .workbench-inline-panel {flex:0 0 100%;width:100%;min-width:0}
+.card-management .workbench-inline-panel:empty {display:none}
+
+@container card-management (min-width:900px) {
+ .card-management .card-list > li > .subscription-action {flex-basis:calc(46% - 24px)}
+}

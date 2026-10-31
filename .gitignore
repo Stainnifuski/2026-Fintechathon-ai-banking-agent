@@ -236,3 +236,8 @@ frontend/tsconfig.tsbuildinfo
 
 # Local offline wealth disclosure archive
 /wealth-final-offline-20261015-disclosure-v2.zip
+
+# Native deployment secrets and isolated Python environments
+.env.native
+.venv-native/
+.venv-voice/

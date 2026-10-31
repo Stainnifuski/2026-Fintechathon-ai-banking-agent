@@ -694,9 +694,10 @@ function App() {
       <aside className="bank-sidebar">
         <button className="brand" onClick={() => openSection('home')} aria-label="返回首页"><span className="brand-mark">N</span><span>NOVA<small>AI BANKING</small></span></button>
         <nav aria-label="主要功能">
-          {([['home','概览'],['transfer','转账与收款'],['insights','账单洞察'],['cards','卡片'],['subscriptions','订阅'],['scheduled','定时任务'],['wealth','理财']] as [BankingSection,string][]).map(([key,label]) =>
+          {([['home','概览'],['transfer','转账与收款'],['insights','账单洞察'],['cards','卡片'],['subscriptions','订阅'],['wealth','理财']] as [BankingSection,string][]).map(([key,label]) =>
             <button key={key} data-destination={key} className={appView === 'banking' && bankingSection === key ? 'active' : ''} onClick={() => openSection(key)}><span><NavIcon d={NAV_ICONS[key]} /></span>{label}</button>)}
           <button data-destination="services" className={appView === 'thirdParty' ? 'active' : ''} onClick={openServices}><span><NavIcon d={NAV_ICONS.services} /></span>生活服务</button>
+          <button data-destination="scheduled" className={appView === 'banking' && bankingSection === 'scheduled' ? 'active' : ''} onClick={() => openSection('scheduled')}><span><NavIcon d={NAV_ICONS.scheduled} /></span>定时任务</button>
         </nav>
         <div className="sidebar-bottom">
           <button className={`sidebar-audit-button ${appView === 'banking' && bankingSection === 'audit' ? 'active' : ''}`} data-destination="audit" onClick={() => openSection('audit')}><span><NavIcon d={NAV_ICONS.audit} /></span>操作记录</button>
@@ -712,13 +713,31 @@ function App() {
         {appView === 'thirdParty' ? <Suspense fallback={<section className="card"><p>正在加载第三方服务…</p></section>}>
           <ThirdPartyServices requestedTab={manualTab} onContextChange={updateThirdPartyPageContext} revision={bankRevision} onBack={() => openSection('home')} onGoBank={goToBankPayment} />
         </Suspense> : <>
-        {bankingSection === 'home' && <FinancialOverview userId={user.user_id} revision={bankRevision} accounts={accounts} subscriptions={subscriptions} loading={overviewLoading} error={overviewError} onRetry={() => void load()} assetSummary={assetSummary} onNavigate={openSection} />}
+        {bankingSection === 'home' && <><FinancialOverview userId={user.user_id} revision={bankRevision} accounts={accounts} subscriptions={subscriptions} loading={overviewLoading} error={overviewError} onRetry={() => void load()} assetSummary={assetSummary} onNavigate={openSection} />
+    <section className="card transfer-ledger overview-ledger"><div className="transfer-heading"><h2>最近流水</h2>{transactions.length > 0 && <small>共 {transactions.length} 笔</small>}</div>
+      {transactions.length === 0 ? <p className="hint">暂无流水</p> : <>
+        <div className="ledger-table-wrap"><table className="ledger-table"><thead><tr><th>时间</th><th>类型</th><th>对方 · 备注</th><th className="r">金额</th><th>状态</th></tr></thead>
+          <tbody>{ledgerRows.map(tx => {
+            const outgoing = isOutgoing(tx.type);
+            const [statusLabel, tone] = transactionStatus(tx.status);
+            return <tr key={tx.tx_id}>
+              <td className="ledger-time">{beijingTime(tx.timestamp).slice(0, 16)}</td>
+              <td>{transactionTypeLabel(tx.type)}</td>
+              <td>{counterpartyLabel(tx.counterparty)}{tx.note && <small> · {tx.note}</small>}</td>
+              <td className={`r ledger-amount ${tx.status !== 'completed' ? 'pending' : outgoing ? 'out' : 'in'}`}>{outgoing ? '' : '+'}{formatYuan(outgoing ? -tx.amount : tx.amount)}</td>
+              <td><span className={`ledger-status ledger-status-${tone}`}>{statusLabel}</span></td>
+            </tr>;
+          })}</tbody></table></div>
+        {ledgerPages > 1 && <nav className="ledger-pager" aria-label="流水翻页"><button type="button" className="secondary" disabled={ledgerPageIndex === 0} onClick={() => setLedgerPage(ledgerPageIndex - 1)}>上一页</button><span>第 {ledgerPageIndex + 1} / {ledgerPages} 页</span><button type="button" className="secondary" disabled={ledgerPageIndex >= ledgerPages - 1} onClick={() => setLedgerPage(ledgerPageIndex + 1)}>下一页</button></nav>}
+      </>}
+    </section>
+        </>}
         {bankingSection === 'scheduled' && <Suspense fallback={<section className="card"><p>正在加载定时任务…</p></section>}><ScheduledTasks accounts={accounts} onFundsChanged={()=>{void load();}} onGoTransfer={()=>openSection('transfer')} onDispatch={task=>{if(!task.dispatch_request_id)return;setNovaPrompts(items=>[...items,{id:task.dispatch_request_id!,text:task.description,context:{version:1,page:'home'},userId:user.user_id}]);setAgentOpen(true);setAgentExpanded(false);}} /></Suspense>}
         {bankingSection === 'wealth' && <AssetSummaryCard {...assetSummary} onRefresh={assetSummary.refresh} />}
         {bankingSection === 'wealth' && showWealthPreview && PortfolioConsumerPreview && <Suspense fallback={<section className="card">正在加载开发预览…</section>}><PortfolioConsumerPreview onReturn={()=>setShowWealthPreview(false)} accounts={accounts} revision={bankRevision} onActivity={load} userId={user.user_id} /></Suspense>}
         {bankingSection === 'wealth' && !showWealthPreview && <>{wealthConsumerPreviewEnabled&&<button className="secondary" onClick={()=>setShowWealthPreview(true)}>返回理财开发预览（保留输入）</button>}<div className="page-intro wealth-intro"><div><p className="eyebrow">WEALTH</p><h1>理财规划与购买</h1><p>选择整体规划或目标产品，核对方案后确认并完成验证。</p></div></div><Suspense fallback={<section className="card"><p>正在加载理财模拟…</p></section>}>{workspaceReady===user.user_id?<Wealth key={user.user_id} userId={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} />:<section className="card">{workspaceError?<><p role="alert">{workspaceError}</p><button onClick={()=>{workspaceBoot.current=null;setWorkspaceRetry(n=>n+1);}}>重新开启操作轮次</button></>:<p role="status">正在开启新的理财操作轮次…</p>}</section>}</Suspense></>}
         {bankingSection === 'audit' && <Suspense fallback={<section className="card"><p>正在加载操作记录…</p></section>}><Audit key={user.user_id} /></Suspense>}
-        {bankingSection === 'insights' && <><div className="page-intro bills-page-intro"><p className="eyebrow">INSIGHTS</p><h1>查看支出与变化</h1><p>查看消费与周期收支，按自己的标签整理账单。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis navigation={billNavigation} key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('transfer')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} onAskNova={(text, context) => { setNovaPrompts(items => [...items,{id:crypto.randomUUID(),text,context,userId:user.user_id}]); setAgentOpen(true); setAgentExpanded(false); }} /></Suspense></>}
+        {bankingSection === 'insights' && <><div className="page-intro bills-page-intro"><p className="eyebrow">INSIGHTS</p><h1>查看支出与变化</h1><p>查看消费与周期收支，按自己的标签整理账单。</p></div><Suspense fallback={<section className="card"><p>正在加载账单分析…</p></section>}><BillAnalysis navigation={billNavigation} key={user.user_id} accounts={accounts} revision={bankRevision} onViewCashflows={() => openSection('home')} onContextChange={updateBillPageContext} onManageSubscription={reviewBillSubscription} onAskNova={(text, context) => { setNovaPrompts(items => [...items,{id:crypto.randomUUID(),text,context,userId:user.user_id}]); setAgentOpen(true); setAgentExpanded(false); }} /></Suspense></>}
 
         {bankingSection === 'transfer' && <div className="transfers-page"><div className="page-intro transfers-page-intro"><p className="eyebrow">MOVE MONEY</p><h1>转账与收款</h1><p>先生成确认信息；高风险操作仍需要本人验证。</p></div><section className="transfer-board">
       <div className="transfer-col">
@@ -738,7 +757,7 @@ function App() {
       </form></div>
       </div>
       <div className="transfer-col">
-      <div className="card transfer-compose"><div className="transfer-heading"><h2>新建转账</h2><div className="transfer-heading-actions transfer-text-actions"><button type="button" className="secondary" aria-expanded={recipientPanel === 'people'} onClick={() => setRecipientPanel(current => current === 'people' ? null : 'people')}>选择收款人</button><button type="button" className="secondary" aria-expanded={recipientPanel === 'settings'} onClick={() => setRecipientPanel(current => current === 'settings' ? null : 'settings')}>管理</button></div></div>
+      <div className="transfer-compose-stack"><div className="card transfer-compose"><div className="transfer-heading"><h2>新建转账</h2><div className="transfer-heading-actions transfer-text-actions"><button type="button" className="secondary" aria-expanded={recipientPanel === 'people'} onClick={() => setRecipientPanel(current => current === 'people' ? null : 'people')}>选择收款人</button><button type="button" className="secondary" aria-expanded={recipientPanel === 'settings'} onClick={() => setRecipientPanel(current => current === 'settings' ? null : 'settings')}>管理</button></div></div>
       {recipientPanel && <TransferContacts key={user.user_id} userId={user.user_id} mode={recipientPanel} onChoose={chooseTransferRecipient} onChanged={load} />}
       <form className="transfer-form" onSubmit={submitTransfer} noValidate>
         <label className="span-2">付款账户<select value={fromAccount} onChange={e => setFromAccount(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{payerOption(a)}</option>)}</select></label>
@@ -755,16 +774,8 @@ function App() {
         </div>
         {transferError && <p className="error span-2" role="alert">{transferError}</p>}
         <div className="span-2 transfer-submit"><button disabled={!fromAccount || isActing}>{isActing ? '正在生成…' : '生成确认信息'}</button><small>生成后在下方任务卡上确认，确认前不会扣款。</small></div>
-      </form></div>
-      <div className="card transfer-request-list" id="payment-requests"><h2>收款申请</h2>{paymentRequests.some(request => ['PENDING', 'ACCEPTED'].includes(request.status) && request.payer_user_id === user.user_id) && <label>付款账户<select value={fromAccount} onChange={e => setFromAccount(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}（{formatYuan(a.balance)}）</option>)}</select></label>}{paymentRequests.length === 0 ? <p className="hint">暂无收款申请</p> : <ul className="history">{paymentRequests.map(request => {
-        const incoming = request.payer_user_id === user.user_id;
-        const canPay = incoming && ['PENDING', 'ACCEPTED'].includes(request.status);
-        return <li className={highlightedPaymentRequest === request.payment_request_id ? 'payment-request-highlight' : ''} key={request.payment_request_id}><span>{incoming ? `${request.requester_name} 向你收款` : `向 ${request.payer_name} 收款`} {request.note && `· ${request.note}`}<small>{request.status} · {beijingTime(request.created_at)}</small></span><strong>{formatYuan(request.amount)}</strong>{(canPay || request.status === 'PENDING') && <div className="confirm">{canPay ? <><button disabled={isActing} onClick={() => actOnPaymentRequest(request, 'accept')}>{request.status === 'ACCEPTED' ? '确认付款' : '接受申请'}</button>{request.status === 'PENDING' && <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'reject')}>拒绝</button>}</> : <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'cancel')}>取消</button>}</div>}</li>;
-      })}</ul>}<p className="hint">接受申请后先核对转账任务，再确认付款；需要强验证的任务会停留在身份验证阶段。</p></div>
-      <div className="card transfer-dialogue"><h2>即时转账对话</h2><p className="hint">例如：给手机号13800000002转300元，备注房租；改成500元；清空备注。当前模式：{conversation?.mode === 'model' ? '模型理解' : '离线规则（有限表达）'}。</p><button className="secondary" disabled={isChatting || !!retryChat} onClick={newConversation}>新建转账会话</button><div className="chat">{chat.map((item,index)=><p key={index}>{item}</p>)}</div>{conversation?.candidates.map(candidate=><button key={candidate.candidate_id} disabled={isChatting || !!retryChat} onClick={()=>sendChat(candidate.candidate_id)}>{candidate.label}</button>)}<div className="row"><input value={chatInput} disabled={isChatting || !!retryChat} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!retryChat&&sendChat()} placeholder="给手机号13800000002转300元，备注聚餐"/><button disabled={isChatting || !!retryChat} onClick={()=>sendChat()}>发送</button></div>{retryChat&&!isChatting&&<button onClick={()=>sendChat(undefined,true)}>重试原消息（避免重复建单）</button>}</div>
-      </div>
-    </section>
-    {activeTask && <section className="card task-focus transfer-task">
+      </form>
+    {activeTask && <div className="transfer-task workbench-confirmation">
       <h2>转账任务</h2><p>{activeTask.message}</p>
       {confirmationCard && <p>从{payerCardTail ? `尾号 ${payerCardTail} 的银行卡` : '付款银行卡'}向 {confirmationCard.recipient_name}（{confirmationCard.recipient_phone_masked
         ? `手机号 ${confirmationCard.recipient_phone_masked}`
@@ -784,24 +795,17 @@ function App() {
         {activeTask.allowed_actions.includes('verify') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => { setMfaCode(''); setMfaFactor({ method: 'totp' }); setMfaOpen(true); }}>身份验证</button>}
         {activeTask.allowed_actions.includes('reconcile') && <button disabled={isActing || isChatting || (conversation?.task?.task_id === activeTask.task_id && conversation.kind === 'clarification')} onClick={() => actOnTask('reconcile')}>核对银行结果</button>}
       </div>
-    </section>}
-    <section className="card transfer-ledger"><div className="transfer-heading"><h2>最近流水</h2>{transactions.length > 0 && <small>共 {transactions.length} 笔</small>}</div>
-      {transactions.length === 0 ? <p className="hint">暂无流水</p> : <>
-        <div className="ledger-table-wrap"><table className="ledger-table"><thead><tr><th>时间</th><th>类型</th><th>对方 · 备注</th><th className="r">金额</th><th>状态</th></tr></thead>
-          <tbody>{ledgerRows.map(tx => {
-            const outgoing = isOutgoing(tx.type);
-            const [statusLabel, tone] = transactionStatus(tx.status);
-            return <tr key={tx.tx_id}>
-              <td className="ledger-time">{beijingTime(tx.timestamp).slice(0, 16)}</td>
-              <td>{transactionTypeLabel(tx.type)}</td>
-              <td>{counterpartyLabel(tx.counterparty)}{tx.note && <small> · {tx.note}</small>}</td>
-              <td className={`r ledger-amount ${tx.status !== 'completed' ? 'pending' : outgoing ? 'out' : 'in'}`}>{outgoing ? '' : '+'}{formatYuan(outgoing ? -tx.amount : tx.amount)}</td>
-              <td><span className={`ledger-status ledger-status-${tone}`}>{statusLabel}</span></td>
-            </tr>;
-          })}</tbody></table></div>
-        {ledgerPages > 1 && <nav className="ledger-pager" aria-label="流水翻页"><button type="button" className="secondary" disabled={ledgerPageIndex === 0} onClick={() => setLedgerPage(ledgerPageIndex - 1)}>上一页</button><span>第 {ledgerPageIndex + 1} / {ledgerPages} 页</span><button type="button" className="secondary" disabled={ledgerPageIndex >= ledgerPages - 1} onClick={() => setLedgerPage(ledgerPageIndex + 1)}>下一页</button></nav>}
-      </>}
-    </section></div>}
+    </div>}
+      </div></div>
+      <div className="card transfer-request-list" id="payment-requests"><h2>收款申请</h2>{paymentRequests.some(request => ['PENDING', 'ACCEPTED'].includes(request.status) && request.payer_user_id === user.user_id) && <label>付款账户<select value={fromAccount} onChange={e => setFromAccount(e.target.value)}>{accounts.map(a => <option value={a.account_id} key={a.account_id}>{a.card_number}（{formatYuan(a.balance)}）</option>)}</select></label>}{paymentRequests.length === 0 ? <p className="hint">暂无收款申请</p> : <ul className="history">{paymentRequests.map(request => {
+        const incoming = request.payer_user_id === user.user_id;
+        const canPay = incoming && ['PENDING', 'ACCEPTED'].includes(request.status);
+        return <li className={highlightedPaymentRequest === request.payment_request_id ? 'payment-request-highlight' : ''} key={request.payment_request_id}><span>{incoming ? `${request.requester_name} 向你收款` : `向 ${request.payer_name} 收款`} {request.note && `· ${request.note}`}<small>{request.status} · {beijingTime(request.created_at)}</small></span><strong>{formatYuan(request.amount)}</strong>{(canPay || request.status === 'PENDING') && <div className="confirm">{canPay ? <><button disabled={isActing} onClick={() => actOnPaymentRequest(request, 'accept')}>{request.status === 'ACCEPTED' ? '确认付款' : '接受申请'}</button>{request.status === 'PENDING' && <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'reject')}>拒绝</button>}</> : <button className="secondary" disabled={isActing} onClick={() => actOnPaymentRequest(request, 'cancel')}>取消</button>}</div>}</li>;
+      })}</ul>}<p className="hint">接受申请后先核对转账任务，再确认付款；需要强验证的任务会停留在身份验证阶段。</p></div>
+      <div className="card transfer-dialogue"><h2>即时转账对话</h2><p className="hint">例如：给手机号13800000002转300元，备注房租；改成500元；清空备注。当前模式：{conversation?.mode === 'model' ? '模型理解' : '离线规则（有限表达）'}。</p><button className="secondary" disabled={isChatting || !!retryChat} onClick={newConversation}>新建转账会话</button><div className="chat">{chat.map((item,index)=><p key={index}>{item}</p>)}</div>{conversation?.candidates.map(candidate=><button key={candidate.candidate_id} disabled={isChatting || !!retryChat} onClick={()=>sendChat(candidate.candidate_id)}>{candidate.label}</button>)}<div className="row"><input value={chatInput} disabled={isChatting || !!retryChat} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!retryChat&&sendChat()} placeholder="给手机号13800000002转300元，备注聚餐"/><button disabled={isChatting || !!retryChat} onClick={()=>sendChat()}>发送</button></div>{retryChat&&!isChatting&&<button onClick={()=>sendChat(undefined,true)}>重试原消息（避免重复建单）</button>}</div>
+      </div>
+    </section>
+</div>}
     {bankingSection === 'cards' && <><div className="page-intro cards-page-intro"><p className="eyebrow">CARDS</p><h1>管理卡片</h1><p>查看卡片状态与限额；变更需确认，部分操作还需验证码。</p></div><Suspense fallback={<section className="card"><p>正在加载卡片管理…</p></section>}><CardManagement key={user.user_id} accounts={accounts} revision={bankRevision} onActivity={load} selectedCardId={selectedCardId} onSelectCard={setSelectedCardId} pendingOperationId={pendingCardOperationId} onPendingHandled={() => setPendingCardOperationId(undefined)} /></Suspense></>}
     {bankingSection === 'subscriptions' && <><div className="page-intro subscription-page-intro"><p className="eyebrow">SUBSCRIPTIONS</p><h1>管理订阅</h1><p>取消前展示影响，历史流水不会被删除。</p></div><section className="card subscription-card">
       <h2>订阅管理</h2><p className="hint">选择一项生效中的订阅后，可向 NOVA 询问“这个订阅什么时候扣费？”</p>
@@ -816,7 +820,10 @@ function App() {
             setSubscriptionCancellationToken(preview.confirmation_token);
           } catch (error) { setStatus(message(error)); }
           finally { setIsActing(false); }
-        }}>取消订阅</button></> : <small>不会继续扣费</small>}</div></li>;
+        }}>取消订阅</button></> : <small>不会继续扣费</small>}</div>{(pendingSubscription?.subscription_id === subscription.subscription_id || pendingChargeSubscription?.subscription_id === subscription.subscription_id) && <div className="workbench-inline-panel">
+      {pendingSubscription?.subscription_id === subscription.subscription_id && <div className="subscription-confirm"><p><strong>确认取消 {pendingSubscription.merchant_name}？</strong></p><p>扣费账户：{pendingSubscription.debit_account_label} · 每月 {formatYuan(pendingSubscription.amount)}<br />计划扣费：{beijingTime(pendingSubscription.next_charge_at)}</p><p className="hint">确认后将停止后续模拟自动扣费，历史扣费流水不会删除。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingSubscription(null); setSubscriptionCancellationToken(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCancellation}>{isActing ? '正在取消…' : '确认取消'}</button></div></div>}
+      {pendingChargeSubscription?.subscription_id === subscription.subscription_id && <div className="subscription-confirm"><p><strong>模拟扣除 {pendingChargeSubscription.merchant_name} {formatYuan(pendingChargeSubscription.amount)}？</strong></p><p className="hint">确认后将真实减少演示账户余额、生成订阅流水，并把下次扣费日推进一个月。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingChargeSubscription(null); setSubscriptionChargeId(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCharge}>{isActing ? '正在扣费…' : '确认模拟扣费'}</button></div></div>}
+</div>}</li>;
       })}</ul>}
       {cancelledSubscriptions.length > 0 && <div className="cancelled-subscriptions">
         <label className="hint"><input type="checkbox" checked={showCancelledSubscriptions} onChange={event => setShowCancelledSubscriptions(event.target.checked)} aria-controls="cancelled-subscription-list" aria-expanded={showCancelledSubscriptions} /> 显示已取消订阅（{cancelledSubscriptions.length}）</label>
@@ -828,8 +835,6 @@ function App() {
           </li>)}</ul>
         </div>}
       </div>}
-      {pendingSubscription && <div className="subscription-confirm"><p><strong>确认取消 {pendingSubscription.merchant_name}？</strong></p><p>扣费账户：{pendingSubscription.debit_account_label} · 每月 {formatYuan(pendingSubscription.amount)}<br />计划扣费：{beijingTime(pendingSubscription.next_charge_at)}</p><p className="hint">确认后将停止后续模拟自动扣费，历史扣费流水不会删除。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingSubscription(null); setSubscriptionCancellationToken(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCancellation}>{isActing ? '正在取消…' : '确认取消'}</button></div></div>}
-      {pendingChargeSubscription && <div className="subscription-confirm"><p><strong>模拟扣除 {pendingChargeSubscription.merchant_name} {formatYuan(pendingChargeSubscription.amount)}？</strong></p><p className="hint">确认后将真实减少演示账户余额、生成订阅流水，并把下次扣费日推进一个月。</p><div className="confirm"><button className="secondary" disabled={isActing} onClick={() => { setPendingChargeSubscription(null); setSubscriptionChargeId(''); }}>返回</button><button disabled={isActing} onClick={confirmSubscriptionCharge}>{isActing ? '正在扣费…' : '确认模拟扣费'}</button></div></div>}
     </section></>}
     </>}
         </div>

@@ -107,26 +107,26 @@
 
 /* ---------- 最近流水：独占一行的表格，每页 5 笔 ---------- */
 .transfers-page .transfer-dialogue {order:5}
-.transfers-page .transfer-ledger {margin-top:0}
-.transfers-page .transfer-ledger .transfer-heading {display:flex;align-items:baseline;justify-content:space-between}
-.transfers-page .ledger-table-wrap {overflow-x:auto;margin:0 -4px}
-.transfers-page .ledger-table {width:100%;border-collapse:collapse;font-size:14px}
-.transfers-page .ledger-table th {text-align:left;font-weight:500;font-size:12px;color:#667085;padding:0 8px 10px;border-bottom:1px solid #edf0f4;white-space:nowrap}
-.transfers-page .ledger-table td {padding:14px 8px;border-bottom:1px solid #edf0f4;vertical-align:middle;line-height:1.5}
-.transfers-page .ledger-table tr:last-child td {border-bottom:0}
-.transfers-page .ledger-table .r {text-align:right;white-space:nowrap}
-.transfers-page .ledger-time {font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:13px;white-space:nowrap;color:#34394b}
-.transfers-page .ledger-table td small {font-size:12px}
-.transfers-page .ledger-amount {font-variant-numeric:tabular-nums;font-family:ui-monospace,"Cascadia Mono",Consolas,monospace}
-.transfers-page .ledger-amount.out {color:#171b30}
-.transfers-page .ledger-amount.in {color:#087443}
-.transfers-page .ledger-amount.pending {color:#98a2b3}
-.transfers-page .ledger-status {display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
-.transfers-page .ledger-status-ok {background:#e7f5ec;color:#087443}
-.transfers-page .ledger-status-warn {background:#fdf3df;color:#8a5a00}
-.transfers-page .ledger-status-danger {background:#fdeceb;color:#b42318}
-.transfers-page .ledger-status-plain {background:#f2f4f7;color:#667085}
-.transfers-page .ledger-pager {display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:14px;font-size:13px;color:#667085}
+.overview-ledger {margin-top:20px;min-width:0;border:1px solid #e7e9f0;border-radius:16px}
+.overview-ledger .transfer-heading {display:flex;align-items:baseline;justify-content:space-between}
+.overview-ledger .ledger-table-wrap {overflow-x:auto;margin:0 -4px}
+.overview-ledger .ledger-table {width:100%;border-collapse:collapse;font-size:14px}
+.overview-ledger .ledger-table th {text-align:left;font-weight:500;font-size:12px;color:#667085;padding:0 8px 10px;border-bottom:1px solid #edf0f4;white-space:nowrap}
+.overview-ledger .ledger-table td {padding:14px 8px;border-bottom:1px solid #edf0f4;vertical-align:middle;line-height:1.5}
+.overview-ledger .ledger-table tr:last-child td {border-bottom:0}
+.overview-ledger .ledger-table .r {text-align:right;white-space:nowrap}
+.overview-ledger .ledger-time {font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:13px;white-space:nowrap;color:#34394b}
+.overview-ledger .ledger-table td small {font-size:12px}
+.overview-ledger .ledger-amount {font-variant-numeric:tabular-nums;font-family:ui-monospace,"Cascadia Mono",Consolas,monospace}
+.overview-ledger .ledger-amount.out {color:#171b30}
+.overview-ledger .ledger-amount.in {color:#087443}
+.overview-ledger .ledger-amount.pending {color:#98a2b3}
+.overview-ledger .ledger-status {display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.overview-ledger .ledger-status-ok {background:#e7f5ec;color:#087443}
+.overview-ledger .ledger-status-warn {background:#fdf3df;color:#8a5a00}
+.overview-ledger .ledger-status-danger {background:#fdeceb;color:#b42318}
+.overview-ledger .ledger-status-plain {background:#f2f4f7;color:#667085}
+.overview-ledger .ledger-pager {display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:14px;font-size:13px;color:#667085}
 @container transfers-page (max-width:620px) {
  .transfers-page .transfer-form {grid-template-columns:minmax(0,1fr)}
 }
@@ -142,3 +142,11 @@
  .transfers-page > .transfer-board {grid-template-columns:repeat(2,minmax(0,1fr))}
  .transfers-page .transfer-col {display:grid;gap:20px;align-content:start;min-width:0}
 }
+
+/* Keep the generated confirmation with its originating form at every width. */
+.transfers-page .transfer-compose-stack {display:grid;gap:20px;min-width:0;order:2}
+.transfers-page .transfer-compose-stack .transfer-task {margin-bottom:0}
+.transfers-page .transfer-compose-stack > .transfer-compose {order:0}
+.transfers-page .transfer-compose-stack > .transfer-task {order:1}
+
+.transfers-page .transfer-compose > .workbench-confirmation {margin:20px 0 0;padding-top:20px;border-top:1px solid #e7e9f0}

@@ -12,6 +12,8 @@ NOVA使用SenseVoice在本地CPU服务中完成录音转文字，不自动发送
 
 默认启动包含语音服务。若排障或暂时只体验文字，可跳过语音构建：PowerShell 使用 `scripts/start_bank.ps1 -SkipVoice`；Linux/macOS 使用 `bash scripts/start_bank.sh --skip-voice`。不会删除已缓存模型或修改已有账本。
 
+无需Docker时，使用[本机原生部署的SenseVoice步骤](deployment.md#55-sensevoice终端三仓库根目录)，在独立Python环境运行同一语音适配服务。
+
 ## 独立控制与排障
 
 以下是公用配置命令。本机若有 `.deps/bank-runtime.override.yml`，必须在 `-f docker-compose.yml` 后、`build`／`up`等子命令前加入 `-f .deps/bank-runtime.override.yml`，以保留原账本选择；启动器自动处理这一点，切勿因升级更换数据库。

@@ -1,0 +1,73 @@
+// Layout regression only: all APIs intercepted; no bank writes or model calls.
+import {pathToFileURL} from 'node:url';
+import {mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const {chromium}=await import(pathToFileURL(process.env.PORTFOLIO_PLAYWRIGHT_MODULE).href);
+const browser=await chromium.launch({executablePath:process.env.PORTFOLIO_BROWSER_EXE,headless:true});
+await mkdir('.deps/workspace-layout',{recursive:true});
+const account={account_id:'A1',account_type:'savings',card_number:'622200001111',balance:5000,available_fen:500000,held_fen:0,daily_transfer_used:0,daily_transfer_limit:50000};
+const task={task_id:'layout-task',phase:'AWAITING_CONFIRMATION',message:'请核对转账信息并确认',state_version:1,allowed_actions:['confirm','cancel'],operation:{from_account:'A1',to_account:'A2',amount:15,note:'布局验证'},confirmation_card:{from_account:'A1',recipient_name:'演示收款人',amount:15,note:'布局验证',risk_level:'yellow'}};
+const cards=Array.from({length:4},(_,i)=>({card_id:'C'+i,account_id:'A1',account_label:'演示账户',card_type:'DEBIT',is_virtual:true,card_number:'62220000'+i,status:'ACTIVE',single_txn_limit_fen:10000,daily_txn_limit_fen:50000,online_enabled:true,atm_enabled:true,overseas_enabled:false,contactless_enabled:true}));
+const subscriptions=Array.from({length:5},(_,i)=>({subscription_id:'S'+i,merchant_name:'演示订阅'+i,debit_account_label:'演示账户',amount:15,status:'ACTIVE',next_charge_at:'2026-11-15T00:00:00Z'}));
+const rect=async locator=>{const r=await locator.boundingBox();assert.ok(r);return r;};
+try{
+ for(const width of [2560,1600,390]){
+  const page=await browser.newPage({viewport:{width,height:1000}});const errors=[],writes=[];
+  page.on('pageerror',e=>errors.push(String(e)));
+  await page.addInitScript(()=>{localStorage.setItem('token','layout-only');localStorage.setItem('bank-user',JSON.stringify({user_id:'LAYOUT',name:'演示',phone:'00000000000'}));localStorage.setItem('active-task-LAYOUT','layout-task');});
+  await page.route('**/api/**',async route=>{
+   const r=route.request(),p=new URL(r.url()).pathname;
+   const json=data=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
+   if(r.method()!=='GET')writes.push(p);
+   if(p.endsWith('/security/status'))return json({locks:[],trade_locked:false,message:''});
+   if(p.endsWith('/system/time'))return json({server_time_utc:new Date().toISOString(),business_timezone:'Asia/Shanghai'});
+   if(p.endsWith('/voice/status'))return json({ready:true});
+   if(p.includes('/bills/')||p.endsWith('/asset-summary'))return route.fulfill({status:503,contentType:'application/json',body:'{}'});
+   if(p.endsWith('/accounts/LAYOUT/accounts'))return json([account]);
+   if(p.endsWith('/tasks/layout-task'))return json(task);
+   if(p.endsWith('/transactions/history'))return json(Array.from({length:7},(_,i)=>({tx_id:'T'+i,type:'transfer_out',amount:15,status:'SUCCESS',timestamp:'2026-10-30T12:00:00Z',counterparty:'演示对方',note:'演示流水'})));
+   if(p.endsWith('/subscriptions'))return json(subscriptions);
+   if(p.endsWith('/cancel-preview'))return json({subscription:subscriptions[0],confirmation_token:'preview-only',expires_at:'2026-11-01T00:00:00Z'});
+   if(p.endsWith('/cards/operations'))return json({operation_id:'OP',action:'card_lock',card_id:'C0',permission_level:'yellow',message:'演示确认',changes:[],expires_at:'2026-11-01T00:00:00Z',allowed_actions:['confirm','cancel']});
+   if(p.endsWith('/cards'))return json(cards);
+   if(p.endsWith('/totp/status'))return json({enabled:false});
+   return json(r.method()==='GET'?[]:{});
+  });
+  await page.goto('http://127.0.0.1:3000/');
+  const toggle=page.locator('#nova-toggle');await toggle.waitFor();
+  if((await toggle.innerText()).includes('收起'))await toggle.click();
+  await page.locator('.bank-sidebar [data-destination="home"]').click();
+  const ledger=page.locator('.overview-ledger');await ledger.waitFor();
+  assert.equal(await page.locator('.ledger-table tbody tr').count(),5);
+  await page.getByRole('button',{name:'下一页',exact:true}).click();assert.equal(await page.locator('.ledger-table tbody tr').count(),2);
+  await page.locator('.bank-sidebar [data-destination="transfer"]').click();
+  const stack=page.locator('.transfer-compose-stack');await stack.locator('.transfer-task').waitFor();
+  await page.waitForFunction(()=>!document.querySelector('.nova-mode-changing'));
+  const {form,confirmation,requests}=await page.evaluate(()=>{const box=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {form:box('.transfer-compose-stack .transfer-compose form'),confirmation:box('.transfer-compose-stack .transfer-task'),requests:box('.transfer-request-list')};});
+  if(width===2560)assert.ok(form.x>(await rect(page.locator('.transfer-accounts'))).x);
+  assert.ok(confirmation.y>=form.y+form.height-1);
+  assert.ok(confirmation.y-form.y-form.height<40,JSON.stringify({width,form,confirmation,requests}));
+  assert.ok(requests.y>=confirmation.y+confirmation.height-1);
+  assert.equal(await stack.locator('.transfer-compose .transfer-task').count(),1);
+  assert.equal(await page.locator('.transfer-ledger').count(),0);
+  await page.screenshot({path:`.deps/workspace-layout/transfer-${width}.png`,fullPage:true});
+  await page.locator('.bank-sidebar [data-destination="cards"]').click();
+  const row=page.locator('.card-list > li').first();await row.getByRole('button',{name:'锁卡',exact:true}).click();
+  await row.getByRole('button',{name:'生成确认信息',exact:true}).click();await row.getByText('演示确认',{exact:true}).waitFor();
+  assert.equal(await page.locator('.card-management .subscription-confirm').count(),1);
+  assert.ok((await rect(page.locator('.card-list > li').nth(1))).y>(await rect(row.locator('.subscription-confirm'))).y);
+  await page.screenshot({path:`.deps/workspace-layout/cards-${width}.png`,fullPage:true});
+  await page.locator('.bank-sidebar [data-destination="subscriptions"]').click();
+  const sub=page.locator('.subscription-card > .history > li').first();await sub.getByRole('button',{name:'取消订阅',exact:true}).click();
+  await sub.getByRole('button',{name:'确认取消',exact:true}).waitFor();
+  assert.ok((await rect(page.locator('.subscription-card > .history > li').nth(1))).y>(await rect(sub.locator('.subscription-confirm'))).y);
+  await sub.getByRole('button',{name:'返回',exact:true}).click();
+  await sub.getByRole('button',{name:'模拟扣费',exact:true}).click();await sub.getByRole('button',{name:'确认模拟扣费',exact:true}).waitFor();
+  assert.equal(await page.locator('.subscription-card .subscription-confirm').count(),1);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  assert.deepEqual(errors,[]);
+  assert.ok(writes.every(p=>p.endsWith('/cancel-preview')||p.endsWith('/cards/operations')||p.endsWith('/wealth/workspace/reset')),JSON.stringify(writes));
+  console.log(JSON.stringify({width,transferGap:confirmation.y-form.y-form.height,ledgerPagination:true,cardPreviewInline:true,subscriptionPanelsInline:true,noExecutionRequests:true}));
+  await page.close();
+ }
+}finally{await browser.close();}

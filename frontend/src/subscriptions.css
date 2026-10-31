@@ -42,3 +42,6 @@
  .page-intro.subscription-page-intro {padding-top:8px}
  .page-intro.subscription-page-intro h1 {font-size:26px}
 }
+
+.subscription-card > .history > li {flex-wrap:wrap}
+.subscription-card > .history > li > .workbench-inline-panel {flex:0 0 100%;width:100%;min-width:0}

@@ -69,7 +69,10 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (disabled || busy || !dirty || !canSave) return;
+    if (disabled || busy || !canSave) return;
+    if (!recipient.trim()) { setError('请填写收款人户名或备注名'); return; }
+    if (!amount.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) { setError('请填写有效的转账金额'); return; }
+    if (!dirty) return;
     if (executionMode === 'scheduled' && !scheduledAt) { setError('请选择定时执行时间'); return; }
     if (executionMode === 'scheduled' && new Date(fromBeijingInput(scheduledAt)).getTime() <= Date.now()) {
       setError('定时执行时间必须晚于当前时间'); return;
@@ -86,7 +89,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
         scheduled_at: executionMode === 'scheduled' ? fromBeijingInput(scheduledAt) : null,
       });
       onUpdated(updated);
-      setNotice('卡片信息已保存，请核对最新计划。');
+      setNotice('信息已更新，请核对卡片中的确认信息；缺少的内容仍需补充。');
     } catch (failure) { setError(errorText(failure)); }
     finally { setBusy(false); }
   }
@@ -175,8 +178,8 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
     {!collapsed && <>
     <p className="hint">{visible?.message || (task.missing_fields.length ? `还需：${task.missing_fields.join('、')}` : '请核对转账信息')}</p>
     <form onSubmit={event => void save(event)} className="nova-transfer-form">
-      <label>收款人姓名<input value={recipient} maxLength={100} disabled={disabled || busy || !canSave}
-        onChange={event => setRecipient(event.target.value)} placeholder="请输入收款人姓名" /></label>
+      <label>收款人户名或备注名<input value={recipient} maxLength={100} disabled={disabled || busy || !canSave}
+        onChange={event => setRecipient(event.target.value)} placeholder="输入真实户名或已保存的备注名" /></label>
       <label>金额（人民币元）<input value={amount} inputMode="decimal" maxLength={30} disabled={disabled || busy || !canSave}
         onChange={event => setAmount(event.target.value)} placeholder="例如 100.00" /></label>
       <label>收款人手机号{task.form.phone_masked && !clearPhone && <small>已保存尾号，点击输入框可更换</small>}
@@ -204,7 +207,7 @@ export default function NovaTransferCard({ task, session, accounts, focused, dis
           value={scheduledAt} disabled={disabled || busy || !canSave} onChange={event => setScheduledAt(event.target.value)} />
           <small>到达设定时间后才执行；确认前可修改。</small></label>
       </>}
-      {canSave && <button type="submit" disabled={disabled || busy || !dirty}>保存卡片信息</button>}
+      {canSave && <button type="submit" disabled={disabled || busy || (!dirty && !!visible)}>生成确认信息</button>}
     </form>
     {task.candidates.length > 0 && <div className="nova-transfer-candidates"><p>请选择匹配的账户：</p>
       {task.candidates.map(candidate => <button type="button" key={candidate.candidate_id} className="secondary"

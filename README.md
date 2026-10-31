@@ -53,6 +53,8 @@
 
 ## 安装与启动
 
+推荐使用Docker Compose部署；无法使用Docker时，可参考[无Docker部署备选方案](docs/setup/deployment.md#5-无docker部署本机运行非推荐方案)。
+
 1. 安装并启动Docker，确认 `docker --version` 和 `docker compose version` 可运行。
 2. 解压完整源码，在根目录复制 `.env.example` 为 `.env`，填写自己的DeepSeek API Key。不要覆盖已有配置或提交真实密钥。
 3. Windows运行 `start_bank.cmd`；Linux／macOS运行 `bash scripts/start_bank.sh`。默认启动包含SenseVoice语音服务，首次构建及模型下载需要网络。
