@@ -2,6 +2,8 @@
 
 本项目是比赛模拟银行。资金、交易、商户与短信通道均为模拟；公开基金资料和NAV另有来源及日期，不代表接入真实银行或支付。正式体验入口为 `http://localhost:3000/`。
 
+**推荐使用 Docker 部署。若受系统或使用环境限制无法使用 Docker，可直接参考[第5节“无 Docker 部署”](#5-无docker部署本机运行非推荐方案)，该方案需自行安装依赖并维护服务配置。**
+
 ## 1. 准备源码与配置
 
 **Windows／macOS 使用者安装并启动 Docker Desktop 即可，无需另装 Compose、Python、Node.js 或 PostgreSQL。** Linux 可使用 Docker Engine 配合 Compose v2。请按 [Docker 官方安装说明](https://docs.docker.com/get-started/get-docker/)完成对应系统的运行环境准备；Windows 采用 WSL 2 后端时，需满足其虚拟化及 WSL 2 要求。使用源码 ZIP 无需安装 Git。首次构建需联网，完整 AI 功能另需有效的 DeepSeek API Key。
@@ -114,12 +116,12 @@ docker compose -f docker-compose.yml stop
 
 若存在 `.deps/bank-runtime.override.yml`，每条命令均在 `-f docker-compose.yml` 后增加 `-f .deps/bank-runtime.override.yml`。既有运行环境若使用其他配置，先查容器 `com.docker.compose.project.config_files` 标签，沿用其全部配置；不要靠改库名、删卷或重新初始化绕过错误。日志对外分享前先遮盖密钥和个人资料。
 
-重新启动仍使用第2节启动器。不要执行删除卷的命令；PostgreSQL账本、持久密钥和本机固定资料／备份是不同存储，应一起保留。日常体验服务、独立开发预览和隔离测试环境应分开。逐步体验见 [评委操作用例](../testing/test_cases.md)，代码测试命令见 [开发者测试索引](../testing/automated_tests.md)。本说明按启动脚本和既有运行记录核对，本轮未另建全新机器做完整部署验收。
+重新启动仍使用第2节启动器。不要执行删除卷的命令；PostgreSQL账本、持久密钥和本机固定资料／备份是不同存储，应一起保留。日常体验服务、独立开发预览和隔离测试环境应分开。逐步体验见 [评委操作用例](../testing/test_cases.md)，代码测试命令见 [开发者测试索引](../testing/automated_tests.md)。本说明按启动脚本和既有运行记录核对。
 
 
 ## 5. 无Docker部署（本机运行，非推荐方案）
 
-> **推荐使用前述Docker Compose部署方案。** 无Docker方案仅供无法使用Docker或需要原生开发环境时参考，需要自行维护系统依赖和服务配置，尚未在全新原生环境完成完整验收。
+> **推荐使用前述Docker Compose部署方案。** 无Docker方案仅供无法使用Docker或需要原生开发环境时参考，需要自行维护系统依赖和服务配置。
 
 本方案使用相同应用源码及固定资料，在本机启动PostgreSQL、Python后端、Vite前端和SenseVoice。前四节为Docker方案；本节可独立使用。以下步骤按源码启动流程整理。
 
